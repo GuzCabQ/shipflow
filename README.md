@@ -194,7 +194,71 @@ Tres huecos de la **fase 0**, que estaban verdes porque no había código:
 
 ---
 
-## Qué promete esta fase y todavía no cumple
+---
+
+## Sabotajes del estado intermedio · fase 0b
+
+Obligación de cada fase, al empezarla: **tres sabotajes contra el estado en que
+la fase deja el sistema, escritos, ejecutados, y con su resultado acá.**
+
+### S0b.1 · ¿Qué promete la fase que todavía no cumple, y el artefacto lo declara?
+
+El grafo existe para responder **ocho preguntas** que ninguna búsqueda contesta
+(`GRAFO` §2). Responde **cuatro**: Q1 conteo de aristas, Q2 índice inverso, Q5
+alcanzabilidad y Q8 ciclos. No responde Q3, Q4, Q6 ni Q7.
+
+**Q4 es la que motivaba la idea entera** —*si algo cambia en código que afecta
+la prosa, saberlo*— y necesita la arista `describe`, que el freno de `GRAFO` §8
+congela hasta que exista un caso real de prosa desincronizada.
+
+**El sabotaje encontró algo, y no fue una omisión: fue de más.** El esquema
+propuesto en `GRAFO` §5 incluye `hash` y `hash_destino`, y los dos existen para
+responder Q4. Escribirlos hoy habría sido andamiaje inventado — exactamente lo
+que §1 prohíbe: *cada campo debe poder nombrar la pregunta que responde*. **No
+se escriben.** El residuo está declarado en `arquitectura.json` →
+`grafo-derivado.alcance.residuo_declarado`.
+
+### S0b.2 · ¿Qué queda a medias si se instala solo una parte?
+
+El generador sin la comparación en CI. `GRAFO` §4 lo dice sin rodeos: **un mapa
+desactualizado es peor que no tener mapa**, porque las reglas derivadas de él
+pasan a ser mentira con aspecto de evidencia.
+
+Son **dos** modos de fallo distintos, y los dos están en el arnés:
+
+| El sabotaje | Resultado |
+|---|---|
+| Un archivo nuevo, sin regenerar el grafo | **detectado** — es la violación canónica de `grafo-derivado` |
+| El `grafo.jsonl` commiteado editado a mano | **detectado** — un caso propio, porque *olvidarse de regenerar* y *editar lo derivado* no son lo mismo |
+
+### S0b.3 · ¿Se puede pasar el check de esta fase sin cumplirlo?
+
+**Sí, de dos maneras, y las dos aparecieron al construirlo.**
+
+**La primera es la grave.** Si el generador **saltea en silencio** un archivo
+que no pudo parsear, el grafo sale más chico — y *regenerado == commiteado*
+sigue pasando en verde, porque **los dos lados están igual de ciegos**. El
+check no compara contra la realidad: compara contra sí mismo.
+
+Corregido con dos controles: un archivo ilegible es **rojo**, no un `continue`;
+y el número de nodos se compara contra el número de archivos candidatos, así
+que perder uno en el camino falla aunque no haya lanzado excepción.
+
+**La segunda fue un error de criterio, no de código.** La primera versión medía
+`saltos` solo desde `README.md`, y dejó **20 de 21 nodos huérfanos** — porque un
+README no enlaza código. La salida cómoda era declarar veinte excepciones en
+`grafo-huerfanos.txt` y seguir.
+
+**Eso habría sido una lista que no protege nada.** El criterio estaba mal, no
+el árbol: en un repo de código los puntos de entrada son el barril público de
+cada paquete, los tests y los `bin/`. Corregido el criterio, los huérfanos son
+**cero** y la lista está vacía — que es su estado correcto.
+
+> La lección es la del catálogo de fallos: **cuando una regla nueva produce
+> veinte violaciones el primer día, lo que suele estar mal es la regla.**
+> Declarar las veinte la desactiva sin borrarla.
+
+## Qué prometen estas fases y todavía no cumplen
 
 Declararlo es obligación de cada fase, y viene de una lección concreta: una
 superficie incompleta que se muestra vacía se lee como *"no había nada"*.

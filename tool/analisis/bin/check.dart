@@ -224,7 +224,7 @@ void main(List<String> args) {
       fallos.add('arquitectura.json: «${e.key}» no declara violación canónica. '
           'Una regla que no puede ponerse roja no está probada.');
     }
-    if (r['aplicada_por'] != 'tool/serializacion') {
+    if (r['aplicada_por'] != 'tool/analisis') {
       fallos.add('arquitectura.json: «${e.key}» ya no delega en este '
           'verificador. Quedaría registrada y sin ejecutar.');
     }

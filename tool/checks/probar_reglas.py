@@ -39,7 +39,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
-SERIALIZACION = RAIZ / "tool" / "serializacion"
+ANALISIS = RAIZ / "tool" / "analisis"
 ARQ_REL = "arquitectura.json"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
@@ -114,22 +114,37 @@ def casos() -> list[dict]:
     c: list[dict] = []
     for rid in REGLAS:
         base = canonica(rid)
+        # Una regla que aplica el motor del grafo necesita ese motor encendido.
+        del_grafo = REGLAS[rid].get("tipo") == "grafo_derivado"
         c.append({
             "nombre": f"{rid} · violación canónica",
             "archivos": dict(base["archivos"]),
             "pub_get": base["pub_get"],
             "menciona": REGLAS[rid]["violacion_canonica"]["debe_mencionar"],
+            "probar_grafo": del_grafo,
         })
         for etiqueta, mutar in neutralizaciones(rid):
             c.append({
                 "nombre": f"{rid} · {etiqueta}",
                 "archivos": {ARQ_REL: arq_con(mutar), **base["archivos"]},
                 "pub_get": base["pub_get"],
+                "probar_grafo": del_grafo,
                 # Se regenera la huella a propósito: sin esto la huella cazaría
                 # toda mutación del JSON y los controles puntuales quedarían sin
                 # probar, tapados por ella. Cada uno tiene que valerse solo.
                 "regenerar_huella": True,
             })
+
+    # Y el otro modo de fallo del grafo: no un archivo nuevo, sino el grafo
+    # commiteado retocado a mano. Son distintos: uno es olvidarse de
+    # regenerar, el otro es editar lo que se deriva.
+    c.append({
+        "nombre": "grafo · grafo commiteado editado a mano",
+        "archivos": {"grafo.jsonl": (RAIZ / "grafo.jsonl").read_text(encoding="utf-8")
+                     .replace('"saltos":0', '"saltos":9', 1)},
+        "menciona": "grafo",
+        "probar_grafo": True,
+    })
 
     # Y la huella, probada por separado: mutación del JSON SIN regenerarla.
     c.append({
@@ -200,18 +215,53 @@ def casos() -> list[dict]:
     return c
 
 
-def corre_check() -> tuple[int, str]:
-    """Los dos motores, sumados. Un sabotaje se considera detectado si CUALQUIERA
-    de los dos lo ve: las reglas son del registro, no del verificador."""
+def compilar() -> dict[str, list[str]]:
+    """Compila los verificadores Dart a snapshot, UNA vez.
+
+    Cada caso los invoca de nuevo, y `dart run` paga ~2,6 s de arranque de VM
+    cada vez: sobre cincuenta y cinco casos son más de cuatro minutos de nada.
+    Un snapshot arranca en 0,2 s.
+
+    El `.dill` va en `bin/`, no en un temporal, porque los dos verificadores
+    encuentran la raíz del repositorio subiendo desde `Platform.script`.
+    """
+    ordenes: dict[str, list[str]] = {}
+    for binario in ("check", "grafo"):
+        dill = ANALISIS / "bin" / f"{binario}.dill"
+        r = subprocess.run(
+            ["dart", "compile", "kernel", f"bin/{binario}.dart", "-o", f"bin/{binario}.dill"],
+            cwd=ANALISIS, capture_output=True, text=True, timeout=300)
+        ordenes[binario] = (["dart", str(dill)] if r.returncode == 0 and dill.exists()
+                            else ["dart", "run", f"bin/{binario}.dart"])
+    return ordenes
+
+
+ORDENES: dict[str, list[str]] = {}
+
+
+def corre_check(con_grafo: bool = True) -> tuple[int, str]:
+    """Los motores, sumados. Un sabotaje se considera detectado si CUALQUIERA
+    de ellos lo ve: las reglas son del registro, no del verificador.
+
+    `con_grafo=False` apaga el del grafo, y no es comodidad. Todo archivo que
+    un sabotaje inyecta es, por construcción, un archivo que nadie importa —
+    es decir, un huérfano—, así que el control Q5 dispararía en TODOS los casos
+    y taparía al control que cada uno apunta. Es el mismo enmascaramiento que
+    ya había provocado la huella. El grafo se prueba en sus dos casos propios,
+    donde es lo único que puede fallar."""
     salida, peor = "", 0
     r = subprocess.run([sys.executable, str(CHECK)], capture_output=True, text=True)
     salida += r.stdout + r.stderr
     peor = max(peor, r.returncode)
-    d = subprocess.run(["dart", "run", "bin/check.dart"], cwd=SERIALIZACION,
-                       capture_output=True, text=True, timeout=300)
-    salida += d.stdout + d.stderr
-    peor = max(peor, d.returncode)
+    for binario in ("check", *(("grafo",) if con_grafo else ())):
+        d = subprocess.run(ORDENES.get(binario, ["dart", "run", f"bin/{binario}.dart"]),
+                           cwd=ANALISIS, capture_output=True, text=True, timeout=300)
+        salida += d.stdout + d.stderr
+        peor = max(peor, d.returncode)
     return peor, salida
+
+
+
 
 
 def pub_get() -> None:
@@ -261,6 +311,8 @@ def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
 
 
 def main() -> int:
+    global ORDENES
+    ORDENES = compilar()
     codigo, salida = corre_check()
     if codigo != 0:
         print("El árbol ya está en rojo antes de sabotear. Arreglá eso primero:\n")
@@ -279,7 +331,7 @@ def main() -> int:
                 subprocess.run([sys.executable, str(CHECK), "--huella"], capture_output=True)
             if caso.get("pub_get"):
                 pub_get()
-            codigo, salida = corre_check()
+            codigo, salida = corre_check(con_grafo=bool(caso.get("probar_grafo")))
             problema = evaluar(caso, codigo, salida)
             if problema:
                 problemas.append(f"{caso['nombre']}: {problema}")
@@ -306,6 +358,8 @@ def main() -> int:
         for p in problemas:
             print(f"  {p}")
         return 1
+    for b in ("check", "grafo"):
+        (ANALISIS / "bin" / f"{b}.dill").unlink(missing_ok=True)
     positivos = sum(1 for c in lista if c.get("espera", "falla") == "falla")
     print(f"\nprobar_reglas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
           f"{len(lista) - positivos} exclusiones honradas.")

@@ -19,3 +19,7 @@ build/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Snapshots que `probar_reglas.py` compila para no pagar el arranque de la VM
+# en cada uno de sus casos. Se generan y se borran en la misma corrida.
+*.dill

@@ -255,7 +255,7 @@
       "enunciado": "En core, los campos de instancia publicos de una clase son exactamente las claves de su toJson y exactamente las que lee su fromJson. Ni uno de mas, ni uno de menos.",
       "origen": "ADR-002 y el criterio de salida de la fase 1 del plan",
       "tipo": "campos_derivados",
-      "aplicada_por": "tool/serializacion",
+      "aplicada_por": "tool/analisis",
       "alternativa": "Si un campo no debe viajar, hacelo privado o declara la clase en `credencial-opaca.opacos`. No lo omitas en silencio.",
       "por_que_derivado": [
         "Un test de ida y vuelta escrito a mano cubre los campos que su autor recordo.",
@@ -279,7 +279,7 @@
       "enunciado": "Todo puerto de core sin implementacion viva esta declarado, con la fase en que aparece. Y todo puerto declarado sin implementacion sigue sin tenerla.",
       "origen": "Plan de desarrollo, regla transversal: que promete la fase que todavia no cumple",
       "tipo": "huecos_declarados",
-      "aplicada_por": "tool/serializacion",
+      "aplicada_por": "tool/analisis",
       "alternativa": "Si el puerto ya tiene implementacion, sacalo de la lista. Si es nuevo y todavia no la tiene, agregalo con su fase.",
       "por_que": [
         "Una superficie de puertos completa se lee como un sistema con esas",
@@ -324,7 +324,7 @@
       "enunciado": "Una clase de core o serializa, o esta declarada opaca con su motivo. No hay tercera opcion silenciosa.",
       "origen": "INV-5, docs/03 §4, y ADR-011 corolario 5",
       "tipo": "opacidad_declarada",
-      "aplicada_por": "tool/serializacion",
+      "aplicada_por": "tool/analisis",
       "alternativa": "Si el tipo no debe viajar, declaralo aca con su motivo y su mascara. Si debe viajar, escribile toJson y fromJson.",
       "opacos": {
         "_": "Clases que NO serializan a proposito. Cada una con su motivo y la mascara exacta que devuelve su toString.",
@@ -340,6 +340,52 @@
         "donde": "packages/core/lib/src/_canario_opaco.dart",
         "contenido": "class CanarioOpaco {\n  final String campo;\n  const CanarioOpaco(this.campo);\n}\n",
         "debe_mencionar": "CanarioOpaco"
+      }
+    },
+    "grafo-derivado": {
+      "enunciado": "El grafo commiteado es identico al que se deriva del arbol, y ningun archivo queda fuera del alcance de algun punto de entrada.",
+      "origen": "arnes-propio/GRAFO.md §4 y §2 (Q1, Q2, Q5, Q8), fase 0b del plan",
+      "tipo": "grafo_derivado",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Regeneralo con `dart run bin/grafo.dart --escribir` desde tool/analisis. No lo edites a mano: se deriva, no se mantiene.",
+      "por_que": [
+        "Un mapa desactualizado es PEOR que no tener mapa: las reglas derivadas de",
+        "el pasan a ser mentira con aspecto de evidencia. Como el grafo se regenera",
+        "entero, no hay nada que actualizar a mano y por lo tanto nada que saltarse.",
+        "",
+        "En CI y no en un gancho: el intento anterior tenia pre-push y --no-verify",
+        "lo salteaba. Es ADR-018 aplicado a nosotros."
+      ],
+      "alcance": {
+        "raiz": ".",
+        "extensiones": [
+          ".dart",
+          ".md"
+        ],
+        "aristas": [
+          "importa",
+          "cita"
+        ],
+        "excluir": {
+          "_": "GRAFO §6: sale de la politica de artefactos, no se inventa.",
+          "generados": {
+            "que": [
+              ".g.dart",
+              ".freezed.dart",
+              ".mocks.dart",
+              ".dart_tool/",
+              "build/"
+            ],
+            "por_que": "Generados por la toolchain. No son arquitectura del producto.",
+            "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+          }
+        },
+        "residuo_declarado": "La arista `describe` (prosa -> codigo) NO se deriva y esta CONGELADA por el freno de GRAFO §8: se agrega cuando exista el primer caso real de prosa desincronizada. Sin ella, Q4 no se responde, y por eso los campos `hash` y `hash_destino` tampoco se escriben: un campo que hoy no responde ninguna pregunta es andamiaje. Se responden Q1, Q2, Q5 y Q8; las otras cuatro no."
+      },
+      "violacion_canonica": {
+        "donde": "packages/vcs/lib/_canario_grafo.dart",
+        "contenido": "// Un archivo nuevo que el grafo commiteado no conoce.\nvoid canario() {}\n",
+        "debe_mencionar": "grafo"
       }
     }
   }
