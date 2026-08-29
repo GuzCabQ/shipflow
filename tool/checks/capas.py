@@ -1,161 +1,208 @@
 #!/usr/bin/env python3
 """La regla de capas, convertida en check.
 
-Tres controles, todos de la fase 0 del plan. Corren desde el commit 0 sobre
-paquetes vacíos, que es el único momento en que instalarlos cuesta cero: sobre
-veinte mil líneas producirían miles de violaciones y se desactivarían.
+Corre desde el commit 0 sobre paquetes vacíos, que es el único momento en que
+instalar reglas de frontera cuesta cero: sobre veinte mil líneas producirían
+miles de violaciones y terminarían desactivadas.
 
     python3 tool/checks/capas.py
 
-Sale 1 si algo falla. No modifica archivos. La regla vive en arquitectura.json.
+Sale 1 si algo falla. No modifica archivos. Las reglas viven en
+arquitectura.json, cada una con su `id` estable y su `alcance` declarado.
+
+PRECONDICIÓN: `dart pub get` tiene que haber corrido. El grafo de dependencias
+no se parsea a mano — se le pide a pub, que es quien lo resuelve. Si no está
+disponible, este check FALLA: no mirar no es lo mismo que no encontrar nada.
 """
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
-REGLA = json.loads((RAIZ / "arquitectura.json").read_text(encoding="utf-8"))
 PAQUETES = RAIZ / "packages"
+REGLAS = json.loads((RAIZ / "arquitectura.json").read_text(encoding="utf-8"))["reglas"]
+
+# Los cuatro controles que arquitectura.json DEBE seguir declarando, con los
+# campos sin los cuales no se pueden aplicar. Quitar uno de acá es un cambio de
+# arquitectura y se revisa como tal; quitarlo solo del JSON, sin esto, dejaba el
+# árbol verde con menos reglas: es F33 en nuestro propio arnés.
+OBLIGATORIAS = {
+    "deps-hacia-core": ("enunciado", "origen", "alcance", "permitidas"),
+    "nucleo-sin-externas": ("enunciado", "origen", "alcance", "paquetes", "origenes_permitidos"),
+    "agente-en-agents": ("enunciado", "origen", "alternativa", "alcance", "cadenas", "solo_en"),
+    "lenguaje-en-plugin-dart": ("enunciado", "origen", "alternativa", "alcance", "cadenas", "solo_en"),
+}
 
 fallos: list[str] = []
 
 
-def paquetes() -> list[Path]:
-    return sorted(p for p in PAQUETES.iterdir() if (p / "pubspec.yaml").exists())
+def paquetes() -> list[str]:
+    return sorted(p.name for p in PAQUETES.iterdir() if (p / "pubspec.yaml").exists())
 
 
-def dependencias(pubspec: Path) -> dict[str, str]:
-    """Lee el bloque `dependencies:` de un pubspec sin depender de PyYAML.
+def grafo() -> dict[str, dict]:
+    """El grafo resuelto, tal como lo reporta pub.
 
-    Devuelve {nombre: origen}, donde origen es 'path' o 'externa'. Falla ruidosa
-    si el archivo no tiene la forma esperada: un parseo silencioso que devuelve
-    vacío daría verde por no haber mirado, que es la clase 1 del catálogo.
+    Se deriva, no se mantiene. Reemplaza al parser de pubspec que teníamos, que
+    solo reconocía una forma textual: `dependencies: {http: ^1.0.0}` o un
+    comentario en la misma línea le devolvían cero dependencias y el check
+    pasaba en verde sin haber mirado.
     """
-    deps: dict[str, str] = {}
-    lineas = pubspec.read_text(encoding="utf-8").splitlines()
     try:
-        i = lineas.index("dependencies:")
-    except ValueError:
-        return deps
-    actual = None
-    for l in lineas[i + 1:]:
-        if l and not l.startswith(" "):
-            break
-        m = re.match(r"^  ([a-z_][a-z0-9_]*):\s*(\S.*)?$", l)
-        if m:
-            actual = m.group(1)
-            deps[actual] = "externa" if m.group(2) else "path"
-        elif actual and re.match(r"^    path:", l):
-            deps[actual] = "path"
-    return deps
+        r = subprocess.run(
+            ["dart", "pub", "deps", "--json"],
+            cwd=RAIZ, capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        fallos.append(f"no se pudo ejecutar `dart pub deps --json`: {e}")
+        return {}
+    if r.returncode != 0:
+        detalle = (r.stderr or r.stdout).strip().splitlines()
+        fallos.append(
+            "`dart pub deps --json` falló. Corré `dart pub get` primero.\n"
+            "      " + (detalle[-1] if detalle else "sin detalle")
+        )
+        return {}
+    try:
+        datos = json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        fallos.append(f"`dart pub deps --json` no devolvió JSON válido: {e}")
+        return {}
+    return {p["name"]: p for p in datos.get("packages", [])}
 
 
-# --- 1 · cadenas acotadas a su adapter -----------------------------------
-
-def check_cadenas() -> None:
-    for reglita in REGLA["cadenas_acotadas"]:
-        permitidos = set(reglita["solo_en"])
-        patron = re.compile(r"\b(" + "|".join(reglita["cadenas"]) + r")\b", re.I)
-        for pkg in paquetes():
-            if pkg.name in permitidos:
-                continue
-            for fuente in sorted(pkg.rglob("*.dart")):
-                for n, l in enumerate(fuente.read_text(encoding="utf-8").splitlines(), 1):
-                    m = patron.search(l)
-                    if m:
-                        fallos.append(
-                            f"{fuente.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
-                            f"{sorted(permitidos)} — {reglita['regla']}.\n"
-                            f"      → {reglita['alternativa']}"
-                        )
-
-
-# --- 2 · dependencias declaradas dentro de lo permitido ------------------
-
-def check_dependencias() -> None:
-    permitidas = REGLA["dependencias_permitidas"]
-    for pkg in paquetes():
-        if pkg.name not in permitidas:
-            fallos.append(f"packages/{pkg.name}: no está declarado en arquitectura.json")
-            continue
-        ok = set(permitidas[pkg.name])
-        for dep, origen in dependencias(pkg / "pubspec.yaml").items():
-            if dep not in ok:
-                fallos.append(
-                    f"packages/{pkg.name}/pubspec.yaml: depende de «{dep}», que no está "
-                    f"permitido. Permitidas: {sorted(ok) or 'ninguna'}"
-                )
-            del origen
-
-
-# --- 3 · core no tiene dependencias externas -----------------------------
-
-def check_nucleo_limpio() -> None:
-    for nombre in REGLA["sin_dependencias_externas"]:
-        pubspec = PAQUETES / nombre / "pubspec.yaml"
-        if not pubspec.exists():
-            fallos.append(f"packages/{nombre}: declarado sin dependencias externas y no existe")
-            continue
-        for dep, origen in dependencias(pubspec).items():
-            if origen == "externa":
-                fallos.append(
-                    f"packages/{nombre}/pubspec.yaml: dependencia externa «{dep}». "
-                    f"{nombre} no tiene dependencias externas. Ninguna."
-                )
-
-
-# --- 4 · meta-check: las reglas registradas siguen registradas ------------
-
-# Los orígenes que arquitectura.json DEBE seguir cubriendo. Sin esto, vaciar el
-# archivo deja el check en verde con menos reglas y nadie se entera: es F33
-# —cuatro de nueve reglas no corrieron y nada lo dijo— en nuestro propio arnés.
-# Quitar un origen de acá es un cambio de arquitectura, y se revisa como tal.
-ORIGENES_OBLIGATORIOS = {"ADR-009", "docs/03 §2"}
-
+# --- meta · las reglas registradas siguen registradas --------------------
 
 def check_meta() -> None:
-    declarados = " · ".join(r["regla"] for r in REGLA["cadenas_acotadas"])
-    for origen in sorted(ORIGENES_OBLIGATORIOS):
-        if origen not in declarados:
+    existentes = paquetes()
+    for rid, campos in OBLIGATORIAS.items():
+        regla = REGLAS.get(rid)
+        if regla is None:
             fallos.append(
-                f"arquitectura.json: ya no declara ninguna regla de «{origen}». "
+                f"arquitectura.json: falta la regla «{rid}». "
                 f"Un control que desaparece sin ruido es F33."
             )
-    for reglita in REGLA["cadenas_acotadas"]:
-        if not reglita.get("cadenas"):
-            fallos.append(f"arquitectura.json: la regla «{reglita['regla']}» quedó sin cadenas")
-        if not reglita.get("alternativa"):
-            fallos.append(
-                f"arquitectura.json: la regla «{reglita['regla']}» no declara alternativa. "
-                f"Ninguna regla prohibitiva se instala sin su «hacé esto» (ADR-017, INV-11)."
-            )
-        for pkg in reglita["solo_en"]:
-            if not (PAQUETES / pkg).exists():
-                fallos.append(f"arquitectura.json: «{reglita['regla']}» permite «{pkg}», que no existe")
+            continue
+        for campo in campos:
+            if not regla.get(campo):
+                fallos.append(f"arquitectura.json: «{rid}» no declara «{campo}»")
+    sobrantes = sorted(set(REGLAS) - set(OBLIGATORIAS))
+    if sobrantes:
+        fallos.append(
+            f"arquitectura.json declara reglas que capas.py no aplica: {sobrantes}. "
+            f"Una regla escrita y no ejecutada es la enfermedad que este proyecto combate."
+        )
+    for rid, regla in REGLAS.items():
+        for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
+            if pkg not in existentes:
+                fallos.append(f"arquitectura.json: «{rid}» nombra el paquete «{pkg}», que no existe")
 
 
-CHECKS = [
-    ("reglas registradas presentes", check_meta),
-    ("cadenas acotadas a su adapter", check_cadenas),
-    ("dependencias entre paquetes", check_dependencias),
-    ("núcleo sin dependencias externas", check_nucleo_limpio),
-]
+# --- deps-hacia-core · por NOMBRE ---------------------------------------
+
+def check_dependencias(g: dict[str, dict]) -> None:
+    regla = REGLAS["deps-hacia-core"]
+    permitidas = regla["permitidas"]
+    for nombre in paquetes():
+        if nombre not in permitidas:
+            fallos.append(f"packages/{nombre}: no está en «deps-hacia-core». Declaralo o borralo.")
+            continue
+        if nombre not in g:
+            fallos.append(f"packages/{nombre}: pub no lo reporta en el grafo. ¿Falta en `workspace:`?")
+            continue
+        ok = set(permitidas[nombre])
+        for dep in g[nombre].get("dependencies", []):
+            if dep not in ok:
+                fallos.append(
+                    f"packages/{nombre}: depende de «{dep}», que no está permitido.\n"
+                    f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}"
+                )
+
+
+# --- nucleo-sin-externas · por ORIGEN, independiente de la anterior ------
+
+def check_origenes(g: dict[str, dict]) -> None:
+    regla = REGLAS["nucleo-sin-externas"]
+    permitidos = set(regla["origenes_permitidos"])
+    for nombre in regla["paquetes"]:
+        if nombre not in g:
+            fallos.append(f"packages/{nombre}: pub no lo reporta en el grafo")
+            continue
+        for dep in g[nombre].get("dependencies", []):
+            origen = g.get(dep, {}).get("source", "desconocido")
+            if origen not in permitidos:
+                fallos.append(
+                    f"packages/{nombre}: dependencia «{dep}» de origen «{origen}». "
+                    f"{regla['enunciado']}"
+                )
+
+
+# --- cadenas acotadas a su adapter --------------------------------------
+
+def check_cadenas() -> None:
+    for regla in REGLAS.values():
+        if regla.get("tipo") != "cadenas_acotadas":
+            continue
+        _cadenas_de(regla)
+
+
+def _cadenas_de(regla: dict) -> None:
+    alcance = regla["alcance"]
+    extensiones = set(alcance["extensiones"])
+    permitidos = set(regla["solo_en"])
+    patron = re.compile(r"\b(" + "|".join(regla["cadenas"]) + r")\b", re.I)
+    excluidos = {
+        nombre
+        for grupo in alcance.get("excluir", {}).values()
+        if isinstance(grupo, dict)
+        for nombre in grupo["que"]
+    }
+    raiz = RAIZ / alcance["raiz"]
+    for archivo in sorted(raiz.rglob("*")):
+        if not archivo.is_file() or archivo.suffix not in extensiones:
+            continue
+        rel = archivo.relative_to(raiz)
+        if not rel.parts or rel.parts[0] in permitidos:
+            continue
+        if excluidos.intersection(rel.parts):
+            continue
+        for n, linea in enumerate(archivo.read_text(encoding="utf-8").splitlines(), 1):
+            m = patron.search(linea)
+            if m:
+                fallos.append(
+                    f"{archivo.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
+                    f"{sorted(permitidos)} — {regla['enunciado']}\n"
+                    f"      → {regla['alternativa']}"
+                )
+
+
+def _paso(nombre, fn, *args) -> None:
+    antes = len(fallos)
+    fn(*args)
+    estado = "ok" if len(fallos) == antes else f"{len(fallos) - antes} fallo(s)"
+    print(f"  {nombre:<38} {estado}")
 
 
 def main() -> int:
-    for nombre, fn in CHECKS:
-        antes = len(fallos)
-        fn()
-        print(f"  {nombre:<36} {'ok' if len(fallos) == antes else f'{len(fallos) - antes} fallo(s)'}")
+    _paso("reglas registradas presentes", check_meta)
+    g = grafo()
+    if g:
+        _paso("dependencias entre paquetes", check_dependencias, g)
+        _paso("núcleo sin dependencias externas", check_origenes, g)
+    else:
+        print(f"  {'grafo de dependencias':<38} NO DISPONIBLE")
+    _paso("cadenas acotadas a su adapter", check_cadenas)
+
     if fallos:
         print("\ncapas: FALLA\n")
         for f in fallos:
             print(f"  {f}")
         return 1
-    print(f"\ncapas: ok — {len(paquetes())} paquetes.")
+    print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.")
     return 0
 
 

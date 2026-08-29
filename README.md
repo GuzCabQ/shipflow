@@ -39,20 +39,40 @@ python3 tool/checks/probar_capas.py    # y la prueba de que sabe fallar
 dart pub get && dart analyze
 ```
 
-| Check | Qué impide | Origen |
+| `id` de la regla | Qué impide | Origen |
 |---|---|---|
-| reglas registradas presentes | Que se vacíe `arquitectura.json` y el árbol quede verde con menos reglas | F33 |
-| cadenas acotadas a su adapter | Que `claude`/`codex`/`gemini` salgan de `agents/`; que `dart`/`flutter` salgan de `plugin_dart/` | ADR-009, docs/03 §2 |
-| dependencias entre paquetes | Que una flecha de dependencia apunte a otro lado que no sea `core` | docs/03 §2 |
-| núcleo sin dependencias externas | Que `core` gane una dependencia. Ninguna | docs/03 §1 |
+| `deps-hacia-core` | Que una flecha de dependencia apunte a otro lado que no sea `core` | docs/03 §2 |
+| `nucleo-sin-externas` | Que `core` gane una dependencia. Ninguna | docs/03 §1 |
+| `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | ADR-009 |
+| `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | docs/03 §2 |
 
-**La regla vive en [`arquitectura.json`](arquitectura.json)**, en un solo lugar y
-diffeable. Tocarlo es cambiar la arquitectura y se revisa como tal.
+**Las reglas viven en [`arquitectura.json`](arquitectura.json)**, en un solo
+lugar y diffeable. Tocarlo es cambiar la arquitectura y se revisa como tal.
 
-`probar_capas.py` rompe cada control a propósito y verifica que el check se
-entere. Corre en CI junto al check, no una vez a mano: **un check que nunca
-falló no está probado**, y un guardia que existe y nunca se disparó es
-indistinguible de uno roto.
+Tres propiedades que las hacen verificables, y que no estaban en la primera
+versión:
+
+- **Cada regla tiene un `id` estable**, y `capas.py` exige que los cuatro sigan
+  presentes con su estructura mínima. Sin eso se podía borrar una regla y dejar
+  el árbol verde con menos controles: es F33.
+- **Cada regla declara su `alcance`** — qué extensiones cubre y qué excluye, con
+  el motivo y con quién lo cubre en su lugar. Un control que no dice qué mira no
+  puede distinguir *"no encontré nada"* de *"no miré ahí"*, que es el corolario 5
+  de ADR-011.
+- **El grafo de dependencias se le pide a pub** (`dart pub deps --json`), no se
+  parsea a mano. La versión anterior solo reconocía una forma textual del
+  `pubspec`: un `dependencies: {http: ^1.0.0}` le devolvía cero dependencias y
+  el check pasaba en verde **sin haber mirado**.
+
+`probar_capas.py` rompe **cada regla por separado** —borrar el registro entero
+es el caso fácil— y verifica que el check se entere: 11 violaciones detectadas.
+Más dos controles negativos, que verifican que las exclusiones declaradas
+excluyan de verdad y no sean un agujero accidental. Y comprueba que los
+sabotajes no dejen residuo en el árbol.
+
+Corre en CI junto al check, no una vez a mano: **un check que nunca falló no
+está probado**, y un guardia que existe y nunca se disparó es indistinguible de
+uno roto.
 
 ---
 
@@ -65,6 +85,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 |---|---|
 | **Coherencia del registro de reglas** — ninguna `Rule` sin `alternativa` ni `evasiones_conocidas`. Es el sexto check de la fase 0 | Necesita `core`. **Fase 1** |
 | **El grafo interno** y su check de *regenerado == commiteado* | **Fase 0b**, después de `core` |
+| **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**

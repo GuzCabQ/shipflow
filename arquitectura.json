@@ -1,36 +1,177 @@
 {
   "_": [
     "La regla de capas, en un solo lugar y diffeable.",
-    "Origen: docs/03 §2 del corpus de diseño, y ADR-009.",
+    "Origen: docs/03 §1 y §2 del corpus de diseño, y ADR-009.",
     "La verifica tool/checks/capas.py y la hace cumplir CI.",
+    "",
+    "Cada regla lleva un `id` estable. El meta-check exige que los cuatro sigan",
+    "presentes con su estructura mínima: sin eso, borrar una regla dejaba el",
+    "árbol verde con menos controles y nadie se enteraba (F33).",
+    "",
+    "Y cada regla declara su `alcance`. Un control que no dice qué cubre no",
+    "puede distinguir 'no encontré nada' de 'no miré ahí' — es el corolario 5",
+    "de ADR-011: cada control declara si puede detectar una omisión.",
+    "",
     "Cambiar este archivo es cambiar la arquitectura: se revisa como tal."
   ],
-
-  "dependencias_permitidas": {
-    "core": [],
-    "orchestration": ["core"],
-    "vcs": ["core"],
-    "rules": ["core"],
-    "agents": ["core"],
-    "plugin_dart": ["core"],
-    "plugin_fake": ["core"],
-    "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart", "plugin_fake"]
-  },
-
-  "sin_dependencias_externas": ["core"],
-
-  "cadenas_acotadas": [
-    {
-      "regla": "ADR-009 · el núcleo es agnóstico del agente",
-      "alternativa": "Si necesitás hablar con un CLI agéntico, es un adapter en agents/",
-      "cadenas": ["claude", "codex", "gemini"],
-      "solo_en": ["agents", "cli"]
+  "reglas": {
+    "deps-hacia-core": {
+      "enunciado": "Todas las flechas de dependencia apuntan hacia core. Solo cli ve a plugin_dart y a agents.",
+      "origen": "docs/03 §2",
+      "tipo": "dependencias_permitidas",
+      "alcance": "El grafo resuelto por `dart pub deps --json`, restringido a los paquetes de packages/. No se parsea el pubspec a mano.",
+      "permitidas": {
+        "core": [],
+        "orchestration": [
+          "core"
+        ],
+        "vcs": [
+          "core"
+        ],
+        "rules": [
+          "core"
+        ],
+        "agents": [
+          "core"
+        ],
+        "plugin_dart": [
+          "core"
+        ],
+        "plugin_fake": [
+          "core"
+        ],
+        "cli": [
+          "core",
+          "orchestration",
+          "vcs",
+          "rules",
+          "agents",
+          "plugin_dart",
+          "plugin_fake"
+        ]
+      }
     },
-    {
-      "regla": "docs/03 §2 · el núcleo es agnóstico del lenguaje",
+    "nucleo-sin-externas": {
+      "enunciado": "core no tiene dependencias externas. Ninguna.",
+      "origen": "docs/03 §1",
+      "tipo": "origen_de_dependencias",
+      "alcance": "El mismo grafo resuelto. Mira el ORIGEN de cada dependencia, no su nombre: es independiente de deps-hacia-core a propósito, para que no se tapen entre sí.",
+      "paquetes": [
+        "core"
+      ],
+      "origenes_permitidos": [
+        "root"
+      ]
+    },
+    "agente-en-agents": {
+      "enunciado": "Las cadenas claude, codex y gemini no aparecen fuera de agents/ y del composition root.",
+      "origen": "ADR-009",
+      "alternativa": "Si necesitás hablar con un CLI agéntico, es un adapter en agents/",
+      "tipo": "cadenas_acotadas",
+      "cadenas": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "solo_en": [
+        "agents",
+        "cli"
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "extensiones": [
+          ".dart",
+          ".yaml",
+          ".yml",
+          ".json",
+          ".sh",
+          ".bash",
+          ".md"
+        ],
+        "_": "Codigo, configuracion y prosa de los paquetes. Las ausencias van en `excluir`, declaradas.",
+        "excluir": {
+          "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quién la cubre en su lugar.",
+          "manifiestos": {
+            "que": [
+              "pubspec.yaml",
+              "pubspec.lock"
+            ],
+            "por_que": "Declaran dependencias: nombran dart y flutter legitimamente en todo paquete.",
+            "quien_lo_cubre": "deps-hacia-core y nucleo-sin-externas, sobre el grafo resuelto por pub."
+          },
+          "artefactos_de_build": {
+            "que": [
+              ".dart_tool",
+              "build"
+            ],
+            "por_que": "Generados por la toolchain. No son fuente.",
+            "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+          },
+          "capa_c_proyectada": {
+            "que": [
+              "AGENTS.md",
+              "CLAUDE.md"
+            ],
+            "por_que": "Prosa proyectada desde el registro de reglas. Nombrar flutter o claude ES su contenido, por diseno.",
+            "quien_lo_cubre": "el check de proyeccion de la capa C, que llega en la fase 3. Hoy NO existe: es un hueco declarado."
+          }
+        }
+      }
+    },
+    "lenguaje-en-plugin-dart": {
+      "enunciado": "Las cadenas dart, flutter y pubspec no aparecen fuera de plugin_dart/ y del composition root.",
+      "origen": "docs/03 §2",
       "alternativa": "Si necesitás conocimiento de Dart, va detrás de un puerto de stack",
-      "cadenas": ["dart", "flutter", "pubspec"],
-      "solo_en": ["plugin_dart", "cli"]
+      "tipo": "cadenas_acotadas",
+      "cadenas": [
+        "dart",
+        "flutter",
+        "pubspec"
+      ],
+      "solo_en": [
+        "plugin_dart",
+        "cli"
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "extensiones": [
+          ".dart",
+          ".yaml",
+          ".yml",
+          ".json",
+          ".sh",
+          ".bash",
+          ".md"
+        ],
+        "_": "Codigo, configuracion y prosa de los paquetes. Las ausencias van en `excluir`, declaradas.",
+        "excluir": {
+          "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quién la cubre en su lugar.",
+          "manifiestos": {
+            "que": [
+              "pubspec.yaml",
+              "pubspec.lock"
+            ],
+            "por_que": "Declaran dependencias: nombran dart y flutter legitimamente en todo paquete.",
+            "quien_lo_cubre": "deps-hacia-core y nucleo-sin-externas, sobre el grafo resuelto por pub."
+          },
+          "artefactos_de_build": {
+            "que": [
+              ".dart_tool",
+              "build"
+            ],
+            "por_que": "Generados por la toolchain. No son fuente.",
+            "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+          },
+          "capa_c_proyectada": {
+            "que": [
+              "AGENTS.md",
+              "CLAUDE.md"
+            ],
+            "por_que": "Prosa proyectada desde el registro de reglas. Nombrar flutter o claude ES su contenido, por diseno.",
+            "quien_lo_cubre": "el check de proyeccion de la capa C, que llega en la fase 3. Hoy NO existe: es un hueco declarado."
+          }
+        }
+      }
     }
-  ]
+  }
 }
