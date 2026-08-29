@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prueba que los checks de capas SEPAN FALLAR.
+"""Prueba que los checks de arquitectura SEPAN FALLAR.
 
     «Un check que nunca falló no está probado.»
     — criterio de salida de la fase 0
@@ -23,7 +23,12 @@ Dos familias de prueba, y la segunda es la que importa:
 
 3. Y controles NEGATIVOS: que las exclusiones declaradas excluyan de verdad.
 
-    python3 tool/checks/probar_capas.py
+    python3 tool/checks/probar_reglas.py
+
+Corre los DOS verificadores —`capas.py` y `tool/serializacion`— contra cada
+sabotaje, porque las reglas viven en un solo registro y el sabotaje no sabe
+cuál de los dos tiene que atraparlo. Que una regla la aplique otro motor no la
+exime de tener que poder ponerse roja.
 """
 from __future__ import annotations
 
@@ -34,6 +39,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
+SERIALIZACION = RAIZ / "tool" / "serializacion"
 ARQ_REL = "arquitectura.json"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
@@ -68,6 +74,13 @@ def neutralizaciones(rid: str) -> list[tuple[str, object]]:
                  "artefactos_de_build",
                  {"que": sorted(p.name for p in (RAIZ / "packages").iterdir()),
                   "por_que": "x", "quien_lo_cubre": "x"})),
+            # `no_cuenta` es el único campo que neutraliza la regla AGRANDANDO
+            # el registro: la lista queda más larga y todos los campos llenos.
+            # Vaciar se ve en un diff; agregar una exención se lee como trabajo.
+            ("exención de token ampliada a todo",
+             lambda r: r[rid]["alcance"].update(no_cuenta=[{
+                 "que": "x", "donde": ".", "por_que": "x", "quien_lo_cubre": "x",
+                 "token": "(" + "|".join(r[rid]["cadenas"]) + ")"}])),
         ]
     elif tipo == "flechas_internas":
         n.append(("permitidas ampliadas",
@@ -79,6 +92,21 @@ def neutralizaciones(rid: str) -> list[tuple[str, object]]:
             ("orígenes ampliados",
              lambda r: r[rid].update(origenes_permitidos=["root", "hosted", "git", "path", "sdk"])),
         ]
+    elif tipo == "campos_derivados":
+        # Saltear la regla declarando opaca la clase que la violaría. Es una
+        # neutralización CRUZADA: no toca esta regla, toca la de al lado.
+        n.append(("clase declarada opaca para saltearla",
+                  lambda r: r["opacidad-declarada"]["opacos"].__setitem__(
+                      "CanarioCampo", {"por_que": "x"})))
+    elif tipo == "opacidad_declarada":
+        n.append(("lista de opacos vaciada",
+                  lambda r: r[rid].update(opacos={"_": "x"})))
+    elif tipo == "huecos_declarados":
+        n.append(("lista de huecos vaciada",
+                  lambda r: r[rid].update(sin_implementacion={"_": "x"})))
+    if REGLAS[rid].get("aplicada_por"):
+        n.append(("aplicada_por apuntado a otro lado",
+                  lambda r: r[rid].update(aplicada_por="tool/inexistente")))
     return n
 
 
@@ -111,6 +139,19 @@ def casos() -> list[dict]:
         "menciona": "huella",
     })
 
+    # La otra mitad de `nucleo-sin-externas`, que la canonica no cubre: la
+    # canonica usa `dependencies:`, y `dev_dependencies:` viaja por otra clave
+    # del grafo. Mirar una sola era una ausencia silenciosa.
+    c.append({
+        "nombre": "nucleo-sin-externas · una externa entrando por dev_dependencies",
+        "archivos": {"packages/core/pubspec.yaml":
+                     "name: core\ndescription: \"canario\"\npublish_to: none\n"
+                     "version: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\n"
+                     "resolution: workspace\n\ndev_dependencies:\n  lints: ^5.0.0\n"},
+        "pub_get": True,
+        "menciona": "desarrollo",
+    })
+
     # NEGATIVOS: las exclusiones declaradas tienen que excluir de verdad.
     c.append({
         "nombre": "exclusión · AGENTS.md proyectado queda fuera",
@@ -122,12 +163,55 @@ def casos() -> list[dict]:
         "archivos": {"packages/rules/.dart_tool/cache.json": '{"cli": "claude"}\n'},
         "espera": "pasa",
     })
+
+    # La exención de token, por sus DOS bordes. Sin el segundo caso sería
+    # indistinguible de haber desactivado la regla en los archivos fuente.
+    c.append({
+        "nombre": "exención · el sufijo de un export legítimo queda fuera",
+        "archivos": {"packages/core/lib/_canario_export.dart": "export 'src/x.dart';\n"},
+        "espera": "pasa",
+    })
+    c.append({
+        "nombre": "exención · el mismo sufijo FUERA de una directiva sigue rojo",
+        "archivos": {
+            "packages/core/lib/_canario_sufijo.dart":
+                "bool esFuente(String p) => p.endsWith('.dart');\n"},
+        "menciona": "dart",
+    })
+    c.append({
+        "nombre": "exención · una biblioteca del SDK en la lista blanca queda fuera",
+        "archivos": {"packages/core/lib/_canario_sdk.dart": "import 'dart:convert';\n"},
+        "espera": "pasa",
+    })
+    c.append({
+        "nombre": "exención · una biblioteca del SDK FUERA de la lista sigue roja",
+        # core haciendo entrada/salida directa es justo lo que la regla existe
+        # para ver: para eso está el puerto Workspace.
+        "archivos": {"packages/core/lib/_canario_io.dart": "import 'dart:io';\n"},
+        "menciona": "dart",
+    })
+    c.append({
+        "nombre": "exención · un import de paquete vigilado sigue rojo",
+        "archivos": {
+            "packages/core/lib/_canario_import.dart":
+                "import 'package:flutter/material.dart';\n"},
+        "menciona": "flutter",
+    })
     return c
 
 
 def corre_check() -> tuple[int, str]:
+    """Los dos motores, sumados. Un sabotaje se considera detectado si CUALQUIERA
+    de los dos lo ve: las reglas son del registro, no del verificador."""
+    salida, peor = "", 0
     r = subprocess.run([sys.executable, str(CHECK)], capture_output=True, text=True)
-    return r.returncode, r.stdout + r.stderr
+    salida += r.stdout + r.stderr
+    peor = max(peor, r.returncode)
+    d = subprocess.run(["dart", "run", "bin/check.dart"], cwd=SERIALIZACION,
+                       capture_output=True, text=True, timeout=300)
+    salida += d.stdout + d.stderr
+    peor = max(peor, d.returncode)
+    return peor, salida
 
 
 def pub_get() -> None:
@@ -218,12 +302,12 @@ def main() -> int:
         problemas.append("los sabotajes dejaron residuo:\n      " + "\n      ".join(nuevos))
 
     if problemas:
-        print("\nprobar_capas: FALLA\n")
+        print("\nprobar_reglas: FALLA\n")
         for p in problemas:
             print(f"  {p}")
         return 1
     positivos = sum(1 for c in lista if c.get("espera", "falla") == "falla")
-    print(f"\nprobar_capas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
+    print(f"\nprobar_reglas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
           f"{len(lista) - positivos} exclusiones honradas.")
     return 0
 

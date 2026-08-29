@@ -1,0 +1,15 @@
+# Las pruebas de `core` importan el framework de pruebas, que está declarado en
+# la raíz del workspace y no acá.
+#
+# No es comodidad: `core` no puede declarar NINGUNA dependencia, ni siquiera de
+# desarrollo, sin violar `nucleo-sin-externas`. Los miembros del workspace
+# comparten una sola resolución, así que el framework se alcanza igual. El lint
+# que se apaga acá supone un paquete aislado, que no es el caso.
+#
+# El alcance es este directorio y solo este: `packages/core/lib` sigue bajo las
+# reglas de la raíz, sin excepciones.
+include: ../../../analysis_options.yaml
+
+linter:
+  rules:
+    depend_on_referenced_packages: false

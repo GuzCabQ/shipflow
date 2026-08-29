@@ -1,0 +1,15 @@
+# Este paquete está fuera del workspace, así que no alcanza las reglas de la
+# raíz: al intentar heredarlas, el analizador no podía resolver el paquete de
+# lints y las descartaba **con una advertencia, no con un error**. El
+# verificador quedaba analizado con menos rigor que lo que verifica.
+#
+# Se declaran acá, con su propia dependencia.
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    todo: warning

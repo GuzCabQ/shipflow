@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   capas:
-    name: reglas de capa · Dart ${{ matrix.sdk }}
+    name: reglas de arquitectura · Dart ${{ matrix.sdk }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -65,11 +65,24 @@ jobs:
       - name: capas
         run: python3 tool/checks/capas.py
 
+      # Las reglas que necesitan el árbol sintáctico de core. Su paquete está
+      # fuera del `workspace:` a propósito, así que resuelve aparte.
+      - name: resolver el verificador de serialización
+        run: dart pub get
+        working-directory: tool/serializacion
+
+      - name: serialización, opacidad y puertos sin implementación
+        run: dart run bin/check.dart
+        working-directory: tool/serializacion
+
       # Y la prueba de que esos checks saben fallar. Corre siempre, no una vez
       # a mano: un guardia que existe y nunca se disparó es indistinguible de
       # uno roto — es F40, y la clase 1 entera del catálogo.
       - name: los checks saben fallar
-        run: python3 tool/checks/probar_capas.py
+        run: python3 tool/checks/probar_reglas.py
+
+      - name: pruebas de core
+        run: dart test packages/core
 
       - name: analyze
         run: dart analyze --fatal-infos

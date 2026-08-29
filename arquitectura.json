@@ -24,7 +24,6 @@
     "",
     "Cambiar este archivo es cambiar la arquitectura: se revisa como tal."
   ],
-
   "reglas": {
     "deps-hacia-core": {
       "enunciado": "Entre paquetes internos, todas las flechas apuntan hacia core. Solo cli ve a plugin_dart y a agents.",
@@ -33,13 +32,33 @@
       "alcance": "Las `directDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las dependencias externas de los paquetes que no son core NO las gobierna esta regla: docs/03 §2 enuncia esa prohibición solo para core.",
       "permitidas": {
         "core": [],
-        "orchestration": ["core"],
-        "vcs": ["core"],
-        "rules": ["core"],
-        "agents": ["core"],
-        "plugin_dart": ["core"],
-        "plugin_fake": ["core"],
-        "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart", "plugin_fake"]
+        "orchestration": [
+          "core"
+        ],
+        "vcs": [
+          "core"
+        ],
+        "rules": [
+          "core"
+        ],
+        "agents": [
+          "core"
+        ],
+        "plugin_dart": [
+          "core"
+        ],
+        "plugin_fake": [
+          "core"
+        ],
+        "cli": [
+          "core",
+          "orchestration",
+          "vcs",
+          "rules",
+          "agents",
+          "plugin_dart",
+          "plugin_fake"
+        ]
       },
       "violacion_canonica": {
         "donde": "packages/orchestration/pubspec.yaml",
@@ -48,14 +67,17 @@
         "requiere_pub_get": true
       }
     },
-
     "nucleo-sin-externas": {
       "enunciado": "core no tiene dependencias externas. Ninguna.",
       "origen": "docs/03 §1 y §2",
       "tipo": "origen_de_dependencias",
-      "alcance": "El ORIGEN de cada `directDependency` de core, sin filtrar por nombre. Es independiente de deps-hacia-core a propósito: una mira flechas internas, la otra el origen. Así no se tapan entre sí.",
-      "paquetes": ["core"],
-      "origenes_permitidos": ["root"],
+      "alcance": "El ORIGEN de cada dependencia directa de core, sin filtrar por nombre, y TAMBIEN el de sus dependencias de desarrollo. `dart pub deps --json` las reporta en dos claves distintas —`directDependencies` y `devDependencies`— y mirar solo la primera dejaba pasar un `dev_dependencies:` en core: el enunciado dice «ninguna». Es independiente de deps-hacia-core a proposito: una mira flechas internas, la otra el origen. Asi no se tapan entre si.",
+      "paquetes": [
+        "core"
+      ],
+      "origenes_permitidos": [
+        "root"
+      ],
       "violacion_canonica": {
         "donde": "packages/core/pubspec.yaml",
         "contenido": "name: core\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  lints: ^5.0.0\n",
@@ -63,27 +85,47 @@
         "requiere_pub_get": true
       }
     },
-
     "agente-en-agents": {
       "enunciado": "Las cadenas claude, codex y gemini no aparecen fuera de agents/ y del composition root.",
       "origen": "ADR-009, primera condición del invariante",
       "alternativa": "Si necesitás hablar con un CLI agéntico, es un adapter en agents/",
       "tipo": "cadenas_acotadas",
-      "cadenas": ["claude", "codex", "gemini"],
-      "solo_en": ["agents", "cli"],
+      "cadenas": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "solo_en": [
+        "agents",
+        "cli"
+      ],
       "alcance": {
         "raiz": "packages",
-        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "extensiones": [
+          ".dart",
+          ".yaml",
+          ".yml",
+          ".json",
+          ".sh",
+          ".bash",
+          ".md"
+        ],
         "_": "Codigo, configuracion y prosa. El pubspec ENTRA: nombrar un CLI agentico en un manifiesto es declararlo, no explicarlo.",
         "excluir": {
           "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quien la cubre en su lugar.",
           "artefactos_de_build": {
-            "que": [".dart_tool", "build"],
+            "que": [
+              ".dart_tool",
+              "build"
+            ],
             "por_que": "Generados por la toolchain. No son fuente y no se versionan.",
             "quien_lo_cubre": "nadie, y no hace falta."
           },
           "capa_c_proyectada": {
-            "que": ["AGENTS.md", "CLAUDE.md"],
+            "que": [
+              "AGENTS.md",
+              "CLAUDE.md"
+            ],
             "por_que": "Prosa proyectada desde el registro de reglas. Nombrar claude ES su contenido, por diseno.",
             "quien_lo_cubre": "el check de proyeccion de la capa C, que llega en la fase 3. Hoy NO existe: es un hueco declarado."
           }
@@ -95,27 +137,65 @@
         "debe_mencionar": "claude"
       }
     },
-
     "lenguaje-en-plugin-dart": {
       "enunciado": "Las cadenas dart, flutter y pubspec no aparecen fuera de plugin_dart/ y del composition root.",
       "origen": "docs/03 §2",
       "alternativa": "Si necesitás conocimiento de Dart, va detrás de un puerto de stack",
       "tipo": "cadenas_acotadas",
-      "cadenas": ["dart", "flutter", "pubspec"],
-      "solo_en": ["plugin_dart", "cli"],
+      "cadenas": [
+        "dart",
+        "flutter",
+        "pubspec"
+      ],
+      "solo_en": [
+        "plugin_dart",
+        "cli"
+      ],
       "alcance": {
         "raiz": "packages",
-        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "extensiones": [
+          ".dart",
+          ".yaml",
+          ".yml",
+          ".json",
+          ".sh",
+          ".bash",
+          ".md"
+        ],
         "_": "El pubspec ENTRA: una restriccion `environment: flutter:` ata el paquete a Flutter y no es una dependencia, asi que el grafo no la ve.",
+        "no_cuenta": [
+          {
+            "que": "El sufijo `.dart` de un URI, dentro de una directiva import/export/part.",
+            "donde": "^\\s*(?:import|export|part)\\b",
+            "token": "\\.dart(?=['\"])",
+            "por_que": "Es la extension de TODO archivo fuente del repositorio, incluido core. No es conocimiento del stack: es como se llama el archivo de al lado. Sin esta excepcion la regla es insatisfacible, y el primer `export` obliga a desactivarla entera — que es peor.",
+            "quien_lo_cubre": "Nada hace falta: el token exento es solo el sufijo. `import 'package:flutter/material.dart'` sigue disparando por «flutter», y un `path.endsWith('.dart')` sigue disparando porque no es una directiva.",
+            "residuo_declarado": "Un import de un paquete cuyo nombre no contenga ninguna cadena vigilada, y que aun asi aporte conocimiento del stack, pasa. Ese residuo lo cubre `nucleo-sin-externas` para core, y la revision para el resto."
+          },
+          {
+            "que": "El esquema `dart:` de una biblioteca del SDK, dentro de una directiva, y SOLO para las bibliotecas de la lista blanca del propio regex.",
+            "donde": "^\\s*(?:import|export|part)\\b",
+            "token": "(?<=['\"])dart(?=:(?:async|collection|convert|core|math|typed_data)\\b)",
+            "por_que": "Son la biblioteca estandar del lenguaje en que esta escrito ESTE repositorio, no conocimiento del stack que el arnes analiza. Prohibirlas obligaria a reimplementar la codificacion JSON para poder probar ADR-002.",
+            "quien_lo_cubre": "La lista blanca es el control: `dart:io`, `dart:ffi`, `dart:mirrors` y cualquier otra NO estan exentas y siguen disparando. core haciendo entrada/salida directa es justo lo que la regla tiene que ver — para eso esta el puerto Workspace.",
+            "residuo_declarado": "Una de las bibliotecas de la lista usada para algo que si es conocimiento del stack. No hay check para eso: es revision."
+          }
+        ],
         "excluir": {
           "_": "Ausencias DECLARADAS, no silenciosas.",
           "artefactos_de_build": {
-            "que": [".dart_tool", "build"],
+            "que": [
+              ".dart_tool",
+              "build"
+            ],
             "por_que": "Generados por la toolchain. No son fuente y no se versionan.",
             "quien_lo_cubre": "nadie, y no hace falta."
           },
           "capa_c_proyectada": {
-            "que": ["AGENTS.md", "CLAUDE.md"],
+            "que": [
+              "AGENTS.md",
+              "CLAUDE.md"
+            ],
             "por_que": "Prosa proyectada. Nombrar flutter ES su contenido, por diseno.",
             "quien_lo_cubre": "el check de proyeccion de la capa C, fase 3. Hoy NO existe: hueco declarado."
           }
@@ -127,7 +207,6 @@
         "debe_mencionar": "flutter"
       }
     },
-
     "sin-api-de-modelo": {
       "enunciado": "Ningún paquete llama directamente a una API de modelo. El modelo lo invoca el CLI del usuario; no pedimos API key.",
       "origen": "ADR-009, segunda condición del invariante",
@@ -143,13 +222,24 @@
       "solo_en": [],
       "alcance": {
         "raiz": "packages",
-        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "extensiones": [
+          ".dart",
+          ".yaml",
+          ".yml",
+          ".json",
+          ".sh",
+          ".bash",
+          ".md"
+        ],
         "_": "NINGUN paquete queda exento, ni siquiera cli ni agents: agents invoca el CLI del usuario, no la API.",
         "residuo_declarado": "PARCIAL. Caza dominios literales y nombres de SDK conocidos. NO caza una URL armada en tiempo de ejecucion ni un cliente HTTP generico apuntado a un valor de configuracion. Ese residuo es inferencial y pertenece al piso de docs/03 §5.1: lo ve el ReviewSensor o el humano, no un check determinista.",
         "excluir": {
           "_": "Ausencias DECLARADAS.",
           "artefactos_de_build": {
-            "que": [".dart_tool", "build"],
+            "que": [
+              ".dart_tool",
+              "build"
+            ],
             "por_que": "Generados por la toolchain.",
             "quien_lo_cubre": "nadie, y no hace falta."
           }
@@ -159,6 +249,97 @@
         "donde": "packages/orchestration/lib/_canario_api.dart",
         "contenido": "final endpoint = 'https://api.anthropic.com/v1/messages';\n",
         "debe_mencionar": "api.anthropic.com"
+      }
+    },
+    "serializacion-sin-perdida": {
+      "enunciado": "En core, los campos de instancia publicos de una clase son exactamente las claves de su toJson y exactamente las que lee su fromJson. Ni uno de mas, ni uno de menos.",
+      "origen": "ADR-002 y el criterio de salida de la fase 1 del plan",
+      "tipo": "campos_derivados",
+      "aplicada_por": "tool/serializacion",
+      "alternativa": "Si un campo no debe viajar, hacelo privado o declara la clase en `credencial-opaca.opacos`. No lo omitas en silencio.",
+      "por_que_derivado": [
+        "Un test de ida y vuelta escrito a mano cubre los campos que su autor recordo.",
+        "Se agrega un campo, nadie toca el test, y el test sigue VERDE mientras el",
+        "campo se pierde en cada serializacion. Es la clase 1 exacta: el instrumento",
+        "en verde sobre algo que no midio. Por eso los campos no se enumeran: se",
+        "derivan del arbol sintactico, igual que el grafo de capas se le pide a pub."
+      ],
+      "alcance": {
+        "raiz": "packages/core/lib",
+        "que_mira": "Clases con campos de instancia. Los campos privados (con _) NO cuentan: no viajan por definicion y su ausencia del JSON es correcta.",
+        "residuo_declarado": "Compara NOMBRES de campo contra NOMBRES de clave. NO verifica que el valor sobreviva el viaje: un toJson que escriba `'path': ''` pasa. Eso lo cubre packages/core/test/serializacion_test.dart, cuyas instancias canonicas no tienen ningun valor por defecto — y esta regla verifica ademas que TODA clase serializable tenga su caso ahi, porque si no el hueco quedaba entre los dos controles. Lo que sigue sin cubrirse: que el caso canonico este bien escrito."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_campo.dart",
+        "contenido": "class CanarioCampo {\n  final String visible;\n  final String olvidado;\n  const CanarioCampo(this.visible, this.olvidado);\n  Map<String, Object?> toJson() => {'visible': visible};\n  factory CanarioCampo.fromJson(Map<String, Object?> json) =>\n      CanarioCampo(json['visible']! as String, '');\n}\n",
+        "debe_mencionar": "olvidado"
+      }
+    },
+    "puertos-sin-implementacion": {
+      "enunciado": "Todo puerto de core sin implementacion viva esta declarado, con la fase en que aparece. Y todo puerto declarado sin implementacion sigue sin tenerla.",
+      "origen": "Plan de desarrollo, regla transversal: que promete la fase que todavia no cumple",
+      "tipo": "huecos_declarados",
+      "aplicada_por": "tool/serializacion",
+      "alternativa": "Si el puerto ya tiene implementacion, sacalo de la lista. Si es nuevo y todavia no la tiene, agregalo con su fase.",
+      "por_que": [
+        "Una superficie de puertos completa se lee como un sistema con esas",
+        "capacidades. En la fase 1 no hay ninguna implementacion, y eso tiene que",
+        "ser un dato declarado y no una sorpresa. La lista se verifica en los DOS",
+        "sentidos: un puerto nuevo sin declarar falla, y una declaracion que quedo",
+        "vieja porque el puerto ya se implemento, tambien."
+      ],
+      "sin_implementacion": {
+        "_": "puerto: en que fase aparece su primera implementacion viva.",
+        "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ProjectTopology": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ArtifactPolicy": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "Verifier": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "DiagnosticNormalizer": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "CodegenTrigger": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "DependencyResolver": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ChangeClassCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "AgentRunner": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "HookInstaller": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ContextProjector": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ChangeSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "CredentialStore": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ReviewSensor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "TraceAuditor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "RuleContributor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "ReviewCriteria": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "EvasionCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "AssertionForms": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete"
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_puerto.dart",
+        "contenido": "abstract interface class CanarioPuerto {\n  void hacerAlgo();\n}\n",
+        "debe_mencionar": "CanarioPuerto"
+      }
+    },
+    "opacidad-declarada": {
+      "enunciado": "Una clase de core o serializa, o esta declarada opaca con su motivo. No hay tercera opcion silenciosa.",
+      "origen": "INV-5, docs/03 §4, y ADR-011 corolario 5",
+      "tipo": "opacidad_declarada",
+      "aplicada_por": "tool/serializacion",
+      "alternativa": "Si el tipo no debe viajar, declaralo aca con su motivo y su mascara. Si debe viajar, escribile toJson y fromJson.",
+      "opacos": {
+        "_": "Clases que NO serializan a proposito. Cada una con su motivo y la mascara exacta que devuelve su toString.",
+        "Credential": {
+          "por_que": "INV-5: un secreto nunca se serializa ni aparece en traza, log o mensaje de error. Que no tenga toJson es el invariante, no una omision.",
+          "mascara": "***"
+        },
+        "RuleNotInstallable": {
+          "por_que": "Es una excepcion, no dato del dominio. Nunca cruza un limite de proceso: se lanza y se atrapa en el mismo. Sin esta declaracion, «no tiene toJson» seria indistinguible de un olvido."
+        }
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_opaco.dart",
+        "contenido": "class CanarioOpaco {\n  final String campo;\n  const CanarioOpaco(this.campo);\n}\n",
+        "debe_mencionar": "CanarioOpaco"
       }
     }
   }

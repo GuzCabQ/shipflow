@@ -1,0 +1,20 @@
+name: shipflow_serializacion
+description: >-
+  Aplica las reglas de arquitectura.json que no se pueden verificar leyendo
+  texto: las que necesitan el árbol sintáctico de core.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+# Deliberadamente FUERA del `workspace:` de la raíz. Es herramienta, no
+# producto: no debe aparecer en el grafo que gobierna las capas, y no debe
+# poder ser importada por ningún paquete de packages/.
+dependencies:
+  analyzer: ">=7.0.0 <10.0.0"
+
+# Las mismas reglas de análisis que el resto del repo. Sin esto el analizador
+# no puede resolver el `include` y las descarta con una advertencia.
+dev_dependencies:
+  lints: ^5.0.0

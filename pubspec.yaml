@@ -8,9 +8,15 @@ environment:
   # (D-068). Los workspaces de pub necesitan 3.6.
   sdk: ^3.6.0
 
-# Solo para el análisis estático. `core` sigue sin dependencias: ninguna.
+# Solo para el análisis estático y las pruebas. Van en la RAÍZ del workspace,
+# no en cada paquete, y eso no es comodidad: `core` no puede declarar ni una
+# dependencia de desarrollo sin violar `nucleo-sin-externas`, que mira el origen
+# de TODA dependencia directa. Los miembros del workspace comparten esta
+# resolución, así que `packages/core/test/` importa el framework sin que `core`
+# lo declare.
 dev_dependencies:
   lints: ^5.0.0
+  test: ^1.25.0
 
 workspace:
   - packages/core
