@@ -1,0 +1,10 @@
+# Archivos que NINGÚN punto de entrada alcanza, a propósito.
+#
+# Un archivo acá es código que no se importa, no se testea y no se ejecuta, y
+# que sin embargo se conserva por una razón que hay que escribir al lado.
+#
+# La lista se verifica en los DOS sentidos: un archivo huérfano sin declarar
+# falla, y una declaración que quedó vieja —porque el archivo se borró o dejó
+# de estar huérfano— también. Una lista que solo se agranda deja de proteger.
+#
+# Hoy está vacía, y eso es el estado correcto.

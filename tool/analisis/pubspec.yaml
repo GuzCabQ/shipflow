@@ -1,7 +1,7 @@
-name: shipflow_serializacion
+name: shipflow_analisis
 description: >-
-  Aplica las reglas de arquitectura.json que no se pueden verificar leyendo
-  texto: las que necesitan el árbol sintáctico de core.
+  Las herramientas que necesitan el árbol sintáctico: verificación de reglas y
+  generación del grafo interno.
 publish_to: none
 version: 0.1.0
 

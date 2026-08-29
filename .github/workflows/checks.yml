@@ -19,7 +19,7 @@ jobs:
   capas:
     name: reglas de arquitectura · Dart ${{ matrix.sdk }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
@@ -67,13 +67,20 @@ jobs:
 
       # Las reglas que necesitan el árbol sintáctico de core. Su paquete está
       # fuera del `workspace:` a propósito, así que resuelve aparte.
-      - name: resolver el verificador de serialización
+      - name: resolver el verificador de árbol sintáctico
         run: dart pub get
-        working-directory: tool/serializacion
+        working-directory: tool/analisis
 
       - name: serialización, opacidad y puertos sin implementación
         run: dart run bin/check.dart
-        working-directory: tool/serializacion
+        working-directory: tool/analisis
+
+      # El grafo interno: regenerado contra commiteado. Un mapa desactualizado
+      # es peor que no tener mapa — las reglas derivadas de él pasan a ser
+      # mentira con aspecto de evidencia.
+      - name: grafo · derivado == commiteado
+        run: dart run bin/grafo.dart
+        working-directory: tool/analisis
 
       # Y la prueba de que esos checks saben fallar. Corre siempre, no una vez
       # a mano: un guardia que existe y nunca se disparó es indistinguible de
