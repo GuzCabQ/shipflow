@@ -26,8 +26,9 @@ jobs:
       matrix:
         include:
           # La versión con la que se verificó. Es la que hace reproducible el
-          # resultado: docs/08 §4 — «debe registrar y fijar la versión, o su
-          # resultado no significa nada dentro de seis meses».
+          # resultado. El principio es de docs/09 §3 —«si el arnés cambia entre
+          # corridas, las comparaciones no significan nada»— aplicado hacia
+          # adentro: docs/08 §4 dice lo mismo del CLI agéntico, no del SDK Dart.
           - sdk: "3.12.0"
             canario: false
           # Y el canal estable como CANARIO: avisa cuando un SDK nuevo rompe

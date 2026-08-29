@@ -4,18 +4,24 @@
     «Un check que nunca falló no está probado.»
     — criterio de salida de la fase 0
 
-Un guardia que existe y nunca se disparó es indistinguible de uno roto: es el
-fallo F40 del catálogo, y la clase 1 entera —el instrumento en verde sobre algo
-que no midió—. Así que cada control se rompe a propósito y se verifica que el
-check se entere.
+Dos familias de prueba, y la segunda es la que importa:
 
-Se sabotea **cada regla por separado**, no el registro entero: borrar todo es el
-caso fácil, y el que ocurre de verdad es que se caiga una sola sin que nadie lo
-note. También hay dos controles NEGATIVOS: verifican que las exclusiones
-declaradas efectivamente excluyan, y no sean un agujero accidental.
+1. VIOLACIÓN CANÓNICA · cada regla declara en arquitectura.json un caso que
+   tiene que detectar. Se inyecta y se revierte. Es sintética a propósito: eso
+   la hace compatible con el ratchet —toda regla nueva está verde el día que se
+   agrega— y de hecho es su precondición, porque «verde» no significa nada si
+   la regla no puede ponerse roja.
 
-Corre en CI junto al check, no una sola vez a mano: si mañana alguien neutraliza
-`capas.py`, esto se pone rojo.
+2. NEUTRALIZACIÓN + CANÓNICA · se degrada la regla de todas las formas que
+   conservan su `id`, y se comprueba que el check IGUAL falla con la canónica
+   puesta. Es la diferencia entre «la regla existe» y «la regla dispara».
+
+   Validar el schema de la política va siempre un paso atrás de quien la edita:
+   una regla puede conservar id, tipo y todos sus campos no vacíos y no detectar
+   nada — basta ensanchar `solo_en`, que hace la lista más LARGA. Por eso se
+   verifica el comportamiento, no la forma.
+
+3. Y controles NEGATIVOS: que las exclusiones declaradas excluyan de verdad.
 
     python3 tool/checks/probar_capas.py
 """
@@ -28,114 +34,95 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
-ARQ = RAIZ / "arquitectura.json"
-
-CORE = """name: core
-description: "sabotaje"
-publish_to: none
-version: 0.1.0
-
-environment:
-  sdk: ^3.6.0
-
-resolution: workspace
-"""
+ARQ_REL = "arquitectura.json"
+ARQ = RAIZ / ARQ_REL
+HUELLA_REL = "tool/checks/arquitectura.huella"
+REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
 
 
-def sin_regla(rid: str) -> str:
+def arq_con(mutar) -> str:
     a = json.loads(ARQ.read_text(encoding="utf-8"))
-    a["reglas"].pop(rid)
+    mutar(a["reglas"])
     return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
 
 
-def sin_campo(rid: str, campo: str) -> str:
-    a = json.loads(ARQ.read_text(encoding="utf-8"))
-    a["reglas"][rid].pop(campo)
-    return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
+def canonica(rid: str) -> dict:
+    v = REGLAS[rid]["violacion_canonica"]
+    return {"archivos": {v["donde"]: v["contenido"]}, "pub_get": v.get("requiere_pub_get", False)}
 
 
-def permitiendo(rid: str, paquete: str, dep: str) -> str:
-    a = json.loads(ARQ.read_text(encoding="utf-8"))
-    a["reglas"][rid]["permitidas"][paquete] = [dep]
-    return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
+def neutralizaciones(rid: str) -> list[tuple[str, object]]:
+    """Formas de dejar la regla sin efecto CONSERVANDO su id."""
+    tipo = REGLAS[rid]["tipo"]
+    n: list[tuple[str, object]] = [
+        ("regla borrada", lambda r: r.pop(rid)),
+        ("tipo cambiado", lambda r: r[rid].update(tipo="desactivada")),
+    ]
+    if tipo == "cadenas_acotadas":
+        n += [
+            ("extensiones vaciadas", lambda r: r[rid]["alcance"].update(extensiones=[])),
+            ("solo_en ampliado a todos",
+             lambda r: r[rid].update(solo_en=sorted(p.name for p in (RAIZ / "packages").iterdir()))),
+            ("exclusión que traga paquetes",
+             lambda r: r[rid]["alcance"]["excluir"].__setitem__(
+                 "artefactos_de_build",
+                 {"que": sorted(p.name for p in (RAIZ / "packages").iterdir()),
+                  "por_que": "x", "quien_lo_cubre": "x"})),
+        ]
+    elif tipo == "flechas_internas":
+        n.append(("permitidas ampliadas",
+                  lambda r: r[rid]["permitidas"].update(
+                      orchestration=sorted(p.name for p in (RAIZ / "packages").iterdir()))))
+    elif tipo == "origen_de_dependencias":
+        n += [
+            ("paquetes vaciados", lambda r: r[rid].update(paquetes=[])),
+            ("orígenes ampliados",
+             lambda r: r[rid].update(origenes_permitidos=["root", "hosted", "git", "path", "sdk"])),
+        ]
+    return n
 
 
-def sabotajes() -> list[dict]:
-    s: list[dict] = []
-
-    # Cada regla, borrada por separado. El meta-check tiene que notar la falta.
-    for rid in ("deps-hacia-core", "nucleo-sin-externas",
-                "agente-en-agents", "lenguaje-en-plugin-dart"):
-        s.append({
-            "nombre": f"regla «{rid}» borrada, sola",
-            "archivos": {"arquitectura.json": sin_regla(rid)},
-            "menciona": rid,
+def casos() -> list[dict]:
+    c: list[dict] = []
+    for rid in REGLAS:
+        base = canonica(rid)
+        c.append({
+            "nombre": f"{rid} · violación canónica",
+            "archivos": dict(base["archivos"]),
+            "pub_get": base["pub_get"],
+            "menciona": REGLAS[rid]["violacion_canonica"]["debe_mencionar"],
         })
+        for etiqueta, mutar in neutralizaciones(rid):
+            c.append({
+                "nombre": f"{rid} · {etiqueta}",
+                "archivos": {ARQ_REL: arq_con(mutar), **base["archivos"]},
+                "pub_get": base["pub_get"],
+                # Se regenera la huella a propósito: sin esto la huella cazaría
+                # toda mutación del JSON y los controles puntuales quedarían sin
+                # probar, tapados por ella. Cada uno tiene que valerse solo.
+                "regenerar_huella": True,
+            })
 
-    # Y una regla a la que se le quita un campo sin el cual no se puede aplicar.
-    s.append({
-        "nombre": "regla sin su «alternativa» (INV-11)",
-        "archivos": {"arquitectura.json": sin_campo("agente-en-agents", "alternativa")},
-        "menciona": "alternativa",
-    })
-
-    # Formas de YAML que el parser viejo no entendía y devolvían cero deps.
-    s.append({
-        "nombre": "dep externa en flow mapping",
-        "archivos": {"packages/core/pubspec.yaml": CORE + "\ndependencies: {lints: ^5.0.0}\n"},
-        "pub_get": True,
-        "menciona": "lints",
-    })
-    s.append({
-        "nombre": "dep externa tras un comentario inline",
-        "archivos": {"packages/core/pubspec.yaml":
-                     CORE + "\ndependencies: # deps del paquete\n  lints: ^5.0.0\n"},
-        "pub_get": True,
-        "menciona": "lints",
-    })
-
-    # El caso combinado: el nombre está permitido, así que deps-hacia-core pasa.
-    # Solo lo caza nucleo-sin-externas, mirando el ORIGEN. Es la prueba de que
-    # los dos controles son independientes y no se tapan entre sí.
-    s.append({
-        "nombre": "dep externa con nombre ya permitido",
-        "archivos": {
-            "arquitectura.json": permitiendo("deps-hacia-core", "core", "lints"),
-            "packages/core/pubspec.yaml": CORE + "\ndependencies:\n  lints: ^5.0.0\n",
-        },
-        "pub_get": True,
-        "menciona": "origen",
-    })
-
-    # Cadenas fuera de su adapter, en los formatos que el check antes no miraba.
-    s.append({
-        "nombre": "cadena de agente en un .yaml",
-        "archivos": {"packages/orchestration/lib/agentes.yaml": "agente: claude\n"},
-        "menciona": "claude",
-    })
-    s.append({
-        "nombre": "cadena de agente en un .sh",
-        "archivos": {"packages/orchestration/lib/lanzar.sh": "#!/bin/sh\ngemini -p x\n"},
-        "menciona": "gemini",
-    })
-    s.append({
-        "nombre": "cadena de lenguaje en un .md",
-        "archivos": {"packages/rules/lib/notas.md": "Corre `flutter test` acá.\n"},
-        "menciona": "flutter",
+    # Y la huella, probada por separado: mutación del JSON SIN regenerarla.
+    c.append({
+        "nombre": "huella · política cambiada sin actualizar la huella",
+        "archivos": {ARQ_REL: arq_con(
+            lambda r: r["agente-en-agents"]["cadenas"].append("cursor"))},
+        "menciona": "huella",
     })
 
     # NEGATIVOS: las exclusiones declaradas tienen que excluir de verdad.
-    s.append({
-        "nombre": "capa C proyectada: AGENTS.md queda fuera",
+    c.append({
+        "nombre": "exclusión · AGENTS.md proyectado queda fuera",
         "archivos": {"packages/orchestration/AGENTS.md": "Usá claude y flutter.\n"},
         "espera": "pasa",
     })
-    s.append({
-        "nombre": "artefacto de build: .dart_tool queda fuera",
+    c.append({
+        "nombre": "exclusión · .dart_tool queda fuera",
         "archivos": {"packages/rules/.dart_tool/cache.json": '{"cli": "claude"}\n'},
         "espera": "pasa",
     })
-    return s
+    return c
 
 
 def corre_check() -> tuple[int, str]:
@@ -148,12 +135,8 @@ def pub_get() -> None:
 
 
 def estado_git() -> str | None:
-    """Huella del árbol de trabajo.
-
-    No exige que esté LIMPIO —esto tiene que poder correrse mientras se
-    desarrolla, que es justo cuando hay cambios sin commitear— sino que no
-    CAMBIE. Lo que se busca es residuo del sabotaje, no pulcritud del repo.
-    """
+    """Huella del árbol. No exige que esté LIMPIO —esto corre mientras se
+    desarrolla— sino que no CAMBIE: busca residuo, no pulcritud."""
     r = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
                        capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else None
@@ -175,12 +158,22 @@ def restaurar(previo: dict[str, str | None]) -> None:
         if contenido is None:
             p.unlink(missing_ok=True)
             for padre in p.parents:
-                if padre == RAIZ:
+                if padre == RAIZ or not padre.is_dir() or any(padre.iterdir()):
                     break
-                if padre.is_dir() and not any(padre.iterdir()):
-                    padre.rmdir()
+                padre.rmdir()
         else:
             p.write_text(contenido, encoding="utf-8")
+
+
+def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
+    espera_falla = caso.get("espera", "falla") == "falla"
+    if espera_falla and codigo == 0:
+        return "el check pasó en verde. La regla quedó sin efecto y nadie se enteró."
+    if espera_falla and caso.get("menciona") and caso["menciona"] not in salida:
+        return f"falló, pero no por esto — no menciona «{caso['menciona']}»."
+    if not espera_falla and codigo != 0:
+        return "el check falló, pero esto debería estar EXCLUIDO por declaración."
+    return None
 
 
 def main() -> int:
@@ -190,31 +183,25 @@ def main() -> int:
         print(salida)
         return 1
     git_antes = estado_git()
-    print("  árbol limpio                                    ok\n")
+    print("  árbol limpio\n")
 
     problemas: list[str] = []
-    casos = sabotajes()
-    for caso in casos:
-        nombre = caso["nombre"]
-        espera_falla = caso.get("espera", "falla") == "falla"
+    lista = casos()
+    for caso in lista:
         previo = aplicar(caso["archivos"])
         try:
+            if caso.get("regenerar_huella"):
+                previo[HUELLA_REL] = (RAIZ / HUELLA_REL).read_text(encoding="utf-8")
+                subprocess.run([sys.executable, str(CHECK), "--huella"], capture_output=True)
             if caso.get("pub_get"):
                 pub_get()
             codigo, salida = corre_check()
-            if espera_falla and codigo == 0:
-                problemas.append(f"{nombre}: el check pasó en verde. NO detecta esta violación.")
-            elif espera_falla and caso["menciona"] not in salida:
-                problemas.append(
-                    f"{nombre}: falló, pero no por esto — no menciona «{caso['menciona']}»."
-                )
-            elif not espera_falla and codigo != 0:
-                problemas.append(
-                    f"{nombre}: el check falló, pero esto debería estar EXCLUIDO.\n"
-                    f"      La exclusión declarada en arquitectura.json no se está honrando."
-                )
+            problema = evaluar(caso, codigo, salida)
+            if problema:
+                problemas.append(f"{caso['nombre']}: {problema}")
             else:
-                print(f"  {nombre:<46} {'detectado' if espera_falla else 'excluido, como se declaró'}")
+                espera_falla = caso.get("espera", "falla") == "falla"
+                print(f"  {caso['nombre']:<52} {'detectado' if espera_falla else 'excluido'}")
         finally:
             restaurar(previo)
             if caso.get("pub_get"):
@@ -225,22 +212,19 @@ def main() -> int:
         problemas.append("el árbol quedó en rojo tras restaurar")
     git_despues = estado_git()
     if git_antes is None or git_despues is None:
-        print("  (sin git: no se pudo verificar que no quedara residuo)")
+        print("\n  (sin git: no se pudo verificar que no quedara residuo)")
     elif git_antes != git_despues:
         nuevos = sorted(set(git_despues.splitlines()) - set(git_antes.splitlines()))
-        problemas.append(
-            "los sabotajes dejaron residuo en el árbol:\n      "
-            + "\n      ".join(nuevos or ["(diferencia sin detalle)"])
-        )
+        problemas.append("los sabotajes dejaron residuo:\n      " + "\n      ".join(nuevos))
 
     if problemas:
         print("\nprobar_capas: FALLA\n")
         for p in problemas:
             print(f"  {p}")
         return 1
-    positivos = sum(1 for c in casos if c.get("espera", "falla") == "falla")
-    print(f"\nprobar_capas: ok — {positivos} violaciones detectadas, "
-          f"{len(casos) - positivos} exclusiones honradas.")
+    positivos = sum(1 for c in lista if c.get("espera", "falla") == "falla")
+    print(f"\nprobar_capas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
+          f"{len(lista) - positivos} exclusiones honradas.")
     return 0
 
 

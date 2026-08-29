@@ -8,7 +8,7 @@ miles de violaciones y terminarían desactivadas.
     python3 tool/checks/capas.py
 
 Sale 1 si algo falla. No modifica archivos. Las reglas viven en
-arquitectura.json, cada una con su `id` estable y su `alcance` declarado.
+arquitectura.json, cada una con su `id`, su `alcance` y su violación canónica.
 
 PRECONDICIÓN: `dart pub get` tiene que haber corrido. El grafo de dependencias
 no se parsea a mano — se le pide a pub, que es quien lo resuelve. Si no está
@@ -16,6 +16,7 @@ disponible, este check FALLA: no mirar no es lo mismo que no encontrar nada.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -24,18 +25,55 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
-REGLAS = json.loads((RAIZ / "arquitectura.json").read_text(encoding="utf-8"))["reglas"]
+ARQ = RAIZ / "arquitectura.json"
+REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
+HUELLA = Path(__file__).parent / "arquitectura.huella"
 
-# Los cuatro controles que arquitectura.json DEBE seguir declarando, con los
-# campos sin los cuales no se pueden aplicar. Quitar uno de acá es un cambio de
-# arquitectura y se revisa como tal; quitarlo solo del JSON, sin esto, dejaba el
-# árbol verde con menos reglas: es F33 en nuestro propio arnés.
+# Las reglas que arquitectura.json DEBE seguir declarando, con los campos sin
+# los cuales no se pueden aplicar.
 OBLIGATORIAS = {
-    "deps-hacia-core": ("enunciado", "origen", "alcance", "permitidas"),
-    "nucleo-sin-externas": ("enunciado", "origen", "alcance", "paquetes", "origenes_permitidos"),
-    "agente-en-agents": ("enunciado", "origen", "alternativa", "alcance", "cadenas", "solo_en"),
-    "lenguaje-en-plugin-dart": ("enunciado", "origen", "alternativa", "alcance", "cadenas", "solo_en"),
+    "deps-hacia-core": ("enunciado", "origen", "tipo", "alcance", "permitidas"),
+    "nucleo-sin-externas": ("enunciado", "origen", "tipo", "alcance", "paquetes",
+                            "origenes_permitidos"),
+    "agente-en-agents": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                         "cadenas", "solo_en"),
+    "lenguaje-en-plugin-dart": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                                "cadenas", "solo_en"),
+    "sin-api-de-modelo": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                          "cadenas"),
 }
+
+# El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
+TIPOS = {
+    "deps-hacia-core": "flechas_internas",
+    "nucleo-sin-externas": "origen_de_dependencias",
+    "agente-en-agents": "cadenas_acotadas",
+    "lenguaje-en-plugin-dart": "cadenas_acotadas",
+    "sin-api-de-modelo": "cadenas_acotadas",
+}
+
+# Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
+# la arquitectura. La violación canónica prueba que el instrumento dispara; esto
+# prueba que la política no se reescribió. Son modos de fallo distintos: ensanchar
+# `solo_en` deja el canario disparando y desprotege todo lo demás.
+EXT = [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"]
+VALORES_FIJOS = {
+    "agente-en-agents": {"solo_en": ["agents", "cli"]},          # ADR-009
+    "lenguaje-en-plugin-dart": {"solo_en": ["plugin_dart", "cli"]},  # docs/03 §2
+    "sin-api-de-modelo": {"solo_en": []},                        # ADR-009: ninguno
+    "nucleo-sin-externas": {"paquetes": ["core"], "origenes_permitidos": ["root"]},
+    # El mapa de flechas ES la arquitectura de docs/03 §1.
+    "deps-hacia-core": {"permitidas": {
+        "core": [], "orchestration": ["core"], "vcs": ["core"], "rules": ["core"],
+        "agents": ["core"], "plugin_dart": ["core"], "plugin_fake": ["core"],
+        "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart",
+                "plugin_fake"]}},
+}
+# El alcance de las reglas de cadenas no deriva: vaciarlo las neutraliza sin
+# tocar ningun otro campo.
+VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
+                         for rid in ("agente-en-agents", "lenguaje-en-plugin-dart",
+                                     "sin-api-de-modelo")}
 
 fallos: list[str] = []
 
@@ -45,85 +83,131 @@ def paquetes() -> list[str]:
 
 
 def grafo() -> dict[str, dict]:
-    """El grafo resuelto, tal como lo reporta pub.
-
-    Se deriva, no se mantiene. Reemplaza al parser de pubspec que teníamos, que
-    solo reconocía una forma textual: `dependencies: {http: ^1.0.0}` o un
-    comentario en la misma línea le devolvían cero dependencias y el check
-    pasaba en verde sin haber mirado.
-    """
+    """El grafo resuelto, tal como lo reporta pub. Se deriva, no se mantiene."""
     try:
-        r = subprocess.run(
-            ["dart", "pub", "deps", "--json"],
-            cwd=RAIZ, capture_output=True, text=True, timeout=120,
-        )
+        r = subprocess.run(["dart", "pub", "deps", "--json"],
+                           cwd=RAIZ, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.TimeoutExpired) as e:
         fallos.append(f"no se pudo ejecutar `dart pub deps --json`: {e}")
         return {}
     if r.returncode != 0:
         detalle = (r.stderr or r.stdout).strip().splitlines()
-        fallos.append(
-            "`dart pub deps --json` falló. Corré `dart pub get` primero.\n"
-            "      " + (detalle[-1] if detalle else "sin detalle")
-        )
+        fallos.append("`dart pub deps --json` falló. Corré `dart pub get` primero.\n      "
+                      + (detalle[-1] if detalle else "sin detalle"))
         return {}
     try:
-        datos = json.loads(r.stdout)
+        return {p["name"]: p for p in json.loads(r.stdout).get("packages", [])}
     except json.JSONDecodeError as e:
         fallos.append(f"`dart pub deps --json` no devolvió JSON válido: {e}")
         return {}
-    return {p["name"]: p for p in datos.get("packages", [])}
 
 
-# --- meta · las reglas registradas siguen registradas --------------------
+# --- meta · el registro sigue siendo aplicable --------------------------
 
 def check_meta() -> None:
     existentes = paquetes()
     for rid, campos in OBLIGATORIAS.items():
         regla = REGLAS.get(rid)
         if regla is None:
-            fallos.append(
-                f"arquitectura.json: falta la regla «{rid}». "
-                f"Un control que desaparece sin ruido es F33."
-            )
+            fallos.append(f"arquitectura.json: falta la regla «{rid}». "
+                          f"Un control que desaparece sin ruido es F33.")
             continue
         for campo in campos:
-            if not regla.get(campo):
+            if campo not in regla:
                 fallos.append(f"arquitectura.json: «{rid}» no declara «{campo}»")
+            elif not regla[campo] and campo not in ("solo_en",):
+                fallos.append(f"arquitectura.json: «{rid}» tiene «{campo}» vacío")
+        if regla.get("tipo") != TIPOS[rid]:
+            fallos.append(f"arquitectura.json: «{rid}» tiene tipo «{regla.get('tipo')}»; "
+                          f"se esperaba «{TIPOS[rid]}». Cambiarlo la saltea sin borrarla.")
+        if not regla.get("violacion_canonica"):
+            fallos.append(f"arquitectura.json: «{rid}» no declara violación canónica. "
+                          f"Una regla que no puede ponerse roja no está probada.")
+    for rid, fijos in VALORES_FIJOS.items():
+        for campo, esperado in fijos.items():
+            actual = REGLAS.get(rid, {}).get(campo)
+            if actual != esperado:
+                fallos.append(f"arquitectura.json: «{rid}.{campo}» = {actual}; "
+                              f"el valor fijado es {esperado}. Viene de {REGLAS.get(rid, {}).get('origen', '?')}.")
+    for rid, fijos in VALORES_FIJOS_ALCANCE.items():
+        for campo, esperado in fijos.items():
+            actual = REGLAS.get(rid, {}).get("alcance", {}).get(campo)
+            if actual != esperado:
+                fallos.append(f"arquitectura.json: «{rid}.alcance.{campo}» = {actual}; "
+                              f"el valor fijado es {esperado}. Vaciarlo neutraliza la regla.")
+    for rid, regla in REGLAS.items():
+        alcance = regla.get("alcance")
+        if not isinstance(alcance, dict):
+            continue
+        for nombre, grupo in alcance.get("excluir", {}).items():
+            if not isinstance(grupo, dict):
+                continue
+            invasores = sorted(set(grupo["que"]).intersection(existentes))
+            if invasores:
+                fallos.append(f"arquitectura.json: la exclusión «{rid}.{nombre}» nombra "
+                              f"paquetes enteros {invasores}. Una exclusión acota QUÉ ARCHIVOS "
+                              f"se miran, no exime paquetes: para eso está `solo_en`.")
+    _check_huella()
     sobrantes = sorted(set(REGLAS) - set(OBLIGATORIAS))
     if sobrantes:
-        fallos.append(
-            f"arquitectura.json declara reglas que capas.py no aplica: {sobrantes}. "
-            f"Una regla escrita y no ejecutada es la enfermedad que este proyecto combate."
-        )
+        fallos.append(f"arquitectura.json declara reglas que capas.py no aplica: {sobrantes}. "
+                      f"Una regla escrita y no ejecutada es la enfermedad que este proyecto combate.")
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
-                fallos.append(f"arquitectura.json: «{rid}» nombra el paquete «{pkg}», que no existe")
+                fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
 
 
-# --- deps-hacia-core · por NOMBRE ---------------------------------------
+# --- flechas internas · por NOMBRE, solo dentro del workspace -----------
 
-def check_dependencias(g: dict[str, dict]) -> None:
+def huella_actual() -> str:
+    """Huella de la política completa. Mismo criterio que el grafo interno:
+    se deriva del contenido y se compara contra lo commiteado."""
+    canon = json.dumps(REGLAS, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def _check_huella() -> None:
+    """Respaldo para todo lo que no está pinneado campo por campo.
+
+    LÍMITE DECLARADO: esto vuelve imposible degradar la política en silencio,
+    no vuelve imposible degradarla. Quien edite `arquitectura.json` y esta
+    huella junto cambia la arquitectura de forma visible y revisable — que es
+    exactamente lo que se busca. Contra eso no hay check: hay revisión.
+    """
+    if not HUELLA.exists():
+        fallos.append("falta tool/checks/arquitectura.huella. Generala con `capas.py --huella`.")
+        return
+    esperada = HUELLA.read_text(encoding="utf-8").strip()
+    if huella_actual() != esperada:
+        fallos.append(
+            "arquitectura.json cambió y su huella no.\n"
+            f"      commiteada: {esperada}\n"
+            f"      actual:     {huella_actual()}\n"
+            "      Si el cambio es deliberado, regenerala con `capas.py --huella` "
+            "y que se revise en el mismo commit.")
+
+
+def check_flechas(g: dict[str, dict]) -> None:
     regla = REGLAS["deps-hacia-core"]
     permitidas = regla["permitidas"]
+    internos = {n for n in paquetes() if g.get(n, {}).get("source") == "root"}
     for nombre in paquetes():
         if nombre not in permitidas:
             fallos.append(f"packages/{nombre}: no está en «deps-hacia-core». Declaralo o borralo.")
             continue
         if nombre not in g:
-            fallos.append(f"packages/{nombre}: pub no lo reporta en el grafo. ¿Falta en `workspace:`?")
+            fallos.append(f"packages/{nombre}: pub no lo reporta. ¿Falta en `workspace:`?")
             continue
         ok = set(permitidas[nombre])
-        for dep in g[nombre].get("dependencies", []):
-            if dep not in ok:
+        for dep in g[nombre].get("directDependencies", []):
+            if dep in internos and dep not in ok:
                 fallos.append(
                     f"packages/{nombre}: depende de «{dep}», que no está permitido.\n"
-                    f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}"
-                )
+                    f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
 
 
-# --- nucleo-sin-externas · por ORIGEN, independiente de la anterior ------
+# --- origen de dependencias · independiente de la anterior --------------
 
 def check_origenes(g: dict[str, dict]) -> None:
     regla = REGLAS["nucleo-sin-externas"]
@@ -132,66 +216,58 @@ def check_origenes(g: dict[str, dict]) -> None:
         if nombre not in g:
             fallos.append(f"packages/{nombre}: pub no lo reporta en el grafo")
             continue
-        for dep in g[nombre].get("dependencies", []):
+        for dep in g[nombre].get("directDependencies", []):
             origen = g.get(dep, {}).get("source", "desconocido")
             if origen not in permitidos:
-                fallos.append(
-                    f"packages/{nombre}: dependencia «{dep}» de origen «{origen}». "
-                    f"{regla['enunciado']}"
-                )
+                fallos.append(f"packages/{nombre}: dependencia «{dep}» de origen «{origen}». "
+                              f"{regla['enunciado']}")
 
 
 # --- cadenas acotadas a su adapter --------------------------------------
 
 def check_cadenas() -> None:
-    for regla in REGLAS.values():
-        if regla.get("tipo") != "cadenas_acotadas":
-            continue
-        _cadenas_de(regla)
+    for rid, regla in REGLAS.items():
+        if TIPOS.get(rid) == "cadenas_acotadas" and regla.get("tipo") == "cadenas_acotadas":
+            _cadenas_de(regla)
 
 
 def _cadenas_de(regla: dict) -> None:
     alcance = regla["alcance"]
     extensiones = set(alcance["extensiones"])
     permitidos = set(regla["solo_en"])
-    patron = re.compile(r"\b(" + "|".join(regla["cadenas"]) + r")\b", re.I)
-    excluidos = {
-        nombre
-        for grupo in alcance.get("excluir", {}).values()
-        if isinstance(grupo, dict)
-        for nombre in grupo["que"]
-    }
+    patron = re.compile("(" + "|".join(re.escape(c) for c in regla["cadenas"]) + ")", re.I)
+    excluidos = {n for grupo in alcance.get("excluir", {}).values()
+                 if isinstance(grupo, dict) for n in grupo["que"]}
     raiz = RAIZ / alcance["raiz"]
     for archivo in sorted(raiz.rglob("*")):
         if not archivo.is_file() or archivo.suffix not in extensiones:
             continue
         rel = archivo.relative_to(raiz)
-        if not rel.parts or rel.parts[0] in permitidos:
-            continue
-        if excluidos.intersection(rel.parts):
+        if not rel.parts or rel.parts[0] in permitidos or excluidos.intersection(rel.parts):
             continue
         for n, linea in enumerate(archivo.read_text(encoding="utf-8").splitlines(), 1):
             m = patron.search(linea)
             if m:
-                fallos.append(
-                    f"{archivo.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
-                    f"{sorted(permitidos)} — {regla['enunciado']}\n"
-                    f"      → {regla['alternativa']}"
-                )
+                fallos.append(f"{archivo.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
+                              f"{sorted(permitidos) or 'todo paquete'} — {regla['enunciado']}\n"
+                              f"      → {regla['alternativa']}")
 
 
 def _paso(nombre, fn, *args) -> None:
     antes = len(fallos)
     fn(*args)
-    estado = "ok" if len(fallos) == antes else f"{len(fallos) - antes} fallo(s)"
-    print(f"  {nombre:<38} {estado}")
+    print(f"  {nombre:<38} {'ok' if len(fallos) == antes else f'{len(fallos) - antes} fallo(s)'}")
 
 
 def main() -> int:
-    _paso("reglas registradas presentes", check_meta)
+    if "--huella" in sys.argv:
+        HUELLA.write_text(huella_actual() + "\n", encoding="utf-8")
+        print(f"huella escrita: {huella_actual()}")
+        return 0
+    _paso("registro aplicable", check_meta)
     g = grafo()
     if g:
-        _paso("dependencias entre paquetes", check_dependencias, g)
+        _paso("flechas entre paquetes internos", check_flechas, g)
         _paso("núcleo sin dependencias externas", check_origenes, g)
     else:
         print(f"  {'grafo de dependencias':<38} NO DISPONIBLE")

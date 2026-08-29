@@ -4,173 +4,161 @@
     "Origen: docs/03 §1 y §2 del corpus de diseño, y ADR-009.",
     "La verifica tool/checks/capas.py y la hace cumplir CI.",
     "",
-    "Cada regla lleva un `id` estable. El meta-check exige que los cuatro sigan",
-    "presentes con su estructura mínima: sin eso, borrar una regla dejaba el",
-    "árbol verde con menos controles y nadie se enteraba (F33).",
+    "Cada regla lleva un `id` estable, su `alcance` declarado, y una",
+    "`violacion_canonica`: un caso sintético que la regla TIENE que detectar.",
     "",
-    "Y cada regla declara su `alcance`. Un control que no dice qué cubre no",
-    "puede distinguir 'no encontré nada' de 'no miré ahí' — es el corolario 5",
-    "de ADR-011: cada control declara si puede detectar una omisión.",
+    "Por qué la canónica y no más validación de schema: una regla puede",
+    "conservar su id, su tipo y todos sus campos no vacíos, y aun así no",
+    "detectar nada — basta ensanchar `solo_en`. Validar la FORMA de la política",
+    "va siempre un paso atrás de quien la edita. La canónica valida que el",
+    "instrumento SIGUE DISPARANDO, que es atestación positiva.",
+    "",
+    "La canónica es sintética a propósito: se inyecta y se revierte. Eso la hace",
+    "compatible con el ratchet —toda regla nueva está verde el día que se",
+    "agrega—, y de hecho es su precondición: «verde» no significa nada si la",
+    "regla no puede ponerse roja.",
+    "",
+    "Lo que la canónica NO prueba es la COBERTURA: si se exime un paquete donde",
+    "el canario no vive, sigue disparando. Eso lo cubre el pinneo de valores en",
+    "capas.py, que fija `solo_en` contra lo que dice el ADR.",
     "",
     "Cambiar este archivo es cambiar la arquitectura: se revisa como tal."
   ],
+
   "reglas": {
     "deps-hacia-core": {
-      "enunciado": "Todas las flechas de dependencia apuntan hacia core. Solo cli ve a plugin_dart y a agents.",
-      "origen": "docs/03 §2",
-      "tipo": "dependencias_permitidas",
-      "alcance": "El grafo resuelto por `dart pub deps --json`, restringido a los paquetes de packages/. No se parsea el pubspec a mano.",
+      "enunciado": "Entre paquetes internos, todas las flechas apuntan hacia core. Solo cli ve a plugin_dart y a agents.",
+      "origen": "docs/03 §1 y §2",
+      "tipo": "flechas_internas",
+      "alcance": "Las `directDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las dependencias externas de los paquetes que no son core NO las gobierna esta regla: docs/03 §2 enuncia esa prohibición solo para core.",
       "permitidas": {
         "core": [],
-        "orchestration": [
-          "core"
-        ],
-        "vcs": [
-          "core"
-        ],
-        "rules": [
-          "core"
-        ],
-        "agents": [
-          "core"
-        ],
-        "plugin_dart": [
-          "core"
-        ],
-        "plugin_fake": [
-          "core"
-        ],
-        "cli": [
-          "core",
-          "orchestration",
-          "vcs",
-          "rules",
-          "agents",
-          "plugin_dart",
-          "plugin_fake"
-        ]
+        "orchestration": ["core"],
+        "vcs": ["core"],
+        "rules": ["core"],
+        "agents": ["core"],
+        "plugin_dart": ["core"],
+        "plugin_fake": ["core"],
+        "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart", "plugin_fake"]
+      },
+      "violacion_canonica": {
+        "donde": "packages/orchestration/pubspec.yaml",
+        "contenido": "name: orchestration\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  vcs:\n    path: ../vcs\n",
+        "debe_mencionar": "vcs",
+        "requiere_pub_get": true
       }
     },
+
     "nucleo-sin-externas": {
       "enunciado": "core no tiene dependencias externas. Ninguna.",
-      "origen": "docs/03 §1",
+      "origen": "docs/03 §1 y §2",
       "tipo": "origen_de_dependencias",
-      "alcance": "El mismo grafo resuelto. Mira el ORIGEN de cada dependencia, no su nombre: es independiente de deps-hacia-core a propósito, para que no se tapen entre sí.",
-      "paquetes": [
-        "core"
-      ],
-      "origenes_permitidos": [
-        "root"
-      ]
+      "alcance": "El ORIGEN de cada `directDependency` de core, sin filtrar por nombre. Es independiente de deps-hacia-core a propósito: una mira flechas internas, la otra el origen. Así no se tapan entre sí.",
+      "paquetes": ["core"],
+      "origenes_permitidos": ["root"],
+      "violacion_canonica": {
+        "donde": "packages/core/pubspec.yaml",
+        "contenido": "name: core\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  lints: ^5.0.0\n",
+        "debe_mencionar": "origen",
+        "requiere_pub_get": true
+      }
     },
+
     "agente-en-agents": {
       "enunciado": "Las cadenas claude, codex y gemini no aparecen fuera de agents/ y del composition root.",
-      "origen": "ADR-009",
+      "origen": "ADR-009, primera condición del invariante",
       "alternativa": "Si necesitás hablar con un CLI agéntico, es un adapter en agents/",
       "tipo": "cadenas_acotadas",
-      "cadenas": [
-        "claude",
-        "codex",
-        "gemini"
-      ],
-      "solo_en": [
-        "agents",
-        "cli"
-      ],
+      "cadenas": ["claude", "codex", "gemini"],
+      "solo_en": ["agents", "cli"],
       "alcance": {
         "raiz": "packages",
-        "extensiones": [
-          ".dart",
-          ".yaml",
-          ".yml",
-          ".json",
-          ".sh",
-          ".bash",
-          ".md"
-        ],
-        "_": "Codigo, configuracion y prosa de los paquetes. Las ausencias van en `excluir`, declaradas.",
+        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "_": "Codigo, configuracion y prosa. El pubspec ENTRA: nombrar un CLI agentico en un manifiesto es declararlo, no explicarlo.",
         "excluir": {
-          "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quién la cubre en su lugar.",
-          "manifiestos": {
-            "que": [
-              "pubspec.yaml",
-              "pubspec.lock"
-            ],
-            "por_que": "Declaran dependencias: nombran dart y flutter legitimamente en todo paquete.",
-            "quien_lo_cubre": "deps-hacia-core y nucleo-sin-externas, sobre el grafo resuelto por pub."
-          },
+          "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quien la cubre en su lugar.",
           "artefactos_de_build": {
-            "que": [
-              ".dart_tool",
-              "build"
-            ],
-            "por_que": "Generados por la toolchain. No son fuente.",
-            "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+            "que": [".dart_tool", "build"],
+            "por_que": "Generados por la toolchain. No son fuente y no se versionan.",
+            "quien_lo_cubre": "nadie, y no hace falta."
           },
           "capa_c_proyectada": {
-            "que": [
-              "AGENTS.md",
-              "CLAUDE.md"
-            ],
-            "por_que": "Prosa proyectada desde el registro de reglas. Nombrar flutter o claude ES su contenido, por diseno.",
+            "que": ["AGENTS.md", "CLAUDE.md"],
+            "por_que": "Prosa proyectada desde el registro de reglas. Nombrar claude ES su contenido, por diseno.",
             "quien_lo_cubre": "el check de proyeccion de la capa C, que llega en la fase 3. Hoy NO existe: es un hueco declarado."
           }
         }
+      },
+      "violacion_canonica": {
+        "donde": "packages/orchestration/lib/_canario.dart",
+        "contenido": "void canario() { print('claude -p'); }\n",
+        "debe_mencionar": "claude"
       }
     },
+
     "lenguaje-en-plugin-dart": {
       "enunciado": "Las cadenas dart, flutter y pubspec no aparecen fuera de plugin_dart/ y del composition root.",
       "origen": "docs/03 §2",
       "alternativa": "Si necesitás conocimiento de Dart, va detrás de un puerto de stack",
       "tipo": "cadenas_acotadas",
-      "cadenas": [
-        "dart",
-        "flutter",
-        "pubspec"
-      ],
-      "solo_en": [
-        "plugin_dart",
-        "cli"
-      ],
+      "cadenas": ["dart", "flutter", "pubspec"],
+      "solo_en": ["plugin_dart", "cli"],
       "alcance": {
         "raiz": "packages",
-        "extensiones": [
-          ".dart",
-          ".yaml",
-          ".yml",
-          ".json",
-          ".sh",
-          ".bash",
-          ".md"
-        ],
-        "_": "Codigo, configuracion y prosa de los paquetes. Las ausencias van en `excluir`, declaradas.",
+        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "_": "El pubspec ENTRA: una restriccion `environment: flutter:` ata el paquete a Flutter y no es una dependencia, asi que el grafo no la ve.",
         "excluir": {
-          "_": "Ausencias DECLARADAS, no silenciosas. Cada una con su motivo y con quién la cubre en su lugar.",
-          "manifiestos": {
-            "que": [
-              "pubspec.yaml",
-              "pubspec.lock"
-            ],
-            "por_que": "Declaran dependencias: nombran dart y flutter legitimamente en todo paquete.",
-            "quien_lo_cubre": "deps-hacia-core y nucleo-sin-externas, sobre el grafo resuelto por pub."
-          },
+          "_": "Ausencias DECLARADAS, no silenciosas.",
           "artefactos_de_build": {
-            "que": [
-              ".dart_tool",
-              "build"
-            ],
-            "por_que": "Generados por la toolchain. No son fuente.",
-            "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+            "que": [".dart_tool", "build"],
+            "por_que": "Generados por la toolchain. No son fuente y no se versionan.",
+            "quien_lo_cubre": "nadie, y no hace falta."
           },
           "capa_c_proyectada": {
-            "que": [
-              "AGENTS.md",
-              "CLAUDE.md"
-            ],
-            "por_que": "Prosa proyectada desde el registro de reglas. Nombrar flutter o claude ES su contenido, por diseno.",
-            "quien_lo_cubre": "el check de proyeccion de la capa C, que llega en la fase 3. Hoy NO existe: es un hueco declarado."
+            "que": ["AGENTS.md", "CLAUDE.md"],
+            "por_que": "Prosa proyectada. Nombrar flutter ES su contenido, por diseno.",
+            "quien_lo_cubre": "el check de proyeccion de la capa C, fase 3. Hoy NO existe: hueco declarado."
           }
         }
+      },
+      "violacion_canonica": {
+        "donde": "packages/rules/lib/_canario.md",
+        "contenido": "Corre `flutter test` desde acá.\n",
+        "debe_mencionar": "flutter"
+      }
+    },
+
+    "sin-api-de-modelo": {
+      "enunciado": "Ningún paquete llama directamente a una API de modelo. El modelo lo invoca el CLI del usuario; no pedimos API key.",
+      "origen": "ADR-009, segunda condición del invariante",
+      "alternativa": "El modelo se invoca por el CLI del usuario, vía AgentRunner en agents/",
+      "tipo": "cadenas_acotadas",
+      "cadenas": [
+        "api.anthropic.com",
+        "api.openai.com",
+        "generativelanguage.googleapis.com",
+        "anthropic",
+        "openai"
+      ],
+      "solo_en": [],
+      "alcance": {
+        "raiz": "packages",
+        "extensiones": [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"],
+        "_": "NINGUN paquete queda exento, ni siquiera cli ni agents: agents invoca el CLI del usuario, no la API.",
+        "residuo_declarado": "PARCIAL. Caza dominios literales y nombres de SDK conocidos. NO caza una URL armada en tiempo de ejecucion ni un cliente HTTP generico apuntado a un valor de configuracion. Ese residuo es inferencial y pertenece al piso de docs/03 §5.1: lo ve el ReviewSensor o el humano, no un check determinista.",
+        "excluir": {
+          "_": "Ausencias DECLARADAS.",
+          "artefactos_de_build": {
+            "que": [".dart_tool", "build"],
+            "por_que": "Generados por la toolchain.",
+            "quien_lo_cubre": "nadie, y no hace falta."
+          }
+        }
+      },
+      "violacion_canonica": {
+        "donde": "packages/orchestration/lib/_canario_api.dart",
+        "contenido": "final endpoint = 'https://api.anthropic.com/v1/messages';\n",
+        "debe_mencionar": "api.anthropic.com"
       }
     }
   }
