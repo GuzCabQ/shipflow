@@ -1,0 +1,15 @@
+# Análisis estricto desde el commit 0.
+#
+# Es el único momento en que activarlo cuesta cero: sobre código existente
+# produce miles de diagnósticos y termina desactivado. Es la misma "regla del
+# ratchet" que el arnés le propone a sus usuarios, aplicada a nosotros.
+
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    todo: warning

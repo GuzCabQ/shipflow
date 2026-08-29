@@ -1,0 +1,13 @@
+name: rules
+description: "Registro de reglas, proyeccion a C y E, telemetria por regla."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  core:
+    path: ../core

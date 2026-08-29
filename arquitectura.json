@@ -1,0 +1,36 @@
+{
+  "_": [
+    "La regla de capas, en un solo lugar y diffeable.",
+    "Origen: docs/03 §2 del corpus de diseño, y ADR-009.",
+    "La verifica tool/checks/capas.py y la hace cumplir CI.",
+    "Cambiar este archivo es cambiar la arquitectura: se revisa como tal."
+  ],
+
+  "dependencias_permitidas": {
+    "core": [],
+    "orchestration": ["core"],
+    "vcs": ["core"],
+    "rules": ["core"],
+    "agents": ["core"],
+    "plugin_dart": ["core"],
+    "plugin_fake": ["core"],
+    "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart", "plugin_fake"]
+  },
+
+  "sin_dependencias_externas": ["core"],
+
+  "cadenas_acotadas": [
+    {
+      "regla": "ADR-009 · el núcleo es agnóstico del agente",
+      "alternativa": "Si necesitás hablar con un CLI agéntico, es un adapter en agents/",
+      "cadenas": ["claude", "codex", "gemini"],
+      "solo_en": ["agents", "cli"]
+    },
+    {
+      "regla": "docs/03 §2 · el núcleo es agnóstico del lenguaje",
+      "alternativa": "Si necesitás conocimiento de Dart, va detrás de un puerto de stack",
+      "cadenas": ["dart", "flutter", "pubspec"],
+      "solo_en": ["plugin_dart", "cli"]
+    }
+  ]
+}

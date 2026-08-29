@@ -1,0 +1,9 @@
+name: core
+description: "Entidades y puertos. Cero dependencias, ni internas ni externas."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace

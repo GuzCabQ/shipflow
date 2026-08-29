@@ -1,0 +1,13 @@
+name: agents
+description: "Adapters por CLI agentico: headless, ganchos, configuracion."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  core:
+    path: ../core

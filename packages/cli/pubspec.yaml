@@ -1,0 +1,25 @@
+name: cli
+description: "Comandos, instalacion, CredentialStore. Composition root."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  core:
+    path: ../core
+  orchestration:
+    path: ../orchestration
+  vcs:
+    path: ../vcs
+  rules:
+    path: ../rules
+  agents:
+    path: ../agents
+  plugin_dart:
+    path: ../plugin_dart
+  plugin_fake:
+    path: ../plugin_fake

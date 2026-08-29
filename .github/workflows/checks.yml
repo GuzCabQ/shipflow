@@ -1,0 +1,44 @@
+# Los checks de la fase 0.
+#
+# Van en CI y no en un gancho local por lo que B3 demostró: la capa de ganchos
+# no resiste al operador, y el operador somos nosotros con presión de entrega.
+# El fallo del intento anterior fue exactamente eso — un `pre-push` y un
+# `--no-verify` que lo salteaba.
+
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  capas:
+    name: reglas de capa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # La regla de capas, verificada.
+      - name: capas
+        run: python3 tool/checks/capas.py
+
+      # Y la prueba de que esos checks saben fallar. Corre siempre, no una vez
+      # a mano: un guardia que existe y nunca se disparó es indistinguible de
+      # uno roto — es F40, y la clase 1 entera del catálogo.
+      - name: los checks saben fallar
+        run: python3 tool/checks/probar_capas.py
+
+  dart:
+    name: toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart format --set-exit-if-changed .

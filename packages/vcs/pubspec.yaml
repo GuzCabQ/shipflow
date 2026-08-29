@@ -1,0 +1,13 @@
+name: vcs
+description: "Rama, commits, PR. Agnostico del lenguaje y del agente."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.6.0
+
+resolution: workspace
+
+dependencies:
+  core:
+    path: ../core

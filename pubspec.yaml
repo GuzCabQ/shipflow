@@ -1,0 +1,23 @@
+# Raíz del workspace. No publica: solo agrupa.
+name: shipflow
+description: Arnés agéntico de implementación. Raíz del workspace.
+publish_to: none
+
+environment:
+  # El arnés soporta el canal estable vigente, no el último SDK publicado
+  # (D-068). Los workspaces de pub necesitan 3.6.
+  sdk: ^3.6.0
+
+# Solo para el análisis estático. `core` sigue sin dependencias: ninguna.
+dev_dependencies:
+  lints: ^5.0.0
+
+workspace:
+  - packages/core
+  - packages/orchestration
+  - packages/vcs
+  - packages/rules
+  - packages/agents
+  - packages/plugin_dart
+  - packages/plugin_fake
+  - packages/cli
