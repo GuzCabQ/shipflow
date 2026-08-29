@@ -124,6 +124,68 @@ Hoy hay dos exenciones, las dos en `lenguaje-en-plugin-dart`:
 
 ---
 
+## El caso ciego · la mitad que faltaba
+
+Cada regla declara **dos** casos, y prueban cosas distintas:
+
+| | Qué prueba | Qué le pasa al check |
+|---|---|---|
+| `violacion_canonica` | Detecta un **exceso** — algo que no debería estar | Se le pone algo malo delante |
+| **`caso_ciego`** | Detecta una **omisión** — que no pudo mirar | **Se le quita el canal por el que observa** |
+
+Ninguno implica al otro. Un check puede disparar impecablemente sobre una
+violación y, con el alcance apuntado a un directorio vacío, pasar en verde sin
+haber inspeccionado un solo archivo. Es lo que ADR-011 corolario 5 llama **el
+sesgo natural de todo verificador**, y su invariante ejecutable pedía esto
+desde el 25/08:
+
+> *Test en CI: para cada paso registrado, existe un caso donde el paso **no
+> puede ejecutarse** y el resultado es no concluyente, **nunca verde**.*
+
+Estuvo **escrito y sin instalar** durante todo el diseño, que es exactamente la
+enfermedad que este proyecto combate.
+
+### Qué encontró en su primera corrida
+
+**Cuatro controles ciegos de nueve.** No hipotéticos: verdes medidos.
+
+| Control | Cómo estaba ciego |
+|---|---|
+| `agente-en-agents` · `lenguaje-en-plugin-dart` · `sin-api-de-modelo` | Con `alcance.raiz` apuntando a un directorio inexistente recorrían **cero archivos** y devolvían «ok». Verde sobre nada se leía igual que verde sobre ochenta archivos limpios |
+| `grafo-derivado` | Envolvía `parseFile` en un `try/catch` que **nunca disparaba**: con `throwIfDiagnostics: false` el parser devuelve un árbol *parcial* en vez de lanzar. Un archivo de basura entraba como nodo sin aristas, el grafo salía más chico, y *regenerado == commiteado* seguía coincidiendo porque **los dos lados quedaban igual de ciegos** |
+
+El segundo es el que más dice: **el comentario del código describía el fallo
+correctamente y el código hacía lo contrario.** Escribir el guardia no es
+instalarlo, ni siquiera cuando el guardia está escrito en el archivo correcto.
+
+### Los cinco resguardos para que esto no repita el patrón
+
+1. **Obligatorio.** Una regla sin `caso_ciego` falla el meta-check. No hay
+   ausencia silenciosa: es el mismo trato que `violacion_canonica`.
+2. **Mecanismo fijado.** `caso_ciego.como` está pinneado en `capas.py`, como el
+   `tipo`. Es el campo que más fácil se vuelve inofensivo — basta cambiarlo por
+   algo que no ciegue nada para que el caso pase siempre.
+3. **`debe_mencionar` obligatorio.** Rojo por otra razón no cuenta. Sin esto,
+   cualquier fallo colateral se leería como ceguera detectada.
+4. **Se ciega un sujeto que YA EXISTE y YA es alcanzable.** Agregar un archivo
+   nuevo y romperlo no serviría: quedaría huérfano y el rojo vendría de Q5.
+5. **El conteo cuadra o falla.** Los casos ciegos se derivan del registro y
+   tienen que ser **uno por regla**. Un mecanismo desconocido tampoco pasa:
+   *un caso que no se puede montar no es un caso que pasó, es uno que no se
+   probó.*
+
+**Y la prueba de que no es decorativo:** revertida la corrección de
+`agente-en-agents`, su caso ciego reporta *«el check pasó en VERDE con su canal
+de observación inutilizado»*. Se comprobó.
+
+**Lo que sigue sin cubrir, declarado.** El caso ciego prueba que el control se
+pone rojo cuando **no puede mirar**. No prueba que **mire en todos lados donde
+dice mirar**: una exclusión que se traga un paquete donde el canario no vive
+deja el canario disparando y desprotege el resto. Eso lo cubre el pinneo de
+valores, y solo en parte.
+
+---
+
 ## Sabotajes del estado intermedio · fase 1
 
 Obligación de cada fase al empezarla, del plan de desarrollo. **Escritos,

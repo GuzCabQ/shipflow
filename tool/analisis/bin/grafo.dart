@@ -158,6 +158,9 @@ void main(List<String> args) {
         'arquitectura.json: «grafo-derivado» ya no delega en este generador.',
       if (regla['violacion_canonica'] == null)
         'arquitectura.json: «grafo-derivado» no declara violación canónica.',
+      if (regla['caso_ciego'] == null)
+        'arquitectura.json: «grafo-derivado» no declara `caso_ciego`. Nadie '
+            'probó qué hace este control cuando no puede mirar.',
     ],
   ];
   if (malRegistro.isNotEmpty) {
@@ -194,20 +197,29 @@ void main(List<String> args) {
     final f = File('${raiz.path}/$rel');
     final aristas = <Arista>[];
     if (rel.endsWith('.dart')) {
-      CompilationUnit unidad;
-      try {
-        unidad = parseFile(
-          path: f.path,
-          featureSet: FeatureSet.latestLanguageVersion(),
-          throwIfDiagnostics: false,
-        ).unit;
-      } catch (e) {
-        // NO se salta. Un archivo que el generador no pudo leer produce un
-        // grafo más chico, y «regenerado == commiteado» sigue pasando porque
-        // los dos son igual de ciegos. Por eso es rojo.
-        ilegibles.add('$rel: $e');
+      // NO se salta un archivo ilegible. Uno que no parsea produce un grafo
+      // más chico, y «regenerado == commiteado» sigue pasando porque LOS DOS
+      // LADOS quedan igual de ciegos: el check deja de comparar contra la
+      // realidad y compara contra sí mismo.
+      //
+      // La primera versión de esto envolvía `parseFile` en un try/catch, y el
+      // catch NO DISPARABA NUNCA: con `throwIfDiagnostics: false` el parser
+      // devuelve un árbol PARCIAL en vez de lanzar, así que un archivo de
+      // basura entraba como un nodo sin aristas y nadie decía nada. El
+      // comentario decía lo correcto y el código hacía lo contrario. Lo
+      // encontró su propio `caso_ciego`, que es exactamente para lo que existe.
+      final resultado = parseFile(
+        path: f.path,
+        featureSet: FeatureSet.latestLanguageVersion(),
+        throwIfDiagnostics: false,
+      );
+      if (resultado.errors.isNotEmpty) {
+        final d = resultado.errors.first;
+        ilegibles.add('$rel:${d.offset}: no pude leer el archivo — '
+            '${d.message} (${resultado.errors.length} error(es) de sintaxis)');
         continue;
       }
+      final unidad = resultado.unit;
       for (final d in unidad.directives) {
         String? uri;
         if (d is ImportDirective) uri = d.uri.stringValue;

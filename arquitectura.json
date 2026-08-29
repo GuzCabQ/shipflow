@@ -65,6 +65,13 @@
         "contenido": "name: orchestration\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  vcs:\n    path: ../vcs\n",
         "debe_mencionar": "vcs",
         "requiere_pub_get": true
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "El manifiesto de la raíz queda ilegible, así que `dart pub deps --json` no puede responder.",
+        "como": "grafo_indisponible",
+        "por_que_ciega": "Esta regla NO lee pubspecs: le pide el grafo resuelto a pub. Sin esa respuesta no tiene con qué comparar, y cero dependencias se lee igual que ninguna dependencia prohibida.",
+        "debe_mencionar": "pub"
       }
     },
     "nucleo-sin-externas": {
@@ -83,6 +90,13 @@
         "contenido": "name: core\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  lints: ^5.0.0\n",
         "debe_mencionar": "origen",
         "requiere_pub_get": true
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "El manifiesto de la raíz queda ilegible, así que `dart pub deps --json` no puede responder.",
+        "como": "grafo_indisponible",
+        "por_que_ciega": "Mira el ORIGEN de cada dependencia directa de core, y el origen lo resuelve pub. Sin grafo no hay orígenes que mirar.",
+        "debe_mencionar": "pub"
       }
     },
     "agente-en-agents": {
@@ -135,6 +149,13 @@
         "donde": "packages/orchestration/lib/_canario.dart",
         "contenido": "void canario() { print('claude -p'); }\n",
         "debe_mencionar": "claude"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "`alcance.raiz` apunta a un directorio que no existe.",
+        "como": "alcance_inexistente",
+        "por_que_ciega": "Recorre archivos bajo esa raíz. Si la raíz no existe, el recorrido no produce ni un archivo — y no encontrar cadenas prohibidas en cero archivos se lee exactamente igual que no encontrarlas en ochenta.",
+        "debe_mencionar": "sin mirar"
       }
     },
     "lenguaje-en-plugin-dart": {
@@ -205,6 +226,13 @@
         "donde": "packages/rules/lib/_canario.md",
         "contenido": "Corre `flutter test` desde acá.\n",
         "debe_mencionar": "flutter"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "`alcance.raiz` apunta a un directorio que no existe.",
+        "como": "alcance_inexistente",
+        "por_que_ciega": "Mismo canal que la anterior: recorrido de archivos bajo una raíz.",
+        "debe_mencionar": "sin mirar"
       }
     },
     "sin-api-de-modelo": {
@@ -249,6 +277,13 @@
         "donde": "packages/orchestration/lib/_canario_api.dart",
         "contenido": "final endpoint = 'https://api.anthropic.com/v1/messages';\n",
         "debe_mencionar": "api.anthropic.com"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "`alcance.raiz` apunta a un directorio que no existe.",
+        "como": "alcance_inexistente",
+        "por_que_ciega": "Mismo canal. Y es la regla con `solo_en` vacío —no exime a nadie—, así que su ceguera es la más cara de las tres.",
+        "debe_mencionar": "sin mirar"
       }
     },
     "serializacion-sin-perdida": {
@@ -273,6 +308,13 @@
         "donde": "packages/core/lib/src/_canario_campo.dart",
         "contenido": "class CanarioCampo {\n  final String visible;\n  final String olvidado;\n  const CanarioCampo(this.visible, this.olvidado);\n  Map<String, Object?> toJson() => {'visible': visible};\n  factory CanarioCampo.fromJson(Map<String, Object?> json) =>\n      CanarioCampo(json['visible']! as String, '');\n}\n",
         "debe_mencionar": "olvidado"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "Un archivo de `packages/core/lib` que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Deriva los campos del árbol sintáctico. De un árbol parcial no se puede derivar nada, y un archivo saltado hace el conjunto más chico sin que el resultado cambie de color.",
+        "debe_mencionar": "no parsea"
       }
     },
     "puertos-sin-implementacion": {
@@ -318,6 +360,13 @@
         "donde": "packages/core/lib/src/_canario_puerto.dart",
         "contenido": "abstract interface class CanarioPuerto {\n  void hacerAlgo();\n}\n",
         "debe_mencionar": "CanarioPuerto"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "Un archivo de `packages/core/lib` que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Mismo canal. Además, un archivo ilegible podría contener justamente la implementación que haría que un puerto dejara de estar huérfano.",
+        "debe_mencionar": "no parsea"
       }
     },
     "opacidad-declarada": {
@@ -340,6 +389,13 @@
         "donde": "packages/core/lib/src/_canario_opaco.dart",
         "contenido": "class CanarioOpaco {\n  final String campo;\n  const CanarioOpaco(this.campo);\n}\n",
         "debe_mencionar": "CanarioOpaco"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "Un archivo de `packages/core/lib` que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Mismo canal: sin árbol no sabe si una clase tiene campos ni si serializa.",
+        "debe_mencionar": "no parsea"
       }
     },
     "grafo-derivado": {
@@ -386,6 +442,13 @@
         "donde": "packages/vcs/lib/_canario_grafo.dart",
         "contenido": "// Un archivo nuevo que el grafo commiteado no conoce.\nvoid canario() {}\n",
         "debe_mencionar": "grafo"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "Un archivo `.dart` del árbol que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Un nodo que no se puede leer hace el grafo más chico, y `regenerado == commiteado` sigue coincidiendo porque LOS DOS LADOS quedan igual de ciegos: el check deja de comparar contra la realidad y compara contra sí mismo.",
+        "debe_mencionar": "no pude leer"
       }
     }
   }
