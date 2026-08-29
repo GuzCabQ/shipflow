@@ -224,6 +224,11 @@ void main(List<String> args) {
       fallos.add('arquitectura.json: «${e.key}» no declara violación canónica. '
           'Una regla que no puede ponerse roja no está probada.');
     }
+    if (r['caso_ciego'] == null) {
+      fallos.add('arquitectura.json: «${e.key}» no declara `caso_ciego`. Nadie '
+          'probó nunca qué hace este control cuando NO PUEDE MIRAR, y su '
+          'silencio es indistinguible de su aprobación (ADR-011 §5).');
+    }
     if (r['aplicada_por'] != 'tool/analisis') {
       fallos.add('arquitectura.json: «${e.key}» ya no delega en este '
           'verificador. Quedaría registrada y sin ejecutar.');

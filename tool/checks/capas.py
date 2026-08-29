@@ -79,6 +79,21 @@ VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
 # del registro: una entrada de más neutraliza la regla sin vaciar nada. Por eso
 # está fijado en dos sentidos — qué regla puede tenerlo, y con qué regexes
 # exactos. Una regla que no figure acá y lo declare, falla.
+# El MECANISMO de ceguera de cada regla, fijado. Es el campo que más
+# fácilmente se vuelve inofensivo: basta cambiar `como` por algo que no ciegue
+# nada para que el caso pase siempre y no pruebe nada. Igual que `tipo`.
+CIEGO_FIJO = {
+    "deps-hacia-core": "grafo_indisponible",
+    "nucleo-sin-externas": "grafo_indisponible",
+    "agente-en-agents": "alcance_inexistente",
+    "lenguaje-en-plugin-dart": "alcance_inexistente",
+    "sin-api-de-modelo": "alcance_inexistente",
+    "serializacion-sin-perdida": "archivo_ilegible",
+    "opacidad-declarada": "archivo_ilegible",
+    "puertos-sin-implementacion": "archivo_ilegible",
+    "grafo-derivado": "archivo_ilegible",
+}
+
 NO_CUENTA_FIJO = {
     "lenguaje-en-plugin-dart": [
         (r"^\s*(?:import|export|part)\b", r"""\.dart(?=['"])"""),
@@ -161,12 +176,53 @@ def check_meta() -> None:
                               f"paquetes enteros {invasores}. Una exclusión acota QUÉ ARCHIVOS "
                               f"se miran, no exime paquetes: para eso está `solo_en`.")
     _check_no_cuenta()
+    _check_casos_ciegos()
     _check_huella()
     _check_delegadas()
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
                 fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
+
+
+def _check_casos_ciegos() -> None:
+    """TODA regla declara cómo se la deja ciega. Sin excepción.
+
+    Es el invariante ejecutable de ADR-011, que estuvo escrito y sin instalar:
+    «para cada paso registrado existe un caso donde el paso NO PUEDE ejecutarse
+    y el resultado es no concluyente, nunca verde».
+
+    La `violacion_canonica` prueba que el check detecta un EXCESO —algo que no
+    debería estar—. Nada probaba que detecte una OMISIÓN —que no pudo mirar—, y
+    ese es el sesgo natural de todo verificador (corolario 5). Las dos hacen
+    falta: son modos de fallo distintos y ninguno implica al otro.
+    """
+    for rid in sorted(set(REGLAS) | set(CIEGO_FIJO)):
+        regla = REGLAS.get(rid)
+        if regla is None:
+            fallos.append(f"arquitectura.json: falta la regla «{rid}», que tiene "
+                          f"mecanismo de ceguera fijado. Desapareció sin ruido.")
+            continue
+        ciego = regla.get("caso_ciego")
+        if not ciego:
+            fallos.append(
+                f"arquitectura.json: «{rid}» no declara `caso_ciego`. Sin él, "
+                f"nadie probó nunca qué hace este control cuando NO PUEDE MIRAR, "
+                f"y su silencio es indistinguible de su aprobación (ADR-011 §5).")
+            continue
+        for campo in ("que", "como", "por_que_ciega", "debe_mencionar"):
+            if not ciego.get(campo):
+                fallos.append(f"arquitectura.json: el `caso_ciego` de «{rid}» no "
+                              f"declara «{campo}».")
+        esperado = CIEGO_FIJO.get(rid)
+        if esperado is None:
+            fallos.append(f"arquitectura.json: «{rid}» declara `caso_ciego` y su "
+                          f"mecanismo no está fijado en capas.py. Un mecanismo sin "
+                          f"fijar se puede cambiar por uno que no ciegue nada.")
+        elif ciego.get("como") != esperado:
+            fallos.append(f"arquitectura.json: el `caso_ciego` de «{rid}» usa "
+                          f"«{ciego.get('como')}»; el mecanismo fijado es «{esperado}». "
+                          f"Cambiarlo deja el caso pasando siempre.")
 
 
 def _check_no_cuenta() -> None:
@@ -293,10 +349,13 @@ def check_origenes(g: dict[str, dict]) -> None:
 def check_cadenas() -> None:
     for rid, regla in REGLAS.items():
         if TIPOS.get(rid) == "cadenas_acotadas" and regla.get("tipo") == "cadenas_acotadas":
-            _cadenas_de(regla)
+            _cadenas_de(rid, regla)
 
 
-def _cadenas_de(regla: dict) -> None:
+MIRADOS: dict[str, int] = {}
+
+
+def _cadenas_de(rid: str, regla: dict) -> None:
     alcance = regla["alcance"]
     extensiones = set(alcance["extensiones"])
     permitidos = set(regla["solo_en"])
@@ -310,12 +369,14 @@ def _cadenas_de(regla: dict) -> None:
     exenciones = [(re.compile(e["donde"]), re.compile(e["token"]))
                   for e in alcance.get("no_cuenta", [])]
     raiz = RAIZ / alcance["raiz"]
+    mirados = 0
     for archivo in sorted(raiz.rglob("*")):
         if not archivo.is_file() or archivo.suffix not in extensiones:
             continue
         rel = archivo.relative_to(raiz)
         if not rel.parts or rel.parts[0] in permitidos or excluidos.intersection(rel.parts):
             continue
+        mirados += 1
         for n, linea in enumerate(archivo.read_text(encoding="utf-8").splitlines(), 1):
             mirada = linea
             for donde, token in exenciones:
@@ -326,6 +387,14 @@ def _cadenas_de(regla: dict) -> None:
                 fallos.append(f"{archivo.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
                               f"{sorted(permitidos) or 'todo paquete'} — {regla['enunciado']}\n"
                               f"      → {regla['alternativa']}")
+    MIRADOS[rid] = mirados
+    if mirados == 0:
+        # ADR-011: la ausencia de evidencia es fallo, no aprobación. Cero
+        # archivos inspeccionados no es «no encontré nada»: es «no miré».
+        fallos.append(
+            f"«{rid}»: recorrió «{alcance['raiz']}» y no inspeccionó NI UN archivo, "
+            f"así que pasó sin mirar. Verde acá es indistinguible de verde sobre "
+            f"un árbol limpio. Revisá `alcance.raiz` y `alcance.extensiones`.")
 
 
 def _paso(nombre, fn, *args) -> None:
@@ -353,7 +422,9 @@ def main() -> int:
         for f in fallos:
             print(f"  {f}")
         return 1
-    print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.")
+    detalle = ", ".join(f"{k}: {v}" for k, v in sorted(MIRADOS.items()))
+    print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.\n"
+          f"       archivos inspeccionados por regla de cadenas → {detalle}")
     return 0
 
 

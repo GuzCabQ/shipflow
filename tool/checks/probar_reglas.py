@@ -21,7 +21,16 @@ Dos familias de prueba, y la segunda es la que importa:
    nada — basta ensanchar `solo_en`, que hace la lista más LARGA. Por eso se
    verifica el comportamiento, no la forma.
 
-3. Y controles NEGATIVOS: que las exclusiones declaradas excluyan de verdad.
+3. CASO CIEGO · a cada verificador se le quita el canal por el que observa, y
+   se comprueba que se ponga ROJO. Es el simétrico de la violación canónica y
+   la mitad que faltaba: aquella prueba que el check detecta un EXCESO —algo
+   que no debería estar—; esta, que detecta una OMISIÓN —que no pudo mirar—.
+
+   ADR-011 corolario 5 lo llama «el sesgo natural de todo verificador», y su
+   invariante ejecutable pedía exactamente esto desde el 25/08. Estuvo escrito
+   y sin instalar, que es la enfermedad que este proyecto combate.
+
+4. Y controles NEGATIVOS: que las exclusiones declaradas excluyan de verdad.
 
     python3 tool/checks/probar_reglas.py
 
@@ -108,6 +117,47 @@ def neutralizaciones(rid: str) -> list[tuple[str, object]]:
         n.append(("aplicada_por apuntado a otro lado",
                   lambda r: r[rid].update(aplicada_por="tool/inexistente")))
     return n
+
+
+BASURA = ")))esto no parsea de ninguna manera(((\n"
+
+
+def casos_ciegos() -> list[dict]:
+    """Uno por regla, DERIVADO del registro. Si una regla no lo declara no se
+    saltea: `capas.py` la rechaza, y acá el conteo tampoco cuadraría."""
+    c: list[dict] = []
+    for rid, regla in REGLAS.items():
+        ciego = regla.get("caso_ciego")
+        if not ciego:
+            continue
+        como = ciego.get("como")
+        caso = {
+            "nombre": f"{rid} · CIEGO · {como}",
+            "menciona": ciego.get("debe_mencionar"),
+            "es_ciego": True,
+        }
+        if como == "alcance_inexistente":
+            caso["archivos"] = {ARQ_REL: arq_con(
+                lambda r, _rid=rid: r[_rid]["alcance"].update(raiz="no-existe"))}
+            # Sin esto la huella caza la mutación y tapa lo que se quiere probar.
+            caso["regenerar_huella"] = True
+        elif como == "grafo_indisponible":
+            caso["archivos"] = {"pubspec.yaml": "name: shipflow\n  :::esto no es yaml\n"}
+            caso["pub_get"] = True
+        elif como == "archivo_ilegible":
+            # Se rompe un archivo QUE YA EXISTE Y YA ES ALCANZABLE. Agregar uno
+            # nuevo no serviría: quedaría huérfano y el rojo vendría de Q5, no
+            # de la ceguera — y rojo por la razón equivocada no prueba nada.
+            objetivo = ("packages/core/test/regla_test.dart"
+                        if rid == "grafo-derivado"
+                        else "packages/core/lib/src/valores.dart")
+            caso["archivos"] = {objetivo: BASURA}
+            caso["probar_grafo"] = rid == "grafo-derivado"
+        else:
+            caso["archivos"] = {}
+            caso["mecanismo_desconocido"] = como
+        c.append(caso)
+    return c
 
 
 def casos() -> list[dict]:
@@ -212,6 +262,9 @@ def casos() -> list[dict]:
                 "import 'package:flutter/material.dart';\n"},
         "menciona": "flutter",
     })
+
+    # Y la mitad que faltaba: a cada verificador se le quita la vista.
+    c += casos_ciegos()
     return c
 
 
@@ -300,8 +353,16 @@ def restaurar(previo: dict[str, str | None]) -> None:
 
 
 def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
+    if caso.get("mecanismo_desconocido"):
+        return (f"declara el mecanismo de ceguera «{caso['mecanismo_desconocido']}», "
+                f"que este arnés no sabe aplicar. Un caso que no se puede montar "
+                f"no es un caso que pasó: es uno que no se probó.")
     espera_falla = caso.get("espera", "falla") == "falla"
     if espera_falla and codigo == 0:
+        if caso.get("es_ciego"):
+            return ("el check pasó en VERDE con su canal de observación "
+                    "inutilizado. No miró nada y lo llamó aprobación — es la "
+                    "clase 1 exacta, y ADR-011 dice que eso es fallo.")
         return "el check pasó en verde. La regla quedó sin efecto y nadie se enteró."
     if espera_falla and caso.get("menciona") and caso["menciona"] not in salida:
         return f"falló, pero no por esto — no menciona «{caso['menciona']}»."
@@ -360,9 +421,21 @@ def main() -> int:
         return 1
     for b in ("check", "grafo"):
         (ANALISIS / "bin" / f"{b}.dill").unlink(missing_ok=True)
+    ciegos = sum(1 for c in lista if c.get("es_ciego"))
+    if ciegos != len(REGLAS):
+        problemas.append(
+            f"hay {ciegos} casos ciegos para {len(REGLAS)} reglas. Toda regla "
+            f"declara cómo se la deja sin vista; si falta uno, ese control nunca "
+            f"se probó a oscuras y nadie lo nota.")
+    if problemas:
+        print("\nprobar_reglas: FALLA\n")
+        for p in problemas:
+            print(f"  {p}")
+        return 1
     positivos = sum(1 for c in lista if c.get("espera", "falla") == "falla")
     print(f"\nprobar_reglas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
-          f"{len(lista) - positivos} exclusiones honradas.")
+          f"de los cuales {ciegos} son casos CIEGOS —uno por regla—, "
+          f"y {len(lista) - positivos} exclusiones honradas.")
     return 0
 
 
