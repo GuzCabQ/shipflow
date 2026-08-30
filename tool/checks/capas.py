@@ -118,6 +118,10 @@ PASOS_OBLIGATORIOS = {
 # Un `true` pelado convertiría el job entero en decorativo.
 CANARIO_DECLARADO = "${{ matrix.canario }}"
 
+# Una versión de Flutter fijada es `X.Y.Z` y nada más. No un canal (`stable`),
+# no una rama (`main`), no una expresión (`${{ ... }}`), no un prefijo (`3.44`).
+VERSION_EXACTA = re.compile(r"\d+\.\d+\.\d+")
+
 # Nombres que se retiraron y no pueden volver a la documentación. Es la misma
 # familia que `coherencia.py` mantiene para el corpus: un renombre deja vivo el
 # nombre viejo en los lugares donde nadie mira.
@@ -285,12 +289,32 @@ def _check_toolchain_del_job(nombre: str, job: dict) -> None:
     for p in pasos:
         if "flutter-action" not in str(p.get("uses", "")):
             continue
-        if not (p.get("with") or {}).get("flutter-version"):
-            fallos.append(
-                f"el job «{nombre}» instala Flutter sin `flutter-version`. Un "
-                f"canal flotante no puede ser una compuerta obligatoria: una "
-                f"versión nueva rompe el merge sin que nadie haya cambiado nada, "
-                f"y la corrida deja de ser reproducible.")
+        version = str((p.get("with") or {}).get("flutter-version", ""))
+        # Comprobar que el campo EXISTA no alcanza: `stable`, `main` y
+        # `${{ matrix.x }}` son valores presentes y ninguno fija nada. Es el
+        # mismo error que ya se cerró dos veces —`alternative` y
+        # `knownEvasions`—: comprobación de PRESENCIA donde tenía que ser de
+        # CONTENIDO.
+        #
+        # Y la excepción NO es «Flutter siempre fijado». El proyecto ya tiene
+        # el patrón: la matriz de Dart corre una pata `stable` FLOTANTE, y es
+        # legítima porque está declarada CANARIO y no bloquea el merge —
+        # reporta, no detiene (ADR-013). Lo que no puede ser flotante es una
+        # COMPUERTA. Prohibirlo siempre habría rechazado mañana un canario de
+        # Flutter escrito con el mismo patrón que ya se usa.
+        if VERSION_EXACTA.fullmatch(version):
+            continue
+        if job.get("continue-on-error") == CANARIO_DECLARADO:
+            continue
+        fallos.append(
+            f"el job «{nombre}» instala Flutter con "
+            f"`flutter-version: {version or '(ausente)'}`, que no es una versión "
+            f"exacta, y el job BLOQUEA el merge. Un canal, una rama o una "
+            f"expresión se resuelven a algo distinto en cada corrida: el merge "
+            f"se rompe sin que nadie haya cambiado nada.\n"
+            f"      Escribí `X.Y.Z`, o declaralo canario con "
+            f"`continue-on-error: {CANARIO_DECLARADO}` — flotante se permite "
+            f"cuando reporta, no cuando detiene.")
 
 
 def _check_readme() -> None:
@@ -333,7 +357,16 @@ def _check_readme() -> None:
     # sobrevivió al renombre estaba dentro de un bloque de código, y el check
     # miraba solo las que estaban entre comillas invertidas. Buscar solo donde
     # es cómodo mirar es la misma ceguera de siempre, en la documentación.
+    #
+    # Excepción DERIVADA, no una lista a mano: las rutas de las violaciones
+    # canónicas existen solo mientras un sabotaje está aplicado. Documentar la
+    # salida real del arnés las nombra, y son correctas justamente por no
+    # existir en reposo.
+    transitorias = {r["violacion_canonica"]["donde"]
+                    for r in REGLAS.values() if r.get("violacion_canonica")}
     for ruta in sorted(set(re.findall(r"(?<![\w/])((?:tool|packages)/[A-Za-z0-9_./-]+)", texto))):
+        if ruta in transitorias:
+            continue
         if not (RAIZ / ruta.rstrip("/.")).exists():
             fallos.append(f"README.md nombra «{ruta}», que no existe en el "
                           f"árbol. Una ruta muerta en la documentación manda a "

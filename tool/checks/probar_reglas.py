@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -50,6 +51,15 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
 ANALISIS = RAIZ / "tool" / "analisis"
+# Diario de escritura anticipada. Se escribe ANTES de tocar el árbol y se borra
+# después de restaurarlo, así que su existencia significa exactamente una cosa:
+# hay un sabotaje aplicado y sin revertir.
+#
+# El `finally` cubre las excepciones; no cubre que a este proceso lo maten. Ya
+# pasó: una corrida terminada desde afuera dejó `arquitectura.json` saboteado y
+# un canario suelto en el árbol, y hubo que limpiarlo a mano. Con el diario, la
+# corrida siguiente lo deshace sola y lo dice.
+DIARIO = RAIZ / "tool" / "checks" / ".sabotaje-en-curso.json"
 ARQ_REL = "arquitectura.json"
 CI_REL = ".github/workflows/checks.yml"
 ARQ = RAIZ / ARQ_REL
@@ -365,7 +375,25 @@ def casos() -> list[dict]:
         "nombre": "ci · Flutter en un canal flotante como compuerta",
         "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
                                         "          channel: stable", 1)},
-        "menciona": "canal flotante",
+        "menciona": "no es una versión exacta",
+    })
+    # CONTROL NEGATIVO de la exención. Sin él, «flotante prohibido salvo en
+    # canario» sería indistinguible de «flotante prohibido siempre», y el día
+    # que alguien escriba un canario de Flutter legítimo el check lo rechazaría
+    # sin que nadie supiera que la exención estaba rota.
+    c.append({
+        "nombre": "ci · flotante SÍ vale en un canario declarado",
+        "archivos": {CI_REL: ci
+                     .replace("          flutter-version: 3.44.0",
+                              "          flutter-version: stable", 1)
+                     .replace("    name: el fixture se verifica a sí mismo\n"
+                              "    runs-on: ubuntu-latest",
+                              "    name: el fixture se verifica a sí mismo\n"
+                              "    runs-on: ubuntu-latest\n"
+                              "    strategy:\n      matrix:\n"
+                              "        canario: [true]\n"
+                              "    continue-on-error: ${{ matrix.canario }}", 1)},
+        "espera": "pasa",
     })
     c.append({
         "nombre": "readme · una cantidad en prosa que envejeció",
@@ -470,12 +498,36 @@ def aplicar(archivos: dict[str, str]) -> dict[str, str | None]:
     for ruta, contenido in archivos.items():
         p = RAIZ / ruta
         previo[ruta] = p.read_text(encoding="utf-8") if p.exists() else None
+    # El diario se escribe ANTES de la primera modificación. Si el proceso
+    # muere en cualquier punto de lo que sigue, la corrida siguiente sabe qué
+    # deshacer.
+    DIARIO.write_text(json.dumps(previo, ensure_ascii=False), encoding="utf-8")
+    for ruta, contenido in archivos.items():
+        p = RAIZ / ruta
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(contenido, encoding="utf-8")
     return previo
 
 
+def anotar(previo: dict[str, str | None], ruta: str) -> None:
+    """Agrega un archivo al conjunto a restaurar Y REESCRIBE EL DIARIO.
+
+    Sin esto quedaba un hueco: la huella se agregaba a `previo` después de que
+    el diario ya estaba escrito, así que una muerte entre medio la dejaba
+    modificada y sin registrar. Un diario que no se actualiza cuando cambia lo
+    que hay que deshacer es un diario que miente sobre su alcance.
+    """
+    p = RAIZ / ruta
+    previo[ruta] = p.read_text(encoding="utf-8") if p.exists() else None
+    DIARIO.write_text(json.dumps(previo, ensure_ascii=False), encoding="utf-8")
+
+
 def restaurar(previo: dict[str, str | None]) -> None:
+    _restaurar(previo)
+    DIARIO.unlink(missing_ok=True)
+
+
+def _restaurar(previo: dict[str, str | None]) -> None:
     for ruta, contenido in previo.items():
         p = RAIZ / ruta
         if contenido is None:
@@ -507,8 +559,63 @@ def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
     return None
 
 
+def recuperar(reparar: bool) -> bool:
+    """Informa qué dejó a medias una corrida que no terminó. Devuelve si hay algo.
+
+    **No repara sola, y eso es la decisión.** El diseño ya falla ruidosamente
+    ante un árbol tocado —«el árbol ya está en rojo antes de sabotear»— y esa
+    negativa ES el control. Reparar en silencio pisaría con contenido viejo
+    cualquier cosa editada después del corte, y escondería lo que había que
+    mostrar; ADR-015 dice lo mismo de un hallazgo: no se corrige solo ni se
+    reporta en silencio.
+
+    Lo que faltaba no era reparar: era **saber qué reparar**. Averiguarlo a
+    mano costó tiempo real cuando pasó.
+
+    `--recuperar` lo deshace, y es explícito a propósito — mismo patrón que
+    `cifras.py --fix`, que tampoco corrige sin que se lo pidan. Y a diferencia
+    de `git checkout`, devuelve los archivos a su contenido PREVIO AL SABOTAJE,
+    no al último commit: no se pierde trabajo sin commitear.
+    """
+    for b in ("check", "grafo"):
+        (ANALISIS / "bin" / f"{b}.dill").unlink(missing_ok=True)
+    if not DIARIO.exists():
+        return False
+    previo = json.loads(DIARIO.read_text(encoding="utf-8"))
+    if reparar:
+        _restaurar(previo)
+        DIARIO.unlink(missing_ok=True)
+        print(f"recuperado: {len(previo)} archivo(s) devueltos a su contenido "
+              f"previo al sabotaje.\n")
+        for ruta in sorted(previo):
+            print(f"  {ruta}")
+        return False
+    print("Una corrida anterior no terminó y dejó el árbol saboteado.\n")
+    for ruta in sorted(previo):
+        print(f"  {ruta}")
+    print("\nEstos archivos NO dicen la verdad sobre el proyecto: tienen un "
+          "sabotaje aplicado y sin\nrevertir. Corré `probar_reglas.py "
+          "--recuperar` para devolverlos a su contenido\nprevio — no a lo "
+          "commiteado, así que no se pierde trabajo sin commitear.")
+    return True
+
+
+def _al_recibir_senal(_num, _frame):
+    """SIGINT y SIGTERM: acá el proceso todavía es dueño del árbol, así que
+    deshacer es correcto y no pisa nada de nadie. SIGKILL no se puede atrapar,
+    y para ese caso está el diario más `--recuperar`."""
+    recuperar(reparar=True)
+    sys.exit(130)
+
+
 def main() -> int:
     global ORDENES
+    for s in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(s, _al_recibir_senal)
+    if recuperar(reparar="--recuperar" in sys.argv):
+        return 1
+    if "--recuperar" in sys.argv:
+        return 0
     ORDENES = compilar()
     codigo, salida = corre_check()
     if codigo != 0:
@@ -524,7 +631,7 @@ def main() -> int:
         previo = aplicar(caso["archivos"])
         try:
             if caso.get("regenerar_huella"):
-                previo[HUELLA_REL] = (RAIZ / HUELLA_REL).read_text(encoding="utf-8")
+                anotar(previo, HUELLA_REL)
                 subprocess.run([sys.executable, str(CHECK), "--huella"], capture_output=True)
             if caso.get("pub_get"):
                 pub_get()
