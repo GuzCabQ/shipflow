@@ -23,3 +23,10 @@ dependencies:
     path: ../plugin_dart
   plugin_fake:
     path: ../plugin_fake
+
+# Las suites de contrato viven acá, así que la dependencia es real y se declara.
+# `core` no puede hacer lo mismo —`nucleo-sin-externas` le prohíbe TODA
+# dependencia directa, incluidas las de desarrollo— y por eso sus pruebas usan
+# la del workspace. Acá no hace falta esa excepción.
+dev_dependencies:
+  test: ^1.25.0

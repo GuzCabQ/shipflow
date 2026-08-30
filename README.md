@@ -143,7 +143,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 11 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 12 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
@@ -161,6 +161,48 @@ lee igual que *«están todos»*. Si el parser no está disponible, el check
 verifica que la **protección de rama exija ese workflow**, porque eso vive en
 la configuración de GitHub y no en el repositorio. Se comprueba intentando un
 push directo, que es un acto manual y periódico.
+
+---
+
+## Las suites de contrato
+
+Un puerto con **una sola implementación** no es una abstracción: es una
+indirección que todavía no se contradijo. El intento anterior tenía quince
+adaptadores vacíos.
+
+`docs/08` §2: *un fake solo es sustituto válido si cumple el mismo contrato que
+el real. Sin eso se testea contra un fake que miente y la suite queda verde por
+construcción.*
+
+Cada puerto implementado tiene su suite, y **la corren las dos**:
+
+| Puerto | Real | Fake |
+|---|---|---|
+| `ProjectTopology` | lee el fixture del disco | se le declara la topología |
+| `ArtifactPolicy` | clasifica con los patrones de `N1-02` y `N1-03` | se le declaran las respuestas |
+
+**El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
+un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
+en verde: dos copias del mismo error se ponen de acuerdo.
+
+Y cada suite abre con un test que comprueba que **son dos**. Sin eso, sacar la
+real —porque tarda, porque necesita disco, porque falló una vez— dejaría todo
+en verde probando el fake contra sí mismo, que es el modo de fallo exacto que
+`docs/08` nombra.
+
+### Lo que encontraron en su primera corrida
+
+Una **divergencia real**: para la ruta vacía, la implementación real decía «no
+editable» y el fake decía «editable».
+
+Ninguna de las dos estaba mal — **faltaba una cláusula del contrato**. Se
+escribió en el puerto, en `core`, donde vale para cualquier stack:
+
+1. Lo generado nunca es editable. No son dos hechos: el segundo se sigue del primero.
+2. Una ruta vacía no es editable. Devolver `true` dejaría al arnés intentando escribir en ninguna parte.
+
+Eso es lo que una suite de contrato produce cuando funciona: no un error en una
+implementación, **sino una parte del acuerdo que nadie había escrito**.
 
 ---
 
@@ -444,11 +486,10 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **Ninguno de los 23 puertos tiene implementación.** Está declarado regla por regla, no solo acá | `plugin_fake` los implementa todos: **fase 2** |
+| **21 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los once puertos del plugin de stack, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
-| **La suite de contrato.** Sin ella `plugin_fake` no es un sustituto válido, y todo lo que se pruebe contra él queda verde por construcción (`docs/08` §2) | **Fase 2**, con los primeros puertos |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**
