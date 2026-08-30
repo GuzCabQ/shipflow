@@ -94,14 +94,21 @@ VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
 # Es F33 aplicado al ejecutor: registrado en ningún lado y ejecutado igual, o
 # —peor— dejado de ejecutar sin que nadie se entere.
 PASOS_OBLIGATORIOS = {
-    "la regla de capas": "tool/checks/capas.py",
-    "que los checks sepan fallar": "tool/checks/probar_reglas.py",
-    "serialización, opacidad y puertos": "bin/check.dart",
-    "el grafo interno": "bin/grafo.dart",
-    "las pruebas de core": "dart test",
-    "el analizador estático": "dart analyze",
-    "el formato": "dart format",
+    # etiqueta: (comando EXACTO, working-directory esperado)
+    "el parser de yaml": ('python3 -m pip install --quiet "pyyaml==6.0.3"', None),
+    "la regla de capas": ("python3 tool/checks/capas.py", None),
+    "que los checks sepan fallar": ("python3 tool/checks/probar_reglas.py", None),
+    "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
+    "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
+    "las pruebas de core": ("dart test packages/core", None),
+    "el analizador estático": ("dart analyze --fatal-infos", None),
+    "el formato": ("dart format --set-exit-if-changed .", None),
 }
+
+# El job puede declararse `continue-on-error` SOLO con esta expresión, que es
+# el canario de la matriz: la pata `stable` avisa y no bloquea, por ADR-013.
+# Un `true` pelado convertiría el job entero en decorativo.
+CANARIO_DECLARADO = "${{ matrix.canario }}"
 
 CIEGO_FIJO = {
     "deps-hacia-core": "grafo_indisponible",
@@ -113,6 +120,7 @@ CIEGO_FIJO = {
     "opacidad-declarada": "archivo_ilegible",
     "puertos-sin-implementacion": "archivo_ilegible",
     "grafo-derivado": "archivo_ilegible",
+    "colecciones-inmutables": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {
@@ -199,12 +207,58 @@ def check_meta() -> None:
     _check_no_cuenta()
     _check_casos_ciegos()
     _check_ci_ejecuta()
+    _check_readme()
     _check_huella()
     _check_delegadas()
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
                 fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
+
+
+def _check_readme() -> None:
+    """La tabla de reglas del README se DERIVA del registro, no se mantiene.
+
+    Un review encontró que la tabla documentaba ocho reglas cuando había nueve,
+    seguía nombrando un directorio renombrado, y presentaba como pendiente algo
+    ya construido. Nada lo detectaba: `cifras.py` deriva cantidades, pero vive
+    en el otro repositorio y mira otro corpus.
+
+    Una tabla de reglas desactualizada es peor que no tenerla: dice qué
+    gobierna el repositorio, y quien la lea va a creerle.
+    """
+    doc = RAIZ / "README.md"
+    if not doc.exists():
+        fallos.append("falta README.md, que es donde se declara qué gobierna "
+                      "este repositorio.")
+        return
+    texto = doc.read_text(encoding="utf-8")
+    filas = dict(re.findall(r"^\| `([a-z][a-z-]+)` \|.*\| `([^`]+)` \|$",
+                            texto, re.M))
+    if not filas:
+        fallos.append("no encontré la tabla de reglas en README.md. Cero filas "
+                      "se lee igual que una tabla al día.")
+        return
+    for rid in sorted(set(REGLAS) - set(filas)):
+        fallos.append(f"README.md: la regla «{rid}» gobierna este repositorio y "
+                      f"no está en la tabla. Quien lea el README no se entera "
+                      f"de que existe.")
+    for rid in sorted(set(filas) - set(REGLAS)):
+        fallos.append(f"README.md: la tabla declara «{rid}», que ya no está en "
+                      f"arquitectura.json. Una fila vieja describe un control "
+                      f"que no corre.")
+    for rid, aplicador in sorted(filas.items()):
+        esperado = REGLAS.get(rid, {}).get("aplicada_por", "capas.py")
+        if aplicador != esperado:
+            fallos.append(f"README.md: dice que «{rid}» la aplica «{aplicador}»; "
+                          f"el registro dice «{esperado}».")
+    # Rutas del repositorio nombradas en el README que ya no existen. Es lo que
+    # dejó vivo el nombre `tool/serializacion` después de renombrarlo.
+    for ruta in sorted(set(re.findall(r"`((?:tool|packages)/[A-Za-z0-9_./-]+)`", texto))):
+        if not (RAIZ / ruta.rstrip("/")).exists():
+            fallos.append(f"README.md nombra «{ruta}», que no existe en el "
+                          f"árbol. Una ruta muerta en la documentación manda a "
+                          f"quien la siga a un lugar que no está.")
 
 
 def _check_ci_ejecuta() -> None:
@@ -240,21 +294,45 @@ def _check_ci_ejecuta() -> None:
         fallos.append(f"no pude leer checks.yml como YAML: {e}")
         return
 
-    pasos = [paso
-             for job in (doc.get("jobs") or {}).values()
-             for paso in (job.get("steps") or [])
-             if isinstance(paso, dict)]
+    pasos = []
+    for nombre_job, job in (doc.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        coe = job.get("continue-on-error")
+        if coe not in (None, False, CANARIO_DECLARADO):
+            fallos.append(
+                f"el job «{nombre_job}» declara `continue-on-error: {coe!r}`. "
+                f"Todos sus pasos corren, se ven en rojo, y el job no falla: "
+                f"la compuerta queda abierta sin tocar ni un check. La única "
+                f"forma permitida es «{CANARIO_DECLARADO}», que es el canario "
+                f"declarado de la matriz.")
+        for paso in (job.get("steps") or []):
+            if isinstance(paso, dict):
+                pasos.append(paso)
     if not pasos:
         fallos.append("leí el workflow y no encontré NI UN paso. Cero pasos se "
                       "lee igual que todos los pasos presentes.")
         return
-    for etiqueta, comando in PASOS_OBLIGATORIOS.items():
-        encontrados = [p for p in pasos if comando in str(p.get("run", ""))]
+    # Comparación EXACTA, no por subcadena. Un check que solo exige que el
+    # comando aparezca MENCIONADO acepta `echo "dart test"` y
+    # `dart test || true`: los dos contienen el texto y ninguno gobierna el
+    # resultado del job. Lo encontró un review, y es el mismo criterio que
+    # `VALORES_FIJOS`: lo que no deriva, se fija.
+    for etiqueta, (comando, wd) in PASOS_OBLIGATORIOS.items():
+        encontrados = [p for p in pasos
+                       if str(p.get("run", "")).strip() == comando
+                       and p.get("working-directory") == wd]
         if not encontrados:
+            parecidos = [str(p.get("run", "")).strip() for p in pasos
+                         if comando.split()[-1] in str(p.get("run", ""))]
+            detalle = (f"\n      hay pasos que lo MENCIONAN sin ejecutarlo así: "
+                       f"{parecidos}" if parecidos else "")
             fallos.append(
-                f"CI ya no ejecuta {etiqueta} («{comando}»). El paso desapareció "
-                f"del workflow y ninguna regla lo notó: el merge pasa a estar "
-                f"gobernado por menos controles de los que el registro declara.")
+                f"CI ya no ejecuta {etiqueta} exactamente como «{comando}»"
+                + (f" en «{wd}»" if wd else "")
+                + f". Un comando envuelto —`echo`, `|| true`, otro directorio— "
+                  f"aparece en el archivo y no gobierna el resultado del job."
+                + detalle)
             continue
         for p in encontrados:
             if p.get("continue-on-error") is True:

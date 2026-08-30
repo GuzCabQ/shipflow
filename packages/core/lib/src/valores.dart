@@ -83,6 +83,30 @@ enum ControlLayer {
 /// rojo sea legible: «no había testigo» no es lo mismo que «encontré fallas».
 enum Verdict { verde, rojo, noConcluyente }
 
+/// Cómo terminó una invocación. **No es lo mismo que su resultado.**
+///
+/// Un analizador que sale con código 1 porque encontró problemas SÍ se
+/// ejecutó: su resultado es rojo y su terminación es [completa]. Uno que no
+/// estaba instalado no produjo resultado alguno, y eso no puede leerse como
+/// «no encontró nada».
+///
+/// Confundir las dos cosas es el agujero exacto que ADR-011 nombra —
+/// «herramienta ausente, timeout» — y por eso la terminación es un campo y no
+/// una interpretación del código de salida.
+enum Termination {
+  /// La herramienta corrió y produjo un resultado, cualquiera sea.
+  completa,
+
+  /// No estaba, o no se pudo invocar.
+  herramientaAusente,
+
+  /// Se cortó por presupuesto de tiempo.
+  tiempoAgotado,
+
+  /// Se interrumpió por cualquier otra causa antes de terminar.
+  interrumpida,
+}
+
 /// Texto que vino de afuera, encapsulado como dato citado (INV-6, `ASI01`).
 ///
 /// El punto no es el tipo: es que el texto externo **nunca se concatena a una
@@ -121,33 +145,49 @@ class QuotedText {
 /// porque la superficie «cubierto» le pide al revisor que NO mire algo, y un
 /// verde sin testigo le estaría pidiendo que se saltee lo que nadie miró.
 class Witness {
-  /// Qué se ejecutó, tal como se ejecutó.
+  /// Qué se ejecutó, tal como se ejecutó. **Vacío no atestigua nada.**
   final String invocation;
 
   /// Sobre qué. **Vacío es un dato**, no un descuido: significa que el paso
   /// corrió sin sujeto, y eso vuelve el resultado no concluyente.
   final List<String> subjects;
 
-  /// Código de salida de la invocación.
+  /// Cómo terminó la invocación. Es lo que distingue «corrió y no encontró
+  /// nada» de «no llegó a correr».
+  final Termination termination;
+
+  /// Código de salida de la invocación. **Es dato, no veredicto**: muchas
+  /// herramientas salen con código distinto de cero cuando encuentran algo,
+  /// y eso significa que corrieron. Quien lo interprete es el verificador que
+  /// conoce esa herramienta, no este tipo.
   final int exitCode;
 
   /// Cuándo terminó, en UTC.
   final DateTime finishedAt;
 
-  const Witness({
+  /// Las listas se copian a una vista inmodificable. Sin esto el invariante
+  /// no es del tipo: quien conservara la lista original podía vaciarla
+  /// después de construir el testigo y cambiarle el veredicto al resultado.
+  Witness({
     required this.invocation,
-    required this.subjects,
+    required List<String> subjects,
     required this.exitCode,
     required this.finishedAt,
-  });
+    this.termination = Termination.completa,
+  }) : subjects = List.unmodifiable(subjects);
 
-  /// Un testigo sin sujetos no atestigua nada (ADR-011, corolario 5): no
-  /// distingue «no encontré nada» de «no miré ahí».
-  bool get attests => subjects.isNotEmpty;
+  /// Un testigo atestigua si **corrió**, si dice **qué** corrió, y si dice
+  /// **sobre qué**. Las tres cosas: es el corolario 5 de ADR-011 —no
+  /// distinguir «no encontré nada» de «no miré ahí»— convertido en predicado.
+  bool get attests =>
+      termination == Termination.completa &&
+      invocation.trim().isNotEmpty &&
+      subjects.isNotEmpty;
 
   Map<String, Object?> toJson() => {
         'invocation': invocation,
         'subjects': subjects,
+        'termination': termination.name,
         'exitCode': exitCode,
         'finishedAt': finishedAt.toUtc().toIso8601String(),
       };
@@ -155,6 +195,7 @@ class Witness {
   factory Witness.fromJson(Map<String, Object?> json) => Witness(
         invocation: json['invocation']! as String,
         subjects: List<String>.from(json['subjects']! as List<Object?>),
+        termination: Termination.values.byName(json['termination']! as String),
         exitCode: json['exitCode']! as int,
         finishedAt: DateTime.parse(json['finishedAt']! as String),
       );

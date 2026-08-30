@@ -1,6 +1,6 @@
 /// Ida y vuelta con VALORES, no con nombres de campo.
 ///
-/// El verificador de `tool/serializacion` compara los nombres de los campos
+/// El verificador de `tool/analisis` compara los nombres de los campos
 /// contra las claves del JSON, y declara su residuo: no mira los valores. Un
 /// `toJson` que escriba `'path': ''` lo pasa en verde. Esto es ese residuo.
 ///
@@ -48,14 +48,14 @@ List<String> valoresPorDefecto(Object? nodo, [String ruta = '']) {
 void main() {
   final cita = QuotedText('texto de afuera', source: 'sistema-externo');
 
-  const criterio = AcceptanceCriterion(
+  final criterio = AcceptanceCriterion(
     id: 'AC-1',
     statement:
         QuotedText('el saldo no puede quedar negativo', source: 'ticket'),
     assertionForm: 'forma-de-aserción-7',
   );
 
-  const item = WorkItem(
+  final item = WorkItem(
     id: 'W-1',
     title: QuotedText('título', source: 'ticket'),
     description: QuotedText('descripción larga', source: 'ticket'),
@@ -66,7 +66,7 @@ void main() {
     },
   );
 
-  const diagnostico = Diagnostic(
+  final diagnostico = Diagnostic(
     file: 'lib/algo.fuente',
     line: 42,
     severity: Severity.bloquea,
@@ -87,18 +87,18 @@ void main() {
   final traza = Trace(
     runId: 'run-1',
     startedAt: DateTime.utc(2026, 8, 29, 12, 0, 0),
-    operational: const OperationalSurface(
+    operational: OperationalSurface(
       toolsUsed: ['leer', 'escribir'],
       inputTokens: 1234,
       outputTokens: 567,
       elapsed: Duration(seconds: 89),
     ),
-    cognitive: const CognitiveSurface(
+    cognitive: CognitiveSurface(
       available: true,
       decisions: ['eligió el camino corto'],
       planSummary: 'resumen',
     ),
-    contextual: const ContextualSurface(
+    contextual: ContextualSurface(
       revision: 'abc123',
       filesInContext: ['lib/algo.fuente'],
       dirtyWorktree: true,
@@ -118,7 +118,7 @@ void main() {
     prohibitive: true,
   );
 
-  const rebanada =
+  final rebanada =
       PullRequestSlice(id: 'PR-1', intent: 'por qué existe', files: ['a.txt']);
 
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
@@ -134,13 +134,12 @@ void main() {
     ),
     'Diagnostic': (diagnostico.toJson(), Diagnostic.fromJson),
     'Package': (
-      const Package(name: 'p', path: 'packages/p', dependsOn: ['core'])
-          .toJson(),
+      Package(name: 'p', path: 'packages/p', dependsOn: ['core']).toJson(),
       Package.fromJson
     ),
     'PullRequestSlice': (rebanada.toJson(), PullRequestSlice.fromJson),
     'Plan': (
-      const Plan(
+      Plan(
         workItemId: 'W-1',
         files: ['lib/algo.fuente'],
         tests: ['test/algo_prueba.fuente'],
@@ -172,7 +171,7 @@ void main() {
     'VerificationOutcome': (
       VerificationOutcome(
         verifierId: 'V-1',
-        diagnostics: const [diagnostico],
+        diagnostics: [diagnostico],
         witness: testigo,
       ).toJson(),
       VerificationOutcome.fromJson

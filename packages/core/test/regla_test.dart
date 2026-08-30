@@ -76,6 +76,28 @@ void main() {
     );
   });
 
+  test('INV-3 · una evasión en blanco no es una evasión', () {
+    // Ocupaba lugar en la lista y hacía que `isEmpty` diera falso, así que el
+    // gancho se instalaba «con evasiones declaradas» sin declarar ninguna.
+    expect(
+        () => regla(layer: ControlLayer.ganchos, knownEvasions: const ['   ']),
+        rechazaPor('INV-3'));
+    expect(
+        () => regla(
+            layer: ControlLayer.ganchos,
+            knownEvasions: const ['se saltea así', '']),
+        rechazaPor('INV-3'));
+  });
+
+  test('las evasiones no se pueden vaciar después de construir la regla', () {
+    final evasiones = ['se saltea así'];
+    final r = regla(layer: ControlLayer.ganchos, knownEvasions: evasiones);
+    evasiones.clear();
+    expect(r.knownEvasions, hasLength(1),
+        reason: 'la regla copió su lista; el invariante es del tipo');
+    expect(() => r.knownEvasions.add('otra'), throwsUnsupportedError);
+  });
+
   test('el mensaje del rechazo dice qué hacer, no solo qué falta', () {
     try {
       regla(prohibitive: true);

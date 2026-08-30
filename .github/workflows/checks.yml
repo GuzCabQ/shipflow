@@ -59,8 +59,11 @@ jobs:
       # casero devuelve cero pasos ante una sintaxis que no reconoce, y cero
       # pasos se lee igual que «están todos». Si este paso desaparece, el
       # import falla y el check se pone rojo — falla del lado seguro.
+      # Fijado por versión, como el SDK y las acciones: es código de terceros
+      # que corre con acceso al repo, y de él depende el meta-check que decide
+      # si CI sigue ejecutando sus propios pasos.
       - name: parser de yaml, para que capas.py pueda leer este workflow
-        run: python3 -m pip install --quiet pyyaml
+        run: python3 -m pip install --quiet "pyyaml==6.0.3"
 
       # Deja registrado contra qué se corrió. Sin esto el verde no es comparable.
       - name: versiones

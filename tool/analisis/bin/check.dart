@@ -1,7 +1,7 @@
 /// Aplica las reglas de `arquitectura.json` que necesitan el árbol sintáctico
 /// de `core`, y que por eso no puede aplicar `capas.py`.
 ///
-///     cd tool/serializacion && dart run bin/check.dart
+///     cd tool/analisis && dart run bin/check.dart
 ///
 /// Sale 1 si algo falla. No modifica archivos.
 ///
@@ -36,6 +36,10 @@ class Clase {
   final String archivo;
   final bool esAbstracta;
   final List<String> camposPublicos;
+
+  /// Campos cuyo tipo es una colección y que el constructor recibe por
+  /// referencia en vez de copiar. Alias vivos hacia afuera del objeto.
+  final List<String> coleccionesAliasadas;
   final Set<String>? clavesToJson;
   final Set<String>? clavesFromJson;
   final String? literalDeToString;
@@ -46,6 +50,7 @@ class Clase {
       this.archivo,
       this.esAbstracta,
       this.camposPublicos,
+      this.coleccionesAliasadas,
       this.clavesToJson,
       this.clavesFromJson,
       this.literalDeToString,
@@ -131,6 +136,7 @@ List<Clase> clasesDe(File archivo, String rel) {
     if (d is! ClassDeclaration) continue;
     final nombre = d.name.lexeme;
     final campos = <String>[];
+    final tiposDeCampo = <String, String>{};
     Set<String>? toJson;
     Set<String>? fromJson;
     String? literalToString;
@@ -139,9 +145,13 @@ List<Clase> clasesDe(File archivo, String rel) {
 
     for (final m in d.members) {
       if (m is FieldDeclaration && !m.isStatic) {
+        final tipo = m.fields.type?.toSource() ?? '';
         for (final v in m.fields.variables) {
           final n = v.name.lexeme;
-          if (!n.startsWith('_')) campos.add(n);
+          if (!n.startsWith('_')) {
+            campos.add(n);
+            tiposDeCampo[n] = tipo;
+          }
         }
       } else if (m is MethodDeclaration && m.name.lexeme == 'toJson') {
         tieneToJson = true;
@@ -165,6 +175,32 @@ List<Clase> clasesDe(File archivo, String rel) {
         }
       }
     }
+    // Un campo de colección que el constructor recibe con `this.x` queda
+    // ALIASADO: quien conserve la lista original puede mutarla después, y
+    // cualquier invariante que dependa de ella deja de ser del tipo. Se exige
+    // que se copie a una vista inmodificable en la lista de inicializadores.
+    final aliasadas = <String>[];
+    for (final entrada in tiposDeCampo.entries) {
+      final t = entrada.value;
+      if (!(t.startsWith('List<') ||
+          t.startsWith('Map<') ||
+          t.startsWith('Set<'))) {
+        continue;
+      }
+      for (final m in d.members) {
+        if (m is! ConstructorDeclaration || m.name != null) continue;
+        final porReferencia = m.parameters.parameters.any((param) {
+          final p = param is DefaultFormalParameter ? param.parameter : param;
+          return p is FieldFormalParameter && p.name.lexeme == entrada.key;
+        });
+        final copiada = m.initializers.any((ini) =>
+            ini is ConstructorFieldInitializer &&
+            ini.fieldName.name == entrada.key &&
+            ini.expression.toSource().contains('.unmodifiable('));
+        if (porReferencia || !copiada) aliasadas.add(entrada.key);
+      }
+    }
+
     final supers = <String>{
       if (d.extendsClause != null) _nombreDeTipo(d.extendsClause!.superclass),
       for (final t in d.implementsClause?.interfaces ?? const <NamedType>[])
@@ -177,6 +213,7 @@ List<Clase> clasesDe(File archivo, String rel) {
         rel,
         d.abstractKeyword != null,
         campos,
+        aliasadas,
         tieneToJson ? toJson : null,
         tieneFromJson ? fromJson : null,
         literalToString,
@@ -208,6 +245,7 @@ void main(List<String> args) {
     'serializacion-sin-perdida': 'campos_derivados',
     'opacidad-declarada': 'opacidad_declarada',
     'puertos-sin-implementacion': 'huecos_declarados',
+    'colecciones-inmutables': 'colecciones_copiadas',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
@@ -285,6 +323,16 @@ void main(List<String> args) {
       fallos.add('${c.archivo} · ${c.nombre}: fromJson no lee «$falta». '
           'El campo viaja de ida y se pierde a la vuelta.');
     }
+    // La cuarta dirección, que faltaba. El enunciado dice EXACTAMENTE las
+    // mismas claves, y se comprobaban tres de los cuatro sentidos: un
+    // `fromJson` que leyera una clave inexistente pasaba en verde. Comparar
+    // conjuntos en una sola dirección es media comparación.
+    for (final sobra in (c.clavesFromJson!.difference(campos)).toList()
+      ..sort()) {
+      fallos.add('${c.archivo} · ${c.nombre}: fromJson lee «$sobra», que no es '
+          'un campo de la clase y que toJson nunca escribe. O sobra la '
+          'lectura, o falta el campo.');
+    }
   }
 
   // --- 1b · y la prueba de ida y vuelta las cubre a todas ----------------
@@ -307,6 +355,25 @@ void main(List<String> args) {
             'serializa y no tiene caso canónico. Agregá una instancia con un '
             'valor distinguible en cada campo.');
       }
+    }
+  }
+
+  // --- 1c · las colecciones se copian, no se aceptan por referencia ------
+  //
+  // `final List<X> campo` NO hace inmutable la lista: solo impide reasignar
+  // el campo. Quien conserve la lista que le pasó al constructor puede
+  // vaciarla después, y con ella cualquier invariante que dependa de su
+  // contenido. Lo encontró un review: una `Rule` construida con evasiones
+  // válidas se quedaba sin ninguna cuando el llamador vaciaba su lista, y un
+  // `VerificationOutcome` pasaba de verde a no concluyente igual.
+  for (final c in clasesCore) {
+    if (c.esAbstracta || opacos.containsKey(c.nombre)) continue;
+    for (final campo in c.coleccionesAliasadas) {
+      fallos.add('${c.archivo} · ${c.nombre}: el campo de colección «$campo» '
+          'entra al constructor por referencia. Copialo con '
+          '`List.unmodifiable(...)` o `Map.unmodifiable(...)` en la lista de '
+          'inicializadores: sin eso, el invariante se puede romper DESPUÉS de '
+          'construir el objeto, y entonces no es una propiedad del tipo.');
     }
   }
 

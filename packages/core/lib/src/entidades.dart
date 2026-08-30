@@ -18,11 +18,23 @@ class AcceptanceCriterion {
   /// Id de la forma de aserción del catálogo del plugin, o `null`.
   final String? assertionForm;
 
-  const AcceptanceCriterion({
+  AcceptanceCriterion({
     required this.id,
     required this.statement,
     this.assertionForm,
-  });
+  }) {
+    // `''` no es el identificador de ninguna forma del catálogo. Permitirlo
+    // dejaba pasar un criterio «mapeado» a nada, y INV-1 miraba solo si el
+    // campo era nulo. Se rechaza en el constructor para que el estado sea
+    // irrepresentable, no para que el getter lo compense.
+    if (assertionForm != null && assertionForm!.trim().isEmpty) {
+      throw ArgumentError.value(
+          assertionForm,
+          'assertionForm',
+          'Una forma de aserción vacía no es una forma. Dejalo en `null` si el '
+              'criterio todavía no se mapeó: `null` es un estado legítimo y visible.');
+    }
+  }
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -59,13 +71,18 @@ class WorkItem {
   /// Escotilla `D-015`. `core` no lo interpreta: lo transporta.
   final Map<String, Object?> sourceMetadata;
 
-  const WorkItem({
+  /// Las colecciones se copian a vistas inmodificables: sin eso, quien
+  /// conservara la lista original podía vaciarla y cambiar `allCriteriaMapped`
+  /// después de construir el ítem. Un invariante que se puede alterar tras el
+  /// constructor no es una propiedad del tipo.
+  WorkItem({
     required this.id,
     required this.title,
     required this.description,
-    required this.criteria,
-    this.sourceMetadata = const {},
-  });
+    required List<AcceptanceCriterion> criteria,
+    Map<String, Object?> sourceMetadata = const {},
+  })  : criteria = List.unmodifiable(criteria),
+        sourceMetadata = Map.unmodifiable(sourceMetadata);
 
   /// INV-1: no entra si algún criterio no se mapeó a una forma del catálogo.
   ///
@@ -73,7 +90,8 @@ class WorkItem {
   /// verifica quien tenga el catálogo. La división es deliberada: `core` no
   /// conoce ningún stack.
   bool get allCriteriaMapped =>
-      criteria.isNotEmpty && criteria.every((c) => c.assertionForm != null);
+      criteria.isNotEmpty &&
+      criteria.every((c) => (c.assertionForm ?? '').trim().isNotEmpty);
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -143,14 +161,14 @@ class Diagnostic {
   /// Escotilla `D-015` para lo que solo entiende el normalizador.
   final Map<String, Object?> sourceMetadata;
 
-  const Diagnostic({
+  Diagnostic({
     required this.file,
     required this.severity,
     required this.ruleId,
     required this.message,
     this.line,
-    this.sourceMetadata = const {},
-  });
+    Map<String, Object?> sourceMetadata = const {},
+  }) : sourceMetadata = Map.unmodifiable(sourceMetadata);
 
   Map<String, Object?> toJson() => {
         'file': file,
@@ -181,11 +199,11 @@ class Package {
   final String path;
   final List<String> dependsOn;
 
-  const Package({
+  Package({
     required this.name,
     required this.path,
-    required this.dependsOn,
-  });
+    required List<String> dependsOn,
+  }) : dependsOn = List.unmodifiable(dependsOn);
 
   Map<String, Object?> toJson() =>
       {'name': name, 'path': path, 'dependsOn': dependsOn};
@@ -206,11 +224,11 @@ class PullRequestSlice {
 
   final List<String> files;
 
-  const PullRequestSlice({
+  PullRequestSlice({
     required this.id,
     required this.intent,
-    required this.files,
-  });
+    required List<String> files,
+  }) : files = List.unmodifiable(files);
 
   Map<String, Object?> toJson() => {'id': id, 'intent': intent, 'files': files};
 
@@ -229,12 +247,14 @@ class Plan {
   final List<String> tests;
   final List<PullRequestSlice> slices;
 
-  const Plan({
+  Plan({
     required this.workItemId,
-    required this.files,
-    required this.tests,
-    required this.slices,
-  });
+    required List<String> files,
+    required List<String> tests,
+    required List<PullRequestSlice> slices,
+  })  : files = List.unmodifiable(files),
+        tests = List.unmodifiable(tests),
+        slices = List.unmodifiable(slices);
 
   Map<String, Object?> toJson() => {
         'workItemId': workItemId,

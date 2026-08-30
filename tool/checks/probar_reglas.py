@@ -34,7 +34,7 @@ Dos familias de prueba, y la segunda es la que importa:
 
     python3 tool/checks/probar_reglas.py
 
-Corre los DOS verificadores —`capas.py` y `tool/serializacion`— contra cada
+Corre los DOS motores —`capas.py` y `tool/analisis`— contra cada
 sabotaje, porque las reglas viven en un solo registro y el sabotaje no sabe
 cuál de los dos tiene que atraparlo. Que una regla la aplique otro motor no la
 exime de tener que poder ponerse roja.
@@ -42,6 +42,7 @@ exime de tener que poder ponerse roja.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -287,6 +288,51 @@ def casos() -> list[dict]:
         "nombre": "ci · el workflow vaciado",
         "archivos": {CI_REL: "# vacío\n"},
         "menciona": "NI UN paso",
+    })
+    # Un paso puede estar presente y no gobernar nada. Estas cuatro formas
+    # dejan el comando escrito en el archivo y la compuerta abierta, y las
+    # cuatro pasaban cuando la comprobación era por subcadena.
+    for etiqueta, viejo, nuevo, menciona in [
+        ("envuelto en echo",
+         "        run: python3 tool/checks/probar_reglas.py",
+         '        run: echo "python3 tool/checks/probar_reglas.py"',
+         "exactamente"),
+        ("con «|| true» al final",
+         "        run: dart test packages/core",
+         "        run: dart test packages/core || true",
+         "exactamente"),
+        ("el job entero con continue-on-error",
+         "    continue-on-error: ${{ matrix.canario }}",
+         "    continue-on-error: true",
+         "compuerta queda abierta"),
+        ("corriendo desde otro directorio",
+         "        run: dart run bin/check.dart\n        working-directory: tool/analisis",
+         "        run: dart run bin/check.dart",
+         "exactamente"),
+    ]:
+        assert ci.count(viejo) == 1, f"ancla del caso «{etiqueta}» no encontrada"
+        c.append({
+            "nombre": f"ci · un paso obligatorio {etiqueta}",
+            "archivos": {CI_REL: ci.replace(viejo, nuevo)},
+            "menciona": menciona,
+        })
+
+    # Que el README siga describiendo lo que gobierna de verdad. Es lo que
+    # envejeció en silencio y encontró un review, no un check.
+    readme = (RAIZ / "README.md").read_text(encoding="utf-8")
+    filas = [l for l in readme.splitlines()
+             if re.match(r"^\| `grafo-derivado` \|.*\| `[^`]+` \|$", l)]
+    assert len(filas) == 1, f"filas de la tabla encontradas: {len(filas)}"
+    c.append({
+        "nombre": "readme · una regla que gobierna y no está en la tabla",
+        "archivos": {"README.md": readme.replace(filas[0] + "\n", "")},
+        "menciona": "no está en la tabla",
+    })
+    c.append({
+        "nombre": "readme · una ruta del repositorio que ya no existe",
+        "archivos": {"README.md": readme.replace("`tool/analisis`",
+                                                 "`tool/serializacion`", 1)},
+        "menciona": "no existe en el",
     })
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
