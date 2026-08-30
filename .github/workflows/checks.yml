@@ -102,17 +102,42 @@ jobs:
       - name: pruebas de core
         run: dart test packages/core
 
-      # EL FIXTURE SE VERIFICA A SÍ MISMO.
-      #
-      # Un fixture commiteado es una fotografía: sus archivos están ahí porque
-      # alguien los copió, no porque el proyecto siga funcionando. Sin esto,
-      # «`ship` corre sobre un fixture real» sería cierto de un árbol de
-      # archivos con la forma correcta y nada detrás. Es F36.
-      - name: flutter, para el fixture
+      - name: analyze
+        run: dart analyze --fatal-infos
+
+      - name: format
+        run: dart format --set-exit-if-changed .
+
+  # EL FIXTURE, EN SU PROPIO JOB. NO ES PROLIJIDAD.
+  #
+  # `flutter-action` agrega al PATH el Dart que Flutter trae adentro
+  # (`flutter/bin/`), así que TODO paso `dart` posterior deja de usar el SDK de
+  # la matriz y pasa a usar el de Flutter. Las dos patas terminaban corriendo
+  # el mismo Dart, y la matriz —que existe para que el resultado sea
+  # reproducible contra una versión declarada— quedaba anulada en silencio.
+  #
+  # Y con `channel: stable` una versión nueva de Flutter podía romper el
+  # fixture y bloquear el merge sin que nadie hubiera cambiado nada. Un canal
+  # flotante no puede ser una compuerta obligatoria: acá va FIJADO.
+  fixture:
+    name: el fixture se verifica a sí mismo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: 3.44.0
 
+      - name: versiones
+        run: flutter --version && dart --version
+
+      # Un fixture commiteado es una fotografía: sus archivos están ahí porque
+      # alguien los copió, no porque el proyecto siga funcionando. Es F36.
       - name: fixture · el dominio compila y sus pruebas pasan
         run: dart pub get && dart analyze && dart test
         working-directory: fixtures/app-minima/dominio
@@ -120,12 +145,6 @@ jobs:
       - name: fixture · la app compila y sus pruebas pasan
         run: flutter pub get && flutter analyze && flutter test
         working-directory: fixtures/app-minima/app
-
-      - name: analyze
-        run: dart analyze --fatal-infos
-
-      - name: format
-        run: dart format --set-exit-if-changed .
 
 # HUECO DECLARADO: el piso `^3.6.0` que declara el pubspec no se verifica acá.
 # La matriz cubre la versión con la que se desarrolló y el canal estable, no el

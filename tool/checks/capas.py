@@ -231,6 +231,46 @@ def check_meta() -> None:
                 fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
 
 
+def _check_toolchain_del_job(nombre: str, job: dict) -> None:
+    """Un job instala UNA sola toolchain de Dart, y si es la de Flutter, fijada.
+
+    `flutter-action` agrega al PATH el Dart que Flutter trae adentro. Un job
+    que instale las dos termina usando el de Flutter para todo, así que el SDK
+    que declaró la matriz —que existe para que la corrida sea reproducible
+    contra una versión concreta— deja de usarse **sin que nada falle**. Las dos
+    patas de la matriz corren el mismo Dart y el verde deja de significar lo
+    que dice.
+
+    Es una sustitución silenciosa de instrumento: no hay error, y lo que se
+    midió no es lo que se declaró medir.
+
+    NO se prohíbe usar `dart` después de Flutter: en un job que solo instala
+    Flutter, su Dart embebido es el instrumento correcto y queda fijado por
+    `flutter-version`. Lo que se prohíbe es tener dos y no saber cuál corre.
+    """
+    if not isinstance(job, dict):
+        return
+    pasos = [p for p in (job.get("steps") or []) if isinstance(p, dict)]
+    usa = [str(p.get("uses", "")) for p in pasos]
+    tiene_dart = any("setup-dart" in u for u in usa)
+    tiene_flutter = any("flutter-action" in u for u in usa)
+    if tiene_dart and tiene_flutter:
+        fallos.append(
+            f"el job «{nombre}» instala Dart Y Flutter. Flutter pone su propio "
+            f"Dart en el PATH, así que todo paso `dart` posterior deja de usar "
+            f"el SDK de la matriz y nada falla: el verde deja de significar que "
+            f"se probó contra la versión declarada. Separalos en dos jobs.")
+    for p in pasos:
+        if "flutter-action" not in str(p.get("uses", "")):
+            continue
+        if not (p.get("with") or {}).get("flutter-version"):
+            fallos.append(
+                f"el job «{nombre}» instala Flutter sin `flutter-version`. Un "
+                f"canal flotante no puede ser una compuerta obligatoria: una "
+                f"versión nueva rompe el merge sin que nadie haya cambiado nada, "
+                f"y la corrida deja de ser reproducible.")
+
+
 def _check_readme() -> None:
     """La tabla de reglas del README se DERIVA del registro, no se mantiene.
 
@@ -279,6 +319,15 @@ def _check_readme() -> None:
     # Y los nombres retirados, que no siempre aparecen como ruta completa. El
     # árbol de estructura del README listaba `serializacion/` a secas, colgando
     # de `tool/`: ninguna ruta que verificar, y el nombre viejo igual de vivo.
+    # Una cantidad afirmada en prosa que nada deriva envejece sin ruido: el
+    # README decía «siete pasos obligatorios» cuando ya eran diez, y lo
+    # encontró un review. Es el mismo criterio que `cifras.py` aplica al
+    # corpus, traído a este lado.
+    for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
+        if int(m.group(1)) != len(PASOS_OBLIGATORIOS):
+            fallos.append(f"README.md dice «{m.group(1)} pasos obligatorios» y "
+                          f"`capas.py` verifica {len(PASOS_OBLIGATORIOS)}. Una "
+                          f"cantidad en prosa que nada deriva envejece sola.")
     for patron, motivo in NOMBRES_RETIRADOS.items():
         for m in re.finditer(patron, texto):
             fallos.append(f"README.md: «{m.group(0)}» es un nombre retirado. "
@@ -320,6 +369,7 @@ def _check_ci_ejecuta() -> None:
 
     pasos = []
     for nombre_job, job in (doc.get("jobs") or {}).items():
+        _check_toolchain_del_job(nombre_job, job)
         if not isinstance(job, dict):
             continue
         coe = job.get("continue-on-error")
