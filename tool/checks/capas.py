@@ -104,6 +104,7 @@ PASOS_OBLIGATORIOS = {
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
     "las suites de contrato": ("dart test packages/cli", None),
+    "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
     # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.

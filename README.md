@@ -143,7 +143,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 12 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 13 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
@@ -514,7 +514,7 @@ packages/
   rules           registro, proyección a C y E, telemetría
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
-  plugin_fake     todos los puertos, para pruebas
+  plugin_fake     los puertos con contrato, para pruebas · hoy 2 de 23
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py

@@ -114,6 +114,11 @@ jobs:
       - name: suites de contrato
         run: dart test packages/cli
 
+      # Pruebas unitarias de la implementación real: lo que solo ella puede
+      # ejercer y que por eso no pertenece a la suite de contrato.
+      - name: pruebas del plugin de stack
+        run: dart test packages/plugin_dart
+
       - name: analyze
         run: dart analyze --fatal-infos
 

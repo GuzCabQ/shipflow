@@ -1,4 +1,5 @@
-/// `plugin_fake` — todos los puertos del plugin, para pruebas.
+/// `plugin_fake` — los puertos del plugin que ya tienen contrato, para
+/// pruebas. **Hoy dos de veintitrés**, y los demás llegan con su fase.
 ///
 /// **No es un atajo: es la segunda implementación viva.** Mientras un puerto
 /// tenga una sola, no es una abstracción — es una indirección que todavía no

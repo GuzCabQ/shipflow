@@ -1,4 +1,5 @@
 import 'package:core/core.dart';
+import 'package:path/path.dart' as rutas;
 
 /// Qué archivos son generados y cuáles se pueden editar, en un proyecto
 /// Dart o Flutter.
@@ -42,8 +43,15 @@ class PoliticaDeArtefactosDart implements ArtifactPolicy {
     return !directoriosDeBuild.any((d) => p.startsWith(d) || p.contains('/$d'));
   }
 
+  /// Normaliza con la biblioteca de rutas, no a mano.
+  ///
+  /// La primera versión solo cambiaba separadores y sacaba un `./`, así que
+  /// `lib/src/../l10n/x` y `lib/l10n/x` —el mismo archivo— daban respuestas
+  /// distintas: uno generado y no editable, el otro editable. Eso violaba la
+  /// cláusula central del puerto. Colapsar `..` a mano es exactamente la clase
+  /// de cosa que produce ese bug.
   String _normalizar(String path) {
     final p = path.replaceAll(r'\', '/').trim();
-    return p.startsWith('./') ? p.substring(2) : p;
+    return p.isEmpty ? '' : rutas.posix.normalize(p);
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:core/core.dart';
+import 'package:path/path.dart' as rutas;
 import 'package:yaml/yaml.dart';
 
 /// Descubre los paquetes de un proyecto Dart o Flutter.
@@ -16,8 +17,16 @@ import 'package:yaml/yaml.dart';
 ///     corrido—. Acá la pregunta es dónde están los límites, que es lo
 ///     DECLARADO. Resolver es otro puerto: `DependencyResolver`.
 ///
-///     La lección de `capas.py` igual se aplica, y es la que importa: el
-///     manifiesto se le pide a un PARSER de YAML, no a una expresión regular.
+///     La lección de `capas.py` igual se aplica: el manifiesto se le pide a un
+///     PARSER de YAML, y las rutas a la biblioteca de rutas. Nada a mano.
+///
+/// DOS PASADAS, Y NO ES UNA OPTIMIZACIÓN
+///     Primero se descubren TODOS los paquetes, después se resuelven las
+///     flechas. Con una sola pasada no hay contra qué contrastar un destino, y
+///     la primera versión de esto agregaba cualquier dependencia con `path:`
+///     sin comprobar que apuntara adentro del proyecto: una dependencia hacia
+///     un paquete de afuera aparecía como si fuera topología interna. Un
+///     review lo reprodujo.
 class TopologiaDart implements ProjectTopology {
   /// Raíz del proyecto que se analiza. **No es el nuestro**: es el del usuario.
   final Directory raiz;
@@ -29,58 +38,86 @@ class TopologiaDart implements ProjectTopology {
 
   @override
   Future<List<Package>> packages() async {
-    final encontrados = <Package>[];
-    await for (final manifiesto in _manifiestos(raiz)) {
-      final texto = await manifiesto.readAsString();
-      final YamlMap doc;
-      try {
-        final cargado = loadYaml(texto);
-        if (cargado is! YamlMap) {
-          throw const FormatException('el manifiesto no es un mapa');
-        }
-        doc = cargado;
-      } on Exception catch (e) {
-        // Un manifiesto ilegible NO se saltea. Saltarlo haría la topología más
-        // chica, y una topología más chica se lee igual que un proyecto con
-        // menos paquetes: es la clase 1 exacta.
-        throw TopologiaIlegible(manifiesto.path, e);
-      }
-      final nombre = doc['name'];
-      if (nombre is! String || nombre.isEmpty) {
-        throw TopologiaIlegible(
-            manifiesto.path, const FormatException('sin `name`'));
-      }
-      encontrados.add(Package(
-        name: nombre,
-        path: _relativo(manifiesto.parent.path),
-        dependsOn: _dependenciasLocales(doc),
-      ));
+    // --- pasada 1 · qué paquetes existen y dónde ------------------------
+    final manifiestos = <String, YamlMap>{};
+    await for (final archivo in _manifiestos(raiz)) {
+      manifiestos[rutas.canonicalize(archivo.parent.path)] = _leer(archivo);
     }
-    encontrados.sort((a, b) => a.name.compareTo(b.name));
-    return encontrados;
+    final nombrePorDirectorio = {
+      for (final e in manifiestos.entries) e.key: e.value['name'] as String,
+    };
+
+    // --- pasada 2 · las flechas, resueltas contra lo descubierto ---------
+    final encontrados = [
+      for (final e in manifiestos.entries)
+        Package(
+          name: nombrePorDirectorio[e.key]!,
+          path: _relativo(e.key),
+          dependsOn: _flechasInternas(e.key, e.value, nombrePorDirectorio),
+        ),
+    ]..sort((a, b) => a.name.compareTo(b.name));
+
+    // Inmodificable: es una cláusula del contrato, no una precaución. Ver
+    // `ProjectTopology` en core.
+    return List.unmodifiable(encontrados);
   }
 
-  /// Solo las dependencias hacia OTRO paquete del mismo proyecto. Las externas
-  /// no son topología: son resolución, y eso es `DependencyResolver`.
-  List<String> _dependenciasLocales(YamlMap doc) {
-    final salida = <String>[];
+  YamlMap _leer(File archivo) {
+    // La lectura y el parseo van juntos a propósito. Antes
+    // `readAsString` quedaba fuera del try, así que un error de E/S escapaba
+    // como `FileSystemException` en vez del diagnóstico contextual.
+    try {
+      final cargado = loadYaml(archivo.readAsStringSync());
+      if (cargado is! YamlMap) {
+        throw const FormatException('el manifiesto no es un mapa');
+      }
+      final nombre = cargado['name'];
+      if (nombre is! String || nombre.isEmpty) {
+        throw const FormatException('el manifiesto no declara `name`');
+      }
+      return cargado;
+    } on Object catch (e) {
+      // Un manifiesto ilegible NO se saltea. Saltarlo haría la topología más
+      // chica, y eso se lee igual que un proyecto con menos paquetes: es la
+      // clase 1 exacta, y el corolario 1 de ADR-011.
+      throw TopologiaIlegible(archivo.path, e);
+    }
+  }
+
+  /// Solo las flechas hacia otro paquete **descubierto dentro de la raíz**.
+  ///
+  /// Una dependencia por ruta hacia afuera del proyecto es una dependencia
+  /// real, pero no es topología de ESTE proyecto: reportarla dejaría una
+  /// arista colgante hacia un paquete que `packages()` nunca devuelve.
+  /// Las externas por versión tampoco entran — eso es `DependencyResolver`.
+  List<String> _flechasInternas(
+    String directorio,
+    YamlMap doc,
+    Map<String, String> nombrePorDirectorio,
+  ) {
+    final salida = <String>{};
     for (final clave in const ['dependencies', 'dev_dependencies']) {
       final seccion = doc[clave];
       if (seccion is! YamlMap) continue;
       for (final entrada in seccion.entries) {
         final valor = entrada.value;
-        if (valor is YamlMap && valor.containsKey('path')) {
-          salida.add(entrada.key as String);
-        }
+        if (valor is! YamlMap) continue;
+        final destino = valor['path'];
+        if (destino is! String) continue;
+        final absoluto = rutas.canonicalize(rutas.join(directorio, destino));
+        // El nombre lo da el manifiesto del DESTINO, no la clave de la
+        // dependencia: las dos pueden diferir, y la que manda es la del
+        // paquete real.
+        final nombre = nombrePorDirectorio[absoluto];
+        if (nombre != null) salida.add(nombre);
       }
     }
-    salida.sort();
-    return salida;
+    return salida.toList()..sort();
   }
 
   Stream<File> _manifiestos(Directory d) async* {
     await for (final e in d.list(followLinks: false)) {
-      final nombre = e.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      final nombre = rutas.basename(e.path);
       if (_ignorados.contains(nombre)) continue;
       if (e is Directory) {
         yield* _manifiestos(e);
@@ -91,10 +128,8 @@ class TopologiaDart implements ProjectTopology {
   }
 
   String _relativo(String absoluto) {
-    final base = raiz.absolute.path;
-    if (!absoluto.startsWith(base)) return absoluto;
-    final r = absoluto.substring(base.length).replaceAll(r'\', '/');
-    return r.startsWith('/') ? r.substring(1) : (r.isEmpty ? '.' : r);
+    final r = rutas.relative(absoluto, from: rutas.canonicalize(raiz.path));
+    return r == '.' ? '.' : r.replaceAll(r'\', '/');
   }
 }
 
