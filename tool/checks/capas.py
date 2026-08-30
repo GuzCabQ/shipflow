@@ -98,6 +98,8 @@ PASOS_OBLIGATORIOS = {
     "el parser de yaml": ('python3 -m pip install --quiet "pyyaml==6.0.3"', None),
     "la regla de capas": ("python3 tool/checks/capas.py", None),
     "que los checks sepan fallar": ("python3 tool/checks/probar_reglas.py", None),
+    "que la recuperación sepa recuperar": (
+        "python3 tool/checks/probar_recuperacion.py", None),
     "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
@@ -292,29 +294,34 @@ def _check_toolchain_del_job(nombre: str, job: dict) -> None:
         version = str((p.get("with") or {}).get("flutter-version", ""))
         # Comprobar que el campo EXISTA no alcanza: `stable`, `main` y
         # `${{ matrix.x }}` son valores presentes y ninguno fija nada. Es el
-        # mismo error que ya se cerró dos veces —`alternative` y
-        # `knownEvasions`—: comprobación de PRESENCIA donde tenía que ser de
-        # CONTENIDO.
+        # mismo error que ya se cerró con `alternative` y `knownEvasions`:
+        # comprobación de PRESENCIA donde tenía que ser de CONTENIDO.
         #
-        # Y la excepción NO es «Flutter siempre fijado». El proyecto ya tiene
-        # el patrón: la matriz de Dart corre una pata `stable` FLOTANTE, y es
-        # legítima porque está declarada CANARIO y no bloquea el merge —
-        # reporta, no detiene (ADR-013). Lo que no puede ser flotante es una
-        # COMPUERTA. Prohibirlo siempre habría rechazado mañana un canario de
-        # Flutter escrito con el mismo patrón que ya se usa.
-        if VERSION_EXACTA.fullmatch(version):
-            continue
-        if job.get("continue-on-error") == CANARIO_DECLARADO:
-            continue
-        fallos.append(
-            f"el job «{nombre}» instala Flutter con "
-            f"`flutter-version: {version or '(ausente)'}`, que no es una versión "
-            f"exacta, y el job BLOQUEA el merge. Un canal, una rama o una "
-            f"expresión se resuelven a algo distinto en cada corrida: el merge "
-            f"se rompe sin que nadie haya cambiado nada.\n"
-            f"      Escribí `X.Y.Z`, o declaralo canario con "
-            f"`continue-on-error: {CANARIO_DECLARADO}` — flotante se permite "
-            f"cuando reporta, no cuando detiene.")
+        # NO HAY EXENCIÓN DE CANARIO, Y ESO SE DECIDIÓ DOS VECES.
+        #
+        # La primera versión permitía versión flotante si el job declaraba
+        # `continue-on-error: ${{ matrix.canario }}`, razonando que la matriz de
+        # Dart ya usa ese patrón. Tenía un agujero medido: no verificaba el
+        # VALOR de la matriz, así que un job sin matriz o con `canario: [false]`
+        # pasaba como canario y bloqueaba igual.
+        #
+        # Se podía tapar verificando el valor. Se sacó entera, porque el
+        # agujero era el síntoma: no existe ningún canario de Flutter. La
+        # exención estaba escrita para un caso hipotético, y eso es lo que el
+        # plan llama construir sin que un fallo lo justifique — ADR-002 lo dice
+        # de su propia decisión: «por razones presentes, no por especulación
+        # futura».
+        #
+        # El día que haga falta un canario de Flutter, extender esta regla es
+        # un acto visible y revisado. Eso es el ratchet funcionando, no un
+        # estorbo.
+        if not VERSION_EXACTA.fullmatch(version):
+            fallos.append(
+                f"el job «{nombre}» instala Flutter con "
+                f"`flutter-version: {version or '(ausente)'}`, que no es una "
+                f"versión exacta. Un canal, una rama o una expresión se "
+                f"resuelven a algo distinto en cada corrida: el merge se rompe "
+                f"sin que nadie haya cambiado nada. Escribí `X.Y.Z`.")
 
 
 def _check_readme() -> None:

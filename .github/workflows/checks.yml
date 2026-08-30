@@ -99,6 +99,12 @@ jobs:
       - name: los checks saben fallar
         run: python3 tool/checks/probar_reglas.py
 
+      # La recuperación ante interrupción es un control como cualquier otro, y
+      # los 85 sabotajes corren TODOS por el camino feliz donde el proceso
+      # termina: pueden seguir verdes mientras esto se rompe.
+      - name: la recuperación sabe hacer su trabajo
+        run: python3 tool/checks/probar_recuperacion.py
+
       - name: pruebas de core
         run: dart test packages/core
 

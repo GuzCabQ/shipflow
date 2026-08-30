@@ -6,7 +6,7 @@ version: 0.1.0
 environment:
   # Alineados con lo que el lockfile REQUIERE. Declaraban ^3.6.0 y >=3.0.0
   # mientras el lock exigía Dart >=3.10 y Flutter >=3.18.
-  sdk: ^3.10.0
+  sdk: ^3.11.0
   flutter: ">=3.18.0"
 
 dependencies:

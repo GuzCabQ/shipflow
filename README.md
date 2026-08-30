@@ -44,7 +44,7 @@ python3 tool/checks/capas.py                  # las reglas que se leen del texto
 python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
 dart test packages/core
 dart analyze --fatal-infos
-dart format --set-exit-if-changed .
+dart format --set-exit-if-changed packages tool   # el fixture se formatea solo
 ```
 
 **Las reglas viven en [`arquitectura.json`](arquitectura.json)**, en un solo
@@ -143,7 +143,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 10 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 11 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |

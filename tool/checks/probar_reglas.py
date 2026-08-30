@@ -58,7 +58,8 @@ ANALISIS = RAIZ / "tool" / "analisis"
 # El `finally` cubre las excepciones; no cubre que a este proceso lo maten. Ya
 # pasó: una corrida terminada desde afuera dejó `arquitectura.json` saboteado y
 # un canario suelto en el árbol, y hubo que limpiarlo a mano. Con el diario, la
-# corrida siguiente lo deshace sola y lo dice.
+# corrida siguiente lo DICE y falla; deshacerlo es un acto explícito,
+# `--recuperar`. Ver `recuperar()` para por qué no se repara solo.
 DIARIO = RAIZ / "tool" / "checks" / ".sabotaje-en-curso.json"
 ARQ_REL = "arquitectura.json"
 CI_REL = ".github/workflows/checks.yml"
@@ -377,12 +378,14 @@ def casos() -> list[dict]:
                                         "          channel: stable", 1)},
         "menciona": "no es una versión exacta",
     })
-    # CONTROL NEGATIVO de la exención. Sin él, «flotante prohibido salvo en
-    # canario» sería indistinguible de «flotante prohibido siempre», y el día
-    # que alguien escriba un canario de Flutter legítimo el check lo rechazaría
-    # sin que nadie supiera que la exención estaba rota.
+    # El control negativo de la exención de canario se retiró CON la exención.
+    # Existía para probar que «flotante prohibido salvo en canario» no era
+    # «prohibido siempre» — y hoy es prohibido siempre, a propósito: no existe
+    # ningún canario de Flutter, y la exención estaba escrita para un caso
+    # hipotético. Un control negativo que defiende una exención que ya no está
+    # es peor que no tenerlo: la haría parecer viva.
     c.append({
-        "nombre": "ci · flotante SÍ vale en un canario declarado",
+        "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ci
                      .replace("          flutter-version: 3.44.0",
                               "          flutter-version: stable", 1)
@@ -390,15 +393,20 @@ def casos() -> list[dict]:
                               "    runs-on: ubuntu-latest",
                               "    name: el fixture se verifica a sí mismo\n"
                               "    runs-on: ubuntu-latest\n"
-                              "    strategy:\n      matrix:\n"
-                              "        canario: [true]\n"
                               "    continue-on-error: ${{ matrix.canario }}", 1)},
-        "espera": "pasa",
+        "menciona": "no es una versión exacta",
     })
+    # El número se DERIVA del README, no se cablea: cablearlo hacía que este
+    # caso dejara de sabotear nada en cuanto la cantidad real cambiara — un
+    # sabotaje que no sabotea es un caso que pasa por no hacer nada.
+    m_pasos = re.search(r"[Ll]os (\d+) pasos obligatorios", readme)
+    assert m_pasos, "no encontré la cantidad de pasos en el README"
     c.append({
         "nombre": "readme · una cantidad en prosa que envejeció",
-        "archivos": {"README.md": readme.replace("Los 10 pasos obligatorios",
-                                                 "Los 7 pasos obligatorios", 1)},
+        "archivos": {"README.md": readme.replace(
+            m_pasos.group(0),
+            m_pasos.group(0).replace(m_pasos.group(1),
+                                     str(int(m_pasos.group(1)) - 3)), 1)},
         "menciona": "pasos obligatorios",
     })
 
