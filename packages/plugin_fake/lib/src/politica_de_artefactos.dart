@@ -1,4 +1,5 @@
 import 'package:core/core.dart';
+import 'package:path/path.dart' as rutas;
 
 /// Clasifica por listas dadas, no por reglas propias.
 ///
@@ -16,8 +17,16 @@ class PoliticaDeArtefactosFalsa implements ArtifactPolicy {
   })  : _generados = Set.unmodifiable(generados),
         _noEditables = Set.unmodifiable(noEditables);
 
+  /// Compara NORMALIZADO, igual que el real. Normalizar una ruta no es
+  /// conocimiento de ningún ecosistema —es semántica de rutas— así que
+  /// honrarlo es cumplir el contrato, no copiar la implementación.
+  static String _n(String p) {
+    final s = p.replaceAll(r'\', '/').trim();
+    return s.isEmpty ? '' : rutas.posix.normalize(s);
+  }
+
   @override
-  bool isGenerated(String path) => _generados.contains(path);
+  bool isGenerated(String path) => _generados.map(_n).contains(_n(path));
 
   /// Un archivo generado nunca es editable: eso NO es una lista aparte, es una
   /// consecuencia. Tenerlas independientes permitiría declarar algo generado y
@@ -34,5 +43,5 @@ class PoliticaDeArtefactosFalsa implements ArtifactPolicy {
   bool isEditable(String path) =>
       path.trim().isNotEmpty &&
       !isGenerated(path) &&
-      !_noEditables.contains(path);
+      !_noEditables.map(_n).contains(_n(path));
 }

@@ -107,9 +107,30 @@ void main() {
         }
       });
 
-      test('la lista que devuelve no se puede mutar desde afuera', () async {
+      test('la lista DEVUELTA no se puede mutar desde afuera', () async {
+        // Esta prueba se llamaba así y probaba la lista INTERIOR de un
+        // Package, que ya era inmodificable en las dos. La exterior no lo era
+        // en la real: el test decía cubrir el caso y lo dejaba verde.
+        final paquetes = await puerto.packages();
+        expect(() => paquetes.add(paquetes.first), throwsUnsupportedError);
+      });
+
+      test('y tampoco la lista de flechas de cada paquete', () async {
         final paquetes = await puerto.packages();
         expect(() => paquetes.first.dependsOn.add('x'), throwsUnsupportedError);
+      });
+
+      test('«dependsOn» solo nombra paquetes que la misma llamada devuelve',
+          () async {
+        // Cláusula 2 del puerto. Una arista colgante apunta a algo que nadie
+        // puede resolver, y no se nota mirando un solo paquete.
+        final paquetes = await puerto.packages();
+        final nombres = paquetes.map((p) => p.name).toSet();
+        for (final p in paquetes) {
+          expect(nombres.containsAll(p.dependsOn), isTrue,
+              reason:
+                  '${p.name} apunta a ${p.dependsOn}, y solo existen $nombres');
+        }
       });
     });
   }

@@ -11,7 +11,9 @@
 /// - **regla** — [Rule] y sus requisitos de instalación.
 /// - **observación** — trazas, hallazgos inferenciales y resultados.
 /// - **credencial** — [Credential], el único tipo que no serializa.
-/// - **puertos** — solo interfaces, ninguna implementación.
+/// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
+///   hace y cuáles siguen sin implementación está declarado en
+///   `arquitectura.json`, y verificado en los dos sentidos.
 library;
 
 export 'src/credencial.dart';

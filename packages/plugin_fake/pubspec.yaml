@@ -11,3 +11,7 @@ resolution: workspace
 dependencies:
   core:
     path: ../core
+  # Para normalizar rutas igual que la implementación real. Normalizar NO es
+  # conocimiento del stack —es semántica de rutas— así que honrarlo no
+  # convierte a este fake en una copia del real.
+  path: ^1.9.0

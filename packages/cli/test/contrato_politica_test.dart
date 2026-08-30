@@ -75,6 +75,25 @@ void main() {
         });
       }
 
+      test('dos formas de escribir el mismo archivo dan la misma respuesta',
+          () {
+        // Cláusula 3 del puerto. Sin normalizar, `lib/src/../l10n/x` esquivaba
+        // la cláusula 1: el mismo archivo salía generado por un camino y
+        // editable por el otro.
+        for (final par in {
+          'lib/l10n/app_es.dart': 'lib/src/../l10n/app_es.dart',
+          'lib/modelo.g.dart': './lib/modelo.g.dart',
+          'build/salida.txt': 'build/./salida.txt',
+        }.entries) {
+          expect(puerto.isGenerated(par.value),
+              equals(puerto.isGenerated(par.key)),
+              reason: '«${par.value}» y «${par.key}» son el mismo archivo');
+          expect(
+              puerto.isEditable(par.value), equals(puerto.isEditable(par.key)),
+              reason: '«${par.value}» y «${par.key}» son el mismo archivo');
+        }
+      });
+
       test('la ruta vacía no es editable', () {
         // Un borde que las dos tienen que responder igual. Devolver `true`
         // acá dejaría al arnés intentando escribir en ninguna parte.

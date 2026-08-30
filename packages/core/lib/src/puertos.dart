@@ -39,6 +39,18 @@ abstract interface class ContextSource {
 // --- Stack · las implementa el plugin del lenguaje ---------------------
 
 /// La topología del proyecto que se está trabajando.
+///
+/// **Cláusulas del contrato**, descubiertas al hacer diverger las dos
+/// implementaciones. Valen para cualquier stack:
+///
+/// 1. **La lista devuelta es inmodificable.** Un llamador que la mutara
+///    corrompería el resultado para todos los demás, y las dos
+///    implementaciones dejarían de ser sustituibles — que es la única razón
+///    por la que existe un fake.
+/// 2. **`dependsOn` solo nombra paquetes que esta misma llamada devuelve.**
+///    Una dependencia por ruta hacia afuera del proyecto es una dependencia
+///    real, pero no es topología de ESTE proyecto: reportarla dejaría una
+///    arista colgante hacia algo que nadie puede resolver.
 abstract interface class ProjectTopology {
   Future<List<Package>> packages();
 }
@@ -54,6 +66,10 @@ abstract interface class ProjectTopology {
 ///    la vez sería un estado sin significado.
 /// 2. **Una ruta vacía no es editable.** Devolver `true` dejaría al arnés
 ///    intentando escribir en ninguna parte.
+/// 3. **Las rutas se comparan normalizadas.** Dos formas de escribir el mismo
+///    archivo —con `.`, con `..`, con separadores distintos— tienen que dar la
+///    misma respuesta. Si no, la cláusula 1 se puede esquivar escribiendo la
+///    ruta de otra manera.
 ///
 /// Lo que SÍ es del stack son los patrones: qué cuenta como generado. Eso lo
 /// aporta el plugin y no aparece acá — si `core` conociera los sufijos de un

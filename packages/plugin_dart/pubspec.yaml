@@ -11,8 +11,18 @@ resolution: workspace
 dependencies:
   core:
     path: ../core
+  # Las rutas se normalizan con la biblioteca oficial, no a mano. Colapsar
+  #  a mano es exactamente el bug que un review encontró acá: dos rutas
+  # que apuntan al mismo archivo daban respuestas distintas.
+  path: ^1.9.0
   # El pubspec se le pide a un PARSER de YAML, no a una expresión regular. Es
   # la misma lección que ya pagó capas.py con el grafo de dependencias: un
   # parser casero devuelve cero ante una sintaxis que no reconoce, y cero se
   # lee igual que «este paquete no depende de nada».
   yaml: ^3.1.0
+
+# Pruebas UNITARIAS de esta implementación: lo que solo ella puede ejercer
+# —resolver rutas, rechazar un manifiesto ilegible— y que por eso no pertenece
+# a la suite de contrato, donde el fake no tendría nada equivalente que hacer.
+dev_dependencies:
+  test: ^1.25.0
