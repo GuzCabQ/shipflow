@@ -82,6 +82,27 @@ VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
 # El MECANISMO de ceguera de cada regla, fijado. Es el campo que más
 # fácilmente se vuelve inofensivo: basta cambiar `como` por algo que no ciegue
 # nada para que el caso pase siempre y no pruebe nada. Igual que `tipo`.
+# Los COMANDOS que CI tiene que ejecutar. Es política pura: no deriva de nada,
+# y por eso está acá y no en el workflow, que es justamente lo que se vigila.
+#
+# Nada verificaba esto. `_check_delegadas` comprueba que CI invoque a los
+# APLICADORES DELEGADOS —porque una regla lo declara—, pero `capas.py`,
+# `probar_reglas.py`, los tests, el analizador y el formateo no los declaraba
+# nadie: borrar cualquiera de esos pasos del workflow no lo notaba nada, y
+# desde que CI bloquea merges eso es la compuerta abriéndose sola.
+#
+# Es F33 aplicado al ejecutor: registrado en ningún lado y ejecutado igual, o
+# —peor— dejado de ejecutar sin que nadie se entere.
+PASOS_OBLIGATORIOS = {
+    "la regla de capas": "tool/checks/capas.py",
+    "que los checks sepan fallar": "tool/checks/probar_reglas.py",
+    "serialización, opacidad y puertos": "bin/check.dart",
+    "el grafo interno": "bin/grafo.dart",
+    "las pruebas de core": "dart test",
+    "el analizador estático": "dart analyze",
+    "el formato": "dart format",
+}
+
 CIEGO_FIJO = {
     "deps-hacia-core": "grafo_indisponible",
     "nucleo-sin-externas": "grafo_indisponible",
@@ -177,12 +198,71 @@ def check_meta() -> None:
                               f"se miran, no exime paquetes: para eso está `solo_en`.")
     _check_no_cuenta()
     _check_casos_ciegos()
+    _check_ci_ejecuta()
     _check_huella()
     _check_delegadas()
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
                 fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
+
+
+def _check_ci_ejecuta() -> None:
+    """CI sigue invocando cada paso obligatorio, y ninguno está neutralizado.
+
+    Un paso borrado del workflow no lo detectaba nada. Desde que las ramas
+    están protegidas y el merge depende de este workflow, borrar un paso es
+    abrir la compuerta sin tocar ninguna regla.
+
+    NO SE PARSEA A MANO. El workflow se le pide a un parser de YAML, por la
+    misma razón por la que el grafo de dependencias se le pide a pub: un
+    parser casero devuelve cero pasos ante una sintaxis que no reconoce, y
+    cero pasos se lee igual que «están todos». Si el parser no está
+    disponible, esto FALLA — no mirar no es lo mismo que no encontrar nada.
+    """
+    ci = RAIZ / ".github" / "workflows" / "checks.yml"
+    if not ci.exists():
+        fallos.append("falta .github/workflows/checks.yml. Sin workflow no hay "
+                      "compuerta, y las ramas protegidas exigen un check que "
+                      "nadie produce.")
+        return
+    try:
+        import yaml
+    except ImportError:
+        fallos.append("no pude importar `yaml` para leer el workflow. Sin parser "
+                      "no puedo saber qué pasos corren, y suponer que corren "
+                      "todos es exactamente el falso verde que este check evita. "
+                      "Instalalo: `pip install pyyaml`.")
+        return
+    try:
+        doc = yaml.safe_load(ci.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        fallos.append(f"no pude leer checks.yml como YAML: {e}")
+        return
+
+    pasos = [paso
+             for job in (doc.get("jobs") or {}).values()
+             for paso in (job.get("steps") or [])
+             if isinstance(paso, dict)]
+    if not pasos:
+        fallos.append("leí el workflow y no encontré NI UN paso. Cero pasos se "
+                      "lee igual que todos los pasos presentes.")
+        return
+    for etiqueta, comando in PASOS_OBLIGATORIOS.items():
+        encontrados = [p for p in pasos if comando in str(p.get("run", ""))]
+        if not encontrados:
+            fallos.append(
+                f"CI ya no ejecuta {etiqueta} («{comando}»). El paso desapareció "
+                f"del workflow y ninguna regla lo notó: el merge pasa a estar "
+                f"gobernado por menos controles de los que el registro declara.")
+            continue
+        for p in encontrados:
+            if p.get("continue-on-error") is True:
+                fallos.append(
+                    f"CI ejecuta {etiqueta} con `continue-on-error: true`. Corre, "
+                    f"se ve en rojo, y no detiene nada — es severidad `reporta` "
+                    f"disfrazada de `bloquea`. Si es deliberado, va como canario "
+                    f"declarado en la matriz, no acá.")
 
 
 def _check_casos_ciegos() -> None:
@@ -424,7 +504,8 @@ def main() -> int:
         return 1
     detalle = ", ".join(f"{k}: {v}" for k, v in sorted(MIRADOS.items()))
     print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.\n"
-          f"       archivos inspeccionados por regla de cadenas → {detalle}")
+          f"       archivos inspeccionados por regla de cadenas → {detalle}\n"
+          f"       pasos obligatorios verificados en CI → {len(PASOS_OBLIGATORIOS)}")
     return 0
 
 

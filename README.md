@@ -124,6 +124,39 @@ Hoy hay dos exenciones, las dos en `lenguaje-en-plugin-dart`:
 
 ---
 
+## Y que CI siga ejecutando lo que dice ejecutar
+
+Todo lo de abajo depende de que el workflow los invoque, y **nada lo verificaba**.
+`capas.py` leía `checks.yml` solo para comprobar que los *aplicadores delegados*
+estuvieran mencionados —porque una regla lo declara—; `capas.py` mismo,
+`probar_reglas.py`, los tests, el analizador y el formateo **no los declaraba
+nadie**. Borrar cualquiera de esos pasos no lo notaba nada.
+
+Mientras el CI no corría era una molestia teórica. **Desde que las ramas están
+protegidas y el merge depende de este workflow, borrar un paso es abrir la
+compuerta sin tocar ninguna regla.**
+
+Los siete pasos obligatorios están fijados en `capas.py` —es política, no
+deriva de nada— y se comprueban en tres modos de fallo distintos:
+
+| El sabotaje | Resultado |
+|---|---|
+| Un paso obligatorio **borrado** del workflow | **detectado** |
+| Un paso obligatorio con **`continue-on-error: true`** — corre, se ve en rojo, no detiene nada | **detectado** |
+| El workflow **vaciado** | **detectado** |
+
+**El workflow se le pide a un parser de YAML**, no se lee a mano: un parser
+casero devuelve cero pasos ante una sintaxis que no reconoce, y cero pasos se
+lee igual que *«están todos»*. Si el parser no está disponible, el check
+**falla** — es la misma lección que ya pagó el grafo de dependencias con pub.
+
+**Residuo declarado:** esto verifica que el workflow **ejecute** los pasos. No
+verifica que la **protección de rama exija ese workflow**, porque eso vive en
+la configuración de GitHub y no en el repositorio. Se comprueba intentando un
+push directo, que es un acto manual y periódico.
+
+---
+
 ## El caso ciego · la mitad que faltaba
 
 Cada regla declara **dos** casos, y prueban cosas distintas:
