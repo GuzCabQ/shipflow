@@ -186,6 +186,36 @@ def casos() -> list[dict]:
             "menciona": REGLAS[rid]["violacion_canonica"]["debe_mencionar"],
             "probar_grafo": del_grafo,
         })
+        # Violaciones canónicas ADICIONALES. Una regla puede tener más de una
+        # forma de romperse, y la segunda suele aparecer cuando el check falla
+        # en verde por un camino que nadie había mirado. Sin registrarla, el
+        # arreglo se puede deshacer sin que nada lo note: el arreglo tampoco es
+        # un invariante hasta que algo lo sostiene.
+        for extra in REGLAS[rid].get("violaciones_extra", []):
+            archivos = dict(extra["archivos"])
+            declarar = extra.get("declarar_sin_implementacion")
+            caso = {
+                "nombre": f"{rid} · {extra['nombre']}",
+                "archivos": archivos,
+                "pub_get": extra.get("requiere_pub_get", False),
+                "menciona": extra["debe_mencionar"],
+                "probar_grafo": del_grafo,
+            }
+            if declarar is not None:
+                # El sabotaje necesita que el registro AFIRME que el puerto no
+                # tiene implementación, para que el check tenga que
+                # contradecirlo. Sin esto el puerto sería un huérfano sin
+                # declarar y el check fallaría por el otro motivo — en rojo,
+                # pero por la razón equivocada, que es un falso detectado.
+                caso["archivos"] = {
+                    ARQ_REL: arq_con(
+                        lambda r, d=declarar, i=rid: r[i]["sin_implementacion"]
+                        .update({d: "canario del sabotaje"})),
+                    **archivos,
+                }
+                caso["regenerar_huella"] = True
+            c.append(caso)
+
         for etiqueta, mutar in neutralizaciones(rid):
             c.append({
                 "nombre": f"{rid} · {etiqueta}",

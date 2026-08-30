@@ -90,6 +90,26 @@ abstract interface class ArtifactPolicy {
 /// Un paso de la cascada. **Devuelve su testigo junto con sus diagnósticos**:
 /// un [Verifier] que devolviera solo diagnósticos no podría distinguir «limpio»
 /// de «no corrí» (INV-2).
+///
+/// **Cláusulas del contrato.** Las descubrieron los dos primeros pasos reales
+/// al diferir: uno puede comprobar su propia cobertura y el otro no, porque su
+/// herramienta no la informa. Esa diferencia no se tapa — se declara.
+///
+/// 1. **Siempre devuelve un testigo.** Sin él el veredicto es
+///    [Verdict.noConcluyente], que ya es lo correcto, pero un paso que lo
+///    omite no dice POR QUÉ, y un rojo que no se puede accionar es casi tan
+///    inútil como un verde que no se puede creer.
+/// 2. **Una terminación distinta de [Termination.completa] no es verde**, sin
+///    importar el código de salida. Es lo mismo que decir que no medir no se
+///    lee como medir y no encontrar nada.
+/// 3. **Un alcance vacío no se invoca**, y el resultado no es verde: correr
+///    sobre nada y correr sobre algo limpio no pueden dar la misma lectura.
+/// 4. **El testigo nombra la invocación que de verdad se hizo.** Un testigo
+///    que nombra otra cosa es peor que no tener testigo: da confianza sobre un
+///    hecho que no ocurrió.
+/// 5. **Lo que el paso NO pudo cubrir va en `omitted`, con su motivo.** Es el
+///    corolario 5 de ADR-011 vuelto dato: cada control declara si puede
+///    detectar una omisión. El que no puede, lo escribe.
 abstract interface class Verifier {
   String get id;
   Future<VerificationOutcome> run(List<String> subjects);

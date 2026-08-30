@@ -424,9 +424,30 @@ void main(List<String> args) {
 
   // --- 3 · puertos sin implementación, declarados ------------------------
   final puertos = clasesCore.where((c) => c.esAbstracta).map((c) => c.nombre);
+  // **La herencia se sigue hasta arriba, no un nivel.** Miraba solo los
+  // supertipos DIRECTOS de las clases concretas, y con eso un puerto
+  // implementado a traves de una base abstracta quedaba invisible: la base
+  // implementa el puerto pero es abstracta —no cuenta—, y la concreta solo
+  // nombra a la base. Paso de verdad con `Verifier`: dos implementaciones
+  // vivas y el registro seguia diciendo que no tenia ninguna, en VERDE.
+  //
+  // Es la forma exacta que este control existe para cazar, aplicada al propio
+  // control: mirar donde es comodo y llamar a eso el invariante.
+  final superDe = {for (final c in todasLasClases) c.nombre: c.superTipos};
+  Set<String> ancestros(String nombre) {
+    final vistos = <String>{};
+    final pila = [...?superDe[nombre]];
+    while (pila.isNotEmpty) {
+      final n = pila.removeLast();
+      if (!vistos.add(n)) continue; // corta ciclos y repeticiones
+      pila.addAll(superDe[n] ?? const <String>{});
+    }
+    return vistos;
+  }
+
   final implementados = <String>{
     for (final c in todasLasClases)
-      if (!c.esAbstracta) ...c.superTipos,
+      if (!c.esAbstracta) ...ancestros(c.nombre),
   };
   final huerfanos = puertos.where((p) => !implementados.contains(p)).toSet();
   for (final p in (huerfanos.difference(sinImpl.keys.toSet())).toList()

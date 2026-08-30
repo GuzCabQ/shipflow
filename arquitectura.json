@@ -331,11 +331,10 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "Verifier": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "CodegenTrigger": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "DependencyResolver": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ChangeClassCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -358,6 +357,18 @@
         "contenido": "abstract interface class CanarioPuerto {\n  void hacerAlgo();\n}\n",
         "debe_mencionar": "CanarioPuerto"
       },
+      "violaciones_extra": [
+        {
+          "nombre": "implementado a traves de una base abstracta",
+          "por_que": "El check miraba los supertipos DIRECTOS de las clases concretas. Una base abstracta que implementa el puerto no contaba —es abstracta— y la clase concreta solo nombraba a la base, asi que el puerto quedaba invisible. Paso de verdad con Verifier: dos implementaciones vivas y el registro diciendo que no tenia ninguna, en VERDE. Sin este caso, seguir la herencia hasta arriba se puede deshacer sin que nada lo note.",
+          "declarar_sin_implementacion": "CanarioPuertoIndirecto",
+          "archivos": {
+            "packages/core/lib/src/_canario_puerto_indirecto.dart": "abstract interface class CanarioPuertoIndirecto {\n  void hacerAlgo();\n}\n",
+            "packages/plugin_dart/lib/src/_canario_indirecto.dart": "import 'package:core/src/_canario_puerto_indirecto.dart';\n\nabstract base class BaseCanaria implements CanarioPuertoIndirecto {}\n\nfinal class CanarioIndirecto extends BaseCanaria {\n  @override\n  void hacerAlgo() {}\n}\n"
+          },
+          "debe_mencionar": "ya tiene implementación"
+        }
+      ],
       "caso_ciego": {
         "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
         "que": "Un archivo de `packages/core/lib` que no parsea.",

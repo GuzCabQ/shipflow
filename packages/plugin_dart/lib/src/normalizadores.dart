@@ -225,8 +225,28 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
     return n;
   }
 
-  @override
-  List<Diagnostic> normalize(QuotedText rawOutput) {
+  /// Cuantos archivos declara la herramienta que MIRO.
+  ///
+  /// **Es el unico dato de cobertura que hay**, y por eso se expone aparte de
+  /// los diagnosticos: el codigo de salida de esta herramienta no distingue
+  /// «formatee todo» de «el directorio que me diste no existe» —los dos son
+  /// cero, esta medido—, asi que un paso que confie en el codigo da verde
+  /// sobre un alcance que nunca miro.
+  ///
+  /// Lanza [UnreadableToolOutput] por los mismos motivos que [normalize].
+  int archivosMirados(QuotedText rawOutput) {
+    final m = _unicoResumen(rawOutput);
+    if (m.group(1) != null) return 0;
+    final total = int.tryParse(m.group(2) ?? '');
+    if (total == null) {
+      throw UnreadableToolOutput(rawOutput.source,
+          'El resumen no dice cuantos archivos miro: «${m.group(0)}».');
+    }
+    return total;
+  }
+
+  /// El resumen, comprobando que haya exactamente uno.
+  RegExpMatch _unicoResumen(QuotedText rawOutput) {
     final fuente = rawOutput.source;
     final texto = rawOutput.content;
 
@@ -252,7 +272,15 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
           'Hay ${resumenes.length} lineas de resumen y el denominador tiene que '
           'ser uno solo. Elegir una seria elegir contra que reconciliar.');
     }
-    final declarados = _cuantosCambiaron(resumenes.single, fuente);
+    return resumenes.single;
+  }
+
+  @override
+  List<Diagnostic> normalize(QuotedText rawOutput) {
+    final fuente = rawOutput.source;
+    final texto = rawOutput.content;
+
+    final declarados = _cuantosCambiaron(_unicoResumen(rawOutput), fuente);
 
     final salida = <Diagnostic>[];
 
