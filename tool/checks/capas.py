@@ -103,6 +103,12 @@ PASOS_OBLIGATORIOS = {
     "las pruebas de core": ("dart test packages/core", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
     "el formato": ("dart format --set-exit-if-changed .", None),
+    # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
+    # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
+    "el fixture · dominio": ("dart pub get && dart analyze && dart test",
+                             "fixtures/app-minima/dominio"),
+    "el fixture · app": ("flutter pub get && flutter analyze && flutter test",
+                         "fixtures/app-minima/app"),
 }
 
 # El job puede declararse `continue-on-error` SOLO con esta expresión, que es
