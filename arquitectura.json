@@ -450,6 +450,42 @@
         "por_que_ciega": "Un nodo que no se puede leer hace el grafo más chico, y `regenerado == commiteado` sigue coincidiendo porque LOS DOS LADOS quedan igual de ciegos: el check deja de comparar contra la realidad y compara contra sí mismo.",
         "debe_mencionar": "no pude leer"
       }
+    },
+    "colecciones-inmutables": {
+      "enunciado": "En core, todo campo cuyo tipo sea una coleccion se COPIA a una vista inmodificable en el constructor. Nunca entra por referencia.",
+      "origen": "Review externo del 29/08/2026 sobre f6eab1a..d67db22",
+      "tipo": "colecciones_copiadas",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Recibi la coleccion como parametro normal y copiala en la lista de inicializadores: `: campo = List.unmodifiable(campo)`.",
+      "por_que": [
+        "`final List<X> campo` NO hace inmutable la lista: solo impide reasignar",
+        "el campo. Quien conserve la lista que le paso al constructor puede",
+        "vaciarla despues, y con ella cualquier invariante que dependa de su",
+        "contenido.",
+        "",
+        "Medido por un review: una Rule construida con evasiones validas se",
+        "quedaba sin ninguna cuando el llamador vaciaba su lista, y un",
+        "VerificationOutcome pasaba de verde a no concluyente igual. Eso rompe la",
+        "tesis entera de la fase 1 — los invariantes NO eran propiedades del tipo",
+        "si se podian alterar despues de construirlo."
+      ],
+      "alcance": {
+        "raiz": "packages/core/lib",
+        "que_mira": "Campos de instancia publicos cuyo tipo empieza con List<, Map< o Set<, y como los recibe cada constructor generativo.",
+        "residuo_declarado": "Exige la COPIA, no la profundidad: un Map<String, Object?> copiado sigue compartiendo los objetos que contiene. Para `sourceMetadata` eso es aceptable porque core no lo interpreta, y queda declarado aca en vez de suponerse."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_coleccion.dart",
+        "contenido": "class CanarioColeccion {\n  final List<String> items;\n  const CanarioColeccion(this.items);\n  Map<String, Object?> toJson() => {'items': items};\n  factory CanarioColeccion.fromJson(Map<String, Object?> json) =>\n      CanarioColeccion(List<String>.from(json['items']! as List<Object?>));\n}\n",
+        "debe_mencionar": "por referencia"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de la violacion canonica: aquella prueba que el check detecta un EXCESO; este, que detecta una OMISION.",
+        "que": "Un archivo de packages/core/lib que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Los tipos de campo y la forma del constructor salen del arbol sintactico. De un arbol parcial no sale ninguno, y una clase que no se pudo leer no tiene colecciones que revisar — que se lee igual que no tenerlas.",
+        "debe_mencionar": "no parsea"
+      }
     }
   }
 }

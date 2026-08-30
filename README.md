@@ -35,7 +35,9 @@ es un campo: se calcula.
 ```
 dart pub get                                  # PRECONDICIÓN: el grafo se le pide a pub
 python3 tool/checks/capas.py                  # las reglas que se leen del texto
-(cd tool/serializacion && dart pub get && dart run bin/check.dart)
+(cd tool/analisis && dart pub get \
+   && dart run bin/check.dart      # serialización, opacidad, puertos, colecciones
+   && dart run bin/grafo.dart)     # el grafo: derivado == commiteado
 python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
 dart test packages/core
 dart analyze --fatal-infos
@@ -53,9 +55,11 @@ la arquitectura y se revisa como tal.
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
-| `serializacion-sin-perdida` | Que un campo de `core` no viaje, o vuelva vacío | `tool/serializacion` |
-| `opacidad-declarada` | Que «no serializa» sea indistinguible de «se olvidaron» | `tool/serializacion` |
-| `puertos-sin-implementacion` | Que una superficie de puertos vacía se lea como un sistema que hace esas cosas | `tool/serializacion` |
+| `serializacion-sin-perdida` | Que un campo de `core` no viaje, o vuelva vacío | `tool/analisis` |
+| `opacidad-declarada` | Que «no serializa» sea indistinguible de «se olvidaron» | `tool/analisis` |
+| `puertos-sin-implementacion` | Que una superficie de puertos vacía se lea como un sistema que hace esas cosas | `tool/analisis` |
+| `colecciones-inmutables` | Que un invariante se pueda romper **después** de construir el objeto, mutando la lista que se le pasó | `tool/analisis` |
+| `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
@@ -362,7 +366,6 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 |---|---|
 | **Ninguno de los 23 puertos tiene implementación.** Está declarado regla por regla, no solo acá | `plugin_fake` los implementa todos: **fase 2** |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
-| **El grafo interno** y su check de *regenerado == commiteado* | **Fase 0b** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 

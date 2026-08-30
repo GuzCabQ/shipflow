@@ -76,11 +76,16 @@ class Rule {
     required this.signalType,
     required this.severity,
     required this.layer,
-    this.knownEvasions = const [],
+    List<String> knownEvasions = const [],
     this.alternative,
     this.prohibitive = false,
-  }) {
+  }) : knownEvasions = List.unmodifiable(knownEvasions) {
     final tieneAlternativa = (alternative ?? '').trim().isNotEmpty;
+    // Una lista con elementos en blanco no declara ninguna evasión utilizable.
+    // Es el mismo agujero que ya se había cerrado para `alternative`: la
+    // comprobación era de PRESENCIA y tenía que ser de CONTENIDO.
+    final evasionesUtiles =
+        this.knownEvasions.where((e) => e.trim().isNotEmpty).toList();
 
     if (prohibitive && !tieneAlternativa) {
       throw const RuleNotInstallable(
@@ -100,7 +105,14 @@ class Rule {
           'Un control inferencial nunca detiene (ADR-006). '
               'Bajá la severidad a `reporta`, o convertí el control en determinista.');
     }
-    if (layer == ControlLayer.ganchos && knownEvasions.isEmpty) {
+    if (this.knownEvasions.length != evasionesUtiles.length) {
+      throw const RuleNotInstallable(
+          'INV-3',
+          'Hay evasiones declaradas en blanco. Una cadena vacía ocupa lugar en '
+              'la lista y no dice por dónde se esquiva el control: sacala, o '
+              'escribí la evasión.');
+    }
+    if (layer == ControlLayer.ganchos && evasionesUtiles.isEmpty) {
       throw const RuleNotInstallable(
           'INV-3',
           'Ningún gancho se instala sin sus evasiones declaradas. '

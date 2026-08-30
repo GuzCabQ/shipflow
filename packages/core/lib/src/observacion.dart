@@ -12,12 +12,12 @@ class OperationalSurface {
   final int outputTokens;
   final Duration elapsed;
 
-  const OperationalSurface({
-    required this.toolsUsed,
+  OperationalSurface({
+    required List<String> toolsUsed,
     required this.inputTokens,
     required this.outputTokens,
     required this.elapsed,
-  });
+  }) : toolsUsed = List.unmodifiable(toolsUsed);
 
   Map<String, Object?> toJson() => {
         'toolsUsed': toolsUsed,
@@ -46,11 +46,11 @@ class CognitiveSurface {
   final List<String> decisions;
   final String? planSummary;
 
-  const CognitiveSurface({
+  CognitiveSurface({
     required this.available,
-    this.decisions = const [],
+    List<String> decisions = const [],
     this.planSummary,
-  });
+  }) : decisions = List.unmodifiable(decisions);
 
   Map<String, Object?> toJson() => {
         'available': available,
@@ -72,11 +72,11 @@ class ContextualSurface {
   final List<String> filesInContext;
   final bool dirtyWorktree;
 
-  const ContextualSurface({
+  ContextualSurface({
     required this.revision,
-    required this.filesInContext,
+    required List<String> filesInContext,
     required this.dirtyWorktree,
-  });
+  }) : filesInContext = List.unmodifiable(filesInContext);
 
   Map<String, Object?> toJson() => {
         'revision': revision,
@@ -101,7 +101,7 @@ class Trace {
   final CognitiveSurface cognitive;
   final ContextualSurface contextual;
 
-  const Trace({
+  Trace({
     required this.runId,
     required this.startedAt,
     required this.operational,
@@ -148,7 +148,7 @@ class Finding {
   /// La nota del sensor, tal como la escribió (INV-6).
   final QuotedText note;
 
-  const Finding({
+  Finding({
     required this.sensorId,
     required this.criterionId,
     required this.file,
@@ -191,11 +191,13 @@ class VerificationOutcome {
   /// registró que corriera**, y las dos cosas son lo mismo para el veredicto.
   final Witness? witness;
 
-  const VerificationOutcome({
+  /// Los diagnósticos se copian: el veredicto se deriva de ellos, y una lista
+  /// mutable desde afuera es un veredicto mutable desde afuera.
+  VerificationOutcome({
     required this.verifierId,
-    required this.diagnostics,
+    required List<Diagnostic> diagnostics,
     this.witness,
-  });
+  }) : diagnostics = List.unmodifiable(diagnostics);
 
   /// El veredicto, calculado. No hay forma de fijarlo desde afuera.
   Verdict get verdict {
