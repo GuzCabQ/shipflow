@@ -10,4 +10,5 @@
 library;
 
 export 'src/politica_de_artefactos.dart';
+export 'src/normalizadores.dart';
 export 'src/topologia.dart';

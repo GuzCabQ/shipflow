@@ -9,7 +9,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, primera rebanada. Hay contratos y un sujeto; no hay producto.
+## Estado: fase 2, segunda rebanada. Hay contratos y un sujeto; no hay producto.
 
 `core` existe: **las entidades y los puertos, como tipos, sin una sola
 implementación.** Y existe el **fixture**: un proyecto de verdad, con toolchain
@@ -180,6 +180,11 @@ Cada puerto implementado tiene su suite, y **la corren las dos**:
 |---|---|---|
 | `ProjectTopology` | lee el fixture del disco | se le declara la topología |
 | `ArtifactPolicy` | clasifica con los patrones de `N1-02` y `N1-03` | se le declaran las respuestas |
+| `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
+
+`DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
+uno y los formatos que tiene que leer son varios. La suite corre contra las
+tres, y cada una trae su propia muestra — el contrato no conoce ningún formato.
 
 **El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
 un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
@@ -203,6 +208,93 @@ escribió en el puerto, en `core`, donde vale para cualquier stack:
 
 Eso es lo que una suite de contrato produce cuando funciona: no un error en una
 implementación, **sino una parte del acuerdo que nadie había escrito**.
+
+### Y lo que encontró la segunda corrida, midiendo las herramientas
+
+Antes de escribir los normalizadores se midió qué escribe cada herramienta en
+cada situación. Tres resultados, reproducibles:
+
+| Invocación | Código | Escribe |
+|---|---|---|
+| formateador sobre un directorio **inexistente** | **0** | `Formatted no files` |
+| analizador, formato `machine`, sin hallazgos | 0 | **cero bytes** |
+| analizador, formato `json`, sin hallazgos | 0 | `{"version":1,"diagnostics":[]}` |
+
+Las dos primeras son **verdes indistinguibles de la ceguera**: un paso que
+confíe en el código de salida da verde sobre un alcance que nunca miró. La
+tercera afirma haber mirado.
+
+Eso decidió dos cosas. Que el plugin use el formato **más incómodo de parsear**,
+porque es el único cuyo caso vacío se distingue del silencio. Y que la línea de
+resumen del formateador sea **obligatoria**: es el denominador, y sin ella cero
+hallazgos no significa nada.
+
+Las cuatro cláusulas que quedaron escritas en el puerto salen de ahí. La
+primera es la que sostiene a las demás: **una entrada que no se puede
+interpretar lanza; nunca devuelve la lista vacía.** La lista vacía tiene una
+sola lectura posible —«leí todo y no había nada»— y si además significara «no
+entendí», el verde del paso sería indistinguible de la ceguera.
+
+### Los guardias se probaron rompiéndolos
+
+Los treinta y dos tests de contrato y los once unitarios pasaron **en la primera
+corrida**, que no prueba nada: un test que nunca falló no está probado. Se
+mutaron los nueve guardias, uno por vez, corriendo las dos suites contra cada
+mutación:
+
+| Se rompió | Murió |
+|---|---|
+| el guardia del vacío | 1 test |
+| la versión de esquema | 2 |
+| la severidad sin mapeo cae en la más suave | 1 |
+| exigir el denominador | 4 |
+| el bloque de parseo sin líneas legibles | 1 |
+| el patrón del archivo que no parsea | 4 |
+| la lista inmodificable | 1 |
+| los campos exactos, en el fake | 1 |
+| recorrer **todas** las líneas, en el fake | 1 |
+
+**Cero sobrevivientes.** El primero es el que justifica el ejercicio: el guardia
+del vacío parecía código muerto, porque el decodificador de JSON también falla
+ante una entrada vacía. Un guardia al que otro le tapa el caso no está
+instalado, está de adorno — así que el test que lo cubre lo identifica **por su
+motivo**, no solo por el tipo de la excepción.
+
+### Y lo que la mutación no encontró, porque los casos los elegía yo
+
+Un review externo encontró dos incumplimientos que las dos suites daban por
+buenos.
+
+**El primero es el patrón que este repositorio ya tiene nombrado.** El
+comentario del normalizador decía «el resumen es obligatorio, **es el
+denominador**, dice cuántos archivos miró de verdad» — y el código solo
+comprobaba que la línea **existiera**. Así, `Formatted 2 files (1 changed)` sin
+ninguna línea `Changed` devolvía cero hallazgos: la herramienta declaraba un
+archivo sin formatear y el normalizador lo reportaba como limpio. Comprobar
+PRESENCIA cuando había que comprobar CONTENIDO es exactamente lo que `Rule`
+tiene escrito a propósito de las evasiones en blanco. Ahora se reconcilia, y en
+los dos sentidos.
+
+**El segundo es de tipo, no de lógica.** Un número de línea inválido hacía que
+el normalizador lanzara `FormatException` y no `UnreadableToolOutput`. Importa
+porque el paso de cascada va a atrapar solo el segundo: una excepción de otro
+tipo aborta la corrida en vez de producir un veredicto no concluyente. El
+review lo vio en el fake; estaba también en el real, por un `int.parse` que solo
+se rompe con un número de veinte dígitos.
+
+**Lo que fallaba no era la atención: era que cada implementación elegía sus
+propios casos ilegibles**, así que podía elegir los fáciles. La suite ahora
+**deriva** las entradas corruptas del texto bueno con mutaciones mecánicas
+—truncar, borrar una línea, volver letras los dígitos, alargarlos— y exige que
+cada una se lea bien o lance **el tipo que el puerto promete**, nunca otro. Es
+el mismo criterio por el que el grafo se le pide a `pub` y los campos al árbol
+sintáctico.
+
+Y esa red nació tapada. Las mutaciones tocaban todas las líneas a la vez,
+incluida la de encabezado del fake: el guardia del encabezado disparaba primero
+y el número de línea nunca se alcanzaba. **El sobreviviente de la corrida de
+mutación era justo el bug del review.** Se corrompe una línea por vez, y ahora
+son cero sobre catorce guardias.
 
 ---
 
@@ -486,10 +578,10 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **21 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **20 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los once puertos del plugin de stack, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
+| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los puertos de stack que quedan, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**
@@ -514,7 +606,7 @@ packages/
   rules           registro, proyección a C y E, telemetría
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
-  plugin_fake     los puertos con contrato, para pruebas · hoy 2 de 23
+  plugin_fake     los puertos con contrato, para pruebas · hoy 3 de 23
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py

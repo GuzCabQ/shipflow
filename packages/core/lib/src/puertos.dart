@@ -95,8 +95,54 @@ abstract interface class Verifier {
   Future<VerificationOutcome> run(List<String> subjects);
 }
 
+/// Se lanza cuando un [DiagnosticNormalizer] **no puede interpretar** lo que
+/// le dieron. No es un hallazgo sobre el codigo del usuario: es el arnes
+/// diciendo que no sabe leer lo que tiene delante.
+///
+/// Existe porque [DiagnosticNormalizer.normalize] devuelve una lista y nada
+/// mas, asi que la unica forma de decir «no entendi» sin devolver la lista
+/// vacia es no devolver. Quien lo atrape lo convierte en
+/// [Verdict.noConcluyente], que es la categoria que ADR-011 creo para esto.
+class UnreadableToolOutput implements Exception {
+  /// El `source` del [QuotedText] que no se pudo leer: que invocacion lo
+  /// produjo.
+  final String source;
+
+  /// Que no se pudo leer, y que hacer.
+  final String reason;
+
+  const UnreadableToolOutput(this.source, this.reason);
+
+  @override
+  String toString() => 'UnreadableToolOutput($source): $reason';
+}
+
 /// Traduce la salida cruda de una herramienta a [Diagnostic] normalizados.
+///
+/// **Clausulas del contrato.** Valen para cualquier herramienta de cualquier
+/// stack, y son lo unico que la suite de contrato puede exigirle a las dos
+/// implementaciones — los formatos concretos son del plugin.
+///
+/// 1. **Una entrada que no se puede interpretar lanza [UnreadableToolOutput];
+///    nunca devuelve la lista vacia.** La lista vacia tiene una sola lectura
+///    posible: «lei toda la salida y no habia nada que reportar». Si ademas
+///    significara «no entendi», el verde del paso seria indistinguible de la
+///    ceguera (ADR-011, corolario 1).
+/// 2. **La entrada vacia es no interpretable.** Es el caso que se cuela, y no
+///    es hipotetico: hay formatos de salida reales que escriben cero bytes
+///    cuando no encontraron nada, y cero bytes es tambien lo que escribe una
+///    herramienta que no llego a correr. Un normalizador que devuelva `[]`
+///    ante el vacio le esta poniendo verde a las dos situaciones.
+/// 3. **La lista devuelta es inmodificable**, por la misma razon que en
+///    [ProjectTopology]: dos implementaciones dejan de ser sustituibles si una
+///    permite que el llamador le corrompa el resultado a las demas.
+/// 4. **El mensaje de cada [Diagnostic] es el de la herramienta, sin
+///    reescribir** (INV-6). Lo que el normalizador entiende y el dominio no
+///    —codigos, correcciones, lo que sea— va en `sourceMetadata`, que es la
+///    escotilla `D-015`. Reescribir el mensaje perderia la unica cosa que el
+///    arnes no puede regenerar: lo que la herramienta dijo de verdad.
 abstract interface class DiagnosticNormalizer {
+  /// Lanza [UnreadableToolOutput] si no puede interpretar [rawOutput].
   List<Diagnostic> normalize(QuotedText rawOutput);
 }
 

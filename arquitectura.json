@@ -331,12 +331,11 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology y ArtifactPolicy salieron de esta lista en la fase 2, con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra las dos.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "Verifier": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "DiagnosticNormalizer": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "CodegenTrigger": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "DependencyResolver": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ChangeClassCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -381,6 +380,9 @@
         },
         "RuleNotInstallable": {
           "por_que": "Es una excepcion, no dato del dominio. Nunca cruza un limite de proceso: se lanza y se atrapa en el mismo. Sin esta declaracion, «no tiene toJson» seria indistinguible de un olvido."
+        },
+        "UnreadableToolOutput": {
+         "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
         }
       },
       "violacion_canonica": {
