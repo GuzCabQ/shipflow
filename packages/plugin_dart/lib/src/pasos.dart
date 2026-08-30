@@ -30,6 +30,10 @@ abstract base class PasoDeCascada implements Verifier {
     this.presupuesto = const Duration(minutes: 5),
   });
 
+  /// El sufijo de los archivos que estas herramientas leen. Vive en la base
+  /// porque los dos pasos necesitan contar el alcance por su cuenta.
+  static const sufijoDeFuente = '.dart';
+
   /// El programa y sus argumentos para un alcance dado.
   String get programa;
   List<String> argumentos(List<String> sujetos);
@@ -54,45 +58,154 @@ abstract base class PasoDeCascada implements Verifier {
   /// acordarse de ponerlo en rojo.
   Cobertura cobertura(List<String> pedidos, QuotedText salida);
 
+  /// Qué le pasa a cada sujeto ANTES de creerle a la herramienta: `null` si
+  /// tiene al menos un archivo que mirar, o el motivo por el que no.
+  ///
+  /// **Existe porque la cobertura tiene que ser por sujeto y no agregada.** Lo
+  /// era: si la herramienta decía haber mirado UN archivo, el paso devolvía
+  /// TODOS los sujetos pedidos como cubiertos. Con un alcance mixto —una ruta
+  /// buena y una que no existe— el testigo certificaba la que la herramienta
+  /// había dicho que no encontraba. Lo encontró un review.
+  Map<String, String?> problemasDeAlcance(List<String> pedidos) {
+    final salida = <String, String?>{};
+    for (final pedido in pedidos) {
+      final absoluto =
+          rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
+      try {
+        if (File(absoluto).existsSync()) {
+          salida[pedido] = absoluto.endsWith(sufijoDeFuente)
+              ? null
+              : 'no es un archivo de fuente de este stack';
+          continue;
+        }
+        final carpeta = Directory(absoluto);
+        if (!carpeta.existsSync()) {
+          salida[pedido] = 'no existe en el árbol';
+          continue;
+        }
+        final cuantos = carpeta
+            .listSync(recursive: true, followLinks: false)
+            .whereType<File>()
+            .where((f) => f.path.endsWith(sufijoDeFuente))
+            .length;
+        salida[pedido] =
+            cuantos == 0 ? 'no contiene ningún archivo de fuente' : null;
+      } on FileSystemException catch (e) {
+        // **No poder mirar es un dato, no una excepción que se escapa.** Un
+        // directorio sin permisos hacía que `run` lanzara y el paso no
+        // devolviera testigo NINGUNO, que rompe la primera cláusula del
+        // puerto. Se atrapa esta familia y no `Object`: un error de
+        // programación tiene que seguir subiendo.
+        salida[pedido] = 'no se pudo mirar: ${e.osError?.message ?? e.message}';
+      }
+    }
+    return salida;
+  }
+
+  /// Los sujetos utilizables y los motivos de los que no lo son, ya en el
+  /// formato en que van al testigo.
+  ({List<String> sanos, List<String> motivos}) separar(List<String> pedidos) {
+    final problemas = problemasDeAlcance(pedidos);
+    return (
+      sanos: [
+        for (final p in pedidos)
+          if (problemas[p] == null) p
+      ],
+      motivos: [
+        for (final e in problemas.entries)
+          if (e.value != null) '${e.key}: ${e.value}',
+      ],
+    );
+  }
+
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
-    final invocacion = [programa, ...argumentos(subjects)].join(' ');
+    // **Se copia y se congela antes de nada.** La lista es del llamador, que
+    // puede mutarla mientras el proceso está suspendido en el `await`: pasó, y
+    // el testigo quedó nombrando una invocación sobre un alcance y declarando
+    // cobertura sobre otro. Es el mismo invariante que `colecciones-inmutables`
+    // exige en `core`, acá en el punto donde se construye la evidencia.
+    final pedidos = List<String>.unmodifiable(subjects);
 
-    VerificationOutcome sinCobertura(
-            Termination t, int codigo, String porQue) =>
+    VerificationOutcome conTestigo({
+      required String invocacion,
+      required List<String> cubierto,
+      required List<String> omitido,
+      required Termination terminacion,
+      required int codigo,
+      List<Diagnostic> diagnosticos = const [],
+    }) =>
         VerificationOutcome(
           verifierId: id,
-          diagnostics: const [],
+          diagnostics: diagnosticos,
           witness: Witness(
             invocation: invocacion,
-            subjects: const [],
-            omitted: [porQue],
-            termination: t,
+            subjects: cubierto,
+            omitted: omitido,
+            termination: terminacion,
             exitCode: codigo,
             finishedAt: DateTime.now().toUtc(),
           ),
         );
 
-    if (subjects.isEmpty) {
-      return sinCobertura(Termination.interrumpida, -1,
-          'No se le dio ningun sujeto, asi que no se invoco nada.');
+    if (pedidos.isEmpty) {
+      // **La invocación queda VACÍA porque no hubo ninguna.** Nombraba el
+      // comando que se habría corrido, y eso es peor que no nombrar nada: la
+      // cuarta cláusula del puerto pide que el testigo nombre la invocación
+      // que de verdad se hizo, y acá no se hizo ninguna.
+      return conTestigo(
+        invocacion: '',
+        cubierto: const [],
+        omitido: const [
+          'No se le dio ningún sujeto, así que no se invocó ninguna herramienta.'
+        ],
+        terminacion: Termination.interrumpida,
+        codigo: -1,
+      );
     }
 
-    final r = await ejecutor.correr(programa, argumentos(subjects),
+    // Los argumentos se calculan UNA vez y se reusan. Se calculaban dos veces
+    // —una para el texto del testigo y otra para la invocación real— y nada
+    // garantizaba que dieran lo mismo.
+    final args = List<String>.unmodifiable(argumentos(pedidos));
+    final invocacion = [programa, ...args].join(' ');
+
+    final r = await ejecutor.correr(programa, args,
         directorio: directorio, presupuesto: presupuesto);
 
     if (r.terminacion != Termination.completa) {
-      return sinCobertura(r.terminacion, r.codigo,
-          'La herramienta no llego a producir un resultado: ${r.salidaDeError}');
+      return conTestigo(
+        invocacion: invocacion,
+        cubierto: const [],
+        omitido: [
+          'La herramienta no llegó a producir un resultado: ${r.salidaDeError}',
+          if (r.terminacion == Termination.tiempoAgotado)
+            'Los procesos descendientes no se rastrean: si la herramienta dejó '
+                'hijos, pueden seguir vivos.',
+        ],
+        terminacion: r.terminacion,
+        codigo: r.codigo,
+      );
     }
 
+    // **Desde acá la terminación es `completa` y no se toca más.** Se
+    // reescribía a `interrumpida` cuando el código era desconocido o cuando la
+    // salida no se podía leer, y eso es falso: la herramienta corrió y produjo
+    // un resultado, que es la definición literal de `completa`. Que nosotros
+    // no sepamos interpretarlo es nuestro problema, y va en `omitted`. El
+    // veredicto no concluyente sale igual, porque no hay sujetos cubiertos.
     if (!codigosDeCorrida.contains(r.codigo)) {
-      return sinCobertura(
-          Termination.interrumpida,
-          r.codigo,
-          'Codigo de salida ${r.codigo}, que no esta entre los que significan '
-          'que la herramienta corrio (${codigosDeCorrida.join(", ")}). '
-          'Suponer que es benigno seria adivinar.');
+      return conTestigo(
+        invocacion: invocacion,
+        cubierto: const [],
+        omitido: [
+          'Código de salida ${r.codigo}, que no está entre los que significan '
+              'que la herramienta corrió (${codigosDeCorrida.join(", ")}). '
+              'Suponer que es benigno sería adivinar.',
+        ],
+        terminacion: Termination.completa,
+        codigo: r.codigo,
+      );
     }
 
     final salida = QuotedText(ensamblar(r), source: invocacion);
@@ -101,34 +214,34 @@ abstract base class PasoDeCascada implements Verifier {
     try {
       diagnosticos = normalizador.normalize(salida);
     } on UnreadableToolOutput catch (e) {
-      // El resultado NO es un diagnostico contra el codigo del usuario: es que
-      // el arnes no sabe leer lo que tiene delante. Esa es exactamente la
-      // categoria que ADR-011 creo, y el motivo viaja en el testigo.
-      return sinCobertura(Termination.interrumpida, r.codigo,
-          'No se pudo interpretar la salida: ${e.reason}');
+      // El resultado NO es un diagnóstico contra el código del usuario: es que
+      // el arnés no sabe leer lo que tiene delante.
+      return conTestigo(
+        invocacion: invocacion,
+        cubierto: const [],
+        omitido: ['No se pudo interpretar la salida: ${e.reason}'],
+        terminacion: Termination.completa,
+        codigo: r.codigo,
+      );
     }
 
-    final c = cobertura(subjects, salida);
-    return VerificationOutcome(
-      verifierId: id,
-      diagnostics: diagnosticos,
-      witness: Witness(
-        invocation: invocacion,
-        subjects: c.cubierto,
-        omitted: c.omitido,
-        termination: Termination.completa,
-        exitCode: r.codigo,
-        finishedAt: DateTime.now().toUtc(),
-      ),
+    final c = cobertura(pedidos, salida);
+    return conTestigo(
+      invocacion: invocacion,
+      cubierto: c.cubierto,
+      omitido: c.omitido,
+      terminacion: Termination.completa,
+      codigo: r.codigo,
+      diagnosticos: diagnosticos,
     );
   }
 }
 
 /// `FormatCheck` — comprueba el formato sin escribir nada.
 ///
-/// **Es el paso que SI puede detectar su propia ceguera.** La herramienta
-/// informa cuantos archivos miro, y esta medido que con un directorio que no
-/// existe sale con codigo 0 y una queja por la corriente de error que nadie
+/// **Es el paso que SÍ puede detectar su propia ceguera.** La herramienta
+/// informa cuántos archivos miró, y está medido que con un directorio que no
+/// existe sale con código 0 y una queja por la corriente de error que nadie
 /// lee. Cero archivos mirados deja el testigo sin sujetos, y sin sujetos no
 /// hay verde.
 final class PasoDeFormato extends PasoDeCascada {
@@ -148,16 +261,16 @@ final class PasoDeFormato extends PasoDeCascada {
   List<String> argumentos(List<String> sujetos) =>
       ['format', '--output=none', ...sujetos];
 
-  /// `0` corrio; `65` corrio y encontro codigo que no parsea. **No se usa
-  /// `--set-exit-if-changed`**: el veredicto sale de los diagnosticos, no del
-  /// codigo de salida, que es lo que dice el propio `Witness.exitCode`.
+  /// `0` corrió; `65` corrió y encontró código que no parsea. **No se usa
+  /// `--set-exit-if-changed`**: el veredicto sale de los diagnósticos, no del
+  /// código de salida, que es lo que dice el propio `Witness.exitCode`.
   @override
   Set<int> get codigosDeCorrida => const {0, 65};
 
   @override
   DiagnosticNormalizer get normalizador => const NormalizadorDeFormato();
 
-  /// El resumen y los archivos cambiados salen por la corriente estandar; los
+  /// El resumen y los archivos cambiados salen por la corriente estándar; los
   /// errores de parseo, por la de error. El normalizador cuenta con este orden.
   @override
   String ensamblar(ResultadoDeProceso r) =>
@@ -165,42 +278,47 @@ final class PasoDeFormato extends PasoDeCascada {
 
   @override
   Cobertura cobertura(List<String> pedidos, QuotedText salida) {
+    final (:sanos, :motivos) = separar(pedidos);
     final mirados = const NormalizadorDeFormato().archivosMirados(salida);
+
     if (mirados == 0) {
       return (
         cubierto: const <String>[],
         omitido: [
-          'La herramienta informo que no miro NINGUN archivo, con el alcance '
-              '${pedidos.join(", ")}. Su codigo de salida es 0 igual, asi que '
-              'esto no se puede leer del codigo: sale del resumen.',
+          ...motivos,
+          'La herramienta informó que no miró NINGÚN archivo. Su código de '
+              'salida es 0 igual, así que esto no se puede leer del código: '
+              'sale del resumen.',
         ],
       );
     }
     // Los archivos que no parsean no entran en la cuenta de formateados: la
-    // herramienta los salta. Que los salte esta bien; que no se diga, no.
-    final noParsearon = salida.content.contains(
-            'Could not format because the source could not be parsed:')
-        ? [
-            'Hubo archivos que no parsean y quedaron sin formatear. Estan '
-                'reportados como diagnostico, no omitidos en silencio.'
-          ]
-        : <String>[];
-    return (cubierto: pedidos, omitido: noParsearon);
+    // herramienta los salta. Que los salte está bien; que no se diga, no.
+    return (
+      cubierto: sanos,
+      omitido: [
+        ...motivos,
+        if (salida.content.contains(
+            'Could not format because the source could not be parsed:'))
+          'Hubo archivos que no parsean y quedaron sin formatear. Están '
+              'reportados como diagnóstico, no omitidos en silencio.',
+      ],
+    );
   }
 }
 
-/// `StaticAnalysis` — el analizador estatico.
+/// `StaticAnalysis` — el analizador estático.
 ///
-/// **Este paso NO puede detectar su propia ceguera, y lo declara.** Esta
-/// medido: sobre un directorio vacio la herramienta devuelve exactamente lo
-/// mismo que sobre un directorio lleno de codigo limpio —codigo 0 y la lista
-/// de hallazgos vacia—, asi que de su salida no se puede saber si leyo algo.
+/// **Este paso NO puede detectar su propia ceguera, y lo declara.** Está
+/// medido: sobre un directorio vacío la herramienta devuelve exactamente lo
+/// mismo que sobre un directorio lleno de código limpio —código 0 y la lista
+/// de hallazgos vacía—, así que de su salida no se puede saber si leyó algo.
 ///
-/// Se compensa por dos lados, y los dos quedan escritos en el testigo:
-/// una ruta que no existe le hace devolver un codigo que no esta en la lista
-/// blanca, y la cantidad de archivos del alcance la cuenta el arnes en vez de
-/// pedirsela a la herramienta. Lo que sigue sin cubrirse —que haya leido todos
-/// los que contamos— es residuo declarado, no un hueco silencioso.
+/// Se compensa por dos lados, y los dos quedan escritos en el testigo: una
+/// ruta que no existe le hace devolver un código que no está en la lista
+/// blanca, y los archivos del alcance los cuenta el arnés, sujeto por sujeto.
+/// Lo que sigue sin cubrirse —que haya leído todos los que contamos— es
+/// residuo declarado, no un hueco silencioso.
 final class PasoDeAnalisis extends PasoDeCascada {
   const PasoDeAnalisis({
     required super.ejecutor,
@@ -208,24 +326,22 @@ final class PasoDeAnalisis extends PasoDeCascada {
     super.presupuesto,
   });
 
-  static const _sufijoDeFuente = '.dart';
-
   @override
   String get id => 'StaticAnalysis';
 
   @override
   String get programa => 'dart';
 
-  /// El formato se eligio por su caso vacio: el otro escribe cero bytes cuando
+  /// El formato se eligió por su caso vacío: el otro escribe cero bytes cuando
   /// no encuentra nada, y cero bytes es lo mismo que deja una herramienta que
-  /// no corrio. Ver [NormalizadorDeAnalisis].
+  /// no corrió. Ver [NormalizadorDeAnalisis].
   @override
   List<String> argumentos(List<String> sujetos) =>
       ['analyze', '--format=json', ...sujetos];
 
-  /// `0` sin hallazgos —incluidos los informativos, esta medido—; `1`, `2` y
+  /// `0` sin hallazgos —incluidos los informativos, está medido—; `1`, `2` y
   /// `3` con hallazgos de distinta gravedad. Una ruta inexistente da `64`, que
-  /// deliberadamente NO esta: es el unico caso ciego que la herramienta si
+  /// deliberadamente NO está: es el único caso ciego que la herramienta sí
   /// delata.
   @override
   Set<int> get codigosDeCorrida => const {0, 1, 2, 3};
@@ -238,44 +354,12 @@ final class PasoDeAnalisis extends PasoDeCascada {
 
   @override
   Cobertura cobertura(List<String> pedidos, QuotedText salida) {
-    final cuenta = _archivosDeFuente(pedidos);
-    final residuo =
-        'La herramienta no informa que archivos leyo: sobre un alcance vacio '
-        'devuelve lo mismo que sobre uno limpio. La cobertura se comprobo '
-        'contando los archivos del alcance ($cuenta), no leyendo su reporte. '
-        'Que los haya leido TODOS no lo verifica este paso.';
-    if (cuenta == 0) {
-      return (
-        cubierto: const <String>[],
-        omitido: [
-          'No hay ningun archivo de fuente bajo ${pedidos.join(", ")}, asi que '
-              'no hubo nada que analizar. $residuo',
-        ],
-      );
-    }
-    return (cubierto: pedidos, omitido: [residuo]);
-  }
-
-  /// Cuenta los archivos de fuente del alcance. **Lo hace el arnes porque la
-  /// herramienta no lo dice**, y no al reves.
-  int _archivosDeFuente(List<String> pedidos) {
-    var n = 0;
-    for (final pedido in pedidos) {
-      final absoluto =
-          rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
-      final archivo = File(absoluto);
-      if (archivo.existsSync()) {
-        if (absoluto.endsWith(_sufijoDeFuente)) n++;
-        continue;
-      }
-      final carpeta = Directory(absoluto);
-      if (!carpeta.existsSync()) continue;
-      n += carpeta
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .where((f) => f.path.endsWith(_sufijoDeFuente))
-          .length;
-    }
-    return n;
+    final (:sanos, :motivos) = separar(pedidos);
+    const residuo =
+        'La herramienta no informa qué archivos leyó: sobre un alcance vacío '
+        'devuelve lo mismo que sobre uno limpio. La cobertura se comprobó '
+        'contando los archivos de cada sujeto, no leyendo su reporte. Que los '
+        'haya leído TODOS no lo verifica este paso.';
+    return (cubierto: sanos, omitido: [...motivos, residuo]);
   }
 }

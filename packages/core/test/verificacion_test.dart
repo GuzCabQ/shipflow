@@ -17,16 +17,30 @@ Witness testigo({
   String invocacion = 'verificador',
   int exitCode = 0,
   Termination termination = Termination.completa,
+  List<String> omitido = const [],
 }) =>
     Witness(
       invocation: invocacion,
       subjects: sujetos,
+      omitted: omitido,
       exitCode: exitCode,
       termination: termination,
       finishedAt: DateTime.utc(2026, 8, 29),
     );
 
 void main() {
+  test('declarar una omisión NO invalida el testigo', () {
+    // Un paso que cubrió parte del alcance y lo dice atestigua. Uno que cubrió
+    // todo y no lo dice no es mejor: por eso `omitted` no entra en `attests`.
+    expect(testigo(omitido: const ['lib/otro: no existe']).attests, isTrue);
+  });
+
+  test('un motivo en blanco no es un motivo', () {
+    // Mismo criterio que las evasiones de `Rule`: una cadena vacía ocupa lugar
+    // en la lista y no dice qué quedó afuera.
+    expect(() => testigo(omitido: const ['  ']), throwsArgumentError);
+  });
+
   test('sin testigo: no concluyente, aunque no haya diagnósticos', () {
     final r = VerificationOutcome(verifierId: 'V', diagnostics: []);
     expect(r.verdict, equals(Verdict.noConcluyente));

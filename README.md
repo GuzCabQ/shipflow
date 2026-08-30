@@ -11,12 +11,18 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ## Estado: fase 2, tercera rebanada. La cascada empieza a correr.
 
-`core` existe: **las entidades y los puertos, como tipos, sin una sola
-implementación.** Y existe el **fixture**: un proyecto de verdad, con toolchain
-de verdad, sobre el que `verify` y `ship` van a correr.
+`core` existe: **las entidades y los puertos, como tipos.** Cuatro de los
+veintitrés ya tienen implementación viva y suite de contrato. Y existe el
+**fixture**: un proyecto de verdad, con toolchain de verdad.
 
-**Ninguno de los dos existe todavía.** No hay CLI, no hay cascada, no hay
-ganchos. Eso es deliberado y está declarado más abajo, control por control.
+**Existen los dos primeros pasos de la cascada** —`FormatCheck` y
+`StaticAnalysis`—: invocan la herramienta, normalizan su salida y devuelven su
+testigo.
+
+**No existe la cascada como tal**, que es otra cosa: nadie los ordena, nadie
+corta temprano, nadie administra presupuesto. Eso es de `orchestration` y no
+está. Tampoco hay CLI, ni `vcs`, ni ensamblado de PR, ni ganchos. Todo eso es
+deliberado y está declarado más abajo, control por control.
 
 **El problema que resuelve.** El intento anterior no falló por mala
 arquitectura: falló porque todo lo que gobernaba el proceso estaba escrito en
@@ -42,10 +48,19 @@ python3 tool/checks/capas.py                  # las reglas que se leen del texto
    && dart run bin/check.dart      # serialización, opacidad, puertos, colecciones
    && dart run bin/grafo.dart)     # el grafo: derivado == commiteado
 python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
-dart test packages/core
+python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
+dart test packages/core                       # invariantes del dominio
+dart test packages/cli                        # las suites de CONTRATO entre implementaciones
+dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
 dart analyze --fatal-infos
-dart format --set-exit-if-changed packages tool   # el fixture se formatea solo
+dart format --set-exit-if-changed packages tool
+(cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
+(cd fixtures/app-minima/app && flutter test)
 ```
+
+**Son 13 pasos y `capas.py` lo verifica contra el workflow**, comando por
+comando: un paso borrado de CI, o neutralizado con un `if:` o un
+`continue-on-error`, pone el check en rojo.
 
 **Las reglas viven en [`arquitectura.json`](arquitectura.json)**, en un solo
 lugar y diffeable, aunque las apliquen dos motores distintos. Tocarlo es cambiar
@@ -384,6 +399,90 @@ la regla ganó una **segunda violación canónica** —un puerto implementado a
 través de una base abstracta— para que el arreglo no se pueda deshacer en
 silencio. El arnés pasó de 86 sabotajes a 87.
 
+### Lo que encontró un review, y por qué esta suite no
+
+Ocho hallazgos, todos reproducidos antes de tocar nada. Los tres primeros
+tienen la misma raíz: **escribí las cinco cláusulas del puerto y las rompí en
+el mismo archivo.**
+
+| Lo que la cláusula dice | Lo que el código hacía |
+|---|---|
+| el testigo nombra la invocación que de verdad se hizo | con alcance vacío nombraba un comando que nunca corrió |
+| lo no cubierto va en `omitted` | devolvía **todos** los sujetos pedidos si la herramienta miró **uno** |
+| `Termination` es un hecho, no una interpretación | lo reescribía a `interrumpida` cuando no sabía leer la salida |
+
+El peor es el segundo, y el corpus lo agrava. **ADR-012:** *«la superficie
+"cubierto" le pide al revisor que **no mire** algo. Eso solo es legítimo si el
+paso realmente corrió sobre el alcance que declara.»* Con una ruta buena y una
+inexistente, el testigo certificaba la que la herramienta había dicho que no
+encontraba — es decir, le habría pedido a una persona que se salteara un
+alcance que nadie miró. La cobertura ahora es por sujeto, y el arnés comprueba
+cada uno antes de creerle a la herramienta.
+
+Un sujeto omitido **no** vuelve rojo el paso: sale de «cubierto», que es donde
+importa, y queda en `omitted` con su motivo. Si una omisión debe detener algo
+es política de `orchestration` —*«orden, corte temprano y presupuesto son
+política de `orchestration`, no del plugin»*, `docs/03` §6—, y ese paquete
+todavía no existe.
+
+Y había más, todos medidos:
+
+- La lista de sujetos es del llamador y **se usaba después del `await`**:
+  mutándola durante la corrida, el testigo nombraba una invocación sobre un
+  alcance y declaraba cobertura sobre otro. Se copia y se congela al entrar.
+- Un directorio sin permisos hacía que `run` **lanzara**, y el paso no devolvía
+  testigo ninguno — que rompe la primera cláusula. No poder mirar es un dato.
+- Al agotarse el presupuesto, el ejecutor devolvía **sin esperar** a que el
+  proceso muriera. Ahora dispara y espera, con un tope.
+- La decodificación toleraba bytes inválidos reemplazándolos, y eso contradice
+  a `QuotedText`, que promete el texto «tal cual llegó». Ahora es estricta, y
+  el costo queda declarado: una ruta con bytes que no son UTF-8 vuelve **no
+  concluyente el paso entero**, no solo ese archivo.
+- El error de una corriente **se tragaba**: una lectura rota producía una
+  terminación «completa» con la salida cortada.
+- `omitted` tenía `= const []`, así que una implementación que se olvidara del
+  campo declaraba cobertura total sin haberlo afirmado. Es el agujero que el
+  propio archivo describe para `Termination`, reabierto por la puerta de al
+  lado. Ahora es obligatorio, y los motivos en blanco se rechazan.
+
+**Por qué la suite de contrato no encontró nada de esto: yo elegí sus casos.**
+Un solo sujeto, siempre válido, siempre existente. Es la misma lección que la
+rebanada anterior ya había aprendido con los normalizadores y que no alcancé a
+aplicar acá — un conjunto de casos que alguien enumera cubre los que ese
+alguien pensó.
+
+### Y dos meta-checks que también fallaban en verde
+
+El del canario nuevo: **se podía borrar sin que nada fallara**. El arnés leía
+`violaciones_extra` con un valor por defecto vacío, así que la ausencia del
+canario se leía como «esta regla no tiene extras» — 86 sabotajes y exit 0,
+contra un README que afirmaba que el arreglo no se podía deshacer en silencio.
+Ahora el arnés declara qué violaciones **tiene** que encontrar en el registro.
+
+El del árbol sintáctico: resolvía la herencia por **nombre simple** en un mapa
+global. Dos clases homónimas en bibliotecas distintas se pisaban, y una
+concreta podía heredar los ancestros de la otra. Resolverlo de verdad pide
+identidad calificada; hasta entonces **falla ante el nombre repetido que
+participa de una herencia que tiene que resolver** — y solo ese. Fallar ante
+cualquier homónimo del repositorio le impondría a todo plugin futuro no repetir
+un nombre que ya use otro, y esa es una restricción de diseño que un check no
+tiene por qué imponer de contrabando.
+
+### Dónde el review se apoyó en un invariante que no dice eso
+
+Justificaba la decodificación estricta con **INV-6**. INV-6 dice *«todo texto
+de fuente externa se encapsula»*: es contra la inyección —`ASI01`, `docs/06`—
+y no habla de fidelidad de bytes. La exigencia de fidelidad la puso
+`QuotedText` en la fase 1, y es la que sostiene el cambio. La conclusión no se
+mueve; el fundamento sí, y citar mal un invariante es la clase de cosa que este
+repositorio no se puede permitir.
+
+También queda **un hueco que este cambio no introdujo y no cierra**: el esquema
+de traza no tiene número de versión, ni `Trace` ni `Witness`. `docs/09` habla de
+«la primera versión del esquema de traza» y el tipo no la lleva. Hoy no hay
+trazas persistidas, así que exigir `omitted` no rompe nada real; cuando las
+haya, esto va a hacer falta antes.
+
 ---
 
 ## Cuando una corrida no termina
@@ -559,9 +658,14 @@ Tres huecos de la **fase 0**, que estaban verdes porque no había código:
 ### S2.1 · ¿Qué promete la fase que todavía no cumple, y el artefacto lo declara?
 
 La fase 2 promete `verify` + `ship`. **Esta rebanada no entrega ninguno de los
-dos**: no hay CLI, no hay cascada, no hay ensamblado de PR. Entrega el
-**fixture** —el sujeto sobre el que todo eso va a correr— y la prueba de que
-sigue siendo un proyecto que funciona.
+dos.** Entrega los dos primeros **pasos** —que saben invocar, normalizar y
+atestiguar— y el **fixture** sobre el que corren.
+
+La distancia que queda está en la palabra: hay pasos, no hay **cascada**. Nadie
+los ordena por costo, nadie corta temprano, nadie administra el presupuesto —
+eso es política de `orchestration`, que no existe. Y sin `vcs` ni ensamblado de
+PR no hay `ship`. Lo que sí se puede afirmar es lo de siempre: **ningún paso da
+verde sobre algo que no miró.**
 
 Declarado en [`fixtures/app-minima/README.md`](fixtures/app-minima/README.md),
 que también dice lo que el fixture **no** es: no entra al grafo, no es miembro
@@ -669,7 +773,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **19 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los puertos de stack que quedan, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
+| **`verify` y `ship`.** Existen los dos primeros pasos y el fixture; falta lo que los convierte en un comando: el orden y el presupuesto de la cascada, los puertos de stack que quedan, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**
