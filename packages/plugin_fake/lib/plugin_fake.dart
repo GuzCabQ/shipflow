@@ -1,5 +1,5 @@
 /// `plugin_fake` — los puertos del plugin que ya tienen contrato, para
-/// pruebas. **Hoy dos de veintitrés**, y los demás llegan con su fase.
+/// pruebas. **Hoy tres de veintitrés**, y los demás llegan con su fase.
 ///
 /// **No es un atajo: es la segunda implementación viva.** Mientras un puerto
 /// tenga una sola, no es una abstracción — es una indirección que todavía no
@@ -11,5 +11,6 @@
 /// error escrito dos veces.
 library;
 
+export 'src/normalizador.dart';
 export 'src/politica_de_artefactos.dart';
 export 'src/topologia.dart';

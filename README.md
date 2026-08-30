@@ -9,7 +9,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, primera rebanada. Hay contratos y un sujeto; no hay producto.
+## Estado: fase 2, segunda rebanada. Hay contratos y un sujeto; no hay producto.
 
 `core` existe: **las entidades y los puertos, como tipos, sin una sola
 implementación.** Y existe el **fixture**: un proyecto de verdad, con toolchain
@@ -180,6 +180,11 @@ Cada puerto implementado tiene su suite, y **la corren las dos**:
 |---|---|---|
 | `ProjectTopology` | lee el fixture del disco | se le declara la topología |
 | `ArtifactPolicy` | clasifica con los patrones de `N1-02` y `N1-03` | se le declaran las respuestas |
+| `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
+
+`DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
+uno y los formatos que tiene que leer son varios. La suite corre contra las
+tres, y cada una trae su propia muestra — el contrato no conoce ningún formato.
 
 **El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
 un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
@@ -203,6 +208,57 @@ escribió en el puerto, en `core`, donde vale para cualquier stack:
 
 Eso es lo que una suite de contrato produce cuando funciona: no un error en una
 implementación, **sino una parte del acuerdo que nadie había escrito**.
+
+### Y lo que encontró la segunda corrida, midiendo las herramientas
+
+Antes de escribir los normalizadores se midió qué escribe cada herramienta en
+cada situación. Tres resultados, reproducibles:
+
+| Invocación | Código | Escribe |
+|---|---|---|
+| formateador sobre un directorio **inexistente** | **0** | `Formatted no files` |
+| analizador, formato `machine`, sin hallazgos | 0 | **cero bytes** |
+| analizador, formato `json`, sin hallazgos | 0 | `{"version":1,"diagnostics":[]}` |
+
+Las dos primeras son **verdes indistinguibles de la ceguera**: un paso que
+confíe en el código de salida da verde sobre un alcance que nunca miró. La
+tercera afirma haber mirado.
+
+Eso decidió dos cosas. Que el plugin use el formato **más incómodo de parsear**,
+porque es el único cuyo caso vacío se distingue del silencio. Y que la línea de
+resumen del formateador sea **obligatoria**: es el denominador, y sin ella cero
+hallazgos no significa nada.
+
+Las cuatro cláusulas que quedaron escritas en el puerto salen de ahí. La
+primera es la que sostiene a las demás: **una entrada que no se puede
+interpretar lanza; nunca devuelve la lista vacía.** La lista vacía tiene una
+sola lectura posible —«leí todo y no había nada»— y si además significara «no
+entendí», el verde del paso sería indistinguible de la ceguera.
+
+### Los guardias se probaron rompiéndolos
+
+Los treinta y dos tests de contrato y los once unitarios pasaron **en la primera
+corrida**, que no prueba nada: un test que nunca falló no está probado. Se
+mutaron los nueve guardias, uno por vez, corriendo las dos suites contra cada
+mutación:
+
+| Se rompió | Murió |
+|---|---|
+| el guardia del vacío | 1 test |
+| la versión de esquema | 2 |
+| la severidad sin mapeo cae en la más suave | 1 |
+| exigir el denominador | 4 |
+| el bloque de parseo sin líneas legibles | 1 |
+| el patrón del archivo que no parsea | 4 |
+| la lista inmodificable | 1 |
+| los campos exactos, en el fake | 1 |
+| recorrer **todas** las líneas, en el fake | 1 |
+
+**Cero sobrevivientes.** El primero es el que justifica el ejercicio: el guardia
+del vacío parecía código muerto, porque el decodificador de JSON también falla
+ante una entrada vacía. Un guardia al que otro le tapa el caso no está
+instalado, está de adorno — así que el test que lo cubre lo identifica **por su
+motivo**, no solo por el tipo de la excepción.
 
 ---
 
@@ -514,7 +570,7 @@ packages/
   rules           registro, proyección a C y E, telemetría
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
-  plugin_fake     los puertos con contrato, para pruebas · hoy 2 de 23
+  plugin_fake     los puertos con contrato, para pruebas · hoy 3 de 23
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py
