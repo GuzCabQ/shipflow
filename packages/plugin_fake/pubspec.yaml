@@ -1,5 +1,7 @@
 name: plugin_fake
-description: "Implementacion completa de todos los puertos, para pruebas."
+description: >-
+  Los puertos que ya tienen contrato, para pruebas. Cuales son y cuales
+  faltan lo declara arquitectura.json, no este texto.
 publish_to: none
 version: 0.1.0
 

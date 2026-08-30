@@ -31,7 +31,7 @@ class PoliticaDeArtefactosFalsa implements ArtifactPolicy {
   /// Un archivo generado nunca es editable: eso NO es una lista aparte, es una
   /// consecuencia. Tenerlas independientes permitiría declarar algo generado y
   /// editable a la vez, que es un estado que no significa nada.
-  /// Honra las dos cláusulas del contrato —lo generado no es editable, y la
+  /// Honra las cláusulas del contrato —lo generado no es editable, la
   /// ruta vacía tampoco—. **Eso no lo vuelve una copia del real**: son
   /// cláusulas del puerto, válidas en cualquier stack, no los patrones de
   /// NINGÚN ecosistema. Los patrones siguen sin estar acá, que es el punto —

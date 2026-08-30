@@ -4,10 +4,14 @@
 /// ningún CLI y ningún sistema de tickets; cuando necesita algo de ellos,
 /// declara un puerto y espera que alguien de afuera lo satisfaga.
 ///
-/// **Ningún puerto de este archivo tiene implementación todavía**, y eso está
-/// declarado en `arquitectura.json` bajo `puertos-sin-implementacion`, con la
-/// fase en que cada uno aparece. Sin esa declaración, «no hay implementación»
-/// sería indistinguible de «se nos olvidó».
+/// **Cuáles tienen implementación y cuáles no está declarado en
+/// `arquitectura.json`** bajo `puertos-sin-implementacion`, con la fase en que
+/// aparece cada uno. Esa lista se verifica en los DOS sentidos: un puerto nuevo
+/// sin declarar falla, y una declaración que quedó vieja —porque el puerto ya
+/// se implementó— también.
+///
+/// No se repite la cuenta acá. Un número en prosa que nada deriva envejece
+/// solo, y este archivo ya lo hizo una vez.
 library;
 
 import 'entidades.dart';
