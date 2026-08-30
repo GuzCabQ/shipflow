@@ -38,6 +38,9 @@ const excluidos = [
   '.dart_tool/',
   'build/',
   '.git/',
+  // El fixture es el SUJETO sobre el que corre el arnés, no parte del arnés:
+  // se verifica solo, con su propia toolchain, en su propio paso de CI.
+  'fixtures/',
   '.g.dart',
   '.freezed.dart',
   '.mocks.dart',

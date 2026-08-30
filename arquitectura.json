@@ -434,6 +434,14 @@
             ],
             "por_que": "Generados por la toolchain. No son arquitectura del producto.",
             "quien_lo_cubre": "nadie, y no hace falta: no se versionan."
+          },
+          "fixtures": {
+            "que": [
+              "fixtures/"
+            ],
+            "por_que": "Un fixture es el SUJETO sobre el que corre el arnes, no parte del arnes. El grafo mapea NUESTRA arquitectura; incluirlo mezclaria dos proyectos distintos en el mismo mapa y sus archivos apareceran siempre como huerfanos porque ningun punto de entrada nuestro los alcanza.",
+            "quien_lo_cubre": "El fixture se verifica a si mismo: CI corre `pub get`, `analyze` y `test` sobre el, con su propia toolchain. Un fixture que dejo de compilar es rojo. Es F36 — el fixture del spec «minimo valido» que nunca valido.",
+            "residuo_declarado": "Codigo de producto escondido bajo fixtures/ no lo veria el grafo. Lo acota `deps-hacia-core`: si un paquete de fixtures/ entrara al `workspace:`, aparecera como miembro sin declarar y falla. No puede volverse parte de nuestra arquitectura en silencio."
           }
         },
         "residuo_declarado": "La arista `describe` (prosa -> codigo) NO se deriva y esta CONGELADA por el freno de GRAFO §8: se agrega cuando exista el primer caso real de prosa desincronizada. Sin ella, Q4 no se responde, y por eso los campos `hash` y `hash_destino` tampoco se escriben: un campo que hoy no responde ninguna pregunta es andamiaje. Se responden Q1, Q2, Q5 y Q8; las otras cuatro no."

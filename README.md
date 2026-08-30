@@ -295,6 +295,49 @@ Tres huecos de la **fase 0**, que estaban verdes porque no había código:
 
 ---
 
+## Sabotajes del estado intermedio · fase 2
+
+### S2.1 · ¿Qué promete la fase que todavía no cumple, y el artefacto lo declara?
+
+La fase 2 promete `verify` + `ship`. **Esta rebanada no entrega ninguno de los
+dos**: no hay CLI, no hay cascada, no hay ensamblado de PR. Entrega el
+**fixture** —el sujeto sobre el que todo eso va a correr— y la prueba de que
+sigue siendo un proyecto que funciona.
+
+Declarado en [`fixtures/app-minima/README.md`](fixtures/app-minima/README.md),
+que también dice lo que el fixture **no** es: no entra al grafo, no es miembro
+del workspace, y **no es representativo de la escala** — dos paquetes contra
+las decenas de un proyecto real.
+
+### S2.2 · ¿Qué queda a medias si se instala solo una parte?
+
+El fixture tiene una mitad Dart pura y una mitad Flutter. **La primera se
+verifica con la toolchain que CI ya tenía; la segunda necesita instalar
+Flutter.** Si esa instalación se cae o alguien saca el paso, la mitad Flutter
+—que es la que justifica que el fixture sea Flutter— queda sin verificar y en
+verde.
+
+| El sabotaje | Resultado |
+|---|---|
+| Sacar de CI el paso que verifica la mitad Flutter | **detectado** — los dos pasos del fixture son obligatorios, con su comando exacto y su directorio |
+
+### S2.3 · ¿Se puede pasar el check de esta fase sin cumplirlo?
+
+**Sí, y es F36.** El criterio de salida dice *«sobre un fixture real»*. Un
+fixture commiteado es una **fotografía**: sus archivos están ahí porque alguien
+los copió. Un árbol con la forma correcta y nada detrás satisfaría la letra del
+criterio sin que nada hubiera compilado nunca.
+
+| El sabotaje | Resultado |
+|---|---|
+| Romper el fixture para que deje de compilar | **detectado** — `dart analyze` sale con 3, y ese comando es un paso obligatorio de CI |
+
+**Por eso CI ejecuta el fixture en vez de solo tenerlo.** Y ya se cobró una
+pieza: al armarlo, el analizador real encontró dos errores en el test de `app`
+que yo no había visto. Un fixture inventado no da eso.
+
+---
+
 ## Sabotajes del estado intermedio · fase 0b
 
 Obligación de cada fase, al empezarla: **tres sabotajes contra el estado en que
@@ -367,6 +410,8 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **Ninguno de los 23 puertos tiene implementación.** Está declarado regla por regla, no solo acá | `plugin_fake` los implementa todos: **fase 2** |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
+| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los once puertos del plugin de stack, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
+| **La suite de contrato.** Sin ella `plugin_fake` no es un sustituto válido, y todo lo que se pruebe contra él queda verde por construcción (`docs/08` §2) | **Fase 2**, con los primeros puertos |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**

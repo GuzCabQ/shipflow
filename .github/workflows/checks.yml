@@ -102,6 +102,25 @@ jobs:
       - name: pruebas de core
         run: dart test packages/core
 
+      # EL FIXTURE SE VERIFICA A SÍ MISMO.
+      #
+      # Un fixture commiteado es una fotografía: sus archivos están ahí porque
+      # alguien los copió, no porque el proyecto siga funcionando. Sin esto,
+      # «`ship` corre sobre un fixture real» sería cierto de un árbol de
+      # archivos con la forma correcta y nada detrás. Es F36.
+      - name: flutter, para el fixture
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+
+      - name: fixture · el dominio compila y sus pruebas pasan
+        run: dart pub get && dart analyze && dart test
+        working-directory: fixtures/app-minima/dominio
+
+      - name: fixture · la app compila y sus pruebas pasan
+        run: flutter pub get && flutter analyze && flutter test
+        working-directory: fixtures/app-minima/app
+
       - name: analyze
         run: dart analyze --fatal-infos
 
