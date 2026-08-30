@@ -7,6 +7,17 @@
 include: package:lints/recommended.yaml
 
 analyzer:
+  # EL FIXTURE NO SE ANALIZA DESDE ACÁ.
+  #
+  # Es otro proyecto con otra toolchain: `app` depende de Flutter, y el
+  # analizador de la raíz no lo tiene. Analizarlo desde acá produce errores de
+  # URI irresolubles — y antes NO fallaba, solo porque Flutter estaba instalado
+  # en el mismo job de CI. Ese acoplamiento tapaba este problema.
+  #
+  # El fixture se analiza a sí mismo, en su propio job, con su propia toolchain
+  # fijada. Quien lo verifica no es nadie de acá.
+  exclude:
+    - fixtures/**
   language:
     strict-casts: true
     strict-inference: true

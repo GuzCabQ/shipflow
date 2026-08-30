@@ -102,7 +102,9 @@ PASOS_OBLIGATORIOS = {
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
-    "el formato": ("dart format --set-exit-if-changed .", None),
+    # Por ruta explícita: `dart format` NO respeta las exclusiones del
+    # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
+    "el formato": ("dart format --set-exit-if-changed packages tool", None),
     # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
     # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
     "el fixture · dominio": ("dart pub get && dart analyze && dart test",
@@ -223,12 +225,32 @@ def check_meta() -> None:
     _check_casos_ciegos()
     _check_ci_ejecuta()
     _check_readme()
+    _check_nada_fuera_de_alcance()
     _check_huella()
     _check_delegadas()
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
                 fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
+
+
+def _check_nada_fuera_de_alcance() -> None:
+    """No hay código nuestro fuera de lo que el formateo y el análisis miran.
+
+    `dart format` recibe rutas explícitas —`packages tool`— porque no respeta
+    las exclusiones del analizador. Eso deja un borde: un `.dart` en cualquier
+    otro lado quedaría sin formatear y sin analizar, y nadie lo notaría.
+    """
+    permitidos = ("packages/", "tool/", "fixtures/")
+    for archivo in sorted(RAIZ.rglob("*.dart")):
+        rel = str(archivo.relative_to(RAIZ))
+        if any(p in rel for p in (".dart_tool", "build/")):
+            continue
+        if not rel.startswith(permitidos):
+            fallos.append(
+                f"{rel}: hay código Dart fuera de {list(permitidos)}, que es lo "
+                f"único que el formateo y el análisis miran. O lo movés adentro, "
+                f"o queda sin verificar y nadie se entera.")
 
 
 def _check_toolchain_del_job(nombre: str, job: dict) -> None:

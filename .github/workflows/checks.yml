@@ -106,7 +106,7 @@ jobs:
         run: dart analyze --fatal-infos
 
       - name: format
-        run: dart format --set-exit-if-changed .
+        run: dart format --set-exit-if-changed packages tool
 
   # EL FIXTURE, EN SU PROPIO JOB. NO ES PROLIJIDAD.
   #
