@@ -101,6 +101,17 @@ void main() {
     // chica. Es el mismo modo de fallo que el archivo declara evitar, cometido
     // dentro del archivo que lo declara.
     for (final caso in {
+      // La SECCIÓN entera, no solo una entrada. Se había arreglado el caso
+      // que un review mostró —una entrada— y no la clase: `dependencies: 42`
+      // seguía produciendo una topología vacía en silencio.
+      '`dependencies` es una lista': 'name: app\ndependencies:\n  - local\n',
+      '`dependencies` es un número': 'name: app\ndependencies: 42\n',
+      '`dev_dependencies` es una lista':
+          'name: app\ndev_dependencies:\n  - x\n',
+      // Y un nivel más: el NOMBRE de la dependencia. No lo pidió ningún
+      // review; salió de recorrer la estructura entera en vez del caso.
+      'el nombre de una dependencia no es cadena':
+          'name: app\ndependencies:\n  42:\n    path: ../x\n',
       '`path` numérico': 'name: app\ndependencies:\n  x:\n    path: 42\n',
       '`path` vacío': "name: app\ndependencies:\n  x:\n    path: ''\n",
       '`path` nulo': 'name: app\ndependencies:\n  x:\n    path:\n',
@@ -120,6 +131,8 @@ void main() {
       'restricción de versión': 'name: app\ndependencies:\n  x: ^1.0.0\n',
       'sin restricción': 'name: app\ndependencies:\n  x:\n',
       'mapa sin `path`': 'name: app\ndependencies:\n  x:\n    sdk: flutter\n',
+      'sección ausente': 'name: app\n',
+      'sección presente y vacía': 'name: app\ndependencies:\n',
     }.entries) {
       test(caso.key, () async {
         paquete('app', caso.value);
