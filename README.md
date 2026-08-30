@@ -9,11 +9,14 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 1. Hay contratos, no hay producto.
+## Estado: fase 2, primera rebanada. Hay contratos y un sujeto; no hay producto.
 
 `core` existe: **las entidades y los puertos, como tipos, sin una sola
-implementación.** No hay CLI, no hay cascada, no hay ganchos. Eso es deliberado
-y está declarado más abajo, control por control.
+implementación.** Y existe el **fixture**: un proyecto de verdad, con toolchain
+de verdad, sobre el que `verify` y `ship` van a correr.
+
+**Ninguno de los dos existe todavía.** No hay CLI, no hay cascada, no hay
+ganchos. Eso es deliberado y está declarado más abajo, control por control.
 
 **El problema que resuelve.** El intento anterior no falló por mala
 arquitectura: falló porque todo lo que gobernaba el proceso estaba escrito en
@@ -140,8 +143,8 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los siete pasos obligatorios están fijados en `capas.py` —es política, no
-deriva de nada— y se comprueban en tres modos de fallo distintos:
+Los 10 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
 |---|---|

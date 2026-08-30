@@ -346,6 +346,34 @@ def casos() -> list[dict]:
                                                  "`tool/serializacion`", 1)},
         "menciona": "no existe en el",
     })
+    # La toolchain: dos formas de que el verde deje de significar lo que dice.
+    # No hay fallo visible en ninguna — hay un instrumento sustituido.
+    flutter_paso = ("      - name: flutter\n"
+                    "        uses: subosito/flutter-action@"
+                    "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
+                    "        with:\n          flutter-version: 3.44.0")
+    assert ci.count(flutter_paso) == 1, "ancla del paso de flutter no encontrada"
+    c.append({
+        "nombre": "ci · dos toolchains de Dart en el mismo job",
+        "archivos": {CI_REL: ci.replace(
+            "      - name: analyze\n        run: dart analyze --fatal-infos",
+            flutter_paso + "\n\n      - name: analyze\n"
+            "        run: dart analyze --fatal-infos", 1)},
+        "menciona": "instala Dart Y Flutter",
+    })
+    c.append({
+        "nombre": "ci · Flutter en un canal flotante como compuerta",
+        "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
+                                        "          channel: stable", 1)},
+        "menciona": "canal flotante",
+    })
+    c.append({
+        "nombre": "readme · una cantidad en prosa que envejeció",
+        "archivos": {"README.md": readme.replace("Los 10 pasos obligatorios",
+                                                 "Los 7 pasos obligatorios", 1)},
+        "menciona": "pasos obligatorios",
+    })
+
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     c.append({
