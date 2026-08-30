@@ -96,6 +96,50 @@ void main() {
         throwsA(isA<TopologiaIlegible>()));
   });
 
+  group('no poder INTERPRETAR una arista no es que no HAYA arista', () {
+    // El bug: `path: 42` se salteaba en silencio y la topología salía más
+    // chica. Es el mismo modo de fallo que el archivo declara evitar, cometido
+    // dentro del archivo que lo declara.
+    for (final caso in {
+      '`path` numérico': 'name: app\ndependencies:\n  x:\n    path: 42\n',
+      '`path` vacío': "name: app\ndependencies:\n  x:\n    path: ''\n",
+      '`path` nulo': 'name: app\ndependencies:\n  x:\n    path:\n',
+      'la dependencia es una lista':
+          'name: app\ndependencies:\n  x:\n    - a\n',
+    }.entries) {
+      test(caso.key, () async {
+        paquete('app', caso.value);
+        expect(() => TopologiaDart(raiz).packages(),
+            throwsA(isA<TopologiaIlegible>()));
+      });
+    }
+  });
+
+  group('lo que SÍ se saltea, porque es una conclusión y no una duda', () {
+    for (final caso in {
+      'restricción de versión': 'name: app\ndependencies:\n  x: ^1.0.0\n',
+      'sin restricción': 'name: app\ndependencies:\n  x:\n',
+      'mapa sin `path`': 'name: app\ndependencies:\n  x:\n    sdk: flutter\n',
+    }.entries) {
+      test(caso.key, () async {
+        paquete('app', caso.value);
+        final ps = await TopologiaDart(raiz).packages();
+        expect(ps.single.dependsOn, isEmpty);
+      });
+    }
+  });
+
+  test('una lectura que falla de verdad también es TopologiaIlegible',
+      () async {
+    // El test de «manifiesto ilegible» usa YAML sintácticamente inválido, así
+    // que no demuestra que un fallo de LECTURA —distinto de uno de parseo—
+    // termine normalizado. Bytes que no son UTF-8 lo ejercen de verdad.
+    final d = Directory('${raiz.path}/bytes')..createSync(recursive: true);
+    File('${d.path}/pubspec.yaml').writeAsBytesSync([0xC3, 0x28, 0xA0, 0xA1]);
+    expect(() => TopologiaDart(raiz).packages(),
+        throwsA(isA<TopologiaIlegible>()));
+  });
+
   test('un proyecto sin ningún paquete devuelve vacío, no falla', () async {
     // Es un resultado legítimo y distinto de «no pude mirar»: la diferencia la
     // sostiene que un manifiesto ilegible SÍ lanza.

@@ -101,9 +101,31 @@ class TopologiaDart implements ProjectTopology {
       if (seccion is! YamlMap) continue;
       for (final entrada in seccion.entries) {
         final valor = entrada.value;
-        if (valor is! YamlMap) continue;
+        // Formas LEGÍTIMAS de declarar algo que no es una dependencia local:
+        //   `paquete: ^1.0.0`    una restricción de versión
+        //   `paquete:`           sin restricción, valor nulo
+        //   `paquete: {sdk: …}`  un mapa sin `path`
+        // Todas se saltean porque no son topología, y eso es una CONCLUSIÓN.
+        if (valor == null || valor is String) continue;
+        if (valor is! YamlMap) {
+          throw TopologiaIlegible(
+              rutas.join(directorio, 'pubspec.yaml'),
+              FormatException('la dependencia «${entrada.key}» no es ni una '
+                  'restricción de versión ni un mapa: ${valor.runtimeType}'));
+        }
+        if (!valor.containsKey('path')) continue;
         final destino = valor['path'];
-        if (destino is! String) continue;
+        if (destino is! String || destino.isEmpty) {
+          // NO se saltea. No poder INTERPRETAR una arista es distinto de que
+          // no HAYA arista, y saltarla haría la topología más chica sin decir
+          // nada — el mismo modo de fallo que este archivo declara evitar unas
+          // líneas más arriba. Lo encontró un review.
+          throw TopologiaIlegible(
+              rutas.join(directorio, 'pubspec.yaml'),
+              FormatException('la dependencia «${entrada.key}» declara `path` '
+                  'con algo que no es una ruta: '
+                  '${destino == null ? "vacío" : destino.runtimeType}'));
+        }
         final absoluto = rutas.canonicalize(rutas.join(directorio, destino));
         // El nombre lo da el manifiesto del DESTINO, no la clave de la
         // dependencia: las dos pueden diferir, y la que manda es la del
