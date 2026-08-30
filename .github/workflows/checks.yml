@@ -108,6 +108,12 @@ jobs:
       - name: pruebas de core
         run: dart test packages/core
 
+      # Las suites de CONTRATO, que corren cada puerto contra su implementación
+      # real y su fake. Sin ellas, todo lo que se pruebe con el fake queda
+      # verde por construcción (docs/08 §2).
+      - name: suites de contrato
+        run: dart test packages/cli
+
       - name: analyze
         run: dart analyze --fatal-infos
 

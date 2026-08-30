@@ -331,12 +331,10 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology y ArtifactPolicy salieron de esta lista en la fase 2, con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra las dos.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "ProjectTopology": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "ArtifactPolicy": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "Verifier": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "DiagnosticNormalizer": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "CodegenTrigger": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",

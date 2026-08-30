@@ -44,6 +44,24 @@ abstract interface class ProjectTopology {
 }
 
 /// Qué artefactos produce y consume el stack, y cuáles no se tocan.
+///
+/// **Cláusulas del contrato, no de una implementación.** Las descubrió la suite
+/// de contrato al hacer diverger a las dos implementaciones, y valen para
+/// cualquier stack:
+///
+/// 1. **Lo generado nunca es editable.** No son dos hechos independientes: el
+///    segundo se sigue del primero. Poder declarar algo generado y editable a
+///    la vez sería un estado sin significado.
+/// 2. **Una ruta vacía no es editable.** Devolver `true` dejaría al arnés
+///    intentando escribir en ninguna parte.
+///
+/// Lo que SÍ es del stack son los patrones: qué cuenta como generado. Eso lo
+/// aporta el plugin y no aparece acá — si `core` conociera los sufijos de un
+/// ecosistema, cambiar de ecosistema exigiría cambiar `core`.
+///
+/// Este comentario nombraba uno de esos sufijos como ejemplo, y el check de
+/// cadenas lo rechazó. Tenía razón: la frase decía «si core conociera X» y al
+/// escribirla, core conocía X.
 abstract interface class ArtifactPolicy {
   bool isGenerated(String path);
   bool isEditable(String path);

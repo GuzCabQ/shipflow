@@ -11,3 +11,8 @@ resolution: workspace
 dependencies:
   core:
     path: ../core
+  # El pubspec se le pide a un PARSER de YAML, no a una expresión regular. Es
+  # la misma lección que ya pagó capas.py con el grafo de dependencias: un
+  # parser casero devuelve cero ante una sintaxis que no reconoce, y cero se
+  # lee igual que «este paquete no depende de nada».
+  yaml: ^3.1.0
