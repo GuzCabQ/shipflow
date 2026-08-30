@@ -85,7 +85,10 @@ def arq_con(mutar) -> str:
 # Esta lista es el piso. Borrarla es editar el arnés, que es el mismo acto que
 # borrar un check entero; no un campo que se va en un diff de JSON.
 EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
-    "puertos-sin-implementacion": {"implementado a traves de una base abstracta"},
+    "puertos-sin-implementacion": {
+        "implementado a traves de una base abstracta",
+        "homonima en el ORIGEN de la resolucion",
+    },
 }
 
 

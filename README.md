@@ -468,6 +468,45 @@ cualquier homónimo del repositorio le impondría a todo plugin futuro no repeti
 un nombre que ya use otro, y esa es una restricción de diseño que un check no
 tiene por qué imponer de contrabando.
 
+### Y una segunda vuelta, porque los dos arreglos estaban a medias
+
+Con las correcciones puestas, el review volvió a correr y encontró que **dos de
+los arreglos cubrían el caso que yo les había puesto delante y nada más.**
+
+**La cobertura del formateador seguía siendo agregada.** Arreglé «un sujeto que
+el arnés no puede ver» y no toqué «la herramienta miró menos de lo que hay»:
+con dos sujetos de un archivo cada uno y un resumen que decía `Formatted 1
+file`, el testigo certificaba los dos. Tenía los dos números a la vista —el
+arnés cuenta los archivos de cada sujeto, la herramienta informa cuántos
+miró— y no los comparé. **La misma reconciliación que acababa de escribir un
+nivel más abajo**, entre las líneas `Changed` y el `(N changed)` del resumen:
+aplicada a los diagnósticos y no a la cobertura, que es donde decide el verde.
+
+Ahora se reconcilia, sumando de vuelta los archivos que no parsean —la
+herramienta los salta, así que no entran en su cuenta—. Y si no cierra no se
+certifica **ningún** sujeto: el resumen es un total, no una lista, así que no
+hay forma de saber a cuál le faltó.
+
+Eso obligó a medir algo más: **la herramienta salta los componentes ocultos al
+recorrer, pero procesa un camino oculto si se lo nombran explícitamente.** Sin
+esa fidelidad la cuenta no cerraría nunca y todo saldría no concluyente — un
+fallo ruidoso, pero igual de inservible. Hay una prueba contra la toolchain de
+verdad que existe solo para eso: si mi forma de contar deja de coincidir con la
+suya, se pone roja.
+
+**Y el control de homónimas marcaba los nodos visitados, no el de arranque.**
+El mapa de herencia devuelve la última declaración: una clase concreta con
+homónima tomaba los ancestros de la otra desde el primer paso, y un puerto
+huérfano quedaba tapado en verde. Cuando verifiqué ese arreglo usé una *base*
+duplicada — que es exactamente el caso para el que lo había escrito.
+
+La condición tampoco era la que puse. La primera versión fallaba ante cualquier
+repetición; la segunda, ante ninguna en el origen. **Ninguna de las dos era la
+condición:** un nombre repetido solo es ambiguo si sus declaraciones **no
+coinciden en lo que heredan**. Si todas heredan lo mismo, da igual cuál gane el
+mapa. Ahora falla exactamente ahí, y el arnés ganó su tercera violación
+canónica —**88 sabotajes**— para que marcar el origen no se pueda deshacer.
+
 ### Dónde el review se apoyó en un invariante que no dice eso
 
 Justificaba la decodificación estricta con **INV-6**. INV-6 dice *«todo texto

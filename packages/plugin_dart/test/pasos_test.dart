@@ -115,6 +115,21 @@ void main() {
       expect(o.witness!.invocation, isNot(contains('no/existe')));
     });
 
+    test('el PROGRAMA también se captura una vez, no dos', () async {
+      // `argumentos` se capturaba una vez y `programa` se leía dos: una para
+      // el texto del testigo y otra para la invocación real. Con las
+      // implementaciones de hoy no falla —las dos devuelven una constante—,
+      // así que sin un paso que cambie no habría forma de que este guardia
+      // dispare nunca. Un control que no puede fallar no está probado.
+      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+      final paso =
+          _ProgramaInestable(ejecutor: ejecutor, directorio: raiz.path);
+      final o = await paso.run(['lib/']);
+      expect(o.witness!.invocation, ejecutor.invocaciones.single,
+          reason: 'el testigo tiene que nombrar el programa que se invocó, no '
+              'otra lectura del mismo getter');
+    });
+
     test('el testigo nombra la invocación que de verdad se hizo', () async {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final o = await PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path)
@@ -166,6 +181,66 @@ void main() {
           .run(['lib/', 'vacio']);
       expect(o.witness!.subjects, ['lib/']);
       expect(o.witness!.omitted.join(), contains('vacio'));
+    });
+  });
+
+  group('FormatCheck · la cuenta se reconcilia, no se toma como suficiente',
+      () {
+    // Que la herramienta haya mirado ALGO no dice que haya mirado lo que se le
+    // pidió. Un review lo reprodujo: dos sujetos de un archivo cada uno y un
+    // resumen que decía «1 file» certificaba los dos.
+    setUp(() {
+      Directory('${raiz.path}/dos').createSync();
+      File('${raiz.path}/dos/b.dart').writeAsStringSync('void main() {}\n');
+    });
+
+    test('miró menos archivos de los que hay: no se certifica ninguno',
+        () async {
+      final o = await formato(salida(
+              estandar: 'Formatted 1 file (0 changed) in 0.00 seconds.\n'))
+          .run(['lib/', 'dos']);
+      expect(o.verdict, Verdict.noConcluyente);
+      expect(o.witness!.subjects, isEmpty);
+      expect(o.witness!.omitted.join(), contains('No cierra'));
+    });
+
+    test('miró todos: certifica los dos sujetos', () async {
+      final o = await formato(salida(
+              estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n'))
+          .run(['lib/', 'dos']);
+      expect(o.verdict, Verdict.verde);
+      expect(o.witness!.subjects, ['lib/', 'dos']);
+    });
+
+    test('los que no parsean cuentan del lado de la herramienta', () async {
+      // La herramienta los salta, así que no entran en «Formatted N». Sin
+      // sumarlos de vuelta, todo archivo corrupto volvería no concluyente el
+      // alcance entero.
+      File('${raiz.path}/dos/roto.dart').writeAsStringSync('void main( {\n');
+      final o = await formato(salida(
+        codigo: 65,
+        estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n',
+        error: 'Could not format because the source could not be parsed:\n'
+            "line 2, column 1 of dos/roto.dart: Expected to find '}'.\n"
+            "line 2, column 1 of dos/roto.dart: Expected an identifier.\n",
+      )).run(['lib/', 'dos']);
+      expect(o.verdict, Verdict.rojo,
+          reason: 'tres archivos: dos formateados y uno que no parsea');
+      expect(o.witness!.subjects, ['lib/', 'dos']);
+      expect(o.witness!.omitted.join(), contains('no parsean'));
+    });
+
+    test('lo que cuelga de una carpeta oculta no se cuenta', () async {
+      // Está medido: la herramienta salta los componentes ocultos al recorrer.
+      // Contarlos haría que la reconciliación no cerrara NUNCA, y todo saldría
+      // no concluyente — un fallo ruidoso, pero igual de inservible.
+      Directory('${raiz.path}/dos/.oculto').createSync();
+      File('${raiz.path}/dos/.oculto/c.dart')
+          .writeAsStringSync('void main() {}\n');
+      final o = await formato(salida(
+              estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n'))
+          .run(['lib/', 'dos']);
+      expect(o.verdict, Verdict.verde);
     });
   });
 
@@ -236,4 +311,34 @@ class _MutaDurante implements EjecutorDeProceso {
       ..add('no/existe');
     return respuesta;
   }
+}
+
+/// Un paso cuyo `programa` cambia en cada lectura. Existe para que el guardia
+/// de «capturar una vez» tenga cómo fallar.
+final class _ProgramaInestable extends PasoDeCascada {
+  _ProgramaInestable({required super.ejecutor, required super.directorio});
+
+  int _lecturas = 0;
+
+  @override
+  String get id => 'ProgramaInestable';
+
+  @override
+  String get programa => 'herramienta-${_lecturas++}';
+
+  @override
+  List<String> argumentos(List<String> sujetos) => ['format', ...sujetos];
+
+  @override
+  Set<int> get codigosDeCorrida => const {0};
+
+  @override
+  DiagnosticNormalizer get normalizador => const NormalizadorDeFormato();
+
+  @override
+  String ensamblar(ResultadoDeProceso r) => r.salidaEstandar;
+
+  @override
+  Cobertura cobertura(List<String> pedidos, QuotedText salida) =>
+      (cubierto: pedidos, omitido: const []);
 }

@@ -18,6 +18,12 @@ import 'normalizadores.dart';
 /// Sobre qué pudo atestiguar un paso, y qué quedó afuera.
 typedef Cobertura = ({List<String> cubierto, List<String> omitido});
 
+/// Lo que el arnés sabe del alcance ANTES de creerle a la herramienta: qué
+/// sujetos son utilizables, por qué no lo son los demás, y **cuántos archivos
+/// hay que mirar**. Ese número es la mitad de una reconciliación; la otra la
+/// pone la herramienta.
+typedef Alcance = ({List<String> sanos, List<String> motivos, int archivos});
+
 /// Un paso de la cascada que invoca una herramienta y normaliza su salida.
 abstract base class PasoDeCascada implements Verifier {
   final EjecutorDeProceso ejecutor;
@@ -58,64 +64,74 @@ abstract base class PasoDeCascada implements Verifier {
   /// acordarse de ponerlo en rojo.
   Cobertura cobertura(List<String> pedidos, QuotedText salida);
 
-  /// Qué le pasa a cada sujeto ANTES de creerle a la herramienta: `null` si
-  /// tiene al menos un archivo que mirar, o el motivo por el que no.
+  /// Cuántos archivos de fuente hay bajo un sujeto, o el motivo por el que no
+  /// se pudo saber.
   ///
-  /// **Existe porque la cobertura tiene que ser por sujeto y no agregada.** Lo
-  /// era: si la herramienta decía haber mirado UN archivo, el paso devolvía
-  /// TODOS los sujetos pedidos como cubiertos. Con un alcance mixto —una ruta
-  /// buena y una que no existe— el testigo certificaba la que la herramienta
-  /// había dicho que no encontraba. Lo encontró un review.
-  Map<String, String?> problemasDeAlcance(List<String> pedidos) {
-    final salida = <String, String?>{};
-    for (final pedido in pedidos) {
-      final absoluto =
-          rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
-      try {
-        if (File(absoluto).existsSync()) {
-          salida[pedido] = absoluto.endsWith(sufijoDeFuente)
-              ? null
-              : 'no es un archivo de fuente de este stack';
-          continue;
-        }
-        final carpeta = Directory(absoluto);
-        if (!carpeta.existsSync()) {
-          salida[pedido] = 'no existe en el árbol';
-          continue;
-        }
-        final cuantos = carpeta
-            .listSync(recursive: true, followLinks: false)
-            .whereType<File>()
-            .where((f) => f.path.endsWith(sufijoDeFuente))
-            .length;
-        salida[pedido] =
-            cuantos == 0 ? 'no contiene ningún archivo de fuente' : null;
-      } on FileSystemException catch (e) {
-        // **No poder mirar es un dato, no una excepción que se escapa.** Un
-        // directorio sin permisos hacía que `run` lanzara y el paso no
-        // devolviera testigo NINGUNO, que rompe la primera cláusula del
-        // puerto. Se atrapa esta familia y no `Object`: un error de
-        // programación tiene que seguir subiendo.
-        salida[pedido] = 'no se pudo mirar: ${e.osError?.message ?? e.message}';
+  /// **Los componentes ocultos no se cuentan al recorrer un directorio**, y
+  /// eso está medido: la herramienta salta todo lo que cuelga de una carpeta
+  /// que empieza con punto. Un sujeto nombrado explícitamente SÍ se procesa
+  /// aunque sea oculto, también medido, y por eso la regla se aplica a lo que
+  /// hay debajo del sujeto y no al sujeto.
+  ///
+  /// Sin esta fidelidad la reconciliación sería siempre distinta de cero y
+  /// todo terminaría no concluyente. Es un fallo ruidoso, no silencioso, pero
+  /// igual inservible.
+  ({int archivos, String? problema}) _mirar(String pedido) {
+    final absoluto =
+        rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
+    try {
+      if (File(absoluto).existsSync()) {
+        return absoluto.endsWith(sufijoDeFuente)
+            ? (archivos: 1, problema: null)
+            : (
+                archivos: 0,
+                problema: 'no es un archivo de fuente de este stack'
+              );
       }
+      final carpeta = Directory(absoluto);
+      if (!carpeta.existsSync()) {
+        return (archivos: 0, problema: 'no existe en el árbol');
+      }
+      final cuantos = carpeta
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((f) => f.path.endsWith(sufijoDeFuente))
+          .where((f) => !rutas
+              .split(rutas.relative(f.path, from: absoluto))
+              .any((parte) => parte.startsWith('.')))
+          .length;
+      return cuantos == 0
+          ? (archivos: 0, problema: 'no contiene ningún archivo de fuente')
+          : (archivos: cuantos, problema: null);
+    } on FileSystemException catch (e) {
+      // **No poder mirar es un dato, no una excepción que se escapa.** Un
+      // directorio sin permisos hacía que `run` lanzara y el paso no
+      // devolviera testigo NINGUNO, que rompe la primera cláusula del puerto.
+      // Se atrapa esta familia y no `Object`: un error de programación tiene
+      // que seguir subiendo.
+      return (
+        archivos: 0,
+        problema: 'no se pudo mirar: ${e.osError?.message ?? e.message}',
+      );
     }
-    return salida;
   }
 
-  /// Los sujetos utilizables y los motivos de los que no lo son, ya en el
-  /// formato en que van al testigo.
-  ({List<String> sanos, List<String> motivos}) separar(List<String> pedidos) {
-    final problemas = problemasDeAlcance(pedidos);
-    return (
-      sanos: [
-        for (final p in pedidos)
-          if (problemas[p] == null) p
-      ],
-      motivos: [
-        for (final e in problemas.entries)
-          if (e.value != null) '${e.key}: ${e.value}',
-      ],
-    );
+  /// El alcance separado en lo utilizable y lo que no, con la cuenta de
+  /// archivos de lo utilizable.
+  Alcance separar(List<String> pedidos) {
+    final sanos = <String>[];
+    final motivos = <String>[];
+    var archivos = 0;
+    for (final pedido in pedidos) {
+      final r = _mirar(pedido);
+      if (r.problema == null) {
+        sanos.add(pedido);
+        archivos += r.archivos;
+      } else {
+        motivos.add('$pedido: ${r.problema}');
+      }
+    }
+    return (sanos: sanos, motivos: motivos, archivos: archivos);
   }
 
   @override
@@ -164,13 +180,14 @@ abstract base class PasoDeCascada implements Verifier {
       );
     }
 
-    // Los argumentos se calculan UNA vez y se reusan. Se calculaban dos veces
-    // —una para el texto del testigo y otra para la invocación real— y nada
-    // garantizaba que dieran lo mismo.
+    // El programa y los argumentos se calculan UNA vez y se reusan. Se
+    // calculaban dos veces —una para el texto del testigo y otra para la
+    // invocación real— y nada garantizaba que dieran lo mismo.
+    final prog = programa;
     final args = List<String>.unmodifiable(argumentos(pedidos));
-    final invocacion = [programa, ...args].join(' ');
+    final invocacion = [prog, ...args].join(' ');
 
-    final r = await ejecutor.correr(programa, args,
+    final r = await ejecutor.correr(prog, args,
         directorio: directorio, presupuesto: presupuesto);
 
     if (r.terminacion != Termination.completa) {
@@ -278,8 +295,10 @@ final class PasoDeFormato extends PasoDeCascada {
 
   @override
   Cobertura cobertura(List<String> pedidos, QuotedText salida) {
-    final (:sanos, :motivos) = separar(pedidos);
-    final mirados = const NormalizadorDeFormato().archivosMirados(salida);
+    const norma = NormalizadorDeFormato();
+    final (:sanos, :motivos, :archivos) = separar(pedidos);
+    final mirados = norma.archivosMirados(salida);
+    final sinParsear = norma.archivosQueNoParsean(salida).length;
 
     if (mirados == 0) {
       return (
@@ -292,15 +311,42 @@ final class PasoDeFormato extends PasoDeCascada {
         ],
       );
     }
-    // Los archivos que no parsean no entran en la cuenta de formateados: la
-    // herramienta los salta. Que los salte está bien; que no se diga, no.
+
+    // **La cuenta se reconcilia, no se toma como suficiente.** Que la
+    // herramienta haya mirado ALGO no dice que haya mirado lo que se le pidió:
+    // con dos sujetos de un archivo cada uno y un resumen que decía «1 file»,
+    // el testigo certificaba los dos. Los archivos que no parsean no entran en
+    // la cuenta de formateados —la herramienta los salta— así que se suman de
+    // vuelta antes de comparar.
+    //
+    // Y no se puede atribuir el faltante a ningún sujeto: el resumen es un
+    // total, no una lista. Si no cierra, no se certifica ninguno.
+    //
+    // Es la misma reconciliación que el normalizador hace un nivel más abajo
+    // entre las líneas «Changed» y el «(N changed)» del resumen. Estaba
+    // aplicada a los diagnósticos y no a la cobertura, que es donde decide el
+    // verde.
+    if (mirados + sinParsear != archivos) {
+      return (
+        cubierto: const <String>[],
+        omitido: [
+          ...motivos,
+          'El alcance tiene $archivos archivo(s) de fuente y la herramienta '
+              'informó $mirados formateado(s) más $sinParsear que no '
+              'parsean. No cierra, y el resumen es un total: no hay forma de '
+              'saber a qué sujeto le faltó, así que no se certifica ninguno.',
+        ],
+      );
+    }
+
+    // Los archivos que no parsean quedaron sin formatear. Que la herramienta
+    // los salte está bien; que no se diga, no.
     return (
       cubierto: sanos,
       omitido: [
         ...motivos,
-        if (salida.content.contains(
-            'Could not format because the source could not be parsed:'))
-          'Hubo archivos que no parsean y quedaron sin formatear. Están '
+        if (sinParsear > 0)
+          '$sinParsear archivo(s) no parsean y quedaron sin formatear. Están '
               'reportados como diagnóstico, no omitidos en silencio.',
       ],
     );
@@ -354,12 +400,16 @@ final class PasoDeAnalisis extends PasoDeCascada {
 
   @override
   Cobertura cobertura(List<String> pedidos, QuotedText salida) {
-    final (:sanos, :motivos) = separar(pedidos);
-    const residuo =
+    final (:sanos, :motivos, :archivos) = separar(pedidos);
+    // **No hay nada que reconciliar acá, y ese es el punto.** El formateador
+    // informa cuántos archivos miró y por eso su cobertura se puede comprobar;
+    // este no informa nada, así que la única cuenta es la del arnés y queda
+    // dicha en el testigo con su número.
+    final residuo =
         'La herramienta no informa qué archivos leyó: sobre un alcance vacío '
         'devuelve lo mismo que sobre uno limpio. La cobertura se comprobó '
-        'contando los archivos de cada sujeto, no leyendo su reporte. Que los '
-        'haya leído TODOS no lo verifica este paso.';
+        'contando los $archivos archivo(s) del alcance, no leyendo su reporte. '
+        'Que los haya leído TODOS no lo verifica este paso.';
     return (cubierto: sanos, omitido: [...motivos, residuo]);
   }
 }

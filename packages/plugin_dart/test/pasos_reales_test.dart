@@ -104,6 +104,26 @@ void main() {
     expect(o.witness!.omitted.join(), contains('no/existe'));
   }, timeout: const Timeout(Duration(minutes: 3)));
 
+  test('la reconciliación cierra contra la toolchain de verdad', () async {
+    // El test que atrapa un error en la REGLA de conteo. Los unitarios usan un
+    // resumen que yo escribo; acá el número lo pone la herramienta, así que si
+    // mi forma de contar el alcance no coincide con la suya, esto se pone rojo
+    // en vez de dejar todo no concluyente en silencio.
+    fuente('uno.dart', 'void main() {\n  print(1);\n}\n');
+    Directory('${raiz.path}/otro').createSync();
+    File('${raiz.path}/otro/dos.dart')
+        .writeAsStringSync('void main() {\n  print(2);\n}\n');
+    // Lo que cuelga de una carpeta oculta la herramienta lo salta; el arnés
+    // tiene que saltarlo igual o la cuenta no cierra nunca.
+    Directory('${raiz.path}/otro/.escondido').createSync();
+    File('${raiz.path}/otro/.escondido/tres.dart')
+        .writeAsStringSync('void  main( ){}\n');
+
+    final o = await formato().run(['lib/', 'otro']);
+    expect(o.verdict, Verdict.verde);
+    expect(o.witness!.subjects, ['lib/', 'otro']);
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
   group('EjecutorDelSistema', () {
     test('una herramienta que no está no se lee como «no encontró nada»',
         () async {
@@ -136,7 +156,10 @@ void main() {
     test('una salida que no se puede decodificar no se degrada en silencio',
         () async {
       // Reemplazaba los bytes inválidos, y eso contradice a QuotedText, que
-      // promete el texto tal como llegó (INV-6).
+      // promete el texto «tal cual llegó». El invariante es el del tipo, NO
+      // INV-6: INV-6 dice que el texto externo se encapsula, que es contra la
+      // inyección y no sobre fidelidad de bytes. Un review lo citó mal y esta
+      // línea lo repetía.
       final r = await const EjecutorDelSistema().correr(
           'sh', const ['-c', r'printf "\xff\xfe"'],
           directorio: raiz.path, presupuesto: const Duration(seconds: 30));
