@@ -23,3 +23,6 @@ __pycache__/
 # Snapshots que `probar_reglas.py` compila para no pagar el arranque de la VM
 # en cada uno de sus casos. Se generan y se borran en la misma corrida.
 *.dill
+
+# Diario del arnés de sabotajes: existe solo mientras hay uno aplicado.
+.sabotaje-en-curso.json

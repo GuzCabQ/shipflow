@@ -164,6 +164,40 @@ push directo, que es un acto manual y periódico.
 
 ---
 
+## Cuando una corrida no termina
+
+El arnés aplica sabotajes sobre el árbol de trabajo y los revierte. El `finally`
+cubre las excepciones; **no cubre que al proceso lo maten**. Ya pasó: una
+corrida terminada desde afuera dejó `arquitectura.json` saboteado y un canario
+suelto, y hubo que averiguar a mano qué tocar.
+
+Hay un **diario de escritura anticipada**: se escribe antes de la primera
+modificación y se borra después de revertir, así que su existencia significa
+exactamente una cosa — hay un sabotaje aplicado y sin revertir.
+
+**No repara solo, y esa es la decisión.** El arnés ya se niega a arrancar con el
+árbol tocado, y esa negativa *es* el control. Reparar en silencio pisaría con
+contenido viejo cualquier cosa editada después del corte, y escondería lo que
+había que mostrar — ADR-015 dice lo mismo de un hallazgo: *no se corrige solo ni
+se reporta en silencio*.
+
+Lo que faltaba no era reparar: era **saber qué reparar**.
+
+```
+Una corrida anterior no terminó y dejó el árbol saboteado.
+
+  arquitectura.json
+  packages/orchestration/lib/_canario.dart
+  tool/checks/arquitectura.huella
+```
+
+`--recuperar` lo deshace, y es explícito a propósito — mismo patrón que
+`cifras.py --fix`. **Y devuelve los archivos a su contenido previo al sabotaje,
+no al último commit**: a diferencia de `git checkout`, no pierde trabajo sin
+commitear.
+
+---
+
 ## El caso ciego · la mitad que faltaba
 
 Cada regla declara **dos** casos, y prueban cosas distintas:
