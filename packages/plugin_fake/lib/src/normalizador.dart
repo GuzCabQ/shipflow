@@ -61,9 +61,25 @@ class NormalizadorFalso implements DiagnosticNormalizer {
         throw UnreadableToolOutput(
             fuente, 'Severidad desconocida: «${campos[0]}».');
       }
+      // `tryParse` y no `parse`: el puerto promete UN tipo de excepcion para
+      // lo que no se puede interpretar, y `FormatException` no es ese. Quien
+      // atrape solo `UnreadableToolOutput` —el paso de cascada— dejaria pasar
+      // esta y abortaria en vez de dar no concluyente. Un fake que filtra un
+      // tipo distinto no es sustituto valido del real: es el modo de fallo
+      // exacto que `docs/08` §2 nombra.
+      final int? numero;
+      if (campos[2].isEmpty) {
+        numero = null;
+      } else {
+        numero = int.tryParse(campos[2]);
+        if (numero == null) {
+          throw UnreadableToolOutput(
+              fuente, 'Numero de linea que no se puede leer: «${campos[2]}».');
+        }
+      }
       salida.add(Diagnostic(
         file: campos[1],
-        line: campos[2].isEmpty ? null : int.parse(campos[2]),
+        line: numero,
         severity: severidad,
         ruleId: campos[3],
         // El mensaje viaja tal cual (clausula 4).

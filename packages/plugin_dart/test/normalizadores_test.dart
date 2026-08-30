@@ -106,6 +106,50 @@ void main() {
           reason: 'INV-8: solo detiene lo que puede decir que hacer');
     });
 
+    test('el resumen se reconcilia: declara mas de lo que se pudo leer', () {
+      // El hallazgo del review. La herramienta declara un archivo cambiado y
+      // aca no se leyo ninguno: devolver la lista vacia reporta como «todo
+      // formateado» algo que la propia herramienta dijo que no lo estaba.
+      expect(
+          () => n
+              .normalize(t('Formatted 2 files (1 changed) in 0.01 seconds.\n')),
+          rechazaPor('perderia el resto en silencio'));
+    });
+
+    test('el resumen se reconcilia: se leyo mas de lo que declara', () {
+      // El otro sentido. Menos peligroso, pero igual de imposible de creer:
+      // una de las dos lecturas esta mal y no se sabe cual.
+      expect(
+          () => n.normalize(t('Changed a\nChanged b\n'
+              'Formatted 2 files (1 changed) in 0.01 seconds.\n')),
+          rechazaPor('no se puede saber cual'));
+    });
+
+    test('un total sin su parentesis no se completa con cero', () {
+      // Suponerlo en cero es fabricar el denominador que falta, que es
+      // exactamente lo que el denominador existe para impedir.
+      expect(() => n.normalize(t('Formatted 2 files in 0.01 seconds.\n')),
+          rechazaPor('no cuantos cambio'));
+    });
+
+    test('dos resumenes no son un denominador', () {
+      expect(
+          () => n.normalize(t('Formatted 1 file (0 changed) in 0.0 seconds.\n'
+              'Formatted 9 files (3 changed) in 0.0 seconds.\n')),
+          rechazaPor('uno solo'));
+    });
+
+    test('un numero que no se puede leer no lanza el tipo equivocado', () {
+      // `int.parse` lanzaria `FormatException`, que NO es lo que el puerto
+      // promete. El paso de cascada solo atrapa `UnreadableToolOutput`: con
+      // cualquier otro tipo la corrida aborta en vez de dar no concluyente.
+      expect(
+          () => n.normalize(t('Formatted no files in 0.00 seconds.\n'
+              'Could not format because the source could not be parsed:\n'
+              'line ${'9' * 40}, column 1 of a: x\n')),
+          rechazaPor('no se puede leer'));
+    });
+
     test('S4 · un archivo que no parsea produce diagnostico con su linea', () {
       final ds = n.normalize(t('Formatted no files in 0.00 seconds.\n'
           'Could not format because the source could not be parsed:\n'

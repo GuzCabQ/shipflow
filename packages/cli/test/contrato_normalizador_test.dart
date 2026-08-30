@@ -39,6 +39,16 @@ const analisisLimpio = r'''{"version":1,"diagnostics":[]}''';
 
 /// Salida real de `dart format --output=none`: primero la corriente estandar,
 /// despues la de error, que es como la ensambla quien lo invoca.
+///
+/// **Cuatro de sus lineas terminan en espacio, y estan a proposito**: son el
+/// cuadro que dibuja la herramienta alrededor del codigo que no parseo, y esto
+/// es salida capturada, no transcrita. `git diff --check` las reporta.
+///
+/// Ninguna asercion depende de esos espacios —el patron de los errores de
+/// parseo no llega a esas lineas—, asi que **no se les pone guardia**: no son
+/// un invariante, son fidelidad. Queda escrito para que quien los vea sepa que
+/// no son un descuido, y para que quien los borre sepa que degrada la muestra
+/// sin romper nada.
 const formatoConHallazgos = r'''Changed lib/feo.dart
 Formatted 2 files (1 changed) in 0.00 seconds.
 Could not format because the source could not be parsed:
@@ -148,6 +158,49 @@ final implementaciones = <String, _Caso>{
 QuotedText _entrada(String texto, String quien) =>
     QuotedText(texto, source: quien);
 
+/// Entradas corruptas DERIVADAS de una buena, sin conocer ningun formato.
+///
+/// Cada una ataca un eje distinto de lo que un parser puede dar por sentado:
+/// que el texto esta completo, que las lineas que espera estan, que lo que
+/// parece un numero lo es, y que los delimitadores siguen ahi.
+Map<String, String> mutaciones(String bueno) {
+  final lineas = bueno.split('\n');
+  final salida = <String, String>{
+    'truncada a la mitad': bueno.substring(0, bueno.length ~/ 2),
+    'truncada al primer tercio': bueno.substring(0, bueno.length ~/ 3),
+    'sin la ultima linea': lineas.take(lineas.length - 1).join('\n'),
+    'con una linea de basura al final': '$bueno\nbasura sin estructura',
+    // El eje que el review encontro: lo que parece numero deja de serlo.
+    'con los digitos vueltos letras': bueno.replaceAll(RegExp(r'\d'), 'x'),
+    'con digitos absurdamente largos':
+        bueno.replaceAll(RegExp(r'(?<!\d)\d(?!\d)'), '9' * 40),
+    'sin delimitadores': bueno.replaceAll('|', ' ').replaceAll(':', ' '),
+    'con las llaves y corchetes dados vuelta':
+        bueno.replaceAll('{', '[').replaceAll('}', ']'),
+  };
+  // Las mutaciones globales de arriba tocan TODAS las lineas, incluida la
+  // primera — y si el formato tiene un preambulo, el guardia que lo comprueba
+  // dispara antes y tapa todo lo demas. Paso: la corrupcion de digitos moria
+  // en la linea de encabezado del fake y nunca llegaba al numero de linea, que
+  // era justo el camino roto.
+  //
+  // Un guardia al que otro le tapa el caso no esta instalado. Asi que ademas
+  // se corrompe UNA linea por vez, dejando el resto intacto.
+  for (var i = 0; i < lineas.length && i < 12; i++) {
+    String conLinea(String nueva) =>
+        [...lineas.sublist(0, i), nueva, ...lineas.sublist(i + 1)].join('\n');
+
+    salida['sin la linea ${i + 1}'] =
+        [...lineas.sublist(0, i), ...lineas.sublist(i + 1)].join('\n');
+    salida['linea ${i + 1} con los digitos vueltos letras'] =
+        conLinea(lineas[i].replaceAll(RegExp(r'\d'), 'x'));
+    salida['linea ${i + 1} con un numero larguisimo'] =
+        conLinea(lineas[i].replaceAll(RegExp(r'\d+'), '9' * 40));
+    salida['linea ${i + 1} en blanco'] = conLinea('');
+  }
+  return salida;
+}
+
 void main() {
   test('la suite corre contra las TRES implementaciones, y dos son reales', () {
     expect(implementaciones, hasLength(3));
@@ -202,6 +255,31 @@ void main() {
                 )),
             throwsUnsupportedError);
       });
+
+      // Las entradas corruptas NO las elige quien escribe el caso: se derivan
+      // del texto bueno con mutaciones mecanicas. Es el mismo motivo por el
+      // que el grafo se le pide a `pub` y los campos al arbol sintactico —
+      // un conjunto de casos que alguien enumera a mano cubre los que ese
+      // alguien penso, y el que se le escapa queda verde para siempre.
+      //
+      // Este control lo instalo un review: un numero de linea invalido hacia
+      // que DOS implementaciones lanzaran `FormatException`, y ninguna de las
+      // entradas ilegibles escritas a mano tocaba ese camino.
+      for (final mutacion in mutaciones(caso.conHallazgos).entries) {
+        test(
+            'corrompida «${mutacion.key}»: o la lee, o lanza el tipo que el '
+            'puerto promete', () {
+          try {
+            n.normalize(_entrada(mutacion.value, quien));
+          } on UnreadableToolOutput {
+            // El unico fracaso admitido por la clausula 1.
+          } catch (e) {
+            fail('lanzo ${e.runtimeType} y no UnreadableToolOutput. El paso '
+                'de cascada solo atrapa el segundo: cualquier otro tipo aborta '
+                'la corrida en vez de producir un veredicto no concluyente.');
+          }
+        });
+      }
 
       test(
           'el mensaje de cada hallazgo es el de la herramienta, sin '

@@ -177,20 +177,53 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
   const NormalizadorDeFormato();
 
   /// `Formatted 3 files (1 changed) in 0.05 seconds.` y `Formatted no files
-  /// in 0.00 seconds.` La cuenta se captura porque es el denominador.
+  /// in 0.00 seconds.`
+  ///
+  /// Los tres grupos se capturan porque los tres se usan: el primero distingue
+  /// «ningun archivo», el segundo dice cuantos MIRO y el tercero cuantos
+  /// CAMBIO — y ese ultimo tiene que coincidir con la cantidad de hallazgos
+  /// que se leyeron mas abajo.
   static final _resumen = RegExp(
       r'^Formatted (?:(no) files|(\d+) files?(?: \((\d+) changed\))?) in ',
       multiLine: true);
 
   static final _cambiado = RegExp(r'^Changed (.+)$', multiLine: true);
 
-  /// `line 2, column 1 of lib/roto.dart: Expected to find '}'.`
+  /// `line 2, column 1 of ruta: Expected to find '}'.`
   static final _noParsea =
       RegExp(r'^line (\d+), column \d+ of (.+?): (.+)$', multiLine: true);
 
   static final _encabezadoNoParsea = RegExp(
       r'^Could not format because the source could not be parsed:$',
       multiLine: true);
+
+  /// Cuantos archivos declara el resumen que CAMBIO.
+  ///
+  /// `no files` es cero explicito. Un total sin su parentesis NO se completa
+  /// con cero: significa que la herramienta dejo de decir cuantos cambio, y
+  /// suponerlo en cero es fabricar el denominador que falta.
+  static int _cuantosCambiaron(RegExpMatch m, String fuente) {
+    if (m.group(1) != null) return 0;
+
+    if (int.tryParse(m.group(2) ?? '') == null) {
+      throw UnreadableToolOutput(
+          fuente, 'El resumen no dice cuantos archivos miro: «${m.group(0)}».');
+    }
+    final cambiados = m.group(3);
+    if (cambiados == null) {
+      throw UnreadableToolOutput(
+          fuente,
+          'El resumen dice cuantos archivos miro pero no cuantos cambio: '
+          '«${m.group(0)}». Sin ese numero no hay contra que reconciliar los '
+          'hallazgos, y suponerlo en cero seria inventarlo.');
+    }
+    final n = int.tryParse(cambiados);
+    if (n == null) {
+      throw UnreadableToolOutput(
+          fuente, 'Cuenta de cambiados que no se puede leer: «$cambiados».');
+    }
+    return n;
+  }
 
   @override
   List<Diagnostic> normalize(QuotedText rawOutput) {
@@ -204,14 +237,22 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
           'el vacio significa que no llego a correr.');
     }
 
-    if (!_resumen.hasMatch(texto)) {
+    final resumenes = _resumen.allMatches(texto).toList();
+    if (resumenes.isEmpty) {
       throw UnreadableToolOutput(
           fuente,
           'Falta la linea de resumen «Formatted ... in ...». Es el denominador: '
-          'sin ella, cero hallazgos no distingue «todo formateado» de «no '
-          'miro ningun archivo», y esta herramienta sale con codigo 0 en '
-          'el segundo caso.');
+          'sin ella, cero hallazgos no distingue «todo formateado» de «no miro '
+          'ningun archivo», y esta herramienta sale con codigo 0 en el segundo '
+          'caso.');
     }
+    if (resumenes.length > 1) {
+      throw UnreadableToolOutput(
+          fuente,
+          'Hay ${resumenes.length} lineas de resumen y el denominador tiene que '
+          'ser uno solo. Elegir una seria elegir contra que reconciliar.');
+    }
+    final declarados = _cuantosCambiaron(resumenes.single, fuente);
 
     final salida = <Diagnostic>[];
 
@@ -233,11 +274,46 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
       ));
     }
 
+    // **El resumen es el testigo que la herramienta da de si misma**, y por eso
+    // se reconcilia en vez de solo exigirse. Que la linea exista no alcanza: si
+    // declara un archivo cambiado y aca se leyo cero, un hallazgo real se
+    // perdio en el camino y la lista vacia lo reporta como «todo formateado».
+    //
+    // Comprobar PRESENCIA cuando habia que comprobar CONTENIDO es un patron
+    // que este repositorio ya tiene nombrado en `Rule`, a proposito de las
+    // evasiones declaradas en blanco. Volvio a pasar aca, y lo encontro un
+    // review y no esta suite: los casos ilegibles los elegia cada
+    // implementacion, asi que podia elegir los faciles.
+    //
+    // Se reconcilia en los DOS sentidos por la misma razon que la lista de
+    // puertos sin implementacion: de mas y de menos son fallas distintas.
+    if (salida.length != declarados) {
+      throw UnreadableToolOutput(
+          fuente,
+          salida.length < declarados
+              ? 'El resumen declara $declarados archivo(s) cambiado(s) y solo se '
+                  'pudieron leer ${salida.length}. Devolver los que se leyeron '
+                  'perderia el resto en silencio.'
+              : 'Se leyeron ${salida.length} archivo(s) cambiado(s) y el resumen '
+                  'declara $declarados. Alguna de las dos lecturas esta mal y no '
+                  'se puede saber cual.');
+    }
+
     final fallosDeParseo = _noParsea.allMatches(texto).toList();
     for (final m in fallosDeParseo) {
+      // `tryParse` y no `parse`: un numero de linea absurdamente largo hace
+      // que `parse` lance `FormatException`, que NO es el tipo que el puerto
+      // promete. Una excepcion de otro tipo se le escapa al paso de cascada
+      // que solo atrapa `UnreadableToolOutput`, y en vez de un veredicto no
+      // concluyente produce una corrida abortada.
+      final linea = int.tryParse(m.group(1)!);
+      if (linea == null) {
+        throw UnreadableToolOutput(
+            fuente, 'Numero de linea que no se puede leer: «${m.group(1)}».');
+      }
       salida.add(Diagnostic(
         file: m.group(2)!,
-        line: int.parse(m.group(1)!),
+        line: linea,
         ruleId: 'formato/no-parsea',
         severity: Severity.bloquea,
         message: QuotedText(m.group(0)!, source: fuente),

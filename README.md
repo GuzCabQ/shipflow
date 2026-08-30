@@ -260,6 +260,42 @@ ante una entrada vacía. Un guardia al que otro le tapa el caso no está
 instalado, está de adorno — así que el test que lo cubre lo identifica **por su
 motivo**, no solo por el tipo de la excepción.
 
+### Y lo que la mutación no encontró, porque los casos los elegía yo
+
+Un review externo encontró dos incumplimientos que las dos suites daban por
+buenos.
+
+**El primero es el patrón que este repositorio ya tiene nombrado.** El
+comentario del normalizador decía «el resumen es obligatorio, **es el
+denominador**, dice cuántos archivos miró de verdad» — y el código solo
+comprobaba que la línea **existiera**. Así, `Formatted 2 files (1 changed)` sin
+ninguna línea `Changed` devolvía cero hallazgos: la herramienta declaraba un
+archivo sin formatear y el normalizador lo reportaba como limpio. Comprobar
+PRESENCIA cuando había que comprobar CONTENIDO es exactamente lo que `Rule`
+tiene escrito a propósito de las evasiones en blanco. Ahora se reconcilia, y en
+los dos sentidos.
+
+**El segundo es de tipo, no de lógica.** Un número de línea inválido hacía que
+el normalizador lanzara `FormatException` y no `UnreadableToolOutput`. Importa
+porque el paso de cascada va a atrapar solo el segundo: una excepción de otro
+tipo aborta la corrida en vez de producir un veredicto no concluyente. El
+review lo vio en el fake; estaba también en el real, por un `int.parse` que solo
+se rompe con un número de veinte dígitos.
+
+**Lo que fallaba no era la atención: era que cada implementación elegía sus
+propios casos ilegibles**, así que podía elegir los fáciles. La suite ahora
+**deriva** las entradas corruptas del texto bueno con mutaciones mecánicas
+—truncar, borrar una línea, volver letras los dígitos, alargarlos— y exige que
+cada una se lea bien o lance **el tipo que el puerto promete**, nunca otro. Es
+el mismo criterio por el que el grafo se le pide a `pub` y los campos al árbol
+sintáctico.
+
+Y esa red nació tapada. Las mutaciones tocaban todas las líneas a la vez,
+incluida la de encabezado del fake: el guardia del encabezado disparaba primero
+y el número de línea nunca se alcanzaba. **El sobreviviente de la corrida de
+mutación era justo el bug del review.** Se corrompe una línea por vez, y ahora
+son cero sobre catorce guardias.
+
 ---
 
 ## Cuando una corrida no termina
@@ -542,10 +578,10 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **21 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **20 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los once puertos del plugin de stack, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
+| **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los puertos de stack que quedan, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**

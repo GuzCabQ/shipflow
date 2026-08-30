@@ -392,6 +392,43 @@ def _check_readme() -> None:
             fallos.append(f"README.md dice «{m.group(1)} pasos obligatorios» y "
                           f"`capas.py` verifica {len(PASOS_OBLIGATORIOS)}. Una "
                           f"cantidad en prosa que nada deriva envejece sola.")
+    # Mismo criterio, segunda cantidad: cuántos puertos siguen sin
+    # implementación. El README decía 21 cuando eran 20, y lo encontró un
+    # review — el mismo review que ya había encontrado los pasos obligatorios.
+    # `puertos.dart` tiene escrito, sobre sí mismo, que «un número en prosa que
+    # nada deriva envejece solo, y este archivo ya lo hizo una vez». Lo hizo
+    # dos: la segunda en el README.
+    #
+    # El total se cuenta del propio archivo de puertos. Es un regex sobre
+    # fuente, que normalmente no alcanza — pero acá no puede desviarse en
+    # silencio: la regla `puertos-sin-implementacion` compara la lista contra
+    # el ÁRBOL SINTÁCTICO en los dos sentidos, así que un puerto declarado de
+    # otra forma la pone roja antes de llegar a esta cuenta.
+    pendientes = REGLAS["puertos-sin-implementacion"]["sin_implementacion"]
+    n_pendientes = len([k for k in pendientes if k != "_"])
+    fuente_puertos = RAIZ / "packages" / "core" / "lib" / "src" / "puertos.dart"
+    if not fuente_puertos.exists():
+        fallos.append("no encontré packages/core/lib/src/puertos.dart, así que "
+                      "no puedo derivar cuántos puertos hay. No mirar no es lo "
+                      "mismo que no encontrar nada.")
+        return
+    n_total = len(re.findall(r"^abstract interface class ",
+                             fuente_puertos.read_text(encoding="utf-8"), re.M))
+    if n_total == 0:
+        fallos.append("conté cero puertos en puertos.dart. Cero se lee igual "
+                      "que «no miré».")
+        return
+    for m in re.finditer(r"(\d+) de los (\d+) puertos siguen sin implementación",
+                         texto):
+        if (int(m.group(1)), int(m.group(2))) != (n_pendientes, n_total):
+            fallos.append(f"README.md dice «{m.group(0)}»; el registro declara "
+                          f"{n_pendientes} pendientes sobre {n_total} puertos.")
+    for m in re.finditer(r"para pruebas · hoy (\d+) de (\d+)", texto):
+        if (int(m.group(1)), int(m.group(2))) != (n_total - n_pendientes, n_total):
+            fallos.append(f"README.md dice «{m.group(0)}»; hay "
+                          f"{n_total - n_pendientes} puertos con contrato sobre "
+                          f"{n_total}.")
+
     for patron, motivo in NOMBRES_RETIRADOS.items():
         for m in re.finditer(patron, texto):
             fallos.append(f"README.md: «{m.group(0)}» es un nombre retirado. "
