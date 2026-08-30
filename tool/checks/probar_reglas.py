@@ -305,6 +305,18 @@ def casos() -> list[dict]:
          "    continue-on-error: ${{ matrix.canario }}",
          "    continue-on-error: true",
          "compuerta queda abierta"),
+        # Estas dos dejan el comando EXACTO en el archivo y aun así no
+        # gobiernan nada: GitHub omite el paso o deja de bloquear con él.
+        # Comparar el comando no alcanzaba; hay que mirar sus atributos.
+        ("omitido con «if: false»",
+         "        run: python3 tool/checks/probar_reglas.py",
+         "        run: python3 tool/checks/probar_reglas.py\n        if: false",
+         "condición"),
+        ("con «continue-on-error: ${{ true }}»",
+         "        run: python3 tool/checks/probar_reglas.py",
+         "        run: python3 tool/checks/probar_reglas.py\n"
+         "        continue-on-error: ${{ true }}",
+         "no detiene nada"),
         ("corriendo desde otro directorio",
          "        run: dart run bin/check.dart\n        working-directory: tool/analisis",
          "        run: dart run bin/check.dart",
@@ -333,6 +345,30 @@ def casos() -> list[dict]:
         "archivos": {"README.md": readme.replace("`tool/analisis`",
                                                  "`tool/serializacion`", 1)},
         "menciona": "no existe en el",
+    })
+    # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
+    # `tool/` y sin ser una ruta completa: no había ruta que verificar.
+    c.append({
+        "nombre": "readme · un nombre retirado, sin forma de ruta",
+        "archivos": {"README.md": readme.replace("  analisis/", "  serializacion/", 1)},
+        "menciona": "nombre retirado",
+    })
+
+    # La canónica de `colecciones-inmutables` usa el constructor anónimo. El
+    # nombrado era el punto ciego: la regla cubría una FORMA DE ESCRIBIR el
+    # constructor y no el invariante.
+    c.append({
+        "nombre": "colecciones-inmutables · alias por constructor con nombre",
+        "archivos": {"packages/core/lib/src/_canario_nombrado.dart":
+                     "class CanarioNombrado {\n"
+                     "  final List<String> items;\n"
+                     "  CanarioNombrado.desde(this.items);\n"
+                     "  Map<String, Object?> toJson() => {'items': items};\n"
+                     "  factory CanarioNombrado.fromJson(Map<String, Object?> json) =>\n"
+                     "      CanarioNombrado.desde(\n"
+                     "          List<String>.from(json['items']! as List<Object?>));\n"
+                     "}\n"},
+        "menciona": "por referencia",
     })
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.

@@ -110,6 +110,15 @@ PASOS_OBLIGATORIOS = {
 # Un `true` pelado convertiría el job entero en decorativo.
 CANARIO_DECLARADO = "${{ matrix.canario }}"
 
+# Nombres que se retiraron y no pueden volver a la documentación. Es la misma
+# familia que `coherencia.py` mantiene para el corpus: un renombre deja vivo el
+# nombre viejo en los lugares donde nadie mira.
+NOMBRES_RETIRADOS = {
+    r"\bserializacion/": "el directorio es `tool/analisis/` desde que también "
+                         "genera el grafo. Solo sobrevive el nombre de la regla "
+                         "`serializacion-sin-perdida`, que no cambió.",
+}
+
 CIEGO_FIJO = {
     "deps-hacia-core": "grafo_indisponible",
     "nucleo-sin-externas": "grafo_indisponible",
@@ -252,13 +261,22 @@ def _check_readme() -> None:
         if aplicador != esperado:
             fallos.append(f"README.md: dice que «{rid}» la aplica «{aplicador}»; "
                           f"el registro dice «{esperado}».")
-    # Rutas del repositorio nombradas en el README que ya no existen. Es lo que
-    # dejó vivo el nombre `tool/serializacion` después de renombrarlo.
-    for ruta in sorted(set(re.findall(r"`((?:tool|packages)/[A-Za-z0-9_./-]+)`", texto))):
-        if not (RAIZ / ruta.rstrip("/")).exists():
+    # Rutas del repositorio que ya no existen. SIN exigir backticks: la que
+    # sobrevivió al renombre estaba dentro de un bloque de código, y el check
+    # miraba solo las que estaban entre comillas invertidas. Buscar solo donde
+    # es cómodo mirar es la misma ceguera de siempre, en la documentación.
+    for ruta in sorted(set(re.findall(r"(?<![\w/])((?:tool|packages)/[A-Za-z0-9_./-]+)", texto))):
+        if not (RAIZ / ruta.rstrip("/.")).exists():
             fallos.append(f"README.md nombra «{ruta}», que no existe en el "
                           f"árbol. Una ruta muerta en la documentación manda a "
                           f"quien la siga a un lugar que no está.")
+    # Y los nombres retirados, que no siempre aparecen como ruta completa. El
+    # árbol de estructura del README listaba `serializacion/` a secas, colgando
+    # de `tool/`: ninguna ruta que verificar, y el nombre viejo igual de vivo.
+    for patron, motivo in NOMBRES_RETIRADOS.items():
+        for m in re.finditer(patron, texto):
+            fallos.append(f"README.md: «{m.group(0)}» es un nombre retirado. "
+                          f"{motivo}")
 
 
 def _check_ci_ejecuta() -> None:
@@ -335,12 +353,25 @@ def _check_ci_ejecuta() -> None:
                 + detalle)
             continue
         for p in encontrados:
-            if p.get("continue-on-error") is True:
+            # `is True` no alcanzaba: `${{ true }}` y `'true'` son cadenas, y
+            # GitHub las evalúa igual. Cualquier valor que no sea ausencia o
+            # `false` deja el paso corriendo sin gobernar el resultado.
+            coe = p.get("continue-on-error")
+            if coe not in (None, False):
                 fallos.append(
-                    f"CI ejecuta {etiqueta} con `continue-on-error: true`. Corre, "
+                    f"CI ejecuta {etiqueta} con `continue-on-error: {coe!r}`. Corre, "
                     f"se ve en rojo, y no detiene nada — es severidad `reporta` "
                     f"disfrazada de `bloquea`. Si es deliberado, va como canario "
                     f"declarado en la matriz, no acá.")
+            # Un `if:` sobre un paso obligatorio lo vuelve condicional, y
+            # `if: false` lo omite entero sin borrarlo del archivo: el comando
+            # sigue escrito, el meta-check lo encuentra, y nunca corre.
+            if "if" in p:
+                fallos.append(
+                    f"CI ejecuta {etiqueta} bajo la condición `if: {p['if']!r}`. "
+                    f"Un paso obligatorio no es condicional: si la condición da "
+                    f"falso, el comando sigue escrito en el archivo y no corre "
+                    f"nunca. Lo que varía por plataforma va en la matriz.")
 
 
 def _check_casos_ciegos() -> None:
