@@ -54,6 +54,14 @@ jobs:
         with:
           sdk: ${{ matrix.sdk }}
 
+      # `capas.py` lee el workflow con un parser de YAML para verificar que
+      # siga ejecutando cada paso obligatorio. No se parsea a mano: un parser
+      # casero devuelve cero pasos ante una sintaxis que no reconoce, y cero
+      # pasos se lee igual que «están todos». Si este paso desaparece, el
+      # import falla y el check se pone rojo — falla del lado seguro.
+      - name: parser de yaml, para que capas.py pueda leer este workflow
+        run: python3 -m pip install --quiet pyyaml
+
       # Deja registrado contra qué se corrió. Sin esto el verde no es comparable.
       - name: versiones
         run: dart --version && python3 --version

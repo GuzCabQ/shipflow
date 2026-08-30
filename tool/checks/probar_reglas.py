@@ -50,6 +50,7 @@ RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
 ANALISIS = RAIZ / "tool" / "analisis"
 ARQ_REL = "arquitectura.json"
+CI_REL = ".github/workflows/checks.yml"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
 REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
@@ -261,6 +262,31 @@ def casos() -> list[dict]:
             "packages/core/lib/_canario_import.dart":
                 "import 'package:flutter/material.dart';\n"},
         "menciona": "flutter",
+    })
+
+    # Que CI siga ejecutando lo que dice ejecutar. Tres modos de fallo, y son
+    # distintos: uno borra el paso, otro lo deja corriendo sin que detenga
+    # nada, y el tercero se lleva el workflow entero.
+    ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
+    i = ci.index("      - name: los checks saben fallar")
+    j = ci.index("      - name: pruebas de core")
+    c.append({
+        "nombre": "ci · un paso obligatorio borrado del workflow",
+        "archivos": {CI_REL: ci[:i] + ci[j:]},
+        "menciona": "ya no ejecuta",
+    })
+    c.append({
+        "nombre": "ci · un paso obligatorio con continue-on-error",
+        "archivos": {CI_REL: ci.replace(
+            "        run: python3 tool/checks/probar_reglas.py",
+            "        run: python3 tool/checks/probar_reglas.py\n"
+            "        continue-on-error: true")},
+        "menciona": "continue-on-error",
+    })
+    c.append({
+        "nombre": "ci · el workflow vaciado",
+        "archivos": {CI_REL: "# vacío\n"},
+        "menciona": "NI UN paso",
     })
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
