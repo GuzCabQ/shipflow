@@ -188,7 +188,19 @@ List<Clase> clasesDe(File archivo, String rel) {
         continue;
       }
       for (final m in d.members) {
-        if (m is! ConstructorDeclaration || m.name != null) continue;
+        // Todos los constructores GENERATIVOS, tengan nombre o no. Antes
+        // se miraba solo el anónimo, así que `Clase.desde(this.items)`
+        // conservaba el alias y el check no lo inspeccionaba: la regla
+        // cubría una forma de escribir el constructor, no el invariante.
+        //
+        // Se saltean los `factory` —no pueden inicializar campos— y los
+        // redirigentes, que delegan en otro constructor ya inspeccionado.
+        if (m is! ConstructorDeclaration) continue;
+        if (m.factoryKeyword != null) continue;
+        if (m.redirectedConstructor != null) continue;
+        if (m.initializers.any((i) => i is RedirectingConstructorInvocation)) {
+          continue;
+        }
         final porReferencia = m.parameters.parameters.any((param) {
           final p = param is DefaultFormalParameter ? param.parameter : param;
           return p is FieldFormalParameter && p.name.lexeme == entrada.key;

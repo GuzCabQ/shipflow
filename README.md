@@ -66,7 +66,7 @@ aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué las tres últimas necesitan otro motor
+### Por qué las cinco últimas necesitan otro motor
 
 Se derivan del **árbol sintáctico** de `core`, no de su texto. Es la misma
 lección que ya pagó `capas.py` con el grafo de dependencias: parsear a mano
@@ -395,7 +395,7 @@ packages/
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py
-  serializacion/  el verificador que necesita el árbol sintáctico · fuera del workspace
+  analisis/      lo que necesita el árbol sintáctico · fuera del workspace
 ```
 
 Todas las flechas de dependencia apuntan hacia `core`. `cli` es el único que

@@ -81,6 +81,7 @@ void main() {
     invocation: 'verificador --sobre lib/',
     subjects: const ['lib/algo.fuente'],
     exitCode: 3,
+    termination: Termination.completa,
     finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
   );
 

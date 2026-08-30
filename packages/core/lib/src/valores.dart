@@ -154,6 +154,11 @@ class Witness {
 
   /// Cómo terminó la invocación. Es lo que distingue «corrió y no encontró
   /// nada» de «no llegó a correr».
+  ///
+  /// **Obligatoria, sin valor por defecto.** Tenía `Termination.completa` por
+  /// defecto y eso reintroducía el falso verde por otra puerta: un adapter que
+  /// se olvidara de mapear el timeout producía «terminó bien» sin que nadie lo
+  /// hubiera afirmado. Un hecho que se asume no es un hecho declarado.
   final Termination termination;
 
   /// Código de salida de la invocación. **Es dato, no veredicto**: muchas
@@ -173,7 +178,7 @@ class Witness {
     required List<String> subjects,
     required this.exitCode,
     required this.finishedAt,
-    this.termination = Termination.completa,
+    required this.termination,
   }) : subjects = List.unmodifiable(subjects);
 
   /// Un testigo atestigua si **corrió**, si dice **qué** corrió, y si dice
