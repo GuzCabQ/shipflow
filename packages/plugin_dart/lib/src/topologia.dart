@@ -96,34 +96,55 @@ class TopologiaDart implements ProjectTopology {
     Map<String, String> nombrePorDirectorio,
   ) {
     final salida = <String>{};
+    final manifiesto = rutas.join(directorio, 'pubspec.yaml');
+
+    // CADA RAMA CONCLUYE O RECHAZA. Ninguna se saltea porque no entendió.
+    //
+    // La primera versión validaba entrada por entrada y descartaba la SECCIÓN
+    // entera con un `is! YamlMap`, así que `dependencies: 42` producía una
+    // topología vacía en silencio. Se había arreglado el caso que un review
+    // mostró, un nivel más adentro, y no la clase — que es lo que este
+    // comentario existe para que no vuelva a pasar.
     for (final clave in const ['dependencies', 'dev_dependencies']) {
+      if (!doc.containsKey(clave)) continue; // ausente: legítimamente vacía
       final seccion = doc[clave];
-      if (seccion is! YamlMap) continue;
+      if (seccion == null) continue; // `dependencies:` sin nada: idem
+      if (seccion is! YamlMap) {
+        throw TopologiaIlegible(
+            manifiesto,
+            FormatException('`$clave` no es un mapa sino '
+                '${seccion.runtimeType}. No se puede saber qué dependencias '
+                'declara, y suponer que ninguna sería inventar.'));
+      }
       for (final entrada in seccion.entries) {
+        final nombreDep = entrada.key;
+        if (nombreDep is! String || nombreDep.isEmpty) {
+          throw TopologiaIlegible(
+              manifiesto,
+              FormatException('`$clave` tiene una dependencia cuyo nombre no '
+                  'es una cadena: ${nombreDep.runtimeType}.'));
+        }
         final valor = entrada.value;
         // Formas LEGÍTIMAS de declarar algo que no es una dependencia local:
         //   `paquete: ^1.0.0`    una restricción de versión
         //   `paquete:`           sin restricción, valor nulo
         //   `paquete: {sdk: …}`  un mapa sin `path`
-        // Todas se saltean porque no son topología, y eso es una CONCLUSIÓN.
+        // Las tres se saltean porque no son topología, y eso es una CONCLUSIÓN.
         if (valor == null || valor is String) continue;
         if (valor is! YamlMap) {
           throw TopologiaIlegible(
-              rutas.join(directorio, 'pubspec.yaml'),
-              FormatException('la dependencia «${entrada.key}» no es ni una '
+              manifiesto,
+              FormatException('la dependencia «$nombreDep» no es ni una '
                   'restricción de versión ni un mapa: ${valor.runtimeType}'));
         }
         if (!valor.containsKey('path')) continue;
         final destino = valor['path'];
         if (destino is! String || destino.isEmpty) {
-          // NO se saltea. No poder INTERPRETAR una arista es distinto de que
-          // no HAYA arista, y saltarla haría la topología más chica sin decir
-          // nada — el mismo modo de fallo que este archivo declara evitar unas
-          // líneas más arriba. Lo encontró un review.
+          // No poder INTERPRETAR una arista es distinto de que no HAYA arista.
           throw TopologiaIlegible(
-              rutas.join(directorio, 'pubspec.yaml'),
-              FormatException('la dependencia «${entrada.key}» declara `path` '
-                  'con algo que no es una ruta: '
+              manifiesto,
+              FormatException('la dependencia «$nombreDep» declara `path` con '
+                  'algo que no es una ruta: '
                   '${destino == null ? "vacío" : destino.runtimeType}'));
         }
         final absoluto = rutas.canonicalize(rutas.join(directorio, destino));
