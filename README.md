@@ -685,6 +685,36 @@ dejar drenar la salida —una corrida `--json` larga se truncaba en silencio— 
 `Cascada.correr` no congelaba el alcance, así que el llamador podía cambiarlo
 entre paso y paso.
 
+### Tercera vuelta: la frontera estaba duplicada
+
+El review siguiente encontró que el arreglo del protocolo **había quedado
+adentro de `verify`**, y el ruteo y el `main` tenían salidas propias: con
+`--json`, tres invocaciones distintas —sin comando, con un comando que no
+existe, y `--help`— imprimían texto suelto. Cada una habría que haberla
+arreglado por separado.
+
+Ahora hay **una sola frontera**. Si el único camino de salida construye
+envelopes, ningún camino puede no construirlos.
+
+| Y además | |
+|---|---|
+| el progreso se emitía **después** de que todo terminara | sale mientras la corrida ocurre, con la hora del paso |
+| `--quiet` mostraba cualquier diagnóstico | «solo errores» es lo que **bloquea** |
+| `Severity.silencia` se imprimía | no se muestra nunca, ni sin banderas |
+| la corriente de error estaba declarada y **sin usar** | hay una última salida que no serializa nada |
+| el rescate en modo humano no decía qué hacer | lo dice, como el envelope |
+
+Lo del progreso es el más de fondo: la cascada devolvía todo junto y el CLI
+recorría los resultados al final. No había nada que mirar mientras una
+herramienta tardaba, y la marca de tiempo era la de armar el reporte. Ahora la
+cascada avisa cuándo empieza y cuándo termina cada paso, que es lo que la
+superficie pide de toda operación de más de tres segundos.
+
+Y el de `Severity.silencia` no lo trajo el review: apareció al mirar por qué el
+filtro estaba en el tipo del evento y no en la severidad. `core` dice de esa
+severidad «registra para telemetría y **no se muestra**», y se estaba
+mostrando.
+
 ---
 
 ## Cuando una corrida no termina

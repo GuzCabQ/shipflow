@@ -5,5 +5,6 @@
 /// sistema a partir de las piezas se decide acá.
 library;
 
+export 'src/comando.dart';
 export 'src/salida.dart';
 export 'src/verify.dart';

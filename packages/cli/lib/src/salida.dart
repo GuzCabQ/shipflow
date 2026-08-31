@@ -136,7 +136,6 @@ class Impresora {
   final StringSink error;
   final bool json;
   final bool silencioso;
-  final bool detallado;
 
   var _resultados = 0;
 
@@ -145,7 +144,6 @@ class Impresora {
     required this.error,
     this.json = false,
     this.silencioso = false,
-    this.detallado = false,
   });
 
   /// Los eventos salen por donde sale todo: la estándar.
@@ -157,13 +155,18 @@ class Impresora {
   /// errores», y callar un diagnóstico bloqueante dejaba un resumen que
   /// afirmaba que había errores sin decir cuáles: eso no es silencio, es un
   /// reporte inservible.
+  ///
+  /// QUÉ diagnósticos se muestran no se decide acá: depende de su severidad,
+  /// y la severidad la conoce quien los tiene. Filtrar por el TIPO del evento
+  /// es lo que hacía esto antes, y con eso `--quiet` mostraba lo informativo
+  /// e incluso lo que `Severity.silencia` declara que no se muestra.
   void evento(EventEnvelope e, String humano) {
     if (_resultados > 0) {
       throw const ProtocoloRoto(
           'Se emitió un evento DESPUÉS del resultado. El resultado es el '
           'último, y un consumidor que ya cerró su lectura no vería esto.');
     }
-    if (silencioso && e.type != 'diagnostic') return;
+    if (silencioso && e.type == 'progress') return;
     _paraEventos.writeln(json ? jsonEncode(e.toJson()) : humano);
   }
 
@@ -194,4 +197,17 @@ class Impresora {
   }
 
   int get resultadosEmitidos => _resultados;
+
+  /// La última salida posible. **Va por la corriente de error y no serializa
+  /// nada.**
+  ///
+  /// El contrato reserva esa corriente para «un fallo que impida incluso
+  /// serializar el resultado», y hasta acá nadie escribía en ella: el rescate
+  /// reintentaba sobre la misma salida que acababa de fallar. Esto no arma un
+  /// envelope, no codifica JSON y no toca el estado de la impresora — si algo
+  /// de eso fuera posible, no estaríamos acá.
+  void ultimoRecurso(String mensaje, String queHacer) {
+    error.writeln('shipflow: $mensaje');
+    error.writeln('  → $queHacer');
+  }
 }

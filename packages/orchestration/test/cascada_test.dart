@@ -145,6 +145,21 @@ void main() {
             'el segundo paso tiene que ver el mismo alcance que el primero');
   });
 
+  test('avisa MIENTRAS corre, no al final', () async {
+    // Devolvía todo junto y el CLI recorría los resultados después: no había
+    // nada que mirar mientras una herramienta tardaba, y la marca de tiempo
+    // era la de armar el reporte. La superficie pide que una operación de más
+    // de tres segundos muestre el paso en curso.
+    final orden = <String>[];
+    await Cascada([_Paso.verde('A'), _Paso.verde('B')]).correr(
+      ['lib/'],
+      alEmpezar: (id) => orden.add('empieza:$id'),
+      alTerminar: (r) => orden.add('termina:${r.verifierId}'),
+    );
+    expect(orden, ['empieza:A', 'termina:A', 'empieza:B', 'termina:B'],
+        reason: 'B no puede anunciarse antes de que A haya terminado');
+  });
+
   group('la precedencia se deriva', () {
     test('verde solo si TODOS corrieron y ninguno objetó', () async {
       final r =

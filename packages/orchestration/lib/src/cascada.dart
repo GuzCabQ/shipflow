@@ -156,11 +156,22 @@ class Cascada {
 
   /// Corre todos los pasos y devuelve lo que resultó.
   ///
+  /// **[alEmpezar] y [alTerminar] se llaman mientras la corrida ocurre**, no
+  /// después. La primera versión devolvía todo junto y el CLI recorría los
+  /// resultados al final: no había nada que mirar mientras una herramienta
+  /// tardaba, y los eventos llevaban la hora de cuando se armó el reporte, no
+  /// la del paso. La superficie pide que una operación de más de tres segundos
+  /// muestre el paso en curso, y eso no se puede hacer desde el final.
+  ///
   /// **Un paso que lanza no interrumpe la cascada**: se registra como fallo
   /// interno y los demás corren igual. Cortar ahí dejaría a los siguientes sin
   /// ejecutar Y sin explicación, y las dos cosas se confundirían en el
   /// reporte de registrados contra ejecutados.
-  Future<ResultadoDeCascada> correr(List<String> sujetos) async {
+  Future<ResultadoDeCascada> correr(
+    List<String> sujetos, {
+    void Function(String id)? alEmpezar,
+    void Function(VerificationOutcome resultado)? alTerminar,
+  }) async {
     // **Se congela al entrar.** La lista es del llamador, que puede mutarla
     // entre paso y paso: el primero correría sobre un alcance y el segundo
     // sobre otro, y el reporte diría que los dos cubrieron lo mismo. Es el
@@ -171,6 +182,7 @@ class Cascada {
     final fallos = <String, String>{};
 
     for (final paso in pasos) {
+      alEmpezar?.call(paso.id);
       try {
         final r = await paso.run(alcance);
         // Un paso que devuelve el resultado de OTRO paso rompe la cuenta.
@@ -181,6 +193,7 @@ class Cascada {
           continue;
         }
         resultados.add(r);
+        alTerminar?.call(r);
       } on Object catch (e) {
         // Se atrapa cualquier excepción a propósito, y solo acá: un paso
         // que se rompe es un error del arnés, no un veredicto sobre el

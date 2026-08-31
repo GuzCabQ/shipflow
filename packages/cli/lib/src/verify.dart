@@ -117,65 +117,20 @@ OpcionesDeVerify interpretar(List<String> args) {
 
 /// Corre `verify` y devuelve el código de proceso.
 ///
-/// **Nada sale de acá sin resultado.** Cualquier excepción —del intérprete, de
-/// la construcción de la cascada, de la impresión— se convierte en `70` con su
-/// resultado. Una excepción que escapara dejaría al proceso con un código que
-/// nadie eligió y al consumidor sin nada que leer, que es exactamente lo que
-/// el sabotaje SC-12 busca.
+/// **Recibe la impresora**, no la construye: la frontera es una sola y vive en
+/// `comando.dart`. Las excepciones tampoco se atrapan acá — suben a esa
+/// frontera, que es la que sabe convertirlas en un `70` con su resultado.
 Future<int> correrVerify(
   List<String> args, {
   required String directorio,
-  required StringSink salida,
-  StringSink? error,
+  required Impresora impresora,
   Cascada Function(String directorio)? construirCascada,
 }) async {
-  // `--json` se detecta ANTES de interpretar, porque un error de uso también
-  // tiene que salir como resultado. Su presencia no es ambigua.
-  final quiereJson = args.contains('--json');
-  var emitidos = 0;
-
-  try {
-    final (codigo, cuantos) = await _verify(
-        args, directorio, salida, error ?? salida, construirCascada);
-    emitidos = cuantos;
-    return codigo;
-  } on Object catch (e, pila) {
-    // Si ya se había emitido el resultado, el fallo fue después: no se emite
-    // un segundo, porque el protocolo promete uno solo. El código igual pasa
-    // a 70, que es el dato que el proceso sí puede llevar.
-    if (emitidos == 0) {
-      Impresora(salida: salida, error: error ?? salida, json: quiereJson)
-          .resultado(
-        ResultEnvelope(
-          command: nombreDelComando,
-          exitCode: Codigo.errorInterno,
-          verdict: veredictoDe(EstadoDeCorrida.errorInterno),
-          nextAction: 'Se rompió el arnés, no la verificación del cambio. '
-              'Reportalo con esta traza.',
-          data: {'error': '$e', 'stack': '$pila'},
-        ),
-        'shipflow verify: error interno del arnés — $e',
-      );
-    }
-    return Codigo.errorInterno;
-  }
-}
-
-Future<(int, int)> _verify(
-  List<String> args,
-  String directorio,
-  StringSink salida,
-  StringSink error,
-  Cascada Function(String directorio)? construirCascada,
-) async {
-  final quiereJson = args.contains('--json');
-
   final OpcionesDeVerify o;
   try {
     o = interpretar(args);
   } on UsoInvalido catch (e) {
-    final imp = Impresora(salida: salida, error: error, json: quiereJson);
-    imp.resultado(
+    impresora.resultado(
       ResultEnvelope(
         command: nombreDelComando,
         exitCode: Codigo.errorDeUso,
@@ -185,20 +140,12 @@ Future<(int, int)> _verify(
       ),
       'shipflow verify: ${e.reason}\n  → ${e.queHacer}',
     );
-    imp.cerrar();
-    return (Codigo.errorDeUso, imp.resultadosEmitidos);
+    impresora.cerrar();
+    return Codigo.errorDeUso;
   }
 
-  final imp = Impresora(
-    salida: salida,
-    error: error,
-    json: o.json,
-    silencioso: o.silencioso,
-    detallado: o.detallado,
-  );
-
   if (o.ayuda) {
-    imp.resultado(
+    impresora.resultado(
       ResultEnvelope(
         command: nombreDelComando,
         exitCode: Codigo.exito,
@@ -207,37 +154,55 @@ Future<(int, int)> _verify(
       ),
       ayudaDeVerify,
     );
-    imp.cerrar();
-    return (Codigo.exito, imp.resultadosEmitidos);
+    impresora.cerrar();
+    return Codigo.exito;
   }
+
+  final imp = impresora;
 
   final cascada =
       (construirCascada ?? (d) => cascadaPorDefecto(directorio: d))(directorio);
-  final r = await cascada.correr(o.sujetos);
 
-  for (final paso in r.resultados) {
-    imp.evento(
+  // **Los eventos salen mientras la corrida ocurre**, no al final. Antes se
+  // recorrían los resultados después de que todo había terminado: no había
+  // nada que mirar mientras una herramienta tardaba, y la marca de tiempo era
+  // la de armar el reporte y no la del paso.
+  final r = await cascada.correr(
+    o.sujetos,
+    alEmpezar: (id) => imp.evento(
       EventEnvelope(
         command: nombreDelComando,
         type: 'progress',
-        data: {
-          'verifier': paso.verifierId,
-          'verdict': paso.verdict.name,
-          'diagnostics': paso.diagnostics.length,
-          if (o.detallado) 'witness': paso.witness?.toJson(),
-        },
+        data: {'verifier': id, 'stage': 'started'},
       ),
-      _pasoEnTexto(paso, detallado: o.detallado),
-    );
-    for (final d in paso.diagnostics) {
+      '  ...       $id',
+    ),
+    alTerminar: (paso) {
       imp.evento(
         EventEnvelope(
-            command: nombreDelComando, type: 'diagnostic', data: d.toJson()),
-        '  ${d.severity.name} ${d.file}${d.line == null ? '' : ':${d.line}'} '
-        '· ${d.ruleId} · ${d.message.content}',
+          command: nombreDelComando,
+          type: 'progress',
+          data: {
+            'verifier': paso.verifierId,
+            'stage': 'finished',
+            'verdict': paso.verdict.name,
+            'diagnostics': paso.diagnostics.length,
+            if (o.detallado) 'witness': paso.witness?.toJson(),
+          },
+        ),
+        _pasoEnTexto(paso, detallado: o.detallado),
       );
-    }
-  }
+      for (final d in paso.diagnostics
+          .where((d) => seMuestra(d, silencioso: o.silencioso))) {
+        imp.evento(
+          EventEnvelope(
+              command: nombreDelComando, type: 'diagnostic', data: d.toJson()),
+          '  ${d.severity.name} ${d.file}${d.line == null ? '' : ':${d.line}'} '
+          '· ${d.ruleId} · ${d.message.content}',
+        );
+      }
+    },
+  );
 
   final estado = r.estado;
   imp.resultado(
@@ -258,8 +223,19 @@ Future<(int, int)> _verify(
   );
   imp.cerrar();
 
-  return (Codigo.deCorrida(estado), imp.resultadosEmitidos);
+  return Codigo.deCorrida(estado);
 }
+
+/// Qué diagnósticos se muestran. **La decisión es de la severidad, no del tipo
+/// de evento.**
+///
+/// `Severity.silencia` dice de sí misma «registra para telemetría y no se
+/// muestra»: no se imprime nunca, ni siquiera sin banderas. Y `--quiet` dice
+/// «solo errores», así que deja pasar lo que bloquea y nada más — mostraba lo
+/// informativo, y también lo silenciado.
+bool seMuestra(Diagnostic d, {required bool silencioso}) =>
+    d.severity != Severity.silencia &&
+    (!silencioso || d.severity == Severity.bloquea);
 
 String _pasoEnTexto(VerificationOutcome paso, {required bool detallado}) {
   final marca = switch (paso.verdict) {

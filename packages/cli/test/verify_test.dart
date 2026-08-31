@@ -48,6 +48,21 @@ class _Paso implements Verifier {
         ],
       ));
 
+  /// Un paso con las tres severidades a la vez.
+  factory _Paso.mixto(String id) => _Paso(id,
+      devuelve: VerificationOutcome(
+        verifierId: id,
+        witness: _testigo(),
+        diagnostics: [
+          for (final s in Severity.values)
+            Diagnostic(
+                file: 'lib/${s.name}.txt',
+                severity: s,
+                ruleId: 'r-${s.name}',
+                message: QuotedText('mensaje-${s.name}', source: 'test')),
+        ],
+      ));
+
   factory _Paso.ciego(String id) => _Paso(id,
       devuelve: VerificationOutcome(
           verifierId: id,
@@ -61,14 +76,26 @@ class _Paso implements Verifier {
   }
 }
 
+/// Corre la invocación ENTERA por la frontera, no solo `verify`. Es lo que
+/// hace el binario, y es donde estaban los agujeros del protocolo.
+Future<(int, String, String)> invocar(List<String> args, List<Verifier> pasos,
+    {Cascada Function(String)? construir}) async {
+  final out = StringBuffer();
+  final err = StringBuffer();
+  final c = await ejecutar(args,
+      directorio: '.',
+      salida: out,
+      error: err,
+      construirCascada: construir ?? (_) => Cascada(pasos));
+  return (c, out.toString(), err.toString());
+}
+
+/// Lo mismo, para los casos donde solo importan código y salida.
 Future<(int, String)> correr(List<String> args, List<Verifier> pasos,
     {Cascada Function(String)? construir}) async {
-  final b = StringBuffer();
-  final c = await correrVerify(args,
-      directorio: '.',
-      salida: b,
-      construirCascada: construir ?? (_) => Cascada(pasos));
-  return (c, b.toString());
+  final (c, out, _) =
+      await invocar(['verify', ...args], pasos, construir: construir);
+  return (c, out);
 }
 
 Impresora _impresora() =>
@@ -255,12 +282,58 @@ void main() {
 
   group('el silencio y el detalle', () {
     test('`--quiet` calla el progreso pero NO los diagnósticos', () async {
-      // «Solo errores» no puede significar callar los errores. Dejaba un
-      // resumen que afirmaba que había diagnósticos sin decir cuáles.
       final (_, salida) = await correr(const ['--quiet'], [_Paso.rojo('A')]);
       expect(salida, contains('el mensaje'));
       expect(salida, isNot(contains('FALLA     A')),
           reason: 'el progreso sí se calla');
+    });
+
+    test('`silencia` NO se muestra nunca, ni siquiera sin banderas', () {
+      // `Severity.silencia` dice de sí misma «registra para telemetría y no se
+      // muestra». Se filtraba por el TIPO del evento, no por la severidad, así
+      // que se imprimía igual.
+      final d = Diagnostic(
+          file: 'a',
+          severity: Severity.silencia,
+          ruleId: 'r',
+          message: const QuotedText('m', source: 't'));
+      expect(seMuestra(d, silencioso: false), isFalse);
+      expect(seMuestra(d, silencioso: true), isFalse);
+    });
+
+    test('`--quiet` es «solo errores», no «todos los diagnósticos»', () async {
+      // Dejaba pasar lo informativo, que anota y sigue. Un error es lo que
+      // bloquea.
+      final (_, ruidoso) = await correr(const [], [_Paso.mixto('A')]);
+      expect(ruidoso, contains('mensaje-bloquea'));
+      expect(ruidoso, contains('mensaje-reporta'));
+      expect(ruidoso, isNot(contains('mensaje-silencia')));
+
+      final (_, callado) = await correr(const ['--quiet'], [_Paso.mixto('A')]);
+      expect(callado, contains('mensaje-bloquea'));
+      expect(callado, isNot(contains('mensaje-reporta')));
+      expect(callado, isNot(contains('mensaje-silencia')));
+    });
+
+    test('el rescate en modo humano TAMBIÉN dice qué hacer', () async {
+      // La excepción que escapa del comando entero pasa por otra rama que la
+      // del paso roto: el envelope llevaba la acción y el texto para personas
+      // no. «Todo error indica la acción siguiente» no admite excepciones por
+      // formato ni por camino.
+      final (c, salida, _) = await invocar(const ['verify'], const [],
+          construir: (_) => Cascada([_Paso.verde('A'), _Paso.verde('A')]));
+      expect(c, 70);
+      expect(salida, contains('→'),
+          reason: 'el rescate imprimía solo la línea del error');
+    });
+
+    test('el error interno en modo humano TAMBIÉN dice qué hacer', () async {
+      // El envelope lo llevaba y la salida para personas no. «Todo error
+      // indica la acción siguiente» no admite excepciones por formato.
+      final (c, salida) =
+          await correr(const [], [_Paso('A', lanza: StateError('x'))]);
+      expect(c, 70);
+      expect(salida, contains('→'));
     });
 
     test('`--verbose` muestra el testigo; sin la bandera, no', () async {
@@ -270,6 +343,45 @@ void main() {
       final (_, con) = await correr(const ['--verbose'], [_Paso.verde('A')]);
       expect(con, contains('herramienta --sobre lib/'));
       expect(con, contains('algo que no se miró'));
+    });
+  });
+
+  group('la frontera es UNA: el ruteo también cumple el protocolo', () {
+    // `_enrutar` y `main` tenían salidas propias y con `--json` rompían el
+    // contrato en tres invocaciones distintas. Cada una había que arreglarla
+    // por separado; ahora el único camino de salida construye envelopes.
+    for (final caso in {
+      'sin comando': <String>[],
+      'comando desconocido': ['desconocido'],
+      'ayuda global': ['--help'],
+    }.entries) {
+      test('«${caso.key}» con --json sale como envelope', () async {
+        final (_, out, _) = await invocar(['--json', ...caso.value], const []);
+        final lineas = out.trim().split('\n');
+        expect(lineas, hasLength(1),
+            reason: 'un solo documento, y nada de texto suelto');
+        final r = jsonDecode(lineas.single) as Map<String, Object?>;
+        expect(r['type'], 'result');
+        expect(r['schema'], esquemaDeSalida);
+      });
+    }
+
+    test('sin comando no es éxito; `--help` explícito sí', () async {
+      expect((await invocar(const [], const [])).$1, 5);
+      expect((await invocar(const ['--help'], const [])).$1, 0);
+    });
+  });
+
+  group('la última salida va por la corriente de error', () {
+    test('si ni siquiera se puede emitir el resultado', () {
+      // El contrato reserva esa corriente para «un fallo que impida incluso
+      // serializar el resultado», y hasta acá nadie escribía en ella: el
+      // rescate reintentaba sobre la misma salida que acababa de fallar.
+      final err = StringBuffer();
+      Impresora(salida: StringBuffer(), error: err)
+          .ultimoRecurso('se rompió', 'hacé esto');
+      expect(err.toString(), contains('se rompió'));
+      expect(err.toString(), contains('→ hacé esto'));
     });
   });
 
