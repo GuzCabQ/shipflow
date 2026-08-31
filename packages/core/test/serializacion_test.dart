@@ -80,6 +80,7 @@ void main() {
   final testigo = Witness(
     invocation: 'verificador --sobre lib/',
     subjects: const ['lib/algo.fuente'],
+    omitted: const ['lib/ilegible.fuente: no se pudo leer'],
     exitCode: 3,
     termination: Termination.completa,
     finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),

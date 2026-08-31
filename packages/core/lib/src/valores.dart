@@ -167,6 +167,19 @@ class Witness {
   /// conoce esa herramienta, no este tipo.
   final int exitCode;
 
+  /// **Qué NO cubrió, y por qué.** Vacía significa «nada quedó afuera», y es
+  /// una afirmación, no un silencio.
+  ///
+  /// ADR-011 pide un testigo de «qué corrió, sobre qué alcance, **qué omitió y
+  /// por qué**». Las tres primeras estaban; esta faltaba, y se notó en el
+  /// primer paso de cascada que la necesitó: una herramienta que no informa
+  /// qué archivos leyó obliga a comprobar la cobertura por otro lado, y eso
+  /// tiene que quedar ESCRITO en el testigo y no en un comentario del código.
+  ///
+  /// Es el corolario 5 vuelto dato: cada control declara si puede detectar una
+  /// omisión. Un paso que no puede, lo dice acá.
+  final List<String> omitted;
+
   /// Cuándo terminó, en UTC.
   final DateTime finishedAt;
 
@@ -179,11 +192,18 @@ class Witness {
     required this.exitCode,
     required this.finishedAt,
     required this.termination,
-  }) : subjects = List.unmodifiable(subjects);
+    List<String> omitted = const [],
+  })  : subjects = List.unmodifiable(subjects),
+        omitted = List.unmodifiable(omitted);
 
   /// Un testigo atestigua si **corrió**, si dice **qué** corrió, y si dice
   /// **sobre qué**. Las tres cosas: es el corolario 5 de ADR-011 —no
   /// distinguir «no encontré nada» de «no miré ahí»— convertido en predicado.
+  ///
+  /// [omitted] NO entra: declarar una omisión es parte de un reporte honesto,
+  /// no un motivo para invalidarlo. Un paso que corrió sobre nueve de diez
+  /// archivos y lo dice atestigua; uno que corrió sobre diez y no lo dice, no
+  /// es mejor.
   bool get attests =>
       termination == Termination.completa &&
       invocation.trim().isNotEmpty &&
@@ -194,6 +214,7 @@ class Witness {
         'subjects': subjects,
         'termination': termination.name,
         'exitCode': exitCode,
+        'omitted': omitted,
         'finishedAt': finishedAt.toUtc().toIso8601String(),
       };
 
@@ -202,6 +223,7 @@ class Witness {
         subjects: List<String>.from(json['subjects']! as List<Object?>),
         termination: Termination.values.byName(json['termination']! as String),
         exitCode: json['exitCode']! as int,
+        omitted: List<String>.from(json['omitted']! as List<Object?>),
         finishedAt: DateTime.parse(json['finishedAt']! as String),
       );
 }

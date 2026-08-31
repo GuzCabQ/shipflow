@@ -1,5 +1,9 @@
 /// `plugin_fake` — los puertos del plugin que ya tienen contrato, para
-/// pruebas. **Hoy tres de veintitrés**, y los demás llegan con su fase.
+/// pruebas. Los demás llegan con su fase.
+///
+/// **No lleva la cuenta escrita acá.** Una cantidad en prosa que nada deriva
+/// envejece sola, y en este repositorio ya lo hizo dos veces. Cuáles tienen
+/// implementación está en `arquitectura.json`, verificado contra el árbol.
 ///
 /// **No es un atajo: es la segunda implementación viva.** Mientras un puerto
 /// tenga una sola, no es una abstracción — es una indirección que todavía no

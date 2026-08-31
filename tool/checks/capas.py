@@ -423,11 +423,13 @@ def _check_readme() -> None:
         if (int(m.group(1)), int(m.group(2))) != (n_pendientes, n_total):
             fallos.append(f"README.md dice «{m.group(0)}»; el registro declara "
                           f"{n_pendientes} pendientes sobre {n_total} puertos.")
-    for m in re.finditer(r"para pruebas · hoy (\d+) de (\d+)", texto):
-        if (int(m.group(1)), int(m.group(2))) != (n_total - n_pendientes, n_total):
-            fallos.append(f"README.md dice «{m.group(0)}»; hay "
-                          f"{n_total - n_pendientes} puertos con contrato sobre "
-                          f"{n_total}.")
+    # NO se deriva cuántos fakes hay. Se intentó, restando pendientes del
+    # total, y estaba mal: eso da los puertos con implementación VIVA, que no
+    # es lo mismo — `Verifier` tiene dos reales y ningún fake. Un control que
+    # deriva la cantidad equivocada es peor que ninguno, porque se lo cree.
+    # La cuenta de fakes saldría de contar en el árbol qué clases de
+    # `plugin_fake` implementan un puerto, y eso es del motor de AST, no de
+    # acá. Hasta entonces el README no afirma esa cantidad.
 
     for patron, motivo in NOMBRES_RETIRADOS.items():
         for m in re.finditer(patron, texto):

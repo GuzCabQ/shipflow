@@ -9,7 +9,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, segunda rebanada. Hay contratos y un sujeto; no hay producto.
+## Estado: fase 2, tercera rebanada. La cascada empieza a correr.
 
 `core` existe: **las entidades y los puertos, como tipos, sin una sola
 implementación.** Y existe el **fixture**: un proyecto de verdad, con toolchain
@@ -181,10 +181,19 @@ Cada puerto implementado tiene su suite, y **la corren las dos**:
 | `ProjectTopology` | lee el fixture del disco | se le declara la topología |
 | `ArtifactPolicy` | clasifica con los patrones de `N1-02` y `N1-03` | se le declaran las respuestas |
 | `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
+| `Verifier` | **dos** reales: los dos primeros pasos | **no hay**, y está declarado |
 
 `DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
 uno y los formatos que tiene que leer son varios. La suite corre contra las
 tres, y cada una trae su propia muestra — el contrato no conoce ningún formato.
+
+`Verifier` salió con **dos reales y ningún fake**, y eso está escrito en el
+registro en vez de disimulado. El motivo por el que un puerto pide dos
+implementaciones —que una sola es una indirección que todavía no se
+contradijo— ya está cubierto: sus dos pasos difieren en lo que importa, y esa
+divergencia produjo la quinta cláusula del puerto. Falta un `Verifier` falso
+para que `orchestration` pueda probar la cascada sin toolchain; llega con la
+fase que lo necesite.
 
 **El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
 un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
@@ -295,6 +304,85 @@ incluida la de encabezado del fake: el guardia del encabezado disparaba primero
 y el número de línea nunca se alcanzaba. **El sobreviviente de la corrida de
 mutación era justo el bug del review.** Se corrompe una línea por vez, y ahora
 son cero sobre catorce guardias.
+
+---
+
+## Los dos primeros pasos de la cascada
+
+`FormatCheck` y `StaticAnalysis`. Invocan la herramienta, normalizan su salida
+y **devuelven su testigo**. Toda la disciplina de atestación vive en la clase
+base y en ningún otro lado: un paso nuevo no puede olvidarse de construir su
+testigo porque no es él quien lo construye. Aporta qué invocar y sobre qué
+puede atestiguar, y el veredicto sale de ahí.
+
+### Los dos no ven lo mismo, y eso se declara
+
+| | ¿Puede detectar que no miró nada? | Cómo |
+|---|---|---|
+| `FormatCheck` | **sí** | la herramienta informa cuántos archivos miró |
+| `StaticAnalysis` | **no** | sobre un alcance vacío devuelve lo mismo que sobre uno limpio |
+
+Está medido, no supuesto. El formateador sobre un directorio inexistente sale
+con **código 0**; el analizador sobre un directorio vacío devuelve
+`{"version":1,"diagnostics":[]}`, byte por byte lo mismo que sobre código
+impecable.
+
+Así que `FormatCheck` deriva su cobertura del resumen de la herramienta, y
+cero archivos mirados deja el testigo **sin sujetos** — y sin sujetos no hay
+verde, por la mecánica que ya estaba en `core`. Nadie tiene que acordarse de
+ponerlo en rojo.
+
+`StaticAnalysis` no puede hacer eso, así que hace dos cosas y escribe las dos
+en su testigo: una ruta inexistente le hace devolver un código que no está en
+su lista blanca, y **la cantidad de archivos del alcance la cuenta el arnés**,
+porque la herramienta no la dice. Lo que sigue sin cubrirse —que los haya
+leído todos— es residuo declarado.
+
+Los códigos de salida que significan «corrí» son una **lista blanca**. Un
+código que no está deja el resultado no concluyente en vez de leerse como el
+más benigno: una herramienta que empieza a devolver un código nuevo tiene que
+hacernos parar, no pasar.
+
+### `Witness` no tenía dónde escribir eso
+
+ADR-011 pide un testigo de *«qué corrió, sobre qué alcance, **qué omitió y por
+qué**»*. Las tres primeras estaban en el tipo desde la fase 1. La cuarta no, y
+se notó en el primer paso que la necesitó. Ahora es un campo, `omitted`, y es
+el corolario 5 vuelto dato: **cada control declara si puede detectar una
+omisión**, en el testigo y no en un comentario del código.
+
+No entra en `attests`. Declarar una omisión es parte de un reporte honesto, no
+un motivo para invalidarlo: un paso que corrió sobre nueve de diez archivos y
+lo dice atestigua; uno que corrió sobre diez y no lo dice no es mejor.
+
+### Contra la toolchain de verdad
+
+Siete pruebas más corren los pasos con la herramienta instalada, sobre archivos
+escritos en el momento. **Cierran el residuo que la suite de contrato había
+declarado**: allá las muestras son salida capturada pero congelada, y si la
+herramienta cambiara de formato aquella suite seguiría verde contra un formato
+que ya nadie emite.
+
+Una de esas siete afirma que el código de salida del formateador sobre un
+alcance inexistente **es 0**. Si algún día deja de serlo, la prueba se pone
+roja y avisa que este paso tiene más defensa de la que necesita — que es la
+forma correcta de enterarse.
+
+### Y el motor de checks tenía su propio punto ciego
+
+Al sacar `Verifier` de la lista de puertos sin implementación, el check dijo
+**ok**. No debía: `Verifier` ya tenía dos implementaciones vivas.
+
+Miraba los supertipos **directos** de las clases concretas. Una base abstracta
+que implementa el puerto no contaba —es abstracta— y la clase concreta solo
+nombraba a la base, así que el puerto quedaba invisible. Es la forma exacta que
+ese control existe para cazar, aplicada al control mismo: mirar donde es cómodo
+y llamar a eso el invariante.
+
+Ahora sigue la herencia hasta arriba. Y como arreglar algo no es instalarlo,
+la regla ganó una **segunda violación canónica** —un puerto implementado a
+través de una base abstracta— para que el arreglo no se pueda deshacer en
+silencio. El arnés pasó de 86 sabotajes a 87.
 
 ---
 
@@ -578,7 +666,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **20 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **19 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`verify` y `ship`.** El fixture ya existe y se verifica solo; falta todo lo que va a correr sobre él: los puertos de stack que quedan, la cascada, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
@@ -606,7 +694,7 @@ packages/
   rules           registro, proyección a C y E, telemetría
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
-  plugin_fake     los puertos con contrato, para pruebas · hoy 3 de 23
+  plugin_fake     los fakes de los puertos que ya tienen contrato
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py
