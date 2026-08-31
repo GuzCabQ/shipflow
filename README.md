@@ -9,20 +9,27 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, tercera rebanada. La cascada empieza a correr.
+## Estado: fase 2, cuarta rebanada. **Hay un comando.**
 
 `core` existe: **las entidades y los puertos, como tipos.** Cuatro de los
 veintitrés ya tienen implementación viva y suite de contrato. Y existe el
 **fixture**: un proyecto de verdad, con toolchain de verdad.
 
-**Existen los dos primeros pasos de la cascada** —`FormatCheck` y
-`StaticAnalysis`—: invocan la herramienta, normalizan su salida y devuelven su
-testigo.
+**Y existe `shipflow verify`.** Corre los dos primeros pasos de la cascada
+—`FormatCheck` y `StaticAnalysis`—, reporta sus diagnósticos con el testigo de
+cada uno, y sale con un código que **se deriva** del estado de la corrida.
 
-**No existe la cascada como tal**, que es otra cosa: nadie los ordena, nadie
-corta temprano, nadie administra presupuesto. Eso es de `orchestration` y no
-está. Tampoco hay CLI, ni `vcs`, ni ensamblado de PR, ni ganchos. Todo eso es
-deliberado y está declarado más abajo, control por control.
+```
+$ shipflow verify lib
+  ok        FormatCheck
+  ok        StaticAnalysis
+verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
+```
+
+**No existe `ship`**, ni el agente, ni los tickets, ni `vcs`, ni los ganchos.
+Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
+presupuesto. Todo eso es deliberado y está declarado más abajo, control por
+control.
 
 **El problema que resuelve.** El intento anterior no falló por mala
 arquitectura: falló porque todo lo que gobernaba el proceso estaba escrito en
@@ -50,6 +57,7 @@ python3 tool/checks/capas.py                  # las reglas que se leen del texto
 python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
 python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
 dart test packages/core                       # invariantes del dominio
+dart test packages/orchestration              # el registro de pasos y la cuenta
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
 dart analyze --fatal-infos
@@ -58,7 +66,7 @@ dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/app && flutter test)
 ```
 
-**Son 13 pasos y `capas.py` lo verifica contra el workflow**, comando por
+**Son 14 pasos y `capas.py` lo verifica contra el workflow**, comando por
 comando: un paso borrado de CI, o neutralizado con un `if:` o un
 `continue-on-error`, pone el check en rojo.
 
@@ -158,7 +166,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 13 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 14 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
@@ -550,6 +558,208 @@ haya, esto va a hacer falta antes.
 
 ---
 
+## `shipflow verify`
+
+La primera rebanada **vertical**: atraviesa el CLI, la orquestación, la cascada
+y el protocolo de salida. No agrega un puerto — usa los que hay.
+
+Se cortó así a propósito. La fase 2 promete `verify` + `ship`, y `ship` necesita
+el agente, los tickets y `vcs`: más de la mitad de los puertos que faltan. `verify`
+no necesita ninguno, y el plan ya había nombrado el riesgo de quedarse del lado
+cómodo: *"la cascada es lo que sabemos hacer; es donde el proyecto puede
+quedarse"*.
+
+### El código de salida se deriva
+
+Estaba escrito en prosa como una tabla de precedencia. Una tabla no impide que
+alguien devuelva `1` desde un `catch`:
+
+```
+errorInterno  >  noConcluyente  >  rojo  >  verde
+     70               2             1        0
+```
+
+Ahora sale de `EstadoDeCorrida` y de ningún otro lado, con un `switch`
+exhaustivo: **un estado nuevo no compila hasta que alguien decida su código.**
+
+Que lo no concluyente gane sobre el rojo no es un descuido. No se puede afirmar
+que el cambio falló cuando parte de la verificación no se ejecutó: el rojo
+invita a arreglar y volver a correr, y volver a correr puede seguir sin observar
+lo que faltó. **Los diagnósticos bloqueantes se reportan igual**; lo que cambia
+es qué se afirma del conjunto.
+
+### El corolario 2 quedó instalado
+
+ADR-011 pide un *"meta-check de cobertura: reglas ejecutadas contra reglas
+registradas; la diferencia se reporta"*. Estaba escrito desde el 25/08 y nunca
+se había instalado, porque no había nada que registrar.
+
+La cascada es un **registro ordenado**, y el resultado lleva `registrados`,
+`ejecutados` y `sinEjecutar`. Un hueco vuelve la corrida no concluyente. Es
+`docs/03` §6 con nombre y apellido: *"si el registro dice cinco, dos pasos
+pueden no correr y nadie se entera"*.
+
+Con dos consecuencias que no estaban en el plan:
+
+- **Una cascada sin pasos no es verde.** Es el falso verde más barato de todos:
+  no miró nada y nadie se lo preguntó.
+- **El id de un paso es una clave, no una etiqueta.** Dos pasos con el mismo id
+  dejarían la cuenta ciega —uno taparía al otro— así que el registro los
+  rechaza al construirse. Es la misma lección que el motor de checks acababa de
+  aprender con las clases homónimas de `core`.
+
+### Un paso que se rompe no es un veredicto
+
+Si un paso lanza, la corrida sale con `70` y **los demás corren igual**. Cortar
+ahí dejaría a los siguientes sin ejecutar *y* sin explicación, y las dos cosas
+se confundirían en la cuenta.
+
+Y hay un caso que no se me habría ocurrido buscar hasta escribir la cuenta: un
+paso que devuelve el resultado de **otro** paso. Su id no coincidiría con el
+registrado y la cuenta diría que corrió algo que no corrió. Se rechaza.
+
+### El protocolo, y lo que promete
+
+Con `--json`, todo va a la salida estándar como JSON Lines: cero o más eventos
+y **exactamente un resultado, último**. Esa promesa no la comprobaba nadie, así
+que la impresora lleva la cuenta y **lanza** si alguien emite un segundo.
+
+Cada envelope lleva su versión de esquema, por la misma razón que el
+normalizador exige la del analizador: leer un formato nuevo con reglas viejas
+devuelve menos de lo que hay, y en silencio.
+
+### Y por fin se ve un testigo
+
+`--verbose` imprime lo que estaba construido y nadie había leído nunca:
+
+```
+  FALLA     FormatCheck
+            invocación: dart format --output=none lib
+            terminación: completa · código 0
+            cubrió: lib
+  bloquea lib/feo.dart · formato/sin-formatear · Changed lib/feo.dart
+  ok        StaticAnalysis
+            omitió: La herramienta no informa qué archivos leyó: sobre un
+            alcance vacío devuelve lo mismo que sobre uno limpio…
+```
+
+Esa última línea aparece en **cada corrida verde** de `StaticAnalysis`, y está
+bien que aparezca: es el paso diciendo, cada vez, qué no puede afirmar.
+
+### Lo que ya se puede exigir de la superficie
+
+Cinco de los sabotajes de superficie del documento de CLI dejaron de ser prosa:
+una bandera desconocida no se ignora, `--quiet --verbose` sale con `5`, una
+invocación sin acción **no sale con `0`** —no cumplió ningún contrato—, con
+`--json` no se cuela texto suelto, y hay exactamente un resultado.
+
+### Y lo que encontró un review sobre la primera versión
+
+Siete bloqueantes, todos reproducidos. La mayoría son la misma forma: **el
+comando cumplía el contrato en el camino feliz y lo rompía en los bordes.**
+
+| Estaba mal | Ahora |
+|---|---|
+| `--json verify` leía `--json` como un comando | las banderas globales valen antes o después |
+| un error de uso con `--json` imprimía texto humano | también sale como envelope |
+| `verify --help` era un bucle: código `5`, y el error recomendaba `--help` | se reconoce y sale con `0` |
+| `--quiet` callaba también los diagnósticos | calla el progreso, **no** los hallazgos |
+| una excepción fuera de la cascada escapaba del comando | nada sale sin resultado, y sin `70` |
+| «uno solo, y último» no cubría **cero** ni «un evento después» | las dos rompen ahora |
+| la cascada vacía mandaba a mirar testigos que no existen | dice que no hay verificadores y señala el composition root |
+
+Los dos primeros y el tercero son el mismo error de fondo: **probé el protocolo
+solo donde el protocolo se cumple.** Con `--json` había un test de una corrida
+normal y ninguno de una corrida que falla antes de empezar.
+
+El más caro para el futuro es otro: **`cascadaPorDefecto` no tenía ninguna
+prueba.** Todas inyectaban la cascada, así que los dos pasos podían borrarse,
+invertirse o reemplazarse y todo seguía verde — la composición real, que es lo
+único que un usuario ejecuta, era exactamente lo que nadie miraba. Ahora hay una
+prueba que corre el binario sobre un proyecto de verdad y exige que
+`FormatCheck` y `StaticAnalysis` estén registrados, **en ese orden**, y que
+encuentren el archivo sin formatear.
+
+Y dos observaciones que también eran reales: `exit()` cortaba el proceso sin
+dejar drenar la salida —una corrida `--json` larga se truncaba en silencio— y
+`Cascada.correr` no congelaba el alcance, así que el llamador podía cambiarlo
+entre paso y paso.
+
+### Tercera vuelta: la frontera estaba duplicada
+
+El review siguiente encontró que el arreglo del protocolo **había quedado
+adentro de `verify`**, y el ruteo y el `main` tenían salidas propias: con
+`--json`, tres invocaciones distintas —sin comando, con un comando que no
+existe, y `--help`— imprimían texto suelto. Cada una habría que haberla
+arreglado por separado.
+
+Ahora hay **una sola frontera**. Si el único camino de salida construye
+envelopes, ningún camino puede no construirlos.
+
+| Y además | |
+|---|---|
+| el progreso se emitía **después** de que todo terminara | sale mientras la corrida ocurre, con la hora del paso |
+| `--quiet` mostraba cualquier diagnóstico | «solo errores» es lo que **bloquea** |
+| `Severity.silencia` se imprimía | no se muestra nunca, ni sin banderas |
+| la corriente de error estaba declarada y **sin usar** | hay una última salida que no serializa nada |
+| el rescate en modo humano no decía qué hacer | lo dice, como el envelope |
+
+Lo del progreso es el más de fondo: la cascada devolvía todo junto y el CLI
+recorría los resultados al final. No había nada que mirar mientras una
+herramienta tardaba, y la marca de tiempo era la de armar el reporte. Ahora la
+cascada avisa cuándo empieza y cuándo termina cada paso, que es lo que la
+superficie pide de toda operación de más de tres segundos.
+
+Y el de `Severity.silencia` no lo trajo el review: apareció al mirar por qué el
+filtro estaba en el tipo del evento y no en la severidad. `core` dice de esa
+severidad «registra para telemetría y **no se muestra**», y se estaba
+mostrando.
+
+### Cuarta vuelta: comprobar que una bandera está no es interpretarla
+
+La frontera nueva usaba `contains` para algunas banderas y resolvía la ayuda
+sin haber mirado el resto. Con eso, `shipflow --inventada --help` salía con
+`0`; `--quiet --verbose --help` también, cuando SC-17 exige `5`; y
+`--quiet --help` no mostraba la ayuda que se le había pedido.
+
+Ahora hay **un intérprete, y corre antes que nada**. El orden de sus
+comprobaciones es parte del contrato: primero la contradicción entre banderas
+—no hay forma de honrar las dos, y elegir una es adivinar—, después las que
+nadie puede aceptar, y recién ahí la ayuda, que **gana sobre `--quiet`**:
+callar lo que alguien pidió explícitamente no es silencio, es no hacerlo.
+
+Una bandera desconocida **con** comando no se rechaza en la frontera: se le
+pasa al subcomando. Hoy `verify` no tiene banderas propias y la rechaza, pero
+rechazarla arriba cerraría la puerta a las que el documento ya declara para
+otros comandos —`--dry-run`, `--budget`—.
+
+Y una cosa más que el review encontró: `alTerminar` estaba **dentro** del
+`try` que clasifica fallos del paso, así que una excepción del observador de
+progreso se le atribuía al verificador. El mismo paso quedaba registrado como
+ejecutado *y* como fallido, y el reporte culpaba a quien había hecho su
+trabajo.
+
+### Una divergencia declarada con el documento de superficie
+
+**`verdict` va nulo cuando la invocación no alcanzó una operación de dominio.**
+
+La superficie enumera `ok · failed · inconclusive · stopped · internalError`, y
+ninguno describe «escribiste mal el comando». El código de salida `5` no es
+`failed` —la verificación no falló, no corrió— ni `inconclusive`, que es un
+verificador que intentó y no pudo. El `4` va a tener el mismo problema cuando
+exista `doctor`.
+
+**No se inventa un veredicto todavía, y es deliberado:** nadie lee ese campo.
+El único consumidor del `--json` hoy es esta suite. Decidir la semántica de un
+campo para un lector que no existe es la misma forma que este proyecto persigue
+—un invariante escrito y sin instalar—, del revés.
+
+Se decide cuando haya un consumidor real que necesite hacer `switch` sobre
+`verdict`. Hasta entonces queda acá, en el tipo, y en las pruebas: los tres
+dicen lo mismo.
+
+---
+
 ## Cuando una corrida no termina
 
 El arnés aplica sabotajes sobre el árbol de trabajo y los revierte. El `finally`
@@ -838,7 +1048,8 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **19 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`verify` y `ship`.** Existen los dos primeros pasos y el fixture; falta lo que los convierte en un comando: el orden y el presupuesto de la cascada, los puertos de stack que quedan, `vcs` y el ensamblado del PR | **Fase 2**, rebanadas siguientes |
+| **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, `vcs`, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
 **El arnés está partido en dos repositorios, y eso se puede instalar a medias.**
