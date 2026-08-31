@@ -132,6 +132,19 @@ void main() {
     });
   });
 
+  test('el alcance no puede cambiar entre paso y paso', () async {
+    // La lista es del llamador. Si muta durante la corrida, el primer paso
+    // verifica un alcance y el segundo otro, y el reporte dice que los dos
+    // cubrieron lo mismo. Es el invariante que `PasoDeCascada.run` ya aplicaba
+    // un nivel más abajo y que acá faltaba.
+    final lista = ['lib/'];
+    final espia = _Espia('B');
+    await Cascada([_Mutador('A', lista), espia]).correr(lista);
+    expect(espia.recibio, ['lib/'],
+        reason:
+            'el segundo paso tiene que ver el mismo alcance que el primero');
+  });
+
   group('la precedencia se deriva', () {
     test('verde solo si TODOS corrieron y ninguno objetó', () async {
       final r =
@@ -167,4 +180,36 @@ void main() {
           reason: 'que el arnés se rompa no es un veredicto sobre el cambio');
     });
   });
+}
+
+/// Muta la lista del llamador en medio de la corrida.
+class _Mutador implements Verifier {
+  @override
+  final String id;
+  final List<String> lista;
+  _Mutador(this.id, this.lista);
+
+  @override
+  Future<VerificationOutcome> run(List<String> subjects) async {
+    lista
+      ..clear()
+      ..add('otro/alcance');
+    return VerificationOutcome(
+        verifierId: id, diagnostics: const [], witness: _testigo());
+  }
+}
+
+/// Anota qué alcance le llegó.
+class _Espia implements Verifier {
+  @override
+  final String id;
+  List<String>? recibio;
+  _Espia(this.id);
+
+  @override
+  Future<VerificationOutcome> run(List<String> subjects) async {
+    recibio = List.of(subjects);
+    return VerificationOutcome(
+        verifierId: id, diagnostics: const [], witness: _testigo());
+  }
 }

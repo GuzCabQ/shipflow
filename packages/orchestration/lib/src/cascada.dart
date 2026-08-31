@@ -161,12 +161,18 @@ class Cascada {
   /// ejecutar Y sin explicación, y las dos cosas se confundirían en el
   /// reporte de registrados contra ejecutados.
   Future<ResultadoDeCascada> correr(List<String> sujetos) async {
+    // **Se congela al entrar.** La lista es del llamador, que puede mutarla
+    // entre paso y paso: el primero correría sobre un alcance y el segundo
+    // sobre otro, y el reporte diría que los dos cubrieron lo mismo. Es el
+    // mismo invariante que `PasoDeCascada.run` ya aplica un nivel más abajo, y
+    // que acá faltaba.
+    final alcance = List<String>.unmodifiable(sujetos);
     final resultados = <VerificationOutcome>[];
     final fallos = <String, String>{};
 
     for (final paso in pasos) {
       try {
-        final r = await paso.run(sujetos);
+        final r = await paso.run(alcance);
         // Un paso que devuelve el resultado de OTRO paso rompe la cuenta.
         if (r.verifierId != paso.id) {
           fallos[paso.id] = 'devolvió un resultado con id «${r.verifierId}»; '

@@ -653,6 +653,38 @@ una bandera desconocida no se ignora, `--quiet --verbose` sale con `5`, una
 invocación sin acción **no sale con `0`** —no cumplió ningún contrato—, con
 `--json` no se cuela texto suelto, y hay exactamente un resultado.
 
+### Y lo que encontró un review sobre la primera versión
+
+Siete bloqueantes, todos reproducidos. La mayoría son la misma forma: **el
+comando cumplía el contrato en el camino feliz y lo rompía en los bordes.**
+
+| Estaba mal | Ahora |
+|---|---|
+| `--json verify` leía `--json` como un comando | las banderas globales valen antes o después |
+| un error de uso con `--json` imprimía texto humano | también sale como envelope |
+| `verify --help` era un bucle: código `5`, y el error recomendaba `--help` | se reconoce y sale con `0` |
+| `--quiet` callaba también los diagnósticos | calla el progreso, **no** los hallazgos |
+| una excepción fuera de la cascada escapaba del comando | nada sale sin resultado, y sin `70` |
+| «uno solo, y último» no cubría **cero** ni «un evento después» | las dos rompen ahora |
+| la cascada vacía mandaba a mirar testigos que no existen | dice que no hay verificadores y señala el composition root |
+
+Los dos primeros y el tercero son el mismo error de fondo: **probé el protocolo
+solo donde el protocolo se cumple.** Con `--json` había un test de una corrida
+normal y ninguno de una corrida que falla antes de empezar.
+
+El más caro para el futuro es otro: **`cascadaPorDefecto` no tenía ninguna
+prueba.** Todas inyectaban la cascada, así que los dos pasos podían borrarse,
+invertirse o reemplazarse y todo seguía verde — la composición real, que es lo
+único que un usuario ejecuta, era exactamente lo que nadie miraba. Ahora hay una
+prueba que corre el binario sobre un proyecto de verdad y exige que
+`FormatCheck` y `StaticAnalysis` estén registrados, **en ese orden**, y que
+encuentren el archivo sin formatear.
+
+Y dos observaciones que también eran reales: `exit()` cortaba el proceso sin
+dejar drenar la salida —una corrida `--json` larga se truncaba en silencio— y
+`Cascada.correr` no congelaba el alcance, así que el llamador podía cambiarlo
+entre paso y paso.
+
 ---
 
 ## Cuando una corrida no termina
