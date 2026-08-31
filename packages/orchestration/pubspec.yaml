@@ -11,3 +11,9 @@ resolution: workspace
 dependencies:
   core:
     path: ../core
+
+# `orchestration` NO es `core`: puede declarar sus dependencias de desarrollo.
+# `nucleo-sin-externas` gobierna solo a core, y `deps-hacia-core` mira los
+# miembros del workspace, no las externas.
+dev_dependencies:
+  test: ^1.25.0

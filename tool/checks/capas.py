@@ -103,6 +103,7 @@ PASOS_OBLIGATORIOS = {
     "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
+    "las pruebas de la orquestación": ("dart test packages/orchestration", None),
     "las suites de contrato": ("dart test packages/cli", None),
     "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),

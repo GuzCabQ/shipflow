@@ -1,2 +1,9 @@
-/// cli — sin API todavia. La fase 0 instala los controles, no el producto.
+/// `cli` — comandos y **composition root**.
+///
+/// Es el único paquete que puede ver a `plugin_dart` y a `agents`, y por eso
+/// es el único que sabe qué pasos concretos existen. Todo lo que arma un
+/// sistema a partir de las piezas se decide acá.
 library;
+
+export 'src/salida.dart';
+export 'src/verify.dart';
