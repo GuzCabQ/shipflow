@@ -160,6 +160,20 @@ void main() {
         reason: 'B no puede anunciarse antes de que A haya terminado');
   });
 
+  test('un fallo del OBSERVADOR no se le atribuye al verificador', () async {
+    // `alTerminar` estaba dentro del `try` que clasifica fallos del paso: el
+    // mismo paso quedaba registrado como ejecutado Y como fallido, y el
+    // reporte culpaba a quien había hecho su trabajo. Si el observador se
+    // rompe, que suba y sea un error del arnés, que es lo que es.
+    expect(
+      () => Cascada([_Paso.verde('A')]).correr(
+        ['lib/'],
+        alTerminar: (_) => throw StateError('falló el observador'),
+      ),
+      throwsStateError,
+    );
+  });
+
   group('la precedencia se deriva', () {
     test('verde solo si TODOS corrieron y ninguno objetó', () async {
       final r =

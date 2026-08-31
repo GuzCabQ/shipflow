@@ -183,6 +183,7 @@ class Cascada {
 
     for (final paso in pasos) {
       alEmpezar?.call(paso.id);
+      VerificationOutcome? logrado;
       try {
         final r = await paso.run(alcance);
         // Un paso que devuelve el resultado de OTRO paso rompe la cuenta.
@@ -193,7 +194,7 @@ class Cascada {
           continue;
         }
         resultados.add(r);
-        alTerminar?.call(r);
+        logrado = r;
       } on Object catch (e) {
         // Se atrapa cualquier excepción a propósito, y solo acá: un paso
         // que se rompe es un error del arnés, no un veredicto sobre el
@@ -201,6 +202,13 @@ class Cascada {
         // para impedir.
         fallos[paso.id] = '$e';
       }
+
+      // **El observador se llama FUERA del `try`.** Adentro, una excepción
+      // suya se atribuía al verificador: el mismo paso quedaba registrado como
+      // ejecutado Y como fallido, y el reporte culpaba a quien había hecho su
+      // trabajo. Si el observador se rompe, que suba a la frontera y sea un
+      // error del arnés, que es lo que es.
+      if (logrado != null) alTerminar?.call(logrado);
     }
 
     return ResultadoDeCascada(

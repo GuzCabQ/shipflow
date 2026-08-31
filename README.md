@@ -715,6 +715,49 @@ filtro estaba en el tipo del evento y no en la severidad. `core` dice de esa
 severidad «registra para telemetría y **no se muestra**», y se estaba
 mostrando.
 
+### Cuarta vuelta: comprobar que una bandera está no es interpretarla
+
+La frontera nueva usaba `contains` para algunas banderas y resolvía la ayuda
+sin haber mirado el resto. Con eso, `shipflow --inventada --help` salía con
+`0`; `--quiet --verbose --help` también, cuando SC-17 exige `5`; y
+`--quiet --help` no mostraba la ayuda que se le había pedido.
+
+Ahora hay **un intérprete, y corre antes que nada**. El orden de sus
+comprobaciones es parte del contrato: primero la contradicción entre banderas
+—no hay forma de honrar las dos, y elegir una es adivinar—, después las que
+nadie puede aceptar, y recién ahí la ayuda, que **gana sobre `--quiet`**:
+callar lo que alguien pidió explícitamente no es silencio, es no hacerlo.
+
+Una bandera desconocida **con** comando no se rechaza en la frontera: se le
+pasa al subcomando. Hoy `verify` no tiene banderas propias y la rechaza, pero
+rechazarla arriba cerraría la puerta a las que el documento ya declara para
+otros comandos —`--dry-run`, `--budget`—.
+
+Y una cosa más que el review encontró: `alTerminar` estaba **dentro** del
+`try` que clasifica fallos del paso, así que una excepción del observador de
+progreso se le atribuía al verificador. El mismo paso quedaba registrado como
+ejecutado *y* como fallido, y el reporte culpaba a quien había hecho su
+trabajo.
+
+### Una divergencia declarada con el documento de superficie
+
+**`verdict` va nulo cuando la invocación no alcanzó una operación de dominio.**
+
+La superficie enumera `ok · failed · inconclusive · stopped · internalError`, y
+ninguno describe «escribiste mal el comando». El código de salida `5` no es
+`failed` —la verificación no falló, no corrió— ni `inconclusive`, que es un
+verificador que intentó y no pudo. El `4` va a tener el mismo problema cuando
+exista `doctor`.
+
+**No se inventa un veredicto todavía, y es deliberado:** nadie lee ese campo.
+El único consumidor del `--json` hoy es esta suite. Decidir la semántica de un
+campo para un lector que no existe es la misma forma que este proyecto persigue
+—un invariante escrito y sin instalar—, del revés.
+
+Se decide cuando haya un consumidor real que necesite hacer `switch` sobre
+`verdict`. Hasta entonces queda acá, en el tipo, y en las pruebas: los tres
+dicen lo mismo.
+
 ---
 
 ## Cuando una corrida no termina

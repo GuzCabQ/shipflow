@@ -10,6 +10,7 @@ import 'package:orchestration/orchestration.dart';
 import 'package:plugin_dart/plugin_dart.dart';
 
 import 'salida.dart';
+import 'uso.dart';
 
 const nombreDelComando = 'verify';
 
@@ -36,6 +37,11 @@ Cascada cascadaPorDefecto({
     ]);
 
 /// Lo que `verify` entendió de la línea de comandos.
+///
+/// **No interpreta banderas**: eso ya lo hizo la frontera, una sola vez. Acá
+/// solo se resuelve el alcance y se rechaza lo que ningún subcomando puede
+/// aceptar. Dos intérpretes para las mismas banderas fue lo que dejó la
+/// frontera aceptando `--inventada`.
 class OpcionesDeVerify {
   final List<String> sujetos;
   final bool json;
@@ -52,13 +58,6 @@ class OpcionesDeVerify {
   }) : sujetos = List.unmodifiable(sujetos);
 }
 
-/// Se lanza cuando la invocación no se puede interpretar. Es el código `5`.
-class UsoInvalido implements Exception {
-  final String reason;
-  final String queHacer;
-  const UsoInvalido(this.reason, this.queHacer);
-}
-
 const ayudaDeVerify = r'''
 shipflow verify [rutas...] — corre la cascada y reporta con testigo.
 
@@ -66,52 +65,32 @@ shipflow verify [rutas...] — corre la cascada y reporta con testigo.
                 salida estándar, incluidos los diagnósticos.
   --verbose     Incluye el testigo de cada paso: qué corrió, sobre qué, y qué
                 omitió.
-  --quiet, -q   Calla el progreso. NO calla los diagnósticos.
+  --quiet, -q   Solo errores: lo que bloquea.
   --help, -h    Esto.
 
 Sin rutas, el alcance es el directorio actual.''';
 
-/// Interpreta los argumentos. **No adivina**: lo que no reconoce, lo rechaza.
-OpcionesDeVerify interpretar(List<String> args) {
-  final sujetos = <String>[];
-  var json = false, silencioso = false, detallado = false, ayuda = false;
-
-  for (final a in args) {
-    switch (a) {
-      case '--json':
-        json = true;
-      case '--quiet' || '-q':
-        silencioso = true;
-      case '--verbose':
-        detallado = true;
-      case '--help' || '-h':
-        // Rechazaba `--help` como bandera desconocida Y el mensaje de error
-        // recomendaba correr `--help`. Un error que manda a quien lo choca
-        // exactamente adonde estaba es peor que no decir nada.
-        ayuda = true;
-      default:
-        if (a.startsWith('-')) {
-          throw UsoInvalido('bandera desconocida: «$a»',
-              'Corré `shipflow verify --help` para ver las que hay.');
-        }
-        sujetos.add(a);
-    }
+/// Resuelve el alcance a partir de lo que la frontera ya interpretó.
+///
+/// **`verify` no tiene banderas propias**, así que cualquier bandera que haya
+/// sobrado no la puede aceptar nadie.
+OpcionesDeVerify opcionesDe(Globales g) {
+  final sobrante = g.restantes.where((a) => a.startsWith('-')).toList();
+  if (sobrante.isNotEmpty) {
+    throw UsoInvalido('bandera desconocida: «${sobrante.first}»',
+        'Corré `shipflow verify --help` para ver las que hay.');
   }
-
-  if (silencioso && detallado) {
-    throw const UsoInvalido('`--quiet` y `--verbose` se contradicen',
-        'Elegí una: `--quiet` para solo errores, `--verbose` para los testigos.');
-  }
+  final sujetos = g.restantes.where((a) => !a.startsWith('-')).toList();
 
   // **Sin alcance explícito, el directorio actual.** No es un default cómodo:
   // es el único alcance que se puede nombrar sin adivinar, y de todos modos el
   // testigo va a decir qué cubrió de verdad.
   return OpcionesDeVerify(
     sujetos: sujetos.isEmpty ? const ['.'] : sujetos,
-    json: json,
-    silencioso: silencioso,
-    detallado: detallado,
-    ayuda: ayuda,
+    json: g.json,
+    silencioso: g.silencioso,
+    detallado: g.detallado,
+    ayuda: g.ayuda,
   );
 }
 
@@ -121,14 +100,14 @@ OpcionesDeVerify interpretar(List<String> args) {
 /// `comando.dart`. Las excepciones tampoco se atrapan acá — suben a esa
 /// frontera, que es la que sabe convertirlas en un `70` con su resultado.
 Future<int> correrVerify(
-  List<String> args, {
+  Globales globales, {
   required String directorio,
   required Impresora impresora,
   Cascada Function(String directorio)? construirCascada,
 }) async {
   final OpcionesDeVerify o;
   try {
-    o = interpretar(args);
+    o = opcionesDe(globales);
   } on UsoInvalido catch (e) {
     impresora.resultado(
       ResultEnvelope(
@@ -145,7 +124,13 @@ Future<int> correrVerify(
   }
 
   if (o.ayuda) {
-    impresora.resultado(
+    // La ayuda gana sobre `--quiet`, igual que en la frontera: si alguien la
+    // pidió, callarla es no hacer lo que se pidió. Y se CIERRA la misma que
+    // emitió — cerrar la otra dejaba el resultado emitido en una y la cuenta
+    // en cero en la otra, que es justamente lo que el guardia detecta.
+    final sinSilencio = Impresora(
+        salida: impresora.salida, error: impresora.error, json: o.json);
+    sinSilencio.resultado(
       ResultEnvelope(
         command: nombreDelComando,
         exitCode: Codigo.exito,
@@ -154,7 +139,7 @@ Future<int> correrVerify(
       ),
       ayudaDeVerify,
     );
-    impresora.cerrar();
+    sinSilencio.cerrar();
     return Codigo.exito;
   }
 

@@ -13,6 +13,7 @@ library;
 import 'package:orchestration/orchestration.dart';
 
 import 'salida.dart';
+import 'uso.dart';
 import 'verify.dart';
 
 /// Lo que un comando decidió, antes de saber cómo se va a imprimir.
@@ -61,53 +62,79 @@ Future<int> ejecutar(
   required StringSink error,
   Cascada Function(String directorio)? construirCascada,
 }) async {
-  // `--json` se detecta antes que nada, porque hasta un error de ruteo tiene
-  // que salir como envelope. Su presencia no es ambigua.
-  final json = args.contains('--json');
-  final silencioso = args.contains('--quiet') || args.contains('-q');
+  // `--json` y `--quiet` se detectan antes de interpretar, porque hasta un
+  // error de interpretación tiene que salir por el canal que se pidió. Su
+  // presencia no es ambigua; lo que NO se hace acá es decidir nada con ellas.
   final imp = Impresora(
-      salida: salida, error: error, json: json, silencioso: silencioso);
+    salida: salida,
+    error: error,
+    json: args.contains('--json'),
+    silencioso: args.contains('--quiet') || args.contains('-q'),
+  );
 
   try {
-    // **Las banderas globales valen antes o después del comando.** El comando
-    // es el primer argumento que no empieza con guion.
-    final i = args.indexWhere((a) => !a.startsWith('-'));
+    // **Se interpreta la invocación entera antes de resolver nada.**
+    // Comprobar la presencia de una bandera con `contains` no es
+    // interpretarla: así, `--inventada --help` salía con 0.
+    final Globales g;
+    try {
+      g = interpretarGlobales(args);
+    } on UsoInvalido catch (e) {
+      return _emitir(
+          imp,
+          'shipflow',
+          Desenlace(
+            codigo: Codigo.errorDeUso,
+            verdict: null,
+            humano: 'shipflow: ${e.reason}',
+            queHacer: e.queHacer,
+            datos: {'error': e.reason},
+          ));
+    }
 
-    if (i < 0) {
-      final pidioAyuda = args.contains('--help') || args.contains('-h');
-      final d = pidioAyuda
-          ? const Desenlace(
+    // La ayuda gana sobre `--quiet`: se pidió, y callarla es no hacer lo que
+    // se pidió. Por eso se emite con una impresora que no silencia.
+    if (g.ayuda && g.comando == null) {
+      return _emitir(
+          Impresora(salida: salida, error: error, json: g.json),
+          'shipflow',
+          const Desenlace(
               codigo: Codigo.exito,
               verdict: 'ok',
               humano: _ayuda,
-              datos: {'help': _ayuda})
-          // Una invocación vacía no cumplió ningún contrato: no hizo nada.
-          : const Desenlace(
-              codigo: Codigo.errorDeUso,
-              verdict: null,
-              humano: _ayuda,
-              queHacer: 'Elegí un comando. Hoy existe `verify`.',
-              datos: {'error': 'invocación sin acción', 'help': _ayuda});
-      return _emitir(imp, 'shipflow', d);
+              datos: {'help': _ayuda}));
     }
 
-    final comando = args[i];
-    if (comando != nombreDelComando) {
+    if (g.comando == null) {
+      // Una invocación vacía no cumplió ningún contrato: no hizo nada.
+      return _emitir(
+          Impresora(salida: salida, error: error, json: g.json),
+          'shipflow',
+          const Desenlace(
+            codigo: Codigo.errorDeUso,
+            verdict: null,
+            humano: _ayuda,
+            queHacer: 'Elegí un comando. Hoy existe `verify`.',
+            datos: {'error': 'invocación sin acción', 'help': _ayuda},
+          ));
+    }
+
+    if (g.comando != nombreDelComando) {
       return _emitir(
         imp,
         'shipflow',
         Desenlace(
           codigo: Codigo.errorDeUso,
           verdict: null,
-          humano: 'shipflow: no conozco el comando «$comando».',
+          humano: 'shipflow: no conozco el comando «${g.comando}».',
           queHacer: 'Hoy solo existe `verify`. El resto llega con su fase.',
-          datos: {'error': 'comando desconocido: $comando'},
+          datos: {'error': 'comando desconocido: ${g.comando}'},
         ),
       );
     }
 
     return await correrVerify(
-      [...args.sublist(0, i), ...args.sublist(i + 1)],
+      g,
       directorio: directorio,
       impresora: imp,
       construirCascada: construirCascada,

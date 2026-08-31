@@ -7,4 +7,5 @@ library;
 
 export 'src/comando.dart';
 export 'src/salida.dart';
+export 'src/uso.dart';
 export 'src/verify.dart';
