@@ -501,11 +501,37 @@ huérfano quedaba tapado en verde. Cuando verifiqué ese arreglo usé una *base*
 duplicada — que es exactamente el caso para el que lo había escrito.
 
 La condición tampoco era la que puse. La primera versión fallaba ante cualquier
-repetición; la segunda, ante ninguna en el origen. **Ninguna de las dos era la
-condición:** un nombre repetido solo es ambiguo si sus declaraciones **no
-coinciden en lo que heredan**. Si todas heredan lo mismo, da igual cuál gane el
-mapa. Ahora falla exactamente ahí, y el arnés ganó su tercera violación
-canónica —**88 sabotajes**— para que marcar el origen no se pueda deshacer.
+repetición; la segunda, ante ninguna en el origen. Ahí quedó una tercera —un
+nombre repetido es ambiguo si sus declaraciones no coinciden en lo que
+heredan— y **tampoco era la condición**, porque respondía la pregunta
+equivocada.
+
+### Tercera vuelta: la herencia describe relaciones, no identidad
+
+Dos puertos pueden tener exactamente los mismos ancestros —ninguno— y seguir
+siendo **contratos distintos**. Con un implementador de uno solo, el otro
+quedaba huérfano y el check daba verde.
+
+El error de fondo era usar un criterio para dos preguntas que no son la misma:
+
+| El nombre se usa para… | ¿Cuándo es ambiguo? |
+|---|---|
+| **resolver** herencia (`superDe`) | solo si las declaraciones heredan cosas distintas |
+| **identificar** una clase en un registro | **siempre**: la identidad no se comparte |
+
+Y `arquitectura.json` direcciona las clases de `core` por su nombre en **tres**
+registros: cuáles son opacas, cuáles son puertos sin implementación, y cuáles
+serializan. El review encontró el segundo; **el mismo agujero estaba en el
+primero** — una clase declarada opaca le daba vía libre a su homónima, que ni
+serializaba ni estaba declarada.
+
+Así que la regla no es sobre puertos: **dentro de `core`, cualquier nombre
+repetido es fatal**, tengan los ancestros que tengan. Afuera de `core` el nombre
+solo se usa para resolver herencia, y ahí el criterio estructural sigue siendo
+el correcto — imponerle a todo plugin futuro no repetir un nombre sería una
+restricción de diseño que un check no tiene por qué imponer.
+
+Cuarta violación canónica registrada: **89 sabotajes**.
 
 ### Dónde el review se apoyó en un invariante que no dice eso
 

@@ -377,6 +377,16 @@
             "packages/plugin_fake/lib/src/_canario_origen_gemelo.dart": "import 'package:core/src/_canario_puerto_colision.dart';\n\nabstract class CanarioOrigen implements CanarioPuertoColision {}\n"
           },
           "debe_mencionar": "herencias DISTINTAS"
+        },
+        {
+          "nombre": "dos puertos homonimos con la MISMA herencia",
+          "por_que": "La correccion anterior considero ambiguo un nombre repetido solo si sus declaraciones heredaban cosas distintas. Eso responde la pregunta correcta para RESOLVER herencia y la equivocada para IDENTIFICAR: dos puertos pueden tener exactamente los mismos ancestros —ninguno— y seguir siendo contratos distintos. Con un implementador de uno solo, el otro quedaba huerfano y el check daba verde. Lo mismo pasaba en el registro de opacidad: una clase declarada opaca le daba via libre a su homonima. Dentro de core el nombre no es una referencia, es una clave.",
+          "archivos": {
+            "packages/core/lib/src/_canario_gemelo_a.dart": "abstract interface class CanarioPuertoGemelo {\n  void primero();\n}\n",
+            "packages/core/lib/src/_canario_gemelo_b.dart": "abstract interface class CanarioPuertoGemelo {\n  void segundo();\n}\n",
+            "packages/plugin_dart/lib/src/_canario_gemelo_impl.dart": "import 'package:core/src/_canario_gemelo_a.dart';\n\nfinal class CanarioGemeloImpl implements CanarioPuertoGemelo {\n  @override\n  void primero() {}\n}\n"
+          },
+          "debe_mencionar": "no es una referencia, es una clave"
         }
       ],
       "caso_ciego": {

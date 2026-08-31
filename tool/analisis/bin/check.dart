@@ -315,6 +315,34 @@ void main(List<String> args) {
         'está vacío, o no supe leerlo: las dos cosas son rojas.');
   }
 
+  // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
+  //
+  // `arquitectura.json` direcciona las clases de core por su NOMBRE, y lo hace
+  // en tres registros: cuáles son opacas, cuáles son puertos sin
+  // implementación, y cuáles serializan. Dos clases que se llamen igual no se
+  // pueden describir por separado en ninguno de los tres: la declaración de
+  // una le da vía libre a la otra.
+  //
+  // **La herencia describe relaciones, no identidad.** Dos puertos pueden
+  // tener exactamente los mismos ancestros —ninguno— y seguir siendo contratos
+  // distintos. Por eso acá NO se usa el criterio estructural que sirve para
+  // resolver herencia más abajo: acá cualquier duplicación es fatal.
+  //
+  // Medido en dos formas antes de instalarse: dos puertos homónimos con un
+  // implementador dejaban huérfano al otro en verde, y dos clases homónimas
+  // con una declarada opaca le daban a la otra un permiso que nadie escribió.
+  final nombresDeCore = <String, List<Clase>>{};
+  for (final c in clasesCore) {
+    (nombresDeCore[c.nombre] ??= []).add(c);
+  }
+  for (final e in nombresDeCore.entries.where((e) => e.value.length > 1)) {
+    fallos.add('«${e.key}» está declarada ${e.value.length} veces dentro de '
+        'core (${e.value.map((c) => c.archivo).join(", ")}). Los registros de '
+        'arquitectura.json direccionan las clases por su nombre, así que no se '
+        'pueden describir por separado y la declaración de una tapa a la otra. '
+        'Renombrá una: acá el nombre no es una referencia, es una clave.');
+  }
+
   // --- 1 · serialización sin pérdida ------------------------------------
   for (final c in clasesCore) {
     if (c.esAbstracta || c.camposPublicos.isEmpty) continue;

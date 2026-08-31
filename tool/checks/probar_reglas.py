@@ -88,6 +88,7 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
     "puertos-sin-implementacion": {
         "implementado a traves de una base abstracta",
         "homonima en el ORIGEN de la resolucion",
+        "dos puertos homonimos con la MISMA herencia",
     },
 }
 
