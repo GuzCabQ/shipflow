@@ -11,6 +11,7 @@
 /// declarado es justamente donde uno escribiría lo que cree que pasa.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
@@ -160,13 +161,31 @@ void main() {
       // INV-6: INV-6 dice que el texto externo se encapsula, que es contra la
       // inyección y no sobre fidelidad de bytes. Un review lo citó mal y esta
       // línea lo repetía.
-      final r = await const EjecutorDelSistema().correr(
-          'sh', const ['-c', r'printf "\xff\xfe"'],
+      //
+      // **Los bytes los escribe Dart, no el shell.** La versión anterior hacía
+      // `printf "\xff\xfe"` y eso NO es portable: `bash` en modo sh
+      // interpreta la secuencia y emite dos bytes inválidos; `dash` —que es el
+      // `sh` de la máquina de CI— la emite literal, ocho caracteres ASCII
+      // perfectamente decodificables. El fixture nunca produjo lo que decía
+      // producir, y el test pasaba en una plataforma y fallaba en la otra por
+      // una razón que no era la que enunciaba.
+      final archivo = File('${raiz.path}/bytes.bin')
+        ..writeAsBytesSync(const [0xff, 0xfe, 0xff]);
+
+      // **El fixture comprueba su propia premisa.** Sin esto puede volver a
+      // pasar —o fallar— por la razón equivocada, y nadie se entera.
+      expect(() => const Utf8Decoder().convert(archivo.readAsBytesSync()),
+          throwsFormatException,
+          reason:
+              'si estos bytes fueran decodificables, lo de abajo no estaría '
+              'probando lo que dice probar');
+
+      final r = await const EjecutorDelSistema().correr('cat', [archivo.path],
           directorio: raiz.path, presupuesto: const Duration(seconds: 30));
       expect(r.terminacion, Termination.interrumpida);
       expect(r.salidaDeError, contains('No se pudo leer'));
     },
         timeout: const Timeout(Duration(minutes: 2)),
-        onPlatform: const {'windows': Skip('sh no está')});
+        onPlatform: const {'windows': Skip('cat no está')});
   });
 }
