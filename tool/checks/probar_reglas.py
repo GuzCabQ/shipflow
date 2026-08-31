@@ -128,8 +128,13 @@ def neutralizaciones(rid: str) -> list[tuple[str, object]]:
             ("extensiones vaciadas", lambda r: r[rid]["alcance"].update(extensiones=[])),
             ("solo_en ampliado a todos",
              lambda r: r[rid].update(solo_en=sorted(p.name for p in (RAIZ / "packages").iterdir()))),
+            # `setdefault`: una regla de cadenas puede no excluir NADA —y la
+            # que mira solo core no excluye nada—, pero la neutralización tiene
+            # que poder aplicarse igual. Asumir que el campo existe dejaba a la
+            # regla nueva sin ese sabotaje, y la ausencia se leía como error del
+            # arnés en vez de como un hueco.
             ("exclusión que traga paquetes",
-             lambda r: r[rid]["alcance"]["excluir"].__setitem__(
+             lambda r: r[rid]["alcance"].setdefault("excluir", {}).__setitem__(
                  "artefactos_de_build",
                  {"que": sorted(p.name for p in (RAIZ / "packages").iterdir()),
                   "por_que": "x", "quien_lo_cubre": "x"})),

@@ -216,9 +216,53 @@ abstract interface class ContextProjector {
 
 // --- Salida e infraestructura ------------------------------------------
 
-/// Por donde salen los cambios al mundo.
+/// Por donde salen los cambios al mundo **local**: rama y commits.
+///
+/// **No sabe que existe una forja, y son dos puertos y no uno.** Lo decidió
+/// ADR-014 sin nombrarlo: su invariante ejecutable exige que tras una
+/// detención por presupuesto «la rama y todos los artefactos existen, y **no
+/// hay PR abierto**». Ese estado tiene que ser alcanzable, estable e
+/// inspeccionable. Un puerto que hiciera las dos cosas en una operación no
+/// tendría un medio — sería una bandera adentro fingiendo que es atómico.
+///
+/// **Cláusulas del contrato:**
+///
+/// 1. **[apply] commitea EXACTAMENTE los archivos de la rebanada.** Ni uno
+///    más. Barrer lo que hubiera suelto en el árbol metería en el PR cambios
+///    que nadie planeó, y el artefacto de revisión los declararía cubiertos.
+/// 2. **Una rebanada sin archivos no se commitea.** Un commit vacío afirma un
+///    cambio que no existe.
+/// 3. **[useBranch] es idempotente**: pedir dos veces la misma rama no falla.
+///    La orquestación la pide al empezar y `--resume` la vuelve a pedir.
 abstract interface class ChangeSink {
-  Future<void> apply(Plan plan);
+  /// La rama donde va el trabajo. La crea si no existe.
+  Future<void> useBranch(String name);
+
+  /// Deja la rebanada commiteada y devuelve la revisión resultante.
+  ///
+  /// **Recibe [PullRequestSlice] y no [Plan]** porque el caso «solo PR» de
+  /// `docs/04` entra sin `WorkItem`, y `Plan.workItemId` es obligatorio. La
+  /// rebanada lleva lo único que hace falta para commitear: qué archivos y por
+  /// qué — su `intent`, que es lo que ADR-014 llama intención.
+  Future<String> apply(PullRequestSlice slice);
+}
+
+/// Por donde sale un Pull Request a la forja.
+///
+/// **Separado de [ChangeSink] a propósito.** Uno es local y funciona sin red;
+/// el otro es remoto, necesita credencial y depende de un proveedor. Fallan
+/// por razones distintas, se prueban distinto, y ADR-014 exige que se pueda
+/// terminar con el primero hecho y el segundo no.
+///
+/// **Quién es la forja no se sabe acá.** GitHub, GitLab o lo que sea vive en
+/// su propio adapter, igual que el stack vive en su plugin.
+abstract interface class PullRequestSink {
+  /// Abre el PR y devuelve dónde quedó.
+  Future<String> open(
+    PullRequestSlice slice, {
+    required String branch,
+    required String base,
+  });
 }
 
 /// El árbol de trabajo: leer, escribir, y saber si está sucio.

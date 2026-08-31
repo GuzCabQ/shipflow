@@ -113,6 +113,11 @@ jobs:
       - name: pruebas de la orquestación
         run: dart test packages/orchestration
 
+      # `vcs` contra `git` de verdad: la rama, los commits y que un commit se
+      # quede EXACTAMENTE con los archivos de su rebanada.
+      - name: pruebas de vcs
+        run: dart test packages/vcs
+
       # Las suites de CONTRATO, que corren cada puerto contra su implementación
       # real y su fake. Sin ellas, todo lo que se pruebe con el fake queda
       # verde por construcción (docs/08 §2).

@@ -11,3 +11,7 @@ resolution: workspace
 dependencies:
   core:
     path: ../core
+
+# `vcs` no es `core`: puede declarar sus dependencias de desarrollo.
+dev_dependencies:
+  test: ^1.25.0

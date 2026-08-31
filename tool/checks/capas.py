@@ -41,6 +41,8 @@ OBLIGATORIAS = {
                                 "cadenas", "solo_en"),
     "sin-api-de-modelo": ("enunciado", "origen", "tipo", "alternativa", "alcance",
                           "cadenas"),
+    "nucleo-sin-entrada-salida": ("enunciado", "origen", "tipo", "alternativa",
+                                  "alcance", "cadenas", "solo_en"),
 }
 
 # El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
@@ -50,6 +52,7 @@ TIPOS = {
     "agente-en-agents": "cadenas_acotadas",
     "lenguaje-en-plugin-dart": "cadenas_acotadas",
     "sin-api-de-modelo": "cadenas_acotadas",
+    "nucleo-sin-entrada-salida": "cadenas_acotadas",
 }
 
 # Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
@@ -61,6 +64,8 @@ VALORES_FIJOS = {
     "agente-en-agents": {"solo_en": ["agents", "cli"]},          # ADR-009
     "lenguaje-en-plugin-dart": {"solo_en": ["plugin_dart", "cli"]},  # docs/03 §2
     "sin-api-de-modelo": {"solo_en": []},                        # ADR-009: ninguno
+    # docs/03 §2: lo que core necesita del mundo lo pide por un puerto.
+    "nucleo-sin-entrada-salida": {"solo_en": []},
     "nucleo-sin-externas": {"paquetes": ["core"], "origenes_permitidos": ["root"]},
     # El mapa de flechas ES la arquitectura de docs/03 §1.
     "deps-hacia-core": {"permitidas": {
@@ -74,6 +79,9 @@ VALORES_FIJOS = {
 VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
                          for rid in ("agente-en-agents", "lenguaje-en-plugin-dart",
                                      "sin-api-de-modelo")}
+# Esta mira SOLO core, y solo su fuente: una importacion vive en un `.dart`.
+VALORES_FIJOS_ALCANCE["nucleo-sin-entrada-salida"] = {
+    "raiz": "packages/core/lib", "extensiones": [".dart"]}
 
 # `no_cuenta` exime un TOKEN dentro de un contexto, y es el campo más peligroso
 # del registro: una entrada de más neutraliza la regla sin vaciar nada. Por eso
@@ -104,6 +112,7 @@ PASOS_OBLIGATORIOS = {
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
     "las pruebas de la orquestación": ("dart test packages/orchestration", None),
+    "las pruebas de vcs": ("dart test packages/vcs", None),
     "las suites de contrato": ("dart test packages/cli", None),
     "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
@@ -142,6 +151,7 @@ CIEGO_FIJO = {
     "agente-en-agents": "alcance_inexistente",
     "lenguaje-en-plugin-dart": "alcance_inexistente",
     "sin-api-de-modelo": "alcance_inexistente",
+    "nucleo-sin-entrada-salida": "alcance_inexistente",
     "serializacion-sin-perdida": "archivo_ilegible",
     "opacidad-declarada": "archivo_ilegible",
     "puertos-sin-implementacion": "archivo_ilegible",
@@ -153,7 +163,7 @@ NO_CUENTA_FIJO = {
     "lenguaje-en-plugin-dart": [
         (r"^\s*(?:import|export|part)\b", r"""\.dart(?=['"])"""),
         (r"^\s*(?:import|export|part)\b",
-         r"""(?<=['"])dart(?=:(?:async|collection|convert|core|math|typed_data)\b)"""),
+         r"""(?<=['"])dart(?=:(?:async|collection|convert|core|math|typed_data|io)\b)"""),
     ],
 }
 

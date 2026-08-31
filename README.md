@@ -58,6 +58,7 @@ python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
 python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
 dart test packages/core                       # invariantes del dominio
 dart test packages/orchestration              # el registro de pasos y la cuenta
+dart test packages/vcs                        # la rama y el commit, contra git de verdad
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
 dart analyze --fatal-infos
@@ -66,7 +67,7 @@ dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/app && flutter test)
 ```
 
-**Son 14 pasos y `capas.py` lo verifica contra el workflow**, comando por
+**Son 15 pasos y `capas.py` lo verifica contra el workflow**, comando por
 comando: un paso borrado de CI, o neutralizado con un `if:` o un
 `continue-on-error`, pone el check en rojo.
 
@@ -78,6 +79,7 @@ la arquitectura y se revisa como tal.
 |---|---|---|
 | `deps-hacia-core` | Que una flecha **interna** apunte a otro lado que no sea `core` | `capas.py` |
 | `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
+| `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
@@ -166,7 +168,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 14 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 15 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
@@ -760,6 +762,67 @@ dicen lo mismo.
 
 ---
 
+## `vcs`: el corte que ADR-014 ya había decidido
+
+`vcs` conoce `git` y nada más. Ni el lenguaje del proyecto, ni el CLI agéntico,
+ni la forja.
+
+### Dos puertos, no uno
+
+`ChangeSink` era un solo puerto con `apply(Plan)`. Ahora son dos:
+
+| | Qué sabe | Qué necesita |
+|---|---|---|
+| `ChangeSink` | `git`: rama y commits | nada, funciona sin red |
+| `PullRequestSink` | la forja | credencial, un proveedor |
+
+**Lo decidió ADR-014 sin nombrarlo.** Su invariante ejecutable exige que tras
+una detención por presupuesto *"la rama y todos los artefactos existen, y **no
+hay PR abierto**"*. Ese estado tiene que ser alcanzable, estable e
+inspeccionable — y un puerto cuya operación es atómica no tiene un medio.
+Sería una bandera adentro fingiendo que no lo es.
+
+El criterio no es cuántas responsabilidades tiene un puerto: es **cuántos
+estados intermedios el diseño exige que sean observables**. Es el mismo
+razonamiento por el que `VerificationOutcome` lleva testigo.
+
+### Y `apply` dejó de recibir un `Plan`
+
+`Plan.workItemId` es obligatorio, y el caso «solo PR» de `docs/04` entra **sin
+`WorkItem`**. El puerto no podía expresar el caso que la fase promete soportar.
+
+Ahora recibe una `PullRequestSlice`, que lleva exactamente lo que hace falta
+para commitear: qué archivos y **por qué** — su `intent`, que es lo que ADR-014
+llama intención, y que termina siendo el mensaje del commit.
+
+### La cláusula que necesitó una medición
+
+**`apply` commitea exactamente los archivos de la rebanada. Ni uno más.**
+
+Barrer lo que hubiera suelto en el árbol metería en el PR cambios que nadie
+planeó, y —por ADR-012— el artefacto de revisión los declararía **cubiertos**,
+que es pedirle a una persona que no los mire.
+
+Se midió cómo se hace: `git commit --message … -- <rutas>` ignora el índice.
+Con un archivo dejado en *staging* de antes, queda afuera. Sin las rutas
+explícitas, entra.
+
+### Lo que encontró al construirse: dos invariantes en un solo control
+
+`vcs` necesita `dart:io` para correr `git`, y la regla de cadenas lo rechazaba.
+No era un falso positivo: **esa regla era lo único que impedía que `core`
+hiciera entrada y salida directa**, porque `dart:io` contiene la cadena `dart`.
+
+Protección real, pero de rebote. `nucleo-sin-externas` mira las dependencias
+que resuelve pub, y una biblioteca del SDK no es una dependencia: `core` podía
+abrir archivos sin declarar nada.
+
+No se podía habilitar una sin perder la otra, así que se separaron.
+**`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
+y su caso ciego — **97 sabotajes**.
+
+---
+
 ## Cuando una corrida no termina
 
 El arnés aplica sabotajes sobre el árbol de trabajo y los revierte. El `finally`
@@ -1045,7 +1108,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 23 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **19 de los 24 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, `vcs`, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
