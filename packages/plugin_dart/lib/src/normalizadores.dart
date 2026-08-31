@@ -245,6 +245,15 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
     return total;
   }
 
+  /// Los archivos DISTINTOS que la herramienta dijo que no puede parsear.
+  ///
+  /// La herramienta los salta: no entran en la cuenta de formateados. Quien
+  /// reconcilie cuántos archivos había con cuántos miró necesita este número,
+  /// o va a concluir que faltó mirar algo que en realidad se reportó.
+  Set<String> archivosQueNoParsean(QuotedText rawOutput) => {
+        for (final m in _noParsea.allMatches(rawOutput.content)) m.group(2)!,
+      };
+
   /// El resumen, comprobando que haya exactamente uno.
   RegExpMatch _unicoResumen(QuotedText rawOutput) {
     final fuente = rawOutput.source;

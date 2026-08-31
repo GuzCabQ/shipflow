@@ -315,6 +315,34 @@ void main(List<String> args) {
         'está vacío, o no supe leerlo: las dos cosas son rojas.');
   }
 
+  // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
+  //
+  // `arquitectura.json` direcciona las clases de core por su NOMBRE, y lo hace
+  // en tres registros: cuáles son opacas, cuáles son puertos sin
+  // implementación, y cuáles serializan. Dos clases que se llamen igual no se
+  // pueden describir por separado en ninguno de los tres: la declaración de
+  // una le da vía libre a la otra.
+  //
+  // **La herencia describe relaciones, no identidad.** Dos puertos pueden
+  // tener exactamente los mismos ancestros —ninguno— y seguir siendo contratos
+  // distintos. Por eso acá NO se usa el criterio estructural que sirve para
+  // resolver herencia más abajo: acá cualquier duplicación es fatal.
+  //
+  // Medido en dos formas antes de instalarse: dos puertos homónimos con un
+  // implementador dejaban huérfano al otro en verde, y dos clases homónimas
+  // con una declarada opaca le daban a la otra un permiso que nadie escribió.
+  final nombresDeCore = <String, List<Clase>>{};
+  for (final c in clasesCore) {
+    (nombresDeCore[c.nombre] ??= []).add(c);
+  }
+  for (final e in nombresDeCore.entries.where((e) => e.value.length > 1)) {
+    fallos.add('«${e.key}» está declarada ${e.value.length} veces dentro de '
+        'core (${e.value.map((c) => c.archivo).join(", ")}). Los registros de '
+        'arquitectura.json direccionan las clases por su nombre, así que no se '
+        'pueden describir por separado y la declaración de una tapa a la otra. '
+        'Renombrá una: acá el nombre no es una referencia, es una clave.');
+  }
+
   // --- 1 · serialización sin pérdida ------------------------------------
   for (final c in clasesCore) {
     if (c.esAbstracta || c.camposPublicos.isEmpty) continue;
@@ -433,13 +461,62 @@ void main(List<String> args) {
   //
   // Es la forma exacta que este control existe para cazar, aplicada al propio
   // control: mirar donde es comodo y llamar a eso el invariante.
+  // **Este mapa resuelve por NOMBRE SIMPLE, y eso solo es correcto mientras
+  // no haya dos clases que se llamen igual.** Dart lo permite en bibliotecas
+  // distintas, y ahí la última pisaría a la primera: una clase concreta
+  // heredaría los ancestros de su homónima de otro paquete y un puerto
+  // huérfano podría quedar tapado. No mirar bien no es lo mismo que no
+  // encontrar nada, así que ante nombres repetidos esto FALLA en vez de
+  // adivinar. Resolverlo de verdad pide identidad calificada —biblioteca más
+  // símbolo— y elementos resueltos del analizador, no el árbol crudo.
+  final porNombre = <String, List<Clase>>{};
+  for (final c in todasLasClases) {
+    (porNombre[c.nombre] ??= []).add(c);
+  }
+
+  /// Un nombre repetido solo es AMBIGUO si sus declaraciones no coinciden en
+  /// lo que heredan. Si todas tienen los mismos supertipos, da igual cuál gane
+  /// el mapa: la respuesta es la misma, y hacer fallar el check ahí le
+  /// impondría a todo plugin futuro no repetir un nombre que ya usa otro.
+  ///
+  /// La primera versión de esto marcaba cualquier repetición; la segunda,
+  /// ninguna que estuviera en el origen del recorrido. Ninguna de las dos era
+  /// la condición: la condición es que el control NO PUEDA saber la respuesta.
+  bool ambiguo(String n) {
+    final decls = porNombre[n];
+    if (decls == null || decls.length < 2) return false;
+    final primero = decls.first.superTipos;
+    return decls.any((d) =>
+        d.superTipos.length != primero.length ||
+        !d.superTipos.every(primero.contains));
+  }
+
   final superDe = {for (final c in todasLasClases) c.nombre: c.superTipos};
+  // Los nombres ambiguos de los que DEPENDE la respuesta. Se acota a esos a
+  // propósito: fallar ante cualquier homónimo del repositorio le impondría a
+  // todo plugin futuro no repetir un nombre que ya usa otro, y esa es una
+  // restricción de diseño que este control no tiene por qué imponer.
+  //
+  // La respuesta depende de tres conjuntos de nombres, y son TODOS los que hay:
+  // el nodo donde arranca cada búsqueda, cada nodo que la búsqueda visita, y
+  // los puertos contra los que se compara al final. La primera versión de esto
+  // solo marcaba el segundo, y con eso una clase concreta con homónima tomaba
+  // los ancestros de la otra desde el primer paso — el mapa está indexado por
+  // nombre simple y devuelve la última declaración. Un puerto huérfano quedaba
+  // tapado y el check daba verde.
+  final ambiguosUsados = <String>{};
+  void anotarSiEsAmbiguo(String n) {
+    if (ambiguo(n)) ambiguosUsados.add(n);
+  }
+
   Set<String> ancestros(String nombre) {
+    anotarSiEsAmbiguo(nombre); // el ORIGEN también decide la respuesta
     final vistos = <String>{};
     final pila = [...?superDe[nombre]];
     while (pila.isNotEmpty) {
       final n = pila.removeLast();
       if (!vistos.add(n)) continue; // corta ciclos y repeticiones
+      anotarSiEsAmbiguo(n);
       pila.addAll(superDe[n] ?? const <String>{});
     }
     return vistos;
@@ -449,6 +526,18 @@ void main(List<String> args) {
     for (final c in todasLasClases)
       if (!c.esAbstracta) ...ancestros(c.nombre),
   };
+  // Un puerto duplicado también decide la respuesta, aunque nadie lo herede.
+  puertos.forEach(anotarSiEsAmbiguo);
+  for (final n in ambiguosUsados.toList()..sort()) {
+    fallos.add('«$n» está declarada ${porNombre[n]!.length} veces, con '
+        'herencias DISTINTAS '
+        '(${porNombre[n]!.map((c) => c.archivo).join(", ")}), y participa de '
+        'una resolución que este control tiene que hacer. Resuelve por NOMBRE '
+        'SIMPLE, así que no puede distinguirlas y no va a adivinar: renombrá '
+        'una, o dale identidad calificada al control —biblioteca más símbolo— '
+        'antes de creerle.');
+  }
+
   final huerfanos = puertos.where((p) => !implementados.contains(p)).toSet();
   for (final p in (huerfanos.difference(sinImpl.keys.toSet())).toList()
     ..sort()) {

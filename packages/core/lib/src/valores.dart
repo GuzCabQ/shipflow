@@ -170,6 +170,22 @@ class Witness {
   /// **Qué NO cubrió, y por qué.** Vacía significa «nada quedó afuera», y es
   /// una afirmación, no un silencio.
   ///
+  /// **Obligatoria, sin valor por defecto**, por la misma razón que
+  /// [termination]: con `= const []` una implementación que se olvidara del
+  /// campo declaraba cobertura total sin haberlo afirmado nunca. Es el agujero
+  /// que este mismo archivo describe dos párrafos más abajo, reabierto por la
+  /// puerta de al lado — y lo encontró un review, no yo.
+  ///
+  /// Los motivos en blanco se rechazan. Una cadena vacía ocupa un lugar en la
+  /// lista y no dice qué quedó afuera: es la misma comprobación de PRESENCIA
+  /// donde hacía falta CONTENIDO que ya corrigió `Rule` con sus evasiones.
+  ///
+  /// **No hay compatibilidad con testigos anteriores, y es deliberado.** Un
+  /// JSON sin `omitted` falla al leerse. Completarlo con `[]` afirmaría que no
+  /// hubo omisiones, que es justo lo que nadie sabe. No hay trazas persistidas
+  /// todavía —no hay CLI— así que el costo es cero y la alternativa era
+  /// mentir sobre corridas viejas.
+  ///
   /// ADR-011 pide un testigo de «qué corrió, sobre qué alcance, **qué omitió y
   /// por qué**». Las tres primeras estaban; esta faltaba, y se notó en el
   /// primer paso de cascada que la necesitó: una herramienta que no informa
@@ -192,9 +208,17 @@ class Witness {
     required this.exitCode,
     required this.finishedAt,
     required this.termination,
-    List<String> omitted = const [],
+    required List<String> omitted,
   })  : subjects = List.unmodifiable(subjects),
-        omitted = List.unmodifiable(omitted);
+        omitted = List.unmodifiable(omitted) {
+    if (this.omitted.any((m) => m.trim().isEmpty)) {
+      throw ArgumentError.value(
+          omitted,
+          'omitted',
+          'Hay motivos en blanco. Un motivo vacío ocupa lugar en la lista y no '
+              'dice qué quedó afuera: sacalo, o escribí por qué');
+    }
+  }
 
   /// Un testigo atestigua si **corrió**, si dice **qué** corrió, y si dice
   /// **sobre qué**. Las tres cosas: es el corolario 5 de ADR-011 —no

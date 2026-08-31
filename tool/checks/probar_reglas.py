@@ -74,6 +74,43 @@ def arq_con(mutar) -> str:
     return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
 
 
+# Violaciones canónicas ADICIONALES que el registro TIENE que declarar.
+#
+# `REGLAS[rid].get("violaciones_extra", [])` hace que borrar la entrada del
+# JSON se lea como «esta regla no tiene extras»: el canario que sostiene un
+# arreglo desaparece y el arnés sigue en verde con un sabotaje menos. Lo
+# comprobó un review borrándolo — 86 sabotajes, exit 0 — contra un README que
+# afirmaba que el arreglo no se podía deshacer en silencio.
+#
+# Esta lista es el piso. Borrarla es editar el arnés, que es el mismo acto que
+# borrar un check entero; no un campo que se va en un diff de JSON.
+EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
+    "puertos-sin-implementacion": {
+        "implementado a traves de una base abstracta",
+        "homonima en el ORIGEN de la resolucion",
+        "dos puertos homonimos con la MISMA herencia",
+    },
+}
+
+
+def inventario_incompleto() -> list[str]:
+    """Extras declaradas en el registro contra las que el arnés exige."""
+    faltantes = []
+    for rid, nombres in EXTRAS_OBLIGATORIAS.items():
+        if rid not in REGLAS:
+            faltantes.append(
+                f"«{rid}» tiene violaciones canónicas obligatorias y ya no está "
+                f"en el registro.")
+            continue
+        declaradas = {e["nombre"] for e in REGLAS[rid].get("violaciones_extra", [])}
+        for n in sorted(nombres - declaradas):
+            faltantes.append(
+                f"«{rid}» tiene que declarar la violación canónica «{n}» y no "
+                f"está en arquitectura.json. Sin ella, el arreglo que sostiene "
+                f"se puede deshacer sin que nada falle.")
+    return faltantes
+
+
 def canonica(rid: str) -> dict:
     v = REGLAS[rid]["violacion_canonica"]
     return {"archivos": {v["donde"]: v["contenido"]}, "pub_get": v.get("requiere_pub_get", False)}
@@ -660,6 +697,13 @@ def main() -> int:
         print("El árbol ya está en rojo antes de sabotear. Arreglá eso primero:\n")
         print(salida)
         return 1
+    faltantes = inventario_incompleto()
+    if faltantes:
+        print("El inventario de sabotajes está incompleto:\n")
+        for f in faltantes:
+            print(f"  {f}")
+        return 1
+
     git_antes = estado_git()
     print("  árbol limpio\n")
 
