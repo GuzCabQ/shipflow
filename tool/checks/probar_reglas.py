@@ -482,6 +482,52 @@ def casos() -> list[dict]:
         "menciona": "pasos obligatorios",
     })
 
+    # Las tres formas de que la cantidad de puertos deje de significar lo que
+    # dice. El check anterior derivaba UNA frase, así que el README podía
+    # afirmar el inventario con otras palabras y envejecer sin ruido: tenía
+    # tres afirmaciones y la derivación cubría una. Lo encontró un review, que
+    # es la tercera vez que una cantidad en prosa se va sola.
+    #
+    # Los anclajes salen del README, no de una constante: cablear el número
+    # hace que el caso deje de sabotear nada el día que la cantidad cambie, y
+    # un sabotaje que no sabotea es un caso que pasa por no hacer nada.
+    m_faltan = re.search(
+        r"(\d+)(\s+de\s+los\s+)(\d+)(\s+puertos\s+siguen\s+sin\s+implementación)",
+        readme)
+    assert m_faltan, "no encontré la cantidad de puertos pendientes en el README"
+    c.append({
+        "nombre": "readme · la cantidad de puertos pendientes envejeció",
+        "archivos": {"README.md": readme.replace(
+            m_faltan.group(0),
+            f"{int(m_faltan.group(1)) - 2}{m_faltan.group(2)}"
+            f"{m_faltan.group(3)}{m_faltan.group(4)}", 1)},
+        "menciona": "el registro declara",
+    })
+
+    m_hay = re.search(
+        r"(\d+\s+de\s+los\s+)(\d+)(\s+puertos\s+ya\s+tienen\s+implementación\s+viva)",
+        readme)
+    assert m_hay, "no encontré la cantidad de puertos implementados en el README"
+    # Escrita con letra: la cifra sigue estando y sigue siendo correcta HOY,
+    # pero en una forma que nada deriva. Es exactamente cómo envejeció —
+    # «cuatro de los veintitrés»— y por qué ningún check lo vio.
+    c.append({
+        "nombre": "readme · la cantidad de puertos, en una forma que nada deriva",
+        "archivos": {"README.md": readme.replace(
+            m_hay.group(0),
+            f"{m_hay.group(1)}veinticuatro{m_hay.group(3)}", 1)},
+        "menciona": "nada la deriva",
+    })
+    # Y el caso ciego de la derivación: que la frase derivada desaparezca. Un
+    # patrón que no encuentra nada no comprueba nada, y se lee igual que uno
+    # que comprobó y salió bien.
+    c.append({
+        "nombre": "readme · la frase derivada desaparece y nadie la extraña",
+        "archivos": {"README.md": readme.replace(
+            m_hay.group(0), "algunos puertos ya tienen implementación viva", 1)},
+        "menciona": "ya no afirma",
+    })
+
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     c.append({
@@ -688,6 +734,40 @@ def _al_recibir_senal(_num, _frame):
     sys.exit(130)
 
 
+def cifra_de_sabotajes(lista: list[dict]) -> str | None:
+    """La cantidad que el README afirma, contra la que hay de verdad.
+
+    El README lleva la cuenta en prosa y nada la derivaba. Es la misma clase de
+    cifra que ya envejeció tres veces del lado de los puertos, y esta encima la
+    escribe el arnés al terminar: tenerla escrita a mano al lado de una que se
+    calcula es pedir que se separen.
+
+    Se cuentan solo los que ESPERAN FALLA, que es lo mismo que cuenta el
+    resumen: los controles negativos —los que esperan verde— prueban que una
+    regla no se pasó de larga, y llamarlos sabotajes inflaría el número con
+    casos que no sabotean nada.
+
+    **Este check no está atado al trinquete, y es a propósito.** Ponerlo en
+    `capas.py` lo haría sabotéable, pero obligaría a `capas.py` a importar este
+    archivo y a construir la lista de casos con el árbol ya mutado: cualquier
+    sabotaje que tocara el README rompería la construcción, y el caso quedaría
+    «detectado» por un motivo que no es el suyo. Un caso que pasa por la razón
+    equivocada es peor que uno que falta.
+    """
+    esperados = sum(1 for c in lista if c.get("espera", "falla") == "falla")
+    texto = (RAIZ / "README.md").read_text(encoding="utf-8")
+    dichos = re.findall(r"\*\*El arnés aplica (\d+) sabotajes\.\*\*", texto)
+    if len(dichos) != 1:
+        return (f"el README tiene {len(dichos)} veces la frase que declara "
+                f"cuántos sabotajes aplica el arnés, y tiene que tener una. "
+                f"Cero es una cifra que nadie deriva; más de una son dos "
+                f"cifras que se pueden separar.")
+    if int(dichos[0]) != esperados:
+        return (f"el README dice que el arnés aplica {dichos[0]} sabotajes y "
+                f"son {esperados}.")
+    return None
+
+
 def main() -> int:
     global ORDENES
     for s in (signal.SIGINT, signal.SIGTERM):
@@ -714,6 +794,10 @@ def main() -> int:
 
     problemas: list[str] = []
     lista = casos()
+    desfasada = cifra_de_sabotajes(lista)
+    if desfasada:
+        print(f"La cuenta de sabotajes no cuadra: {desfasada}")
+        return 1
     for caso in lista:
         previo = aplicar(caso["archivos"])
         try:

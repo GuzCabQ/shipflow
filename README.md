@@ -11,9 +11,9 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ## Estado: fase 2, cuarta rebanada. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** Cuatro de los
-veintitrés ya tienen implementación viva y suite de contrato. Y existe el
-**fixture**: un proyecto de verdad, con toolchain de verdad.
+`core` existe: **las entidades y los puertos, como tipos.** 5 de los 24
+puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
+de verdad, con toolchain de verdad.
 
 **Y existe `shipflow verify`.** Corre los dos primeros pasos de la cascada
 —`FormatCheck` y `StaticAnalysis`—, reporta sus diagnósticos con el testigo de
@@ -26,7 +26,7 @@ $ shipflow verify lib
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
 
-**No existe `ship`**, ni el agente, ni los tickets, ni `vcs`, ni los ganchos.
+**No existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
 control.
@@ -199,7 +199,11 @@ adaptadores vacíos.
 el real. Sin eso se testea contra un fake que miente y la suite queda verde por
 construcción.*
 
-Cada puerto implementado tiene su suite, y **la corren las dos**:
+Cada puerto implementado tiene su suite. **No todos la corren contra un
+fake**, y por eso la columna existe: la tabla dice cuál tiene qué, en vez
+de afirmar de todos lo que vale para algunos. Va sin número a propósito —
+hoy nada deriva cuántos fakes hay, y una cifra que nadie deriva envejece
+sola.
 
 | Puerto | Real | Fake |
 |---|---|---|
@@ -207,6 +211,7 @@ Cada puerto implementado tiene su suite, y **la corren las dos**:
 | `ArtifactPolicy` | clasifica con los patrones de `N1-02` y `N1-03` | se le declaran las respuestas |
 | `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
 | `Verifier` | **dos** reales: los dos primeros pasos | **no hay**, y está declarado |
+| `ChangeSink` | `git` de verdad, sin doble | **no hay**, y está declarado |
 
 `DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
 uno y los formatos que tiene que leer son varios. La suite corre contra las
@@ -219,6 +224,14 @@ contradijo— ya está cubierto: sus dos pasos difieren en lo que importa, y esa
 divergencia produjo la quinta cláusula del puerto. Falta un `Verifier` falso
 para que `orchestration` pueda probar la cascada sin toolchain; llega con la
 fase que lo necesite.
+
+`ChangeSink` salió igual, con **una real y ningún fake**, y un review lo
+cobró: no por faltarle el fake, sino porque **salió de la lista de puertos
+sin implementación sin declarar con qué salía**. La lista decía quién falta;
+hacía falta que también dijera con qué se fue el que ya no está. Hoy no hay
+etapa que lo consuma —no existe `ship`— así que no hay nada que probar
+contra un fake, y una suite de contrato con una sola implementación no
+contrasta nada: corre la misma lógica dos veces. El fake llega con `ship`.
 
 **El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
 un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
@@ -807,6 +820,137 @@ Se midió cómo se hace: `git commit --message … -- <rutas>` ignora el índice
 Con un archivo dejado en *staging* de antes, queda afuera. Sin las rutas
 explícitas, entra.
 
+**Y la medición cubrió el caso que tenía delante.** Un review la rompió por
+otros dos lados, los dos reproducidos contra `git` de verdad antes de tocar
+nada:
+
+| Lo que decía la rebanada | Lo que commiteaba `git` |
+|---|---|
+| `files: ['*.txt']` | `a.txt` **y** `b.txt` |
+| `files: [':(glob)*.txt']` | `a.txt` **y** `b.txt` |
+| `files: ['dir']` | `dir/x.txt` **y** `dir/y.txt` |
+| `files: ['.']` | todo |
+
+`--` evita que una ruta se lea como una **opción**. No hace nada contra que se
+lea como un **patrón**, que es otra cosa. La cláusula decía «exactamente», y el
+comando decía «lo que estos pathspecs abarquen».
+
+Y el mismo error, otra vez, en la rama:
+
+```
+$ git tag release && useBranch('release')
+GitFallo(git switch release → 128):
+fatal: a branch is expected, got tag 'release'
+```
+
+`rev-parse --verify` resuelve **cualquier revisión**. Con una etiqueta
+homónima el adapter creía que la rama ya existía, y una reanudación legítima
+—lo que ADR-014 exige de `--resume`— quedaba rota por un nombre que ni
+siquiera era una rama.
+
+**La raíz es una sola: una cadena del dominio no es un argumento de `git`.** El
+adapter no fallaba por ignorar `git`, sino por confiar en que la semántica de
+`git` coincidía con la del dominio. «Una ruta» no es un *pathspec* y «un
+nombre» no es una *revisión*.
+
+Lo instalado va en dos capas, y la segunda es la que importa:
+
+| | Qué hace | Qué cubre |
+|---|---|---|
+| **Validar** | `--literal-pathspecs`, forma canónica de ruta, se rechaza un directorio, y un borrado tiene que ser el de **un** archivo rastreado; el nombre lo valida `git check-ref-format` y la rama se busca en `refs/heads/` | los casos que alguien enumeró, con un «qué hacer» en cada rechazo |
+| **Preguntar** | `git commit --dry-run --porcelain -z` dice qué entraría; se compara contra lo declarado en **las dos direcciones** y recién después se commitea | **la cláusula**, incluido el caso que nadie enumeró |
+
+### Y la segunda capa estaba del lado equivocado del commit
+
+La primera versión de esto comprobaba el commit **ya hecho**. Un segundo review
+lo cobró con el argumento correcto: *una postcondición solo garantiza integridad
+si puede impedir o revertir lo que valida*. La excepción decía la verdad y la
+rama ya tenía el commit indebido. Un invariante que solo se puede reportar no es
+un invariante, es una crónica.
+
+Y traía dos fallos propios, los dos reproducidos:
+
+| | Qué pasaba |
+|---|---|
+| `á.txt` | `git show --name-only` **cita** lo que no es ASCII: devolvía `"\303\241.txt"` y un archivo válido daba incumplimiento falso |
+| `files: ['dir']` con `dir/` ya borrado | `ls-files --error-unmatch` coincide por **prefijo**: el borrado del directorio pasaba como si fuera un archivo |
+
+`git commit --dry-run --porcelain -z` responde lo mismo sin tocar nada: su
+primera columna es lo que va al commit, su segunda lo que se queda en el árbol,
+y `-z` devuelve las rutas crudas. **Queda un hueco, declarado:** entre la
+pregunta y el commit nada más puede tocar el árbol, y eso es el lock de
+concurrencia que el plan ya tiene como decisión abierta `A-5` para la fase 4.
+
+### «Exactamente» tenía una sola dirección
+
+Se comprobaba que no entrara nada de más. Una rebanada que declaraba
+`['a.txt', 'b.txt']` con `b.txt` sin cambios commiteaba `a.txt` y daba verde: un
+plan que dijo que iba a tocar algo y no lo tocó. Ahora las dos direcciones, con
+dos desenlaces distintos — **de más** es la cláusula rota y **de menos** es la
+rebanada mal armada.
+
+Y al rechazar se **desmonta el índice**, solo en las rutas que pusimos. Sin eso,
+el rechazo dejaba preparado justo lo que se acababa de declarar inaceptable,
+esperando al próximo `git commit` hecho a mano.
+
+Se prueba con envoltorios que le sacan a `git` una salvaguarda —el que le hace
+contestar de más a la consulta previa, el que desprende `HEAD` en el `switch`—
+para que la promesa tenga cómo romperse; un control que nunca se vio en rojo no
+está instalado. Y cada caso comprueba también que **`HEAD` no se movió**.
+
+Y un **control negativo**: un archivo que de verdad se llama `*.txt` sí se
+commitea, y uno con acento o con espacios también. La corrección no podía
+volverse «prohibido lo que parezca un patrón» — y ese caso, antes, era
+imposible.
+
+**Veinte mutaciones, ninguna sobrevivió** — y dos de ellas encontraron lo que 38
+tests verdes no vieron: la guardia de ruta absoluta se podía borrar entera
+porque el rechazo genérico la tapaba, y el filtro de archivos no rastreados era
+código muerto, porque `--untracked-files=no` ya los quitaba. Una redundancia que
+no puede fallar se lee como defensa y no defiende nada.
+
+### Y rechazar tampoco puede tocar lo que preparó otro
+
+El índice es del usuario. Una rebanada rechazada no hizo nada, así que no puede
+haber cambiado nada — y la primera limpieza usaba `git reset -- <rutas>`, que
+**no restaura el índice anterior sino `HEAD`**. Medido:
+
+| | Contenido de `a.txt` |
+|---|---|
+| lo que el usuario tenía preparado | `STAGED` |
+| lo que había en el árbol | `ARBOL` |
+| tras `git reset -- a.txt` | `ARBOL` — la versión preparada se perdió |
+
+Un tercer review lo encontró, y es la misma confusión de todo este archivo —un
+comando que *se parece* a lo que quiero no es lo que quiero— cometida esta vez
+**en el código que existía para reparar**. Y traía dos agujeros más: la limpieza
+corría solo en la rama del rechazo por contenido, así que un `git add` que
+fallaba a medias dejaba rastro —está medido que `git add -- a.txt ignorado.txt`
+sale con 1 y deja `a.txt` preparado igual—, y el `reset` usaba la llamada que
+**no lanza** por código distinto de cero: un reparador que no podía fallar.
+
+Ahora hay una frontera: se fotografía el índice de esas rutas antes de tocarlo
+—`git ls-files --stage -z`— y **cualquier** excepción posterior lo devuelve con
+`git update-index --cacheinfo`, o lo saca con `--force-remove` si no estaba. La
+restauración **se verifica**, y si no pudo, lo dice **junto con** el motivo del
+rechazo: un fallo de limpieza no puede borrar por qué se rechazó.
+
+Un índice con conflictos sin resolver aborta antes de tocar nada: ahí una ruta
+tiene tres entradas y `--cacheinfo` solo sabe escribir la de stage 0, así que
+prometer que se restaura sería mentira.
+
+En el camino de éxito no se restaura nada, y es lo correcto: está medido que
+`git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo `HEAD`.
+**El adapter se comporta como `git`**, no como una idea nuestra de `git`.
+
+### Dos pruebas que anunciaban un escenario y ejercían otro
+
+El mismo review encontró que la prueba del «SHA homónimo» usaba `rama-<sha>` —un
+nombre que no es homónimo de nada y jamás se habría resuelto como el commit— y
+que la del «salto de línea» solo creaba un archivo con espacios. **Un caso que se
+anuncia y no se ejerce es peor que uno que falta: se lee como cubierto.** Es
+`cubierto` de ADR-012 aplicado a la suite en vez de al PR.
+
 ### Lo que encontró al construirse: dos invariantes en un solo control
 
 `vcs` necesita `dart:io` para correr `git`, y la regla de cadenas lo rechazaba.
@@ -819,7 +963,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego — **97 sabotajes**.
+y su caso ciego. **El arnés aplica 100 sabotajes.**
 
 ---
 
@@ -927,10 +1071,11 @@ sabotaje.
 
 ### S1.1 · ¿Qué promete la fase que todavía no cumple, y el artefacto lo declara?
 
-`core` expone **23 puertos y cero implementaciones**. Una superficie de puertos
-completa se lee como un sistema que hace esas cosas.
+`core` exponía **toda su superficie de puertos y cero implementaciones**. Una
+superficie de puertos completa se lee como un sistema que hace esas cosas.
 
-**Instalado:** `puertos-sin-implementacion` lista los 23 con su fase, y se
+**Instalado:** `puertos-sin-implementacion` lista los pendientes con su fase,
+y se
 verifica **en los dos sentidos** — un puerto nuevo sin declarar falla, y una
 declaración que quedó vieja porque el puerto ya se implementó, también.
 **Ejecutado:** la canónica y el vaciado de la lista, detectados.
@@ -1111,7 +1256,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **19 de los 24 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, `vcs`, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
 | **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
