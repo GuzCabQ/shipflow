@@ -284,85 +284,94 @@ class RepositorioGit implements ChangeSink {
     return entran;
   }
 
-  /// Las entradas del índice para estas rutas, **tal como están ahora**.
+  /// El índice, **entero y en bytes**, más lo que `git` ve.
   ///
-  /// Es la foto que permite dejar el índice como estaba si la rebanada se
-  /// rechaza. La primera versión de esto usaba `git reset -- <rutas>`, que no
-  /// restaura el índice anterior sino **HEAD**: si alguien tenía preparada una
-  /// versión distinta de un archivo, se perdía. Lo encontró un review, y es la
-  /// misma confusión de siempre —un comando que *se parece* a lo que quiero no
-  /// es lo que quiero— cometida en el código que existía para reparar.
+  /// La primera versión guardaba `modo`, `objeto` y `ruta` leídos con
+  /// `ls-files --stage` y los reponía con `update-index --cacheinfo`. Un review
+  /// lo rompió con un caso legítimo: `git add --intent-to-add` deja una entrada
+  /// que en `ls-files` se ve **idéntica** a una normal con el blob vacío, y
+  /// reponerla con `--cacheinfo` la convierte en un archivo vacío de verdad. El
+  /// usuario terminaba con algo preparado que nunca preparó.
   ///
-  /// **Un índice con conflictos sin resolver aborta.** Ahí una ruta tiene tres
-  /// entradas, una por lado del merge, y `--cacheinfo` solo sabe escribir la
-  /// de stage 0: prometer que se puede restaurar sería mentira. Además `git`
-  /// mismo se niega a hacer un commit parcial durante un merge, así que la
-  /// rebanada no iba a poder aplicarse igual.
-  Future<Map<String, String>> _indiceDe(List<String> rutas) async {
-    final salida = await _exigir(['ls-files', '--stage', '-z', '--', ...rutas]);
-    final entradas = <String, String>{};
-    for (final linea in salida.split('\u0000').where((s) => s.isNotEmpty)) {
-      final tab = linea.indexOf('\t');
-      if (tab < 0) {
-        throw GitFallo('$programa ls-files --stage', 0,
-            'no entiendo «$linea» en el índice');
-      }
-      // `<modo> <sha> <stage>` y después la ruta. La ruta puede tener espacios
-      // y hasta tabuladores, así que se corta por el PRIMER tabulador.
-      final campos = linea.substring(0, tab).split(' ');
-      final ruta = linea.substring(tab + 1);
-      if (campos.length != 3) {
-        throw GitFallo('$programa ls-files --stage', 0,
-            'no entiendo «$linea» en el índice');
-      }
-      if (campos[2] != '0') {
-        throw RebanadaNoAplicable(
-            '«$ruta» está en un merge sin resolver.',
-            'Resolvé el merge y volvé a intentar. Con conflictos abiertos no '
-                'se puede prometer que el índice quede como estaba.');
-      }
-      entradas[ruta] = '${campos[0]},${campos[1]},$ruta';
-    }
-    return entradas;
+  /// El índice tiene más estado del que `ls-files` muestra —`intent-to-add`,
+  /// `skip-worktree`, `assume-unchanged`, las tres entradas de un conflicto—,
+  /// así que **cualquier reconstrucción a partir de su lectura pierde algo**.
+  /// Es la lección de todo este archivo otra vez: no reimplementar la
+  /// semántica de la herramienta, usar su estado.
+  ///
+  /// Se guardan dos cosas: los bytes, que son lo que se repone, y la vista de
+  /// `git status`, que es contra lo que se comprueba que reponerlos sirvió.
+  Future<({List<int>? bytes, String vista})> _fotoDelIndice() async {
+    final archivo = File(await _rutaDelIndice());
+    return (
+      bytes: archivo.existsSync() ? archivo.readAsBytesSync() : null,
+      vista: await _exigir(['status', '--porcelain', '-z']),
+    );
   }
 
-  /// Deja el índice **exactamente** como lo dejó [_indiceDe], y lo comprueba.
+  /// Dónde vive el archivo del índice. **Se le pregunta a `git`**: no siempre
+  /// es `.git/index` —un worktree enlazado lo tiene en otro lado.
+  Future<String> _rutaDelIndice() async {
+    final relativa = await _exigir(['rev-parse', '--git-path', 'index']);
+    return relativa.startsWith('/') ? relativa : '$directorio/$relativa';
+  }
+
+  /// Devuelve el índice a la foto, **y comprueba que haya servido**.
   ///
-  /// Se tocan solo las rutas de la rebanada: lo que alguien hubiera dejado
-  /// preparado en otra parte no es nuestro. Una ruta que no estaba en el
-  /// índice se saca con `--force-remove`, que no toca el árbol.
+  /// Se escribe a un temporal y se renombra encima, porque `rename` es
+  /// atómico: si el proceso muere a mitad no queda un índice cortado. Un
+  /// repositorio recién creado no tiene índice todavía, y ahí «reponer» es
+  /// borrarlo.
   ///
-  /// **Si no puede restaurar, lo dice, y dice también qué se estaba
-  /// rechazando.** La versión anterior se tragaba el fallo del `reset` en
-  /// silencio — un reparador que no puede fallar es la misma clase de
-  /// instrumento roto que este arnés existe para cazar. Pero un fallo de
-  /// limpieza tampoco puede borrar el motivo del rechazo: van los dos.
+  /// **Todo está envuelto.** Antes, un fallo acá —de `git`, del disco, de la
+  /// ruta— se propagaba solo y el motivo del rechazo se perdía: la promesa de
+  /// informar las dos cosas se cumplía solo cuando la verificación llegaba a
+  /// correr. Lo encontró un review. Ahora **cualquier** excepción de la
+  /// reposición sale como [PromesaIncumplida] nombrando las dos.
   Future<void> _restaurarIndice(
-      List<String> rutas, Map<String, String> antes, Object porQue) async {
-    final args = <String>['update-index'];
-    final quitar = <String>[];
-    for (final ruta in rutas) {
-      final entrada = antes[ruta];
-      if (entrada != null) {
-        args.addAll(['--cacheinfo', entrada]);
+      ({List<int>? bytes, String vista}) foto, Object porQue) async {
+    Object? problema;
+    try {
+      final archivo = File(await _rutaDelIndice());
+      if (foto.bytes == null) {
+        if (archivo.existsSync()) archivo.deleteSync();
       } else {
-        quitar.add(ruta);
+        final temporal = File('${archivo.path}.shipflow-restaura');
+        temporal.writeAsBytesSync(foto.bytes!, flush: true);
+        temporal.renameSync(archivo.path);
       }
+      // **Contra lo que ve `git`, no contra los bytes que acabo de escribir.**
+      // Comparar el archivo contra sí mismo solo prueba que el disco no miente.
+      final vista = await _exigir(['status', '--porcelain', '-z']);
+      if (vista != foto.vista) {
+        problema = 'git ve el repositorio distinto de como estaba';
+      }
+    } catch (e) {
+      problema = e;
     }
-    if (quitar.isNotEmpty) args.addAll(['--force-remove', '--', ...quitar]);
-
-    final r = await _git(args);
-    final ahora = r.exitCode == 0 ? await _indiceDe(rutas) : null;
-    if (ahora == null || !_mismoIndice(antes, ahora)) {
+    if (problema != null) {
       throw PromesaIncumplida(
-          'dejar el índice como estaba al rechazar la rebanada (${porQue.runtimeType}: $porQue)',
-          'un índice que no pude devolver a su lugar: '
-              '${r.exitCode == 0 ? "quedó distinto" : "${r.stdout}${r.stderr}".trim()}');
+          'dejar el índice como estaba al rechazar la rebanada '
+              '(${porQue.runtimeType}: $porQue)',
+          'un índice que no pude devolver a su lugar: $problema');
     }
   }
 
-  static bool _mismoIndice(Map<String, String> a, Map<String, String> b) =>
-      a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
+  /// Un merge sin resolver no admite rebanadas.
+  ///
+  /// **Ya no es por la reposición** —los bytes del índice traen las tres
+  /// entradas del conflicto sin que haya que entenderlas—. Es porque `git`
+  /// mismo se niega: *«cannot do a partial commit during a merge»*. Está acá
+  /// para decirlo antes y decir qué hacer, que es lo que un `GitFallo` crudo no
+  /// hace.
+  Future<void> _exigirSinConflictos() async {
+    if ((await _exigir(['ls-files', '--unmerged', '-z'])).isNotEmpty) {
+      throw const RebanadaNoAplicable(
+          'hay un merge sin resolver.',
+          'Resolvé el merge y volvé a intentar: git no hace un commit parcial '
+              'con conflictos abiertos, y una rebanada es siempre parcial.');
+    }
+  }
 
   @override
   Future<String> apply(PullRequestSlice slice) async {
@@ -397,11 +406,16 @@ class RepositorioGit implements ChangeSink {
     // rama del rechazo, así que un `add` que fallaba a medias dejaba staged
     // lo que había alcanzado a preparar. Está medido: `git add -- a.txt
     // ignorado.txt` sale con 1 **y deja `a.txt` preparado igual**.
-    final indiceAntes = await _indiceDe(rutas);
+    //
+    // En el camino de éxito no se repone nada, y es lo correcto: está medido
+    // que `git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo
+    // `HEAD`. El adapter se comporta como `git`, no como una idea de `git`.
+    await _exigirSinConflictos();
+    final foto = await _fotoDelIndice();
     try {
       return await _aplicarSobreElIndice(slice, rutas);
     } catch (porQue) {
-      await _restaurarIndice(rutas, indiceAntes, porQue);
+      await _restaurarIndice(foto, porQue);
       rethrow;
     }
   }

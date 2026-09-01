@@ -913,13 +913,14 @@ no puede fallar se lee como defensa y no defiende nada.
 
 El índice es del usuario. Una rebanada rechazada no hizo nada, así que no puede
 haber cambiado nada — y la primera limpieza usaba `git reset -- <rutas>`, que
-**no restaura el índice anterior sino `HEAD`**. Medido:
+**no restaura el índice anterior sino `HEAD`**. Medido con tres versiones
+distintas, porque con dos la tabla se leía mal y un review lo cobró:
 
-| | Contenido de `a.txt` |
-|---|---|
-| lo que el usuario tenía preparado | `STAGED` |
-| lo que había en el árbol | `ARBOL` |
-| tras `git reset -- a.txt` | `ARBOL` — la versión preparada se perdió |
+| `a.txt` en… | Antes | Tras `git reset -- a.txt` |
+|---|---|---|
+| `HEAD` | `BASE` | `BASE` |
+| **el índice** | `STAGED` | **`BASE`** — la versión preparada se perdió |
+| el árbol | `ARBOL` | `ARBOL` — intacto |
 
 Un tercer review lo encontró, y es la misma confusión de todo este archivo —un
 comando que *se parece* a lo que quiero no es lo que quiero— cometida esta vez
@@ -929,15 +930,45 @@ fallaba a medias dejaba rastro —está medido que `git add -- a.txt ignorado.tx
 sale con 1 y deja `a.txt` preparado igual—, y el `reset` usaba la llamada que
 **no lanza** por código distinto de cero: un reparador que no podía fallar.
 
-Ahora hay una frontera: se fotografía el índice de esas rutas antes de tocarlo
-—`git ls-files --stage -z`— y **cualquier** excepción posterior lo devuelve con
-`git update-index --cacheinfo`, o lo saca con `--force-remove` si no estaba. La
-restauración **se verifica**, y si no pudo, lo dice **junto con** el motivo del
-rechazo: un fallo de limpieza no puede borrar por qué se rechazó.
+### Y la foto tampoco podía ser una lectura
 
-Un índice con conflictos sin resolver aborta antes de tocar nada: ahí una ruta
-tiene tres entradas y `--cacheinfo` solo sabe escribir la de stage 0, así que
-prometer que se restaura sería mentira.
+La primera frontera guardaba `modo`, `objeto` y `ruta` con `ls-files --stage` y
+los reponía con `update-index --cacheinfo`. Un cuarto review la rompió con un
+caso legítimo:
+
+```
+$ git add --intent-to-add nueva.txt     # «va a existir», sin contenido preparado
+$ # …rebanada rechazada, índice «restaurado»…
+$ git diff --cached --name-only
+nueva.txt                               # ahora sí está preparado, y vacío
+```
+
+`intent-to-add` se ve en `ls-files --stage` **idéntico** a una entrada normal
+con el blob vacío. Reponerlo desde esa lectura lo convierte en un archivo vacío
+de verdad, que el usuario nunca preparó y que su próximo `git commit` a mano se
+llevaría.
+
+Y no es una bandera que faltara enumerar: el índice tiene `skip-worktree`,
+`assume-unchanged`, las tres entradas de un conflicto. **Cualquier
+reconstrucción a partir de su lectura pierde algo.** Es la lección de toda esta
+sección una vez más, cometida en la reparación: no reimplementar la semántica
+de la herramienta, usar su estado.
+
+Ahora la foto son **los bytes del archivo del índice** —cuya ruta se le
+pregunta a `git`, porque un worktree enlazado lo tiene en otro lado— y se
+reponen con un `rename`, que es atómico. La reposición **se verifica contra lo
+que ve `git`**, no contra los bytes que se acaban de escribir: comparar un
+archivo consigo mismo solo prueba que el disco no miente.
+
+Y **cualquier** excepción de la reposición sale junto con el motivo del
+rechazo. Antes eso valía solo si la verificación llegaba a correr; si fallaba la
+escritura, el motivo del rechazo se perdía en el camino. Un fallo de limpieza no
+puede borrar por qué se rechazó.
+
+Un merge sin resolver aborta antes de tocar nada. **Ya no por la reposición** —
+los bytes traen las tres entradas del conflicto sin que haya que entenderlas—
+sino porque `git` mismo se niega a hacer un commit parcial durante un merge, y
+decirlo antes con un «qué hacer» es mejor que un `GitFallo` crudo.
 
 En el camino de éxito no se restaura nada, y es lo correcto: está medido que
 `git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo `HEAD`.

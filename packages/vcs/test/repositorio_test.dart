@@ -466,12 +466,55 @@ exec git "$@"
               .having((e) => e.reason, 'razón', contains('merge'))));
     });
 
+    test('una entrada `intent-to-add` sigue siendo intent-to-add', () async {
+      // El caso que rompió la versión anterior. `git add --intent-to-add` deja
+      // una entrada que en `ls-files --stage` se ve IDÉNTICA a una normal con
+      // el blob vacío: reponerla desde esa lectura la convertía en un archivo
+      // vacío preparado de verdad, que el usuario nunca preparó. Por eso la
+      // foto son los bytes del índice y no su lectura.
+      escribir('nueva.txt', 'nueva\n');
+      git(['add', '--intent-to-add', '--', 'nueva.txt']);
+      escribir('a.txt', 'cambio\n');
+      final antes = correr('git', ['status', '--porcelain']);
+      // Lo que distingue `intent-to-add` de un archivo vacío preparado no es
+      // cómo lo pinta `status` —`correr` recorta el espacio inicial de ` A`—
+      // sino que NO hay contenido preparado. Esa es la premisa que importa.
+      expect(antes, contains('A nueva.txt'), reason: 'la premisa: git la ve');
+      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
+          reason: 'la premisa: intent-to-add NO es contenido preparado');
+
+      await expectLater(repo.apply(rebanada(['a.txt', 'b.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+
+      expect(correr('git', ['status', '--porcelain']), antes);
+      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
+          reason:
+              'no puede quedar preparado un archivo vacío que nadie preparó');
+    });
+
+    test('un `skip-worktree` tampoco se pierde', () async {
+      // Otro estado que `ls-files --stage` no muestra. No se enumera cada
+      // bandera del índice: se reponen los bytes, y por eso están todas.
+      git(['update-index', '--skip-worktree', '--', 'b.txt']);
+      final antes = correr('git', ['ls-files', '-v', '--', 'b.txt']);
+      expect(antes, startsWith('S'), reason: 'la premisa: S = skip-worktree');
+
+      escribir('a.txt', 'cambio\n');
+      await expectLater(repo.apply(rebanada(['a.txt', 'nada.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+      expect(correr('git', ['ls-files', '-v', '--', 'b.txt']), antes);
+    });
+
     test('si NO puede restaurar, lo dice, y dice qué rechazaba', () async {
       // Un reparador que no puede fallar es la misma clase de instrumento roto
-      // que este arnés existe para cazar. La versión anterior se tragaba el
-      // fallo del `reset` en silencio.
-      final falso = envoltorio('git-no-restaura', r'''#!/bin/sh
-if [ "$2" = "update-index" ]; then exit 0; fi
+      // que este arnés existe para cazar. Se le miente sobre dónde vive el
+      // índice: escribir ahí lanza, y el fallo tiene que salir JUNTO con el
+      // motivo del rechazo, no en su lugar.
+      final falso = envoltorio('git-indice-fantasma', r'''#!/bin/sh
+if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
+  echo "no/existe/index"
+  exit 0
+fi
 exec git "$@"
 ''');
       escribir('a.txt', 'cambio\n');
@@ -484,19 +527,85 @@ exec git "$@"
                   contains('RebanadaNoAplicable'))));
     });
 
-    test('tampoco si lo que no puede es SACAR una entrada', () async {
-      // El otro lado de la verificación, y lo encontró una mutación: sin
-      // comparar el TAMAÑO, una entrada de más que la restauración no logró
-      // quitar pasaba por buena — comparar solo el contenido recorre las
-      // entradas de la foto, y esta no está en la foto.
-      final falso = envoltorio('git-no-quita', r'''#!/bin/sh
-if [ "$2" = "update-index" ]; then exit 0; fi
+    test('si la reposición LANZA, el motivo del rechazo no se pierde',
+        () async {
+      // El caso que las mutaciones encontraron sin cubrir: la promesa de
+      // informar las dos cosas se cumplía solo cuando la verificación llegaba
+      // a correr. Si fallaba antes —la escritura, la ruta, git—, el motivo del
+      // rechazo se perdía en el camino.
+      //
+      // El envoltorio contesta bien la PRIMERA vez, para que la foto se tome,
+      // y falla después, cuando hay que reponer.
+      final falso = envoltorio('git-rev-parse-intermitente', r'''#!/bin/sh
+if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
+  if [ -f .git/shipflow-marca ]; then exit 1; fi
+  : > .git/shipflow-marca
+fi
 exec git "$@"
 ''');
-      escribir('nueva.txt', 'nueva\n');
+      escribir('a.txt', 'cambio\n');
       final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
-      await expectLater(torcido.apply(rebanada(['nueva.txt', 'b.txt'])),
-          throwsA(isA<PromesaIncumplida>()));
+      await expectLater(
+          torcido.apply(rebanada(['a.txt', 'b.txt'])),
+          throwsA(isA<PromesaIncumplida>()
+              .having((e) => e.sePidio, 'el motivo original',
+                  contains('RebanadaNoAplicable'))
+              .having((e) => e.quedo, 'y el fallo de la limpieza',
+                  contains('GitFallo'))));
+    });
+
+    test('un repositorio SIN índice todavía vuelve a no tenerlo', () async {
+      // «Reponer» cuando no había nada es borrar. Sin eso, un repositorio
+      // recién creado terminaba con un índice que nadie había hecho.
+      final virgen = Directory.systemTemp.createTempSync('vcs_virgen_');
+      addTearDown(() => virgen.deleteSync(recursive: true));
+      Process.runSync('git', ['init', '--initial-branch=main', '.'],
+          workingDirectory: virgen.path);
+      Process.runSync('git', ['config', 'user.email', 'p@p'],
+          workingDirectory: virgen.path);
+      Process.runSync('git', ['config', 'user.name', 'prueba'],
+          workingDirectory: virgen.path);
+      File('${virgen.path}/a.txt').writeAsStringSync('uno\n');
+      expect(File('${virgen.path}/.git/index').existsSync(), isFalse,
+          reason: 'la premisa: todavía no hay índice');
+
+      final falso = File('${virgen.path}/git-de-mas')
+        ..writeAsStringSync(r'''#!/bin/sh
+if [ "$2" = "commit" ] && [ "$3" = "--dry-run" ]; then
+  git "$@"
+  printf 'M  intruso.txt'
+  exit 0
+fi
+exec git "$@"
+''');
+      Process.runSync('chmod', ['700', falso.path]);
+      final torcido =
+          RepositorioGit(directorio: virgen.path, programa: falso.path);
+
+      await expectLater(
+          torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
+          throwsA(isA<PromesaIncumplida>()
+              .having((e) => e.quedo, 'quedó', contains('intruso.txt'))));
+      expect(File('${virgen.path}/.git/index').existsSync(), isFalse,
+          reason: 'el add lo creó; el rechazo lo borra');
+    });
+
+    test('y si git ve algo distinto tras reponer, también', () async {
+      // La otra mitad: la escritura puede salir bien y no haber servido.
+      // Se comprueba contra lo que ve `git`, no contra los bytes escritos.
+      final falso = envoltorio('git-indice-al-costado', r'''#!/bin/sh
+if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
+  echo "index.al-costado"
+  exit 0
+fi
+exec git "$@"
+''');
+      escribir('a.txt', 'cambio\n');
+      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      await expectLater(
+          torcido.apply(rebanada(['a.txt', 'b.txt'])),
+          throwsA(isA<PromesaIncumplida>().having(
+              (e) => e.quedo, 'quedó', contains('distinto de como estaba'))));
     });
   });
 
