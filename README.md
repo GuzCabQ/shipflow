@@ -998,6 +998,103 @@ y su caso ciego. **El arnés aplica 100 sabotajes.**
 
 ---
 
+## Lo que `apply` pregunta antes de commitear
+
+El pseudocódigo del corpus le da a `ChangeSink` seis líneas antes del PR. La
+rebanada anterior entregó una: `commit + push`. Esta entrega dos más.
+
+```
+SNK → PLG:  ArtifactPolicy → qué se commitea          ← esta
+SNK → PLG:  ProjectTopology → límites de paquete         declarada, no hecha
+SNK:        escanea secretos                          ← esta
+SNK:        commit + push                                ya estaba
+SNK:        arma el artefacto de DOS SUPERFICIES         falta
+SNK → HOST: PR en draft                                  falta
+```
+
+### Rechaza, no excluye
+
+El pseudocódigo dice *«excluye generados del stage»* y **el corpus nunca dijo
+si eso es en silencio**. No hay texto que lo autorice ni que lo prohíba.
+
+Lo decide la cláusula 1, que ya estaba instalada: *exactamente los archivos de
+la rebanada, en los dos sentidos*. Quitar un archivo que la rebanada declara la
+rompería. Y `docs/03` tiene el principio general, aunque nunca lo aplicó a
+`vcs`: *«se reporta como hallazgo, no se absorbe en silencio»*.
+
+Se le pregunta `isEditable` y no `isGenerated`, que son dos cosas: `isEditable`
+es la negación de las dos —lo generado se regenera, lo de build no es fuente— y
+preguntar solo por lo generado dejaba pasar los directorios de build. Hay un
+test que le pasa una política **al revés** y comprueba que el veredicto se da
+vuelta sobre el mismo nombre: `vcs` no sabe qué hace que algo sea generado, y
+esa ignorancia es comprobable.
+
+### Los secretos cortan el commit, y esa decisión no estaba tomada
+
+El corpus asigna la detección a `vcs` en cuatro lugares y **nunca le dio
+severidad**: no hay ADR, ni delta, ni invariante; no figura en la tabla de
+severidades de `docs/08` ni entre los seis deltas que ADR-013 reconcilió. La
+única pista era que el plan la ubica en «Requiere criterio», que por ADR-012 es
+la superficie de **mirar**.
+
+Bloquea. Un secreto commiteado no se des-commitea: queda en el historial, y
+reportarlo entonces no es un control sino una crónica — es el mismo argumento
+por el que el check de anonimato de este repositorio mira el historial y no el
+árbol. Cumple INV-8 porque la alternativa la escribe el propio corpus en `P-07`
+y `L-09`: *«leé de `env` vía provider de configuración»*.
+
+**El hallazgo nunca lleva el secreto.** INV-5 le exige eso a las credenciales
+del arnés; vale igual para las del usuario. Un detector que para avisarte de una
+filtración te la escribe en un log la filtra otra vez, y en un lugar que nadie
+está mirando. Hay un test que lo comprueba sobre el mensaje entero.
+
+**No es exhaustivo, y va escrito.** Reconoce formas con estructura —encabezados
+de clave privada, prefijos de token de proveedores— y asignaciones a nombres que
+declaran su contenido. Una cadena sin ninguna de esas dos cosas pasa: un secreto
+sin forma reconocible es indistinguible de cualquier otra cadena, y prometer lo
+contrario sería el falso verde que este arnés existe para cazar.
+
+La suite **se deriva de la tabla de patrones**, no de una lista paralela: hay un
+test que compara las muestras contra `DetectorDeSecretos.loQueReconoce`, así que
+un patrón nuevo sin caso deja la suite en rojo en vez de entrar sin que nadie lo
+haya visto fallar.
+
+### Y `ProjectTopology` no entra, con su motivo
+
+Su única función descrita es *«corta commits atómicos por unidad coherente»*
+(`happy-path.md`, una sola línea en todo el corpus). **«Unidad coherente» no
+está definida en ninguna parte**, y hay una contradicción sin resolver:
+`docs/05` §4 asigna la descomposición a `orchestration`, y el plan la congela —
+*«un PR por corrida hasta que el corpus muestre que hace falta»*—. Construirla
+ahora sería inventar el criterio que falta.
+
+### Lo que la regla de cadenas cobró en el camino
+
+Los fixtures de los tests se llamaban `generado.g.dart` y `config.dart`, y
+`lenguaje-en-plugin-dart` los rechazó. Tenía razón: `vcs` no puede saber qué
+extensión significa «generado» —eso es justamente lo que la política inyectada
+viene a decidir— y un fixture con esa forma lo enseñaba de contrabando. Ahora se
+llaman `generado.gen` y `ajustes.conf`, y el test es más honesto que antes.
+
+También cobró un comentario que decía *«una credencial filtrada no es una
+pregunta sobre X ni sobre Y»*: al escribirlo, `vcs` conocía X e Y. Es el mismo
+caso que ya había corregido `ArtifactPolicy` en `core`, palabra por palabra.
+
+### Doce mutaciones, y dos encontraron lo que 70 tests verdes no
+
+| La mutación | Lo que reveló |
+|---|---|
+| saltar los binarios → no saltarlos | **rama muerta**: sin `--binary`, `git diff` no emite ninguna línea de contenido para un binario, así que no había nada que saltar |
+| `{12,}` → `*` en el literal | ningún test daba un valor **corto** a un nombre sensible, así que el umbral no estaba probado |
+| `break` → `continue` por línea | una línea que encaja en dos patrones se contaba dos veces, inflando el «hay N secretos» |
+
+La primera es la tercera rama muerta que este proyecto borra en dos días. Una
+redundancia que no puede fallar se lee como defensa en profundidad y no defiende
+nada. Ahora la premisa —que `git` no emite contenido de binarios— **está
+comprobada en la suite** en vez de asumida por una rama que la protegía de nada.
+
+---
+
 ## Cuando una corrida no termina
 
 El arnés aplica sabotajes sobre el árbol de trabajo y los revierte. El `finally`
@@ -1287,7 +1384,9 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **19 de los 24 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ProjectTopology` en `vcs`.** Declarada y no hecha: su única función descrita es «cortar commits por unidad coherente», que no está definida en el corpus, y la descomposición está asignada a `orchestration` y congelada por el plan | Cuando el corpus defina «unidad coherente» |
+| **La omisión del detector de secretos, por corrida.** Hoy es un límite declarado del método —lo binario no se revisa— y no una omisión reportada en cada ejecución, que es lo que pide el corolario 5 de ADR-011 | Con el artefacto de revisión, en `ship` |
 | **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 

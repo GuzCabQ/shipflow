@@ -23,6 +23,8 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'secretos.dart';
+
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///
 /// **Lleva el comando y lo que dijo.** Un fallo de repositorio sin la salida
@@ -74,7 +76,32 @@ class RepositorioGit implements ChangeSink {
   /// nada que hacer.
   final String programa;
 
-  const RepositorioGit({required this.directorio, this.programa = 'git'});
+  /// Qué es fuente y qué no, según el stack. **Obligatoria y sin valor por
+  /// defecto.**
+  ///
+  /// `docs/04` §«solo PR» lo dice sin ambigüedad: *«`ChangeSink` sigue
+  /// necesitando `ArtifactPolicy` y `ProjectTopology`»*, incluso en el caso
+  /// que entra sin `WorkItem`, sin plan y sin agente. Un valor por defecto
+  /// —una política que dijera que todo es fuente— haría que un llamador
+  /// distraído commiteara artefactos generados sin que nadie lo hubiera
+  /// afirmado, que es el mismo agujero que `Witness.omitted` cerró del otro
+  /// lado: un hecho que se asume no es un hecho declarado.
+  ///
+  /// **`vcs` no sabe qué la hace decir que sí.** Recibe el puerto de `core`;
+  /// los sufijos y directorios que definen «generado» viven en el plugin del
+  /// stack, que este paquete ni siquiera puede ver.
+  final ArtifactPolicy politica;
+
+  /// Qué reconoce como secreto. Inyectable **para poder probar que su
+  /// ausencia se nota**, igual que [programa].
+  final DetectorDeSecretos detector;
+
+  const RepositorioGit({
+    required this.directorio,
+    required this.politica,
+    this.programa = 'git',
+    this.detector = const DetectorDeSecretos(),
+  });
 
   /// **Todo pasa por `--literal-pathspecs`.** Sin eso, `git` lee cada ruta
   /// como un patrón: `*.txt` commitea dos archivos y `:(glob)…` commitea lo
@@ -183,6 +210,27 @@ class RepositorioGit implements ChangeSink {
     if (partes.any((s) => s.isEmpty || s == '.' || s == '..')) {
       throw no('no está en la forma en que git nombra un archivo.',
           'Escribila sin `./`, sin `..` y sin barras repetidas ni al final.');
+    }
+
+    // **Lo que no es fuente no se commitea, y no se quita en silencio.**
+    //
+    // `isEditable` es la pregunta correcta y no `isGenerated`: es la negación
+    // de dos cosas —lo generado se regenera, lo de build no es fuente— y las
+    // dos van afuera. Preguntar solo por lo generado dejaba pasar los
+    // directorios de build, que no son generados y tampoco se versionan.
+    //
+    // **Se rechaza, no se excluye.** El pseudocódigo dice «excluye generados
+    // del stage» y el corpus nunca dijo si eso es en silencio; quitar un
+    // archivo que la rebanada declara rompería la cláusula 1, que exige
+    // exactamente los archivos de la rebanada en los dos sentidos. Y `docs/03`
+    // tiene el principio: se reporta como hallazgo, no se absorbe en silencio.
+    if (!politica.isEditable(entrada)) {
+      throw no(
+          'no es fuente: el stack lo declara generado o artefacto de build.',
+          'Lo generado se regenera, así que versionarlo duplica la verdad y la '
+              'deja envejecer. Sacalo de la rebanada; si de verdad tiene que '
+              'viajar, lo que hay que cambiar es la política del stack, no '
+              'esta rebanada.');
     }
 
     // Qué hay del otro lado. `followLinks: false` a propósito: `git` guarda un
@@ -455,6 +503,24 @@ class RepositorioGit implements ChangeSink {
           'La cláusula dice EXACTAMENTE, y eso vale en los dos sentidos: un '
               'archivo declarado que no cambió es un plan que no pasó. Sacalo '
               'de la rebanada, o revisá por qué no se escribió.');
+    }
+
+    // **Los secretos, sobre lo que está a punto de entrar.**
+    //
+    // Acá y no después: un secreto commiteado no se des-commitea. Queda en el
+    // historial y reportarlo entonces no es un control sino una crónica — el
+    // mismo argumento por el que el check de anonimato de este repositorio
+    // mira el historial y no el árbol.
+    final hallazgos = detector.revisar(
+        await _exigir(['diff', '--cached', '--unified=0', '--', ...rutas]));
+    if (hallazgos.isNotEmpty) {
+      final primero = hallazgos.first;
+      throw RebanadaNoAplicable(
+          hallazgos.length == 1
+              ? 'hay ${primero.queEs} en ${primero.archivo}:${primero.linea}.'
+              : 'hay ${hallazgos.length} secretos, el primero '
+                  '${primero.queEs} en ${primero.archivo}:${primero.linea}.',
+          primero.queHacer);
     }
 
     // **`-- <rutas>` es la cláusula 1 hecha comando.** Sin eso, `git commit`

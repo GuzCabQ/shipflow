@@ -15,7 +15,42 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 import 'package:vcs/vcs.dart';
 
+/// El puerto de `core`, con una respuesta declarada.
+///
+/// **No es el fake de `plugin_fake`, y es a propósito.** Depender de él
+/// obligaría a `vcs` a ver un paquete que no es `core`, y `deps-hacia-core` lo
+/// prohíbe con razón: `vcs` no puede conocer ningún stack, ni siquiera uno
+/// falso. Esto no pretende ser un sustituto del puerto —para eso está la suite
+/// de contrato, que corre contra la real y la falsa— sino un testigo declarado
+/// de lo que `vcs` le pregunta.
+class _PoliticaDeclarada implements ArtifactPolicy {
+  final Set<String> generados;
+  final Set<String> deBuild;
+  const _PoliticaDeclarada(
+      {this.generados = const {}, this.deBuild = const {}});
+
+  @override
+  bool isGenerated(String path) => generados.contains(path);
+
+  @override
+  bool isEditable(String path) =>
+      path.trim().isNotEmpty && !isGenerated(path) && !deBuild.contains(path);
+}
+
 void main() {
+  const politica = _PoliticaDeclarada(
+      generados: {'generado.gen'}, deBuild: {'build/salida.txt'});
+
+  test('el doble respeta las cláusulas del puerto que dice implementar', () {
+    // Un doble que no cumple el contrato hace pasar la suite contra un
+    // comportamiento que la implementación real nunca produce.
+    expect(politica.isEditable('generado.gen'), isFalse,
+        reason: 'cláusula 1: lo generado nunca es editable');
+    expect(politica.isEditable('   '), isFalse,
+        reason: 'cláusula 2: una ruta vacía no es editable');
+    expect(politica.isEditable('a.txt'), isTrue);
+  });
+
   late Directory raiz;
   late RepositorioGit repo;
 
@@ -40,7 +75,7 @@ void main() {
 
   setUp(() {
     raiz = Directory.systemTemp.createTempSync('vcs_');
-    repo = RepositorioGit(directorio: raiz.path);
+    repo = RepositorioGit(directorio: raiz.path, politica: politica);
     git(['init', '--initial-branch=main', '.']);
     git(['config', 'user.email', 'p@p']);
     git(['config', 'user.name', 'prueba']);
@@ -140,7 +175,8 @@ void main() {
 if [ "$2" = "switch" ]; then exec git "$1" switch --detach HEAD; fi
 exec git "$@"
 ''');
-      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
       await expectLater(
           torcido.useBranch('shipflow/x'),
           throwsA(isA<PromesaIncumplida>()
@@ -383,7 +419,8 @@ fi
 exec git "$@"
 ''');
       final antes = correr('git', ['rev-parse', 'HEAD']);
-      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
       await expectLater(
           torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
           throwsA(isA<PromesaIncumplida>()
@@ -392,6 +429,209 @@ exec git "$@"
           reason: 'no puede quedar el commit que se acaba de declarar mal');
       expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
           reason: 'ni el índice preparado para que alguien lo commitee a mano');
+    });
+  });
+
+  group('lo que no es fuente no se commitea', () {
+    setUp(() async => repo.useBranch('shipflow/x'));
+
+    test('un archivo GENERADO se rechaza, y no se quita en silencio', () async {
+      // El pseudocódigo dice «excluye generados del stage» y nunca dijo si en
+      // silencio. Quitar un archivo que la rebanada declara rompería la
+      // cláusula 1 —exactamente los archivos de la rebanada, en los dos
+      // sentidos— así que se rechaza y se dice qué hacer.
+      escribir('generado.gen', 'lo hizo la toolchain\n');
+      final antes = correr('git', ['rev-parse', 'HEAD']);
+      await expectLater(
+          repo.apply(rebanada(['generado.gen'])),
+          throwsA(isA<RebanadaNoAplicable>()
+              .having((e) => e.reason, 'razón', contains('no es fuente'))
+              .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
+      expect(correr('git', ['rev-parse', 'HEAD']), antes);
+    });
+
+    test('un artefacto de BUILD también', () async {
+      // `isEditable` y no `isGenerated`: `build/` no es generado y tampoco se
+      // versiona. Preguntar por lo generado dejaba pasar la mitad de `N1-03`.
+      Directory('${raiz.path}/build').createSync();
+      escribir('build/salida.txt', 'x\n');
+      await expectLater(repo.apply(rebanada(['build/salida.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+    });
+
+    test('CONTROL NEGATIVO: la fuente pasa', () async {
+      // La corrección no puede volverse «prohibido lo que se parezca».
+      escribir('a.txt', 'cambio\n');
+      await repo.apply(rebanada(['a.txt']));
+      expect(
+          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'a.txt');
+    });
+
+    test('se le pregunta al puerto, no a una lista de acá', () async {
+      // `vcs` no sabe qué hace que algo sea generado: los sufijos viven en el
+      // plugin del stack, que este paquete ni siquiera puede ver. Con otra
+      // política, otro veredicto sobre el MISMO nombre.
+      const alReves = _PoliticaDeclarada(generados: {'a.txt'});
+      final otro = RepositorioGit(directorio: raiz.path, politica: alReves);
+      escribir('a.txt', 'cambio\n');
+      escribir('generado.gen', 'x\n');
+      await expectLater(
+          otro.apply(rebanada(['a.txt'])), throwsA(isA<RebanadaNoAplicable>()));
+      await otro.apply(rebanada(['generado.gen']));
+      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+          'generado.gen');
+    });
+  });
+
+  group('los secretos se cortan ANTES del commit', () {
+    setUp(() async => repo.useBranch('shipflow/x'));
+
+    // Un caso por patrón, y la lista sale de la tabla del detector: un patrón
+    // nuevo sin caso deja la suite en rojo en vez de entrar sin que nadie lo
+    // haya visto fallar. Es la misma disciplina que el inventario de sabotajes.
+    const muestras = <String, String>{
+      'una clave privada': '-----BEGIN RSA PRIVATE KEY-----',
+      'una clave de acceso de AWS': 'AKIAIOSFODNN7EXAMPLE',
+      'un token de GitHub': 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB',
+      'un token de Slack': 'xoxb-1234567890-abcdefghij',
+      'una clave de API de Google': 'AIzaSyA0123456789abcdefghijklmnopqrstuv',
+      'una clave secreta de Stripe': 'sk_live_0123456789abcdefghij',
+      'una credencial asignada en el código':
+          'const apiKey = "s7Kd93jfBq82Lm4zPq";',
+    };
+
+    test('la tabla de muestras cubre TODOS los patrones', () {
+      // Sin esto, agregar un patrón sin muestra pasa desapercibido: el bucle de
+      // abajo recorre las muestras, no los patrones.
+      expect(muestras.keys.toSet(), DetectorDeSecretos.loQueReconoce.toSet());
+    });
+
+    for (final nombre in muestras.keys) {
+      test('«$nombre» corta el commit', () async {
+        escribir('ajustes.conf', 'final x = 1;\n${muestras[nombre]}\n');
+        final antes = correr('git', ['rev-parse', 'HEAD']);
+        await expectLater(
+            repo.apply(rebanada(['ajustes.conf'])),
+            throwsA(isA<RebanadaNoAplicable>()
+                .having((e) => e.reason, 'razón', contains(nombre))
+                .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
+        expect(correr('git', ['rev-parse', 'HEAD']), antes,
+            reason: 'un secreto commiteado no se des-commitea');
+        expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
+            reason: 'ni queda preparado para que alguien lo commitee a mano');
+      });
+    }
+
+    test('el mensaje NO lleva el secreto', () async {
+      // INV-5 le exige eso a las credenciales del arnés. Un detector que para
+      // avisarte de una filtración te la escribe en un log la filtra otra vez.
+      const secreto = 'AKIAIOSFODNN7EXAMPLE';
+      escribir('ajustes.conf', 'const k = "$secreto";\n');
+      try {
+        await repo.apply(rebanada(['ajustes.conf']));
+        fail('tenía que rechazar');
+      } on RebanadaNoAplicable catch (e) {
+        expect([e.reason, e.queHacer, e.toString()].join(' '),
+            isNot(contains(secreto)));
+        expect(e.reason, contains('ajustes.conf'),
+            reason: 'sí dice dónde, que es lo accionable');
+      }
+    });
+
+    test('lo que se QUITA no cuenta: no lo introduce esta rebanada', () async {
+      // La pregunta es «¿este cambio introduce un secreto?». Bloquear por una
+      // línea que se está borrando impediría justamente arreglar la fuga.
+      escribir('ajustes.conf', 'const k = "AKIAIOSFODNN7EXAMPLE";\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'la fuga, que ya estaba']);
+      escribir('ajustes.conf', 'const k = String.fromEnvironment("K");\n');
+      await repo.apply(rebanada(['ajustes.conf'], intent: 'saco la fuga'));
+      expect(correr('git', ['log', '-1', '--format=%s']), 'saco la fuga');
+    });
+
+    test('un marcador de posición no es un secreto', () async {
+      // El patrón que mira el NOMBRE es el que más falsos positivos puede dar,
+      // y bloquea: un falso positivo acá cuesta caro.
+      escribir(
+          'ajustes.conf',
+          'const apiKey = "YOUR_API_KEY_HERE";\n'
+              'const password = "xxxxxxxxxxxxxxxx";\n'
+              'const token = String.fromEnvironment("TOKEN");\n'
+              // Y un valor CORTO: cuatro caracteres no son una credencial, y sin
+              // el umbral el patrón que mira el nombre marcaría cualquier
+              // asignación. Lo encontró una mutación, no un test.
+              'const apiKey = "ab12";\n');
+      await repo.apply(rebanada(['ajustes.conf']));
+      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+          'ajustes.conf');
+    });
+
+    test('un BINARIO no bloquea, y es un límite declarado', () async {
+      // Buscar una forma de texto dentro de bytes que no son texto no responde
+      // nada. Queda como límite del detector, escrito y no disimulado.
+      File('${raiz.path}/imagen.bin')
+          .writeAsBytesSync([0, 1, 2, 255, 254, 0, 3]);
+      // La premisa, comprobada y no asumida: git no emite NINGUNA línea de
+      // contenido para un binario, así que no hay nada que saltar. Había una
+      // rama que lo saltaba y una mutación la encontró muerta.
+      git(['add', '--', 'imagen.bin']);
+      final diff = correr('git', ['diff', '--cached', '--unified=0']);
+      expect(diff, contains('Binary files'));
+      expect(diff.split('\n').where((l) => l.startsWith('+')), isEmpty);
+
+      await repo.apply(rebanada(['imagen.bin']));
+      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+          'imagen.bin');
+    });
+  });
+
+  group('el detector, a solas', () {
+    const detector = DetectorDeSecretos();
+
+    test('un diff vacío no encuentra nada, y tampoco lanza', () {
+      expect(detector.revisar(''), isEmpty);
+    });
+
+    test('dice el archivo y la LÍNEA', () {
+      final h = detector.revisar('diff --git a/x.txt b/x.txt\n'
+          '--- a/x.txt\n+++ b/x.txt\n'
+          '@@ -0,0 +12,2 @@\n'
+          '+inocente\n'
+          '+AKIAIOSFODNN7EXAMPLE\n');
+      expect(h, hasLength(1));
+      expect(h.single.archivo, 'x.txt');
+      expect(h.single.linea, 13);
+    });
+
+    test('un encabezado de hunk que no se entiende LANZA', () {
+      // «No encontré nada» y «no pude mirar» no se pueden confundir. Devolver
+      // cero acá diría que el archivo está limpio sin haberlo leído.
+      expect(
+          () => detector.revisar('diff --git a/x.txt b/x.txt\n'
+              '@@ esto no es un encabezado @@\n'
+              '+AKIAIOSFODNN7EXAMPLE\n'),
+          throwsA(isA<DiffIlegible>()));
+    });
+
+    test('una línea que encaja en DOS patrones es UN hallazgo', () {
+      // `const apiKey = "AKIA…"` encaja por la forma del valor y por el nombre
+      // al que se asigna. Contarla dos veces infla el «hay N secretos» del
+      // mensaje, que es lo único cuantitativo que se le dice a quien lo lee.
+      // Lo encontró una mutación: cambiar el `break` por `continue` no ponía
+      // nada en rojo.
+      final h = detector.revisar('diff --git a/x.txt b/x.txt\n'
+          '@@ -0,0 +1 @@\n'
+          '+const apiKey = "AKIAZZZZ111122223333";\n');
+      expect(h, hasLength(1));
+    });
+
+    test('el encabezado +++ no se confunde con una línea agregada', () {
+      expect(
+          detector.revisar('diff --git a/x b/x\n'
+              '+++ b/AKIAIOSFODNN7EXAMPLE\n'
+              '@@ -0,0 +1 @@\n'
+              '+limpio\n'),
+          isEmpty);
     });
   });
 
@@ -518,7 +758,8 @@ fi
 exec git "$@"
 ''');
       escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
       await expectLater(
           torcido.apply(rebanada(['a.txt', 'b.txt'])),
           throwsA(isA<PromesaIncumplida>()
@@ -544,7 +785,8 @@ fi
 exec git "$@"
 ''');
       escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
       await expectLater(
           torcido.apply(rebanada(['a.txt', 'b.txt'])),
           throwsA(isA<PromesaIncumplida>()
@@ -579,8 +821,8 @@ fi
 exec git "$@"
 ''');
       Process.runSync('chmod', ['700', falso.path]);
-      final torcido =
-          RepositorioGit(directorio: virgen.path, programa: falso.path);
+      final torcido = RepositorioGit(
+          directorio: virgen.path, politica: politica, programa: falso.path);
 
       await expectLater(
           torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
@@ -601,7 +843,8 @@ fi
 exec git "$@"
 ''');
       escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(directorio: raiz.path, programa: falso);
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
       await expectLater(
           torcido.apply(rebanada(['a.txt', 'b.txt'])),
           throwsA(isA<PromesaIncumplida>().having(
@@ -613,8 +856,8 @@ exec git "$@"
     test('la ausencia se nota, y dice qué se intentó', () async {
       // Una herramienta que no está no puede leerse como que no había nada que
       // hacer. Es la misma exigencia que ADR-011 le hace a un verificador.
-      final sinGit =
-          RepositorioGit(directorio: raiz.path, programa: 'no-existe-git');
+      final sinGit = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: 'no-existe-git');
       await expectLater(
         sinGit.useBranch('x'),
         throwsA(isA<GitFallo>().having(
