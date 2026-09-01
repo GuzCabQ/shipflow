@@ -243,21 +243,31 @@ abstract interface class ContextProjector {
 ///    informar: la excepción dice la verdad y el commit indebido ya está en
 ///    la rama. Un invariante que solo se puede reportar no es un invariante,
 ///    es una crónica.
-/// 4. **Lo que el stack no declara fuente no se commitea, y no se quita en
+/// 2. **Una rebanada sin archivos no se commitea.** Un commit vacío afirma un
+///    cambio que no existe.
+/// 3. **[useBranch] es idempotente**: pedir dos veces la misma rama no falla.
+///    La orquestación la pide al empezar y `--resume` la vuelve a pedir.
+/// 4. **Lo que el stack no declara fuente no se AGREGA, y no se quita en
 ///    silencio.** Un artefacto generado versionado duplica la verdad y la deja
 ///    envejecer. Quitarlo de la rebanada sin decirlo rompería la cláusula 1 en
 ///    su segunda dirección, así que la rebanada se rechaza con su alternativa.
 ///    Quién decide qué es fuente no se sabe acá: es [ArtifactPolicy], y su
 ///    contenido vive en el plugin del stack.
-/// 5. **Un secreto corta el commit.** No lo reporta: un secreto commiteado no
+///
+///    **Borrarlo sí se puede**, y la distinción importa: la política dice qué
+///    no se escribe, y sacar del repositorio algo que ya estaba versionado es
+///    justamente lo que quiere. Prohibirlo dejaba al arnés sin manera de
+///    limpiar lo que otro commiteó antes.
+/// 5. **Lo que se inspecciona es el objeto que se commitea**, no una
+///    representación suya. `apply` arma un índice aparte, lo inspecciona y
+///    commitea ESE índice: si no, un gancho `pre-commit` puede reescribir el
+///    archivo entre la inspección y el commit, y hay dos objetos donde el
+///    contrato promete uno.
+/// 6. **Un secreto corta el commit.** No lo reporta: un secreto commiteado no
 ///    se des-commitea —queda en el historial— y avisar después es una crónica,
 ///    no un control. Cumple INV-8 porque la alternativa existe y es concreta.
 ///    El corpus nunca le dio severidad a esto; la decisión se tomó al
 ///    construirlo y quedó registrada.
-/// 2. **Una rebanada sin archivos no se commitea.** Un commit vacío afirma un
-///    cambio que no existe.
-/// 3. **[useBranch] es idempotente**: pedir dos veces la misma rama no falla.
-///    La orquestación la pide al empezar y `--resume` la vuelve a pedir.
 abstract interface class ChangeSink {
   /// La rama donde va el trabajo. La crea si no existe.
   Future<void> useBranch(String name);

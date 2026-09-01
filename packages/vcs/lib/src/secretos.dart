@@ -148,23 +148,31 @@ class DetectorDeSecretos {
   /// *«¿este cambio introduce un secreto?»*, y el corpus concreta exactamente
   /// eso —`happy-path.md`: «escanea secretos **en el diff**»—. Lo «del repo»
   /// de `docs/11` es otra pregunta, con otro costo, y queda declarada.
-  List<Secreto> revisar(String diff) {
+  /// [archivo] **se pasa, no se deduce.** Sacarla del encabezado `diff --git
+  /// a/x b/x` era otro parser de más: con una ruta que no es ASCII `git` la
+  /// cita —`"a/\303\241.conf"`— y el hallazgo terminaba señalando una cadena
+  /// que no es un archivo. Quien llama ya sabe qué ruta le está dando.
+  List<Secreto> revisar(String diff, {required String archivo}) {
     if (diff.isEmpty) return const [];
     final hallazgos = <Secreto>[];
-    var archivo = '';
     var linea = 0;
+    // **Dentro de un hunk, toda línea que empieza con `+` es contenido.**
+    //
+    // Antes se descartaba cualquier línea que empezara con `+++`, dando por
+    // hecho que solo el encabezado del archivo tiene esa forma. No es cierto:
+    // una línea de contenido que empieza con `++` se representa como `+++`, y
+    // un review commiteó una clave así. El encabezado `+++ b/…` aparece SIEMPRE
+    // antes del primer `@@`, así que lo que distingue no es la forma de la
+    // línea sino dónde está.
+    var enHunk = false;
 
     for (final l in diff.split('\n')) {
-      if (l.startsWith('diff --git ')) {
-        archivo = _rutaDeEncabezado(l);
-        linea = 0;
-        continue;
-      }
       if (l.startsWith('@@')) {
         linea = _lineaDeHunk(l, archivo);
+        enHunk = true;
         continue;
       }
-      if (!l.startsWith('+') || l.startsWith('+++')) continue;
+      if (!enHunk || !l.startsWith('+')) continue;
 
       final contenido = l.substring(1);
       for (final p in _patrones) {
@@ -181,13 +189,6 @@ class DetectorDeSecretos {
       linea++;
     }
     return hallazgos;
-  }
-
-  /// `diff --git a/x b/x` → `x`. Se toma **el lado b**, que es el archivo
-  /// nuevo: en un renombrado, el lado a ya no existe.
-  static String _rutaDeEncabezado(String l) {
-    final b = l.indexOf(' b/');
-    return b < 0 ? l : l.substring(b + 3);
   }
 
   /// `@@ -1,0 +12,3 @@` → `12`. **Si no se puede leer, lanza.**

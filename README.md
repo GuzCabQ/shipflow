@@ -879,7 +879,13 @@ Y traía dos fallos propios, los dos reproducidos:
 primera columna es lo que va al commit, su segunda lo que se queda en el árbol,
 y `-z` devuelve las rutas crudas. **Queda un hueco, declarado:** entre la
 pregunta y el commit nada más puede tocar el árbol, y eso es el lock de
-concurrencia que el plan ya tiene como decisión abierta `A-5` para la fase 4.
+concurrencia — que **no es `A-5`**, y un review lo cobró: `A-5` es el lock
+sobre `.sdlc/` para que dos corridas no se pisen la configuración de ganchos, no
+un lock del árbol ni del índice. Queda como decisión propia y abierta.
+
+Lo que sí cerró esta rebanada es el otro caso, que no era concurrencia: **el
+propio `commit` invocaba un gancho capaz de reescribir el archivo entre la
+inspección y el commit.** Eso está adentro de la operación, no afuera.
 
 ### «Exactamente» tenía una sola dirección
 
@@ -1079,6 +1085,42 @@ llaman `generado.gen` y `ajustes.conf`, y el test es más honesto que antes.
 También cobró un comentario que decía *«una credencial filtrada no es una
 pregunta sobre X ni sobre Y»*: al escribirlo, `vcs` conocía X e Y. Es el mismo
 caso que ya había corregido `ArtifactPolicy` en `core`, palabra por palabra.
+
+### Tres formas de colar un secreto, y una cuarta que salió midiendo
+
+Un review encontró que el detector se podía evadir de tres maneras. Las tres
+reproducidas contra `git` de verdad, y **la raíz de las tres es la misma**: el
+detector inspeccionaba una *representación* del cambio, y el commit consumía
+otra.
+
+| La evasión | Por qué pasaba |
+|---|---|
+| contenido `++ AKIA…` | `git` lo representa como `+++ AKIA…`, y el detector descartaba toda línea `+++` por su **forma**, dando por hecho que solo el encabezado la tiene |
+| un `textconv` en `.gitattributes` | el repositorio inspeccionado configura cómo se ve su propio diff; con uno que no imprime nada, el detector recibía un diff vacío |
+| un gancho `pre-commit` | reescribe el archivo y hace `git add` **entre** la inspección y el commit: se escaneaba «inocente» y `HEAD` quedaba con la clave |
+| **un driver de diff externo** | la cuarta, que el review no nombró: `diff.<driver>.command` también oculta el contenido, y **`--no-textconv` no lo tapa** |
+
+La primera se arregla con estado del parser en vez de forma de la línea: el
+encabezado `+++ b/…` aparece **siempre antes** del primer `@@`, así que lo que
+distingue no es cómo se ve la línea sino dónde está. La segunda y la cuarta,
+con `--no-textconv` y `--no-ext-diff`, que son dos banderas porque son dos
+agujeros — lo comprobé midiendo, no leyéndolo.
+
+**La tercera cambió el diseño.** No era la concurrencia futura: era la propia
+operación invocando al gancho adentro suyo. `apply` arma ahora un **índice
+aparte** con `GIT_INDEX_FILE`, lo inspecciona y commitea **ese** índice con
+`--no-verify`. Deja de haber dos consultas cercanas en el tiempo sobre
+representaciones distintas: hay un objeto.
+
+Y tuvo una consecuencia que no busqué: **el índice del usuario ya no se toca**,
+así que la maquinaria de fotografiarlo y reponerlo —que otro review había
+pedido, y que construí y probé— quedó sin nada que reparar. Se fue con sus
+tests de reposición. Los que comprueban que el índice del usuario sobrevive a
+un rechazo se quedan, y ahora pasan por construcción en vez de por reparación.
+
+**Costo declarado:** los ganchos del usuario no corren sobre los commits del
+arnés. INV-10 ya dice que ningún control cuya ausencia sea inaceptable se funda
+en ganchos; acá el gancho no era el control, era lo que lo evadía.
 
 ### Doce mutaciones, y dos encontraron lo que 70 tests verdes no
 

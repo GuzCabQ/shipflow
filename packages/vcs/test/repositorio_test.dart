@@ -404,16 +404,15 @@ exec git "$@"
 
     test('si igual fuera a entrar algo de más, NO se commitea', () async {
       // El control que cubre el caso que nadie enumeró. El envoltorio le hace
-      // a la consulta previa lo único que la puede engañar: contestar de más.
+      // a la consulta lo único que la puede engañar: contestar de más.
       //
       // Y lo que se comprueba no es solo que lance: es que **`HEAD` no se
-      // haya movido**. Antes esto estaba después del commit, y un review lo
-      // cobró — una postcondición que solo informa convierte un fallo visible
-      // en un estado parcial.
+      // haya movido**. Una postcondición que solo informa convierte un fallo
+      // visible en un estado parcial.
       final falso = envoltorio('git-contesta-de-mas', r'''#!/bin/sh
-if [ "$2" = "commit" ] && [ "$3" = "--dry-run" ]; then
+if [ "$2" = "diff" ] && [ "$3" = "--cached" ] && [ "$4" = "--name-only" ]; then
   git "$@"
-  printf 'M  intruso.txt'
+  printf 'intruso.txt'
   exit 0
 fi
 exec git "$@"
@@ -457,6 +456,20 @@ exec git "$@"
       escribir('build/salida.txt', 'x\n');
       await expectLater(repo.apply(rebanada(['build/salida.txt'])),
           throwsA(isA<RebanadaNoAplicable>()));
+    });
+
+    test('pero BORRAR un generado ya versionado sí se puede', () async {
+      // La política dice qué no se escribe. Si un repositorio ya tenía un
+      // generado commiteado, sacarlo es justamente lo que la política quiere,
+      // y prohibirlo dejaba al arnés sin manera de limpiarlo. Lo señaló un
+      // review; `D-094` se enmendó con esto.
+      escribir('generado.gen', 'estaba versionado de antes\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'el generado, que ya estaba']);
+      File('${raiz.path}/generado.gen').deleteSync();
+
+      await repo.apply(rebanada(['generado.gen'], intent: 'lo saco'));
+      expect(correr('git', ['ls-files', 'generado.gen']), isEmpty);
     });
 
     test('CONTROL NEGATIVO: la fuente pasa', () async {
@@ -585,19 +598,104 @@ exec git "$@"
     });
   });
 
+  group('las tres formas de colar un secreto que encontró un review', () {
+    setUp(() async => repo.useBranch('shipflow/x'));
+
+    test('contenido que empieza con ++, que git representa como +++', () async {
+      // El detector descartaba toda línea `+++` dando por hecho que solo el
+      // encabezado tiene esa forma. Un contenido `++ AKIA…` la tiene también.
+      escribir('ajustes.conf', '++ AKIAIOSFODNN7EXAMPLE\n');
+      git(['add', '--', 'ajustes.conf']);
+      expect(correr('git', ['diff', '--cached', '--unified=0']),
+          contains('+++ AKIAIOSFODNN7EXAMPLE'),
+          reason: 'la premisa, con git de verdad');
+      git(['reset', '--quiet']);
+
+      final antes = correr('git', ['rev-parse', 'HEAD']);
+      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+      expect(correr('git', ['rev-parse', 'HEAD']), antes);
+    });
+
+    test('un `textconv` que oculta el contenido del diff', () async {
+      // Una inspección de seguridad no puede leer una REPRESENTACIÓN que el
+      // propio repositorio inspeccionado configura. Con un `textconv` que no
+      // imprime nada, el detector recibía un diff vacío.
+      final oculto = envoltorio('oculta-todo', '#!/bin/sh\nexit 0\n');
+      git(['config', 'diff.oculto.textconv', oculto]);
+      escribir('.gitattributes', '*.conf diff=oculto\n');
+      escribir('ajustes.conf', 'const k = "AKIAIOSFODNN7EXAMPLE";\n');
+      git(['add', '--', 'ajustes.conf']);
+      expect(correr('git', ['diff', '--cached', '--unified=0']),
+          isNot(contains('AKIA')),
+          reason: 'la premisa: con textconv, el secreto no se ve');
+      git(['reset', '--quiet']);
+
+      final antes = correr('git', ['rev-parse', 'HEAD']);
+      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+      expect(correr('git', ['rev-parse', 'HEAD']), antes);
+    });
+
+    test('un driver de diff EXTERNO, que es otra evasión distinta', () async {
+      // El review recomendó `--no-ext-diff` junto con `--no-textconv`. Medido,
+      // son dos agujeros independientes: con `diff.<driver>.command` el
+      // contenido también desaparece, y `--no-textconv` NO lo tapa. Sin este
+      // caso, la bandera se podía borrar sin que nada se pusiera rojo.
+      final mudo = envoltorio('diff-mudo', '#!/bin/sh\nexit 0\n');
+      git(['config', 'diff.mudo.command', mudo]);
+      escribir('.gitattributes', '*.conf diff=mudo\n');
+      escribir('ajustes.conf', 'const k = "AKIAIOSFODNN7EXAMPLE";\n');
+      git(['add', '--', 'ajustes.conf']);
+      expect(correr('git', ['diff', '--cached', '--unified=0']),
+          isNot(contains('AKIA')),
+          reason: 'la premisa: el driver externo lo oculta');
+      expect(
+          correr('git', ['diff', '--cached', '--unified=0', '--no-textconv']),
+          isNot(contains('AKIA')),
+          reason: 'y --no-textconv NO alcanza: son dos agujeros distintos');
+      git(['reset', '--quiet']);
+
+      final antes = correr('git', ['rev-parse', 'HEAD']);
+      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
+          throwsA(isA<RebanadaNoAplicable>()));
+      expect(correr('git', ['rev-parse', 'HEAD']), antes);
+    });
+
+    test('un gancho `pre-commit` que cambia el contenido DESPUÉS', () async {
+      // El peor de los tres: no es concurrencia futura, es la propia operación
+      // invocando al gancho adentro suyo. El escaneo veía «inocente» y el
+      // commit se llevaba la clave.
+      final hooks = Directory('${raiz.path}/.git/hooks')
+        ..createSync(recursive: true);
+      File('${hooks.path}/pre-commit').writeAsStringSync('#!/bin/sh\n'
+          'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
+          'git add -- ajustes.conf\n'
+          'exit 0\n');
+      Process.runSync('chmod', ['700', '${hooks.path}/pre-commit']);
+
+      escribir('ajustes.conf', 'inocente\n');
+      await repo.apply(rebanada(['ajustes.conf']));
+      expect(correr('git', ['show', 'HEAD:ajustes.conf']), 'inocente',
+          reason: 'se commitea el objeto que se escaneó, no otro');
+    });
+  });
+
   group('el detector, a solas', () {
     const detector = DetectorDeSecretos();
 
     test('un diff vacío no encuentra nada, y tampoco lanza', () {
-      expect(detector.revisar(''), isEmpty);
+      expect(detector.revisar('', archivo: 'x.txt'), isEmpty);
     });
 
     test('dice el archivo y la LÍNEA', () {
-      final h = detector.revisar('diff --git a/x.txt b/x.txt\n'
+      final h = detector.revisar(
+          'diff --git a/x.txt b/x.txt\n'
           '--- a/x.txt\n+++ b/x.txt\n'
           '@@ -0,0 +12,2 @@\n'
           '+inocente\n'
-          '+AKIAIOSFODNN7EXAMPLE\n');
+          '+AKIAIOSFODNN7EXAMPLE\n',
+          archivo: 'x.txt');
       expect(h, hasLength(1));
       expect(h.single.archivo, 'x.txt');
       expect(h.single.linea, 13);
@@ -607,9 +705,11 @@ exec git "$@"
       // «No encontré nada» y «no pude mirar» no se pueden confundir. Devolver
       // cero acá diría que el archivo está limpio sin haberlo leído.
       expect(
-          () => detector.revisar('diff --git a/x.txt b/x.txt\n'
+          () => detector.revisar(
+              'diff --git a/x.txt b/x.txt\n'
               '@@ esto no es un encabezado @@\n'
-              '+AKIAIOSFODNN7EXAMPLE\n'),
+              '+AKIAIOSFODNN7EXAMPLE\n',
+              archivo: 'x.txt'),
           throwsA(isA<DiffIlegible>()));
     });
 
@@ -619,23 +719,45 @@ exec git "$@"
       // mensaje, que es lo único cuantitativo que se le dice a quien lo lee.
       // Lo encontró una mutación: cambiar el `break` por `continue` no ponía
       // nada en rojo.
-      final h = detector.revisar('diff --git a/x.txt b/x.txt\n'
+      final h = detector.revisar(
+          'diff --git a/x.txt b/x.txt\n'
           '@@ -0,0 +1 @@\n'
-          '+const apiKey = "AKIAZZZZ111122223333";\n');
+          '+const apiKey = "AKIAZZZZ111122223333";\n',
+          archivo: 'x.txt');
       expect(h, hasLength(1));
     });
 
     test('el encabezado +++ no se confunde con una línea agregada', () {
+      // Lo que distingue el encabezado no es su forma: es que está ANTES del
+      // primer `@@`.
       expect(
-          detector.revisar('diff --git a/x b/x\n'
+          detector.revisar(
+              'diff --git a/x b/x\n'
               '+++ b/AKIAIOSFODNN7EXAMPLE\n'
               '@@ -0,0 +1 @@\n'
-              '+limpio\n'),
+              '+limpio\n',
+              archivo: 'x.txt'),
           isEmpty);
+    });
+
+    test('pero una línea de CONTENIDO que empieza con ++ sí se mira', () {
+      // El agujero exacto que encontró un review: un contenido `++ AKIA…` se
+      // representa como `+++ AKIA…`, y descartarlo por su forma lo dejaba
+      // pasar. Está medido con git de verdad.
+      final h = detector.revisar(
+          '@@ -0,0 +1 @@\n'
+          '+++ AKIAIOSFODNN7EXAMPLE\n',
+          archivo: 'x.txt');
+      expect(h, hasLength(1));
+      expect(h.single.linea, 1);
     });
   });
 
-  group('rechazar no puede tocar lo que preparó otro', () {
+  group('el índice del usuario no se toca', () {
+    // El índice es del usuario. Antes esto se conseguía fotografiándolo y
+    // reponiéndolo tras cada fallo; ahora `apply` trabaja sobre un índice
+    // APARTE y no hay nada que reponer. Los casos siguen: lo que cambió es
+    // que pasan por construcción y no por reparación.
     // El índice es del usuario. Una rebanada rechazada no hizo nada, así que
     // no puede haber cambiado nada — y la primera versión de la limpieza usaba
     // `git reset -- <rutas>`, que restaura desde HEAD y no desde el índice
@@ -743,112 +865,6 @@ exec git "$@"
       await expectLater(repo.apply(rebanada(['a.txt', 'nada.txt'])),
           throwsA(isA<RebanadaNoAplicable>()));
       expect(correr('git', ['ls-files', '-v', '--', 'b.txt']), antes);
-    });
-
-    test('si NO puede restaurar, lo dice, y dice qué rechazaba', () async {
-      // Un reparador que no puede fallar es la misma clase de instrumento roto
-      // que este arnés existe para cazar. Se le miente sobre dónde vive el
-      // índice: escribir ahí lanza, y el fallo tiene que salir JUNTO con el
-      // motivo del rechazo, no en su lugar.
-      final falso = envoltorio('git-indice-fantasma', r'''#!/bin/sh
-if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
-  echo "no/existe/index"
-  exit 0
-fi
-exec git "$@"
-''');
-      escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
-      await expectLater(
-          torcido.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<PromesaIncumplida>()
-              .having((e) => e.sePidio, 'se pidió', contains('índice'))
-              .having((e) => e.sePidio, 'el motivo original',
-                  contains('RebanadaNoAplicable'))));
-    });
-
-    test('si la reposición LANZA, el motivo del rechazo no se pierde',
-        () async {
-      // El caso que las mutaciones encontraron sin cubrir: la promesa de
-      // informar las dos cosas se cumplía solo cuando la verificación llegaba
-      // a correr. Si fallaba antes —la escritura, la ruta, git—, el motivo del
-      // rechazo se perdía en el camino.
-      //
-      // El envoltorio contesta bien la PRIMERA vez, para que la foto se tome,
-      // y falla después, cuando hay que reponer.
-      final falso = envoltorio('git-rev-parse-intermitente', r'''#!/bin/sh
-if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
-  if [ -f .git/shipflow-marca ]; then exit 1; fi
-  : > .git/shipflow-marca
-fi
-exec git "$@"
-''');
-      escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
-      await expectLater(
-          torcido.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<PromesaIncumplida>()
-              .having((e) => e.sePidio, 'el motivo original',
-                  contains('RebanadaNoAplicable'))
-              .having((e) => e.quedo, 'y el fallo de la limpieza',
-                  contains('GitFallo'))));
-    });
-
-    test('un repositorio SIN índice todavía vuelve a no tenerlo', () async {
-      // «Reponer» cuando no había nada es borrar. Sin eso, un repositorio
-      // recién creado terminaba con un índice que nadie había hecho.
-      final virgen = Directory.systemTemp.createTempSync('vcs_virgen_');
-      addTearDown(() => virgen.deleteSync(recursive: true));
-      Process.runSync('git', ['init', '--initial-branch=main', '.'],
-          workingDirectory: virgen.path);
-      Process.runSync('git', ['config', 'user.email', 'p@p'],
-          workingDirectory: virgen.path);
-      Process.runSync('git', ['config', 'user.name', 'prueba'],
-          workingDirectory: virgen.path);
-      File('${virgen.path}/a.txt').writeAsStringSync('uno\n');
-      expect(File('${virgen.path}/.git/index').existsSync(), isFalse,
-          reason: 'la premisa: todavía no hay índice');
-
-      final falso = File('${virgen.path}/git-de-mas')
-        ..writeAsStringSync(r'''#!/bin/sh
-if [ "$2" = "commit" ] && [ "$3" = "--dry-run" ]; then
-  git "$@"
-  printf 'M  intruso.txt'
-  exit 0
-fi
-exec git "$@"
-''');
-      Process.runSync('chmod', ['700', falso.path]);
-      final torcido = RepositorioGit(
-          directorio: virgen.path, politica: politica, programa: falso.path);
-
-      await expectLater(
-          torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
-          throwsA(isA<PromesaIncumplida>()
-              .having((e) => e.quedo, 'quedó', contains('intruso.txt'))));
-      expect(File('${virgen.path}/.git/index').existsSync(), isFalse,
-          reason: 'el add lo creó; el rechazo lo borra');
-    });
-
-    test('y si git ve algo distinto tras reponer, también', () async {
-      // La otra mitad: la escritura puede salir bien y no haber servido.
-      // Se comprueba contra lo que ve `git`, no contra los bytes escritos.
-      final falso = envoltorio('git-indice-al-costado', r'''#!/bin/sh
-if [ "$2" = "rev-parse" ] && [ "$4" = "index" ]; then
-  echo "index.al-costado"
-  exit 0
-fi
-exec git "$@"
-''');
-      escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
-      await expectLater(
-          torcido.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<PromesaIncumplida>().having(
-              (e) => e.quedo, 'quedó', contains('distinto de como estaba'))));
     });
   });
 
