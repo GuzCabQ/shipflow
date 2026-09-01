@@ -227,9 +227,22 @@ abstract interface class ContextProjector {
 ///
 /// **Cláusulas del contrato:**
 ///
-/// 1. **[apply] commitea EXACTAMENTE los archivos de la rebanada.** Ni uno
-///    más. Barrer lo que hubiera suelto en el árbol metería en el PR cambios
-///    que nadie planeó, y el artefacto de revisión los declararía cubiertos.
+/// 1. **[apply] commitea EXACTAMENTE los archivos de la rebanada**, y eso
+///    vale en los dos sentidos.
+///
+///    **Ni uno más**: barrer lo que hubiera suelto en el árbol metería en el
+///    PR cambios que nadie planeó, y el artefacto de revisión los declararía
+///    cubiertos —que por ADR-012 es pedirle a una persona que no los mire.
+///
+///    **Ni uno menos**: un archivo declarado que no produce ningún cambio es
+///    un plan que dijo que iba a tocar algo y no lo tocó. La cláusula decía
+///    «exactamente» y solo se comprobaba una dirección; la otra dejaba pasar
+///    en verde una rebanada que no hizo lo que prometía.
+///
+///    **Y se comprueba ANTES de commitear.** Comprobarlo después solo puede
+///    informar: la excepción dice la verdad y el commit indebido ya está en
+///    la rama. Un invariante que solo se puede reportar no es un invariante,
+///    es una crónica.
 /// 2. **Una rebanada sin archivos no se commitea.** Un commit vacío afirma un
 ///    cambio que no existe.
 /// 3. **[useBranch] es idempotente**: pedir dos veces la misma rama no falla.
