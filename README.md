@@ -858,7 +858,7 @@ Lo instalado va en dos capas, y la segunda es la que importa:
 | | Qué hace | Qué cubre |
 |---|---|---|
 | **Validar** | `--literal-pathspecs`, forma canónica de ruta, se rechaza un directorio, y un borrado tiene que ser el de **un** archivo rastreado; el nombre lo valida `git check-ref-format` y la rama se busca en `refs/heads/` | los casos que alguien enumeró, con un «qué hacer» en cada rechazo |
-| **Preguntar** | `git commit --dry-run --porcelain -z` dice qué entraría; se compara contra lo declarado en **las dos direcciones** y recién después se commitea | **la cláusula**, incluido el caso que nadie enumeró |
+| **Preguntar** | el índice aislado **es** el contenido del commit: `git diff --cached --name-only -z` sobre él dice qué va a entrar, y se compara contra lo declarado en **las dos direcciones** antes de commitear | **la cláusula**, incluido el caso que nadie enumeró |
 
 ### Y la segunda capa estaba del lado equivocado del commit
 
@@ -875,17 +875,16 @@ Y traía dos fallos propios, los dos reproducidos:
 | `á.txt` | `git show --name-only` **cita** lo que no es ASCII: devolvía `"\303\241.txt"` y un archivo válido daba incumplimiento falso |
 | `files: ['dir']` con `dir/` ya borrado | `ls-files --error-unmatch` coincide por **prefijo**: el borrado del directorio pasaba como si fuera un archivo |
 
-`git commit --dry-run --porcelain -z` responde lo mismo sin tocar nada: su
-primera columna es lo que va al commit, su segunda lo que se queda en el árbol,
-y `-z` devuelve las rutas crudas. **Queda un hueco, declarado:** entre la
-pregunta y el commit nada más puede tocar el árbol, y eso es el lock de
-concurrencia — que **no es `A-5`**, y un review lo cobró: `A-5` es el lock
-sobre `.sdlc/` para que dos corridas no se pisen la configuración de ganchos, no
-un lock del árbol ni del índice. Queda como decisión propia y abierta.
+La primera respuesta a esto fue `git commit --dry-run --porcelain`, que dice
+qué entraría sin tocar nada. **Duró hasta el review siguiente**, que mostró que
+seguían siendo dos consultas sobre dos objetos: `commit -- <rutas>` vuelve a
+leer el árbol. Lo que quedó instalado —el índice aislado— está más abajo.
 
-Lo que sí cerró esta rebanada es el otro caso, que no era concurrencia: **el
-propio `commit` invocaba un gancho capaz de reescribir el archivo entre la
-inspección y el commit.** Eso está adentro de la operación, no afuera.
+**Y queda un hueco, declarado:** entre la inspección y el commit nada más puede
+tocar el árbol. Eso es un lock de concurrencia que **no es `A-5`**, y un review
+lo cobró: `A-5` es el lock sobre `.sdlc/` para que dos corridas no se pisen la
+configuración de ganchos, no un lock del árbol ni del índice. Queda como
+decisión propia y abierta.
 
 ### «Exactamente» tenía una sola dirección
 
@@ -895,14 +894,11 @@ plan que dijo que iba a tocar algo y no lo tocó. Ahora las dos direcciones, con
 dos desenlaces distintos — **de más** es la cláusula rota y **de menos** es la
 rebanada mal armada.
 
-Y al rechazar se **desmonta el índice**, solo en las rutas que pusimos. Sin eso,
-el rechazo dejaba preparado justo lo que se acababa de declarar inaceptable,
-esperando al próximo `git commit` hecho a mano.
-
 Se prueba con envoltorios que le sacan a `git` una salvaguarda —el que le hace
-contestar de más a la consulta previa, el que desprende `HEAD` en el `switch`—
-para que la promesa tenga cómo romperse; un control que nunca se vio en rojo no
-está instalado. Y cada caso comprueba también que **`HEAD` no se movió**.
+contestar de más a la consulta, el que desprende `HEAD` en el `switch`, el que
+rompe el `reset` final— para que la promesa tenga cómo romperse; un control que
+nunca se vio en rojo no está instalado. Y cada caso comprueba también que
+**`HEAD` no se movió**.
 
 Y un **control negativo**: un archivo que de verdad se llama `*.txt` sí se
 commitea, y uno con acento o con espacios también. La corrección no podía
@@ -936,49 +932,18 @@ fallaba a medias dejaba rastro —está medido que `git add -- a.txt ignorado.tx
 sale con 1 y deja `a.txt` preparado igual—, y el `reset` usaba la llamada que
 **no lanza** por código distinto de cero: un reparador que no podía fallar.
 
-### Y la foto tampoco podía ser una lectura
+### Y hubo una foto del índice, que también se fue
 
-La primera frontera guardaba `modo`, `objeto` y `ruta` con `ls-files --stage` y
-los reponía con `update-index --cacheinfo`. Un cuarto review la rompió con un
-caso legítimo:
+Entre medio existió una tercera capa: fotografiar el índice del usuario antes de
+tocarlo y reponerlo ante cualquier fallo. La pidió un review, se construyó, se
+probó y se mutó — y encontró de paso que reponerlo desde `ls-files --stage`
+pierde `intent-to-add`, porque el índice tiene más estado del que esa lectura
+muestra.
 
-```
-$ git add --intent-to-add nueva.txt     # «va a existir», sin contenido preparado
-$ # …rebanada rechazada, índice «restaurado»…
-$ git diff --cached --name-only
-nueva.txt                               # ahora sí está preparado, y vacío
-```
-
-`intent-to-add` se ve en `ls-files --stage` **idéntico** a una entrada normal
-con el blob vacío. Reponerlo desde esa lectura lo convierte en un archivo vacío
-de verdad, que el usuario nunca preparó y que su próximo `git commit` a mano se
-llevaría.
-
-Y no es una bandera que faltara enumerar: el índice tiene `skip-worktree`,
-`assume-unchanged`, las tres entradas de un conflicto. **Cualquier
-reconstrucción a partir de su lectura pierde algo.** Es la lección de toda esta
-sección una vez más, cometida en la reparación: no reimplementar la semántica
-de la herramienta, usar su estado.
-
-Ahora la foto son **los bytes del archivo del índice** —cuya ruta se le
-pregunta a `git`, porque un worktree enlazado lo tiene en otro lado— y se
-reponen con un `rename`, que es atómico. La reposición **se verifica contra lo
-que ve `git`**, no contra los bytes que se acaban de escribir: comparar un
-archivo consigo mismo solo prueba que el disco no miente.
-
-Y **cualquier** excepción de la reposición sale junto con el motivo del
-rechazo. Antes eso valía solo si la verificación llegaba a correr; si fallaba la
-escritura, el motivo del rechazo se perdía en el camino. Un fallo de limpieza no
-puede borrar por qué se rechazó.
-
-Un merge sin resolver aborta antes de tocar nada. **Ya no por la reposición** —
-los bytes traen las tres entradas del conflicto sin que haya que entenderlas—
-sino porque `git` mismo se niega a hacer un commit parcial durante un merge, y
-decirlo antes con un «qué hacer» es mejor que un `GitFallo` crudo.
-
-En el camino de éxito no se restaura nada, y es lo correcto: está medido que
-`git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo `HEAD`.
-**El adapter se comporta como `git`**, no como una idea nuestra de `git`.
+**Se borró entera al llegar el índice aislado**, que no toca el índice del
+usuario y deja la reposición sin nada que reparar. Queda anotado porque el
+recorrido dice algo: la pregunta *«¿cómo reparo el daño?»* tuvo tres respuestas
+cada vez mejores, y la buena era *«¿por qué hay daño?»*.
 
 ### Dos pruebas que anunciaban un escenario y ejercían otro
 

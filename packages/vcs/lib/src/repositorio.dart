@@ -136,13 +136,24 @@ class RepositorioGit implements ChangeSink {
   /// Corre `git` y **exige que haya salido bien**. Un código distinto de cero
   /// que se ignora es un cambio que se cree hecho y no está.
   Future<String> _exigir(List<String> args,
+          {Map<String, String> entorno = const {}}) async =>
+      (await _exigirCrudo(args, entorno: entorno)).trim();
+
+  /// Igual, pero **sin recortar**.
+  ///
+  /// Las salidas separadas por NUL son bytes, no texto para leer: un archivo
+  /// que se llame « a.txt» sale con su espacio, y recortarlo lo convierte en
+  /// otro archivo. Un review lo encontró — la comparación decía que se pidió
+  /// « a.txt» y que el índice además tocaba «a.txt», que es el mismo archivo
+  /// escrito de dos maneras por culpa nuestra.
+  Future<String> _exigirCrudo(List<String> args,
       {Map<String, String> entorno = const {}}) async {
     final r = await _git(args, entorno: entorno);
     if (r.exitCode != 0) {
       throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}',
           r.exitCode, '${r.stdout}${r.stderr}'.trim());
     }
-    return (r.stdout as String).trim();
+    return r.stdout as String;
   }
 
   @override
@@ -310,21 +321,32 @@ class RepositorioGit implements ChangeSink {
   /// sincroniza, porque es lo que hace `git commit -- <ruta>` y este adapter
   /// se comporta como `git`.
   Future<T> _conIndiceAislado<T>(
-      Future<T> Function(Map<String, String>) usar) async {
+      Future<T> Function(Map<String, String>, String) usar) async {
     final ruta = '${await _rutaDeGit('index')}.shipflow';
     final entorno = {'GIT_INDEX_FILE': ruta};
     final archivo = File(ruta);
+    // **A dónde va a buscar ganchos `git`, y no los va a encontrar.**
+    //
+    // No se crea: está medido que con una ruta inexistente `git` commitea
+    // igual y no dispara nada. Crearla era código muerto y una mutación lo
+    // demostró — nada se ponía rojo al sacarlo. Lo que sí hace falta es
+    // **borrarla si existe**: si alguien dejó un gancho justo ahí, correría, y
+    // «ningún gancho del usuario corre» dejaría de ser cierto por la puerta que
+    // abrimos nosotros. Esa guardia sí tiene su caso y sí se la vio fallar.
+    final sinGanchos = Directory('$ruta.sin-ganchos');
     try {
       if (archivo.existsSync()) archivo.deleteSync();
+      if (sinGanchos.existsSync()) sinGanchos.deleteSync(recursive: true);
       // Un repositorio sin commits todavía no tiene de dónde leer un árbol, y
       // ahí el índice vacío ES el punto de partida correcto.
       if ((await _git(['rev-parse', '--verify', '--quiet', 'HEAD'])).exitCode ==
           0) {
         await _exigir(['read-tree', 'HEAD'], entorno: entorno);
       }
-      return await usar(entorno);
+      return await usar(entorno, sinGanchos.path);
     } finally {
       if (archivo.existsSync()) archivo.deleteSync();
+      if (sinGanchos.existsSync()) sinGanchos.deleteSync(recursive: true);
     }
   }
 
@@ -378,14 +400,14 @@ class RepositorioGit implements ChangeSink {
 
     await _exigirSinConflictos();
 
-    final revision = await _conIndiceAislado((entorno) async {
+    final revision = await _conIndiceAislado((entorno, sinGanchos) async {
       await _exigir(['add', '--', ...rutas], entorno: entorno);
 
       // **Lo que este índice va a commitear, que es este índice.** Ya no hay
       // que preguntarle a `commit --dry-run` qué haría: el índice ES el
       // contenido del commit. `-z` porque `git` cita las rutas que no son
       // ASCII y comparar la cita contra la ruta falla sobre archivos válidos.
-      final entra = (await _exigir(
+      final entra = (await _exigirCrudo(
               ['diff', '--cached', '--name-only', '-z', '--', ...rutas],
               entorno: entorno))
           .split('\u0000')
@@ -409,21 +431,48 @@ class RepositorioGit implements ChangeSink {
 
       await _exigirSinSecretos(rutas, entorno);
 
-      // **`--no-verify`, y es una decisión con costo.** Un gancho `pre-commit`
-      // corre con este mismo `GIT_INDEX_FILE`, así que puede reescribir el
-      // archivo y volver a prepararlo **después** del escaneo: está medido que
-      // sin esto el secreto llega a `HEAD`. INV-10 ya dice que ningún control
-      // cuya ausencia sea inaceptable se funda en ganchos; acá el gancho no es
-      // el control, es lo que lo evade.
-      await _exigir(['commit', '--no-verify', '--message', slice.intent],
-          entorno: entorno);
+      // **Ningún gancho del usuario corre, y hace falta más que `--no-verify`.**
+      //
+      // `--no-verify` frena `pre-commit` y `commit-msg`, y nada más. Un review
+      // lo midió: con `prepare-commit-msg` el gancho reescribía el archivo en
+      // el árbol de trabajo y `apply` devolvía éxito dejando el repositorio con
+      // la clave. El objeto commiteado seguía siendo el inspeccionado —el
+      // índice aislado aguantó— pero el costo que `D-096` declaraba era falso.
+      // `post-commit` también corría.
+      //
+      // Un `core.hooksPath` a un directorio vacío los frena a todos, y es UN
+      // mecanismo en vez de dos: `--no-verify` al lado de esto sería una línea
+      // que no puede fallar.
+      await _exigir([
+        '-c',
+        'core.hooksPath=$sinGanchos',
+        'commit',
+        '--message',
+        slice.intent,
+      ], entorno: entorno);
       return _exigir(['rev-parse', 'HEAD']);
     });
 
     // **Sincronizar el índice real con el nuevo `HEAD`, solo en estas rutas.**
     // Está medido que es exactamente lo que deja `git commit -- <ruta>`. Sin
     // esto, `git status` reporta las rutas recién commiteadas como borradas.
-    await _git(['reset', '--quiet', '--', ...rutas]);
+    // **Y su fallo no se ignora.** Estaba con la llamada que NO lanza, así que
+    // un `reset` que fallara dejaba el commit hecho, el índice desincronizado y
+    // a `apply` devolviendo una revisión como si todo hubiera salido bien. Lo
+    // encontró un review, y contradecía la regla que este mismo archivo se
+    // impone unas líneas más arriba.
+    //
+    // La revisión ya existe y no se deshace: son dos efectos distintos y el
+    // primero salió bien. Lo que no se puede es afirmar éxito total, así que el
+    // estado parcial se nombra entero, con la revisión adentro.
+    final sincronizado = await _git(['reset', '--quiet', '--', ...rutas]);
+    if (sincronizado.exitCode != 0) {
+      throw PromesaIncumplida(
+          'dejar el índice al día con el commit $revision',
+          'la revisión $revision creada y el índice sin sincronizar en '
+              '${rutas.join(", ")}: '
+              '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}');
+    }
     return revision;
   }
 

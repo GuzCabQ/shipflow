@@ -58,6 +58,12 @@ void main() {
       (Process.runSync(cmd, args, workingDirectory: raiz.path).stdout as String)
           .trim();
 
+  /// Sin recortar. Un nombre de archivo puede empezar con un espacio, y el
+  /// helper de arriba se lo comía — el mismo error que se está corrigiendo,
+  /// cometido en el instrumento que iba a comprobarlo.
+  String correrCrudo(String cmd, List<String> args) =>
+      Process.runSync(cmd, args, workingDirectory: raiz.path).stdout as String;
+
   void git(List<String> args) =>
       Process.runSync('git', args, workingDirectory: raiz.path);
 
@@ -662,6 +668,56 @@ exec git "$@"
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
+    test('NINGÚN gancho del usuario corre, ni los que `--no-verify` deja pasar',
+        () async {
+      // `--no-verify` frena `pre-commit` y `commit-msg`, y nada más. Un review
+      // lo midió: `prepare-commit-msg` reescribía el archivo en el ÁRBOL y
+      // `apply` devolvía éxito dejando el repositorio con la clave. El objeto
+      // commiteado seguía siendo el inspeccionado —el índice aislado aguantó—
+      // pero el costo declarado era falso.
+      final hooks = Directory('${raiz.path}/.git/hooks')
+        ..createSync(recursive: true);
+      for (final gancho in ['pre-commit', 'prepare-commit-msg', 'commit-msg']) {
+        File('${hooks.path}/$gancho').writeAsStringSync('#!/bin/sh\n'
+            'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
+            'git add -- ajustes.conf\n'
+            'exit 0\n');
+        Process.runSync('chmod', ['700', '${hooks.path}/$gancho']);
+      }
+      File('${hooks.path}/post-commit').writeAsStringSync(
+          '#!/bin/sh\n: > .git/corrio-post-commit\nexit 0\n');
+      Process.runSync('chmod', ['700', '${hooks.path}/post-commit']);
+
+      escribir('ajustes.conf', 'inocente\n');
+      await repo.apply(rebanada(['ajustes.conf']));
+
+      expect(correr('git', ['show', 'HEAD:ajustes.conf']), 'inocente',
+          reason: 'se commitea el objeto que se escaneó, no otro');
+      expect(File('${raiz.path}/ajustes.conf').readAsStringSync(), 'inocente\n',
+          reason: 'y el árbol tampoco queda con la clave');
+      expect(File('${raiz.path}/.git/corrio-post-commit').existsSync(), isFalse,
+          reason: 'post-commit tampoco: el costo declarado dice NINGUNO');
+    });
+
+    test('ni un gancho dejado en NUESTRO directorio de ganchos', () async {
+      // `core.hooksPath` apunta a un directorio nuestro que se recrea vacío en
+      // cada corrida. Si no se recreara, algo dejado ahí correría igual — y
+      // «ningún gancho del usuario corre» dejaría de ser cierto por la puerta
+      // que abrimos nosotros.
+      final nuestro = Directory('${raiz.path}/.git/index.shipflow.sin-ganchos')
+        ..createSync(recursive: true);
+      File('${nuestro.path}/pre-commit').writeAsStringSync('#!/bin/sh\n'
+          'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
+          'git add -- ajustes.conf\n'
+          'exit 0\n');
+      Process.runSync('chmod', ['700', '${nuestro.path}/pre-commit']);
+
+      escribir('ajustes.conf', 'inocente\n');
+      await repo.apply(rebanada(['ajustes.conf']));
+      expect(
+          File('${raiz.path}/ajustes.conf').readAsStringSync(), 'inocente\n');
+    });
+
     test('un gancho `pre-commit` que cambia el contenido DESPUÉS', () async {
       // El peor de los tres: no es concurrencia futura, es la propia operación
       // invocando al gancho adentro suyo. El escaneo veía «inocente» y el
@@ -678,6 +734,44 @@ exec git "$@"
       await repo.apply(rebanada(['ajustes.conf']));
       expect(correr('git', ['show', 'HEAD:ajustes.conf']), 'inocente',
           reason: 'se commitea el objeto que se escaneó, no otro');
+    });
+  });
+
+  group('cuando el commit sale bien y lo de después no', () {
+    setUp(() async => repo.useBranch('shipflow/x'));
+
+    test('si el índice real no se puede sincronizar, NO es un éxito', () async {
+      // Son dos efectos distintos: la revisión existe y el índice quedó
+      // desincronizado. El `reset` usaba la llamada que NO lanza, así que
+      // `apply` devolvía la revisión como si todo hubiera salido bien.
+      final falso = envoltorio('git-reset-roto', r'''#!/bin/sh
+if [ "$2" = "reset" ]; then exit 91; fi
+exec git "$@"
+''');
+      escribir('a.txt', 'cambio\n');
+      final torcido = RepositorioGit(
+          directorio: raiz.path, politica: politica, programa: falso);
+      await expectLater(
+          torcido.apply(rebanada(['a.txt'])),
+          throwsA(isA<PromesaIncumplida>()
+              .having((e) => e.quedo, 'nombra la revisión', contains('creada'))
+              .having((e) => e.quedo, 'y qué quedó sin hacer',
+                  contains('sin sincronizar'))));
+      expect(correr('git', ['log', '-1', '--format=%s']), 'porque sí',
+          reason: 'el commit se hizo, y no se deshace: eso salió bien');
+    });
+
+    test('un archivo cuyo nombre empieza con espacio no se corrompe', () async {
+      // Las salidas separadas por NUL son bytes. `_exigir` las recortaba, y
+      // « a.txt» se convertía en «a.txt»: el mismo archivo escrito de dos
+      // maneras por culpa nuestra, y una PromesaIncumplida absurda.
+      escribir(' a.txt', 'con espacio adelante\n');
+      await repo.apply(rebanada([' a.txt']));
+      expect(
+          correrCrudo('git', ['show', '--name-only', '--format=', '-z', 'HEAD'])
+              .split('\u0000')
+              .where((s) => s.isNotEmpty),
+          [' a.txt']);
     });
   });
 
