@@ -41,6 +41,8 @@ OBLIGATORIAS = {
                                 "cadenas", "solo_en"),
     "sin-api-de-modelo": ("enunciado", "origen", "tipo", "alternativa", "alcance",
                           "cadenas"),
+    "nucleo-sin-entrada-salida": ("enunciado", "origen", "tipo", "alternativa",
+                                  "alcance", "cadenas", "solo_en"),
 }
 
 # El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
@@ -50,6 +52,7 @@ TIPOS = {
     "agente-en-agents": "cadenas_acotadas",
     "lenguaje-en-plugin-dart": "cadenas_acotadas",
     "sin-api-de-modelo": "cadenas_acotadas",
+    "nucleo-sin-entrada-salida": "cadenas_acotadas",
 }
 
 # Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
@@ -61,6 +64,8 @@ VALORES_FIJOS = {
     "agente-en-agents": {"solo_en": ["agents", "cli"]},          # ADR-009
     "lenguaje-en-plugin-dart": {"solo_en": ["plugin_dart", "cli"]},  # docs/03 §2
     "sin-api-de-modelo": {"solo_en": []},                        # ADR-009: ninguno
+    # docs/03 §2: lo que core necesita del mundo lo pide por un puerto.
+    "nucleo-sin-entrada-salida": {"solo_en": []},
     "nucleo-sin-externas": {"paquetes": ["core"], "origenes_permitidos": ["root"]},
     # El mapa de flechas ES la arquitectura de docs/03 §1.
     "deps-hacia-core": {"permitidas": {
@@ -74,6 +79,9 @@ VALORES_FIJOS = {
 VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
                          for rid in ("agente-en-agents", "lenguaje-en-plugin-dart",
                                      "sin-api-de-modelo")}
+# Esta mira SOLO core, y solo su fuente: una importacion vive en un `.dart`.
+VALORES_FIJOS_ALCANCE["nucleo-sin-entrada-salida"] = {
+    "raiz": "packages/core/lib", "extensiones": [".dart"]}
 
 # `no_cuenta` exime un TOKEN dentro de un contexto, y es el campo más peligroso
 # del registro: una entrada de más neutraliza la regla sin vaciar nada. Por eso
@@ -93,6 +101,20 @@ VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
 #
 # Es F33 aplicado al ejecutor: registrado en ningún lado y ejecutado igual, o
 # —peor— dejado de ejecutar sin que nadie se entere.
+# Numerales escritos con letra, de diez para arriba. Van acá porque el README
+# afirmó «cuatro de los veintitrés» y ningún check lo vio: derivaba una FRASE,
+# no una cantidad, y una frase nueva escapa. De diez para arriba alcanza — toda
+# afirmación sobre el inventario de puertos nombra el total, que es mayor que
+# diez; «5 de los 24» y «cuatro de los veintitrés» las dos traen su número
+# grande, y en cambio «dos puertos y no uno», que habla de un corte y no de un
+# inventario, no trae ninguno.
+PALABRAS_NUMERO = (
+    "diez once doce trece catorce quince dieciseis dieciséis diecisiete "
+    "dieciocho diecinueve veinte veintiuno veintiun veintiún veintidos "
+    "veintidós veintitres veintitrés veinticuatro veinticinco veintiseis "
+    "veintiséis veintisiete veintiocho veintinueve treinta cuarenta cincuenta"
+).split()
+
 PASOS_OBLIGATORIOS = {
     # etiqueta: (comando EXACTO, working-directory esperado)
     "el parser de yaml": ('python3 -m pip install --quiet "pyyaml==6.0.3"', None),
@@ -104,6 +126,7 @@ PASOS_OBLIGATORIOS = {
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "las pruebas de core": ("dart test packages/core", None),
     "las pruebas de la orquestación": ("dart test packages/orchestration", None),
+    "las pruebas de vcs": ("dart test packages/vcs", None),
     "las suites de contrato": ("dart test packages/cli", None),
     "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
@@ -142,6 +165,7 @@ CIEGO_FIJO = {
     "agente-en-agents": "alcance_inexistente",
     "lenguaje-en-plugin-dart": "alcance_inexistente",
     "sin-api-de-modelo": "alcance_inexistente",
+    "nucleo-sin-entrada-salida": "alcance_inexistente",
     "serializacion-sin-perdida": "archivo_ilegible",
     "opacidad-declarada": "archivo_ilegible",
     "puertos-sin-implementacion": "archivo_ilegible",
@@ -153,7 +177,7 @@ NO_CUENTA_FIJO = {
     "lenguaje-en-plugin-dart": [
         (r"^\s*(?:import|export|part)\b", r"""\.dart(?=['"])"""),
         (r"^\s*(?:import|export|part)\b",
-         r"""(?<=['"])dart(?=:(?:async|collection|convert|core|math|typed_data)\b)"""),
+         r"""(?<=['"])dart(?=:(?:async|collection|convert|core|math|typed_data|io)\b)"""),
     ],
 }
 
@@ -419,11 +443,54 @@ def _check_readme() -> None:
         fallos.append("conté cero puertos en puertos.dart. Cero se lee igual "
                       "que «no miré».")
         return
-    for m in re.finditer(r"(\d+) de los (\d+) puertos siguen sin implementación",
-                         texto):
-        if (int(m.group(1)), int(m.group(2))) != (n_pendientes, n_total):
-            fallos.append(f"README.md dice «{m.group(0)}»; el registro declara "
-                          f"{n_pendientes} pendientes sobre {n_total} puertos.")
+    # Dos frases, no una: cuántos faltan y cuántos ya están. La segunda existía
+    # en el README sin que nada la derivara, escrita con letra y con el total
+    # viejo.
+    derivadas = [
+        (r"(\d+)\s+de\s+los\s+(\d+)\s+puertos\s+siguen\s+sin\s+implementación",
+         (n_pendientes, n_total)),
+        (r"(\d+)\s+de\s+los\s+(\d+)\s+puertos\s+ya\s+tienen\s+implementación\s+viva",
+         (n_total - n_pendientes, n_total)),
+    ]
+    cubierto = set()
+    for patron, esperado in derivadas:
+        encontrada = False
+        for m in re.finditer(patron, texto):
+            encontrada = True
+            cubierto.update(range(m.start(), m.end()))
+            if (int(m.group(1)), int(m.group(2))) != esperado:
+                fallos.append(f"README.md dice «{m.group(0)}»; el registro "
+                              f"declara {esperado[0]} sobre {esperado[1]}.")
+        if not encontrada:
+            fallos.append(f"README.md ya no afirma «{patron}». La derivación "
+                          f"quedó apuntando a una frase que no está: no "
+                          f"comprueba nada y se lee como que sí.")
+
+    # **Y cualquier OTRA forma de decir la misma cifra.** Este check ya falló
+    # dos veces por lo mismo, y la tercera la encontró un review: derivaba la
+    # frase que tenía delante, así que el README podía afirmar el inventario
+    # con otras palabras y envejecer sin ruido. Tenía tres afirmaciones y la
+    # derivación cubría una.
+    #
+    # No se deriva la frase: se prohíbe la cifra suelta. Toda oración que hable
+    # de puertos y traiga un numeral de diez para arriba tiene que ser una de
+    # las derivadas. Escribir la cantidad de otra manera es rojo hasta que esa
+    # manera se derive también.
+    numeral = (r"(?<![\w./-])(\d{2,}|" + "|".join(PALABRAS_NUMERO) +
+               r")(?![\w.-])")
+    inicio = 0
+    for corte in re.finditer(r"(?<=[.!?])\s+|\n\s*\n|\n(?=[|#])", texto):
+        oracion, fin = texto[inicio:corte.start()], corte.start()
+        if re.search(r"\bpuertos?\b", oracion, re.I):
+            for m in re.finditer(numeral, oracion, re.I):
+                if inicio + m.start() in cubierto:
+                    continue
+                fallos.append(
+                    f"README.md: «{m.group(0)}» en una oración sobre puertos, y "
+                    f"nada la deriva. Una cantidad en prosa que nadie deriva "
+                    f"envejece sola, y esta ya envejeció tres veces. Escribila "
+                    f"en la forma derivada, o sacá el número: «{oracion.strip()[:90]}»")
+        inicio = corte.end()
     # NO se deriva cuántos fakes hay. Se intentó, restando pendientes del
     # total, y estaba mal: eso da los puertos con implementación VIVA, que no
     # es lo mismo — `Verifier` tiene dos reales y ningún fake. Un control que

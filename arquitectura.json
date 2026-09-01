@@ -196,9 +196,9 @@
           {
             "que": "El esquema `dart:` de una biblioteca del SDK, dentro de una directiva, y SOLO para las bibliotecas de la lista blanca del propio regex.",
             "donde": "^\\s*(?:import|export|part)\\b",
-            "token": "(?<=['\"])dart(?=:(?:async|collection|convert|core|math|typed_data)\\b)",
+            "token": "(?<=['\"])dart(?=:(?:async|collection|convert|core|math|typed_data|io)\\b)",
             "por_que": "Son la biblioteca estandar del lenguaje en que esta escrito ESTE repositorio, no conocimiento del stack que el arnes analiza. Prohibirlas obligaria a reimplementar la codificacion JSON para poder probar ADR-002.",
-            "quien_lo_cubre": "La lista blanca es el control: `dart:io`, `dart:ffi`, `dart:mirrors` y cualquier otra NO estan exentas y siguen disparando. core haciendo entrada/salida directa es justo lo que la regla tiene que ver — para eso esta el puerto Workspace.",
+            "quien_lo_cubre": "La lista blanca es el control: `dart:ffi`, `dart:mirrors`, `dart:isolate` y cualquier otra NO estan exentas y siguen disparando. `dart:io` SI esta exenta, y esa exencion tiene su propio dueno: la regla `nucleo-sin-entrada-salida`. Estaba cubierto de rebote por esta regla —`dart:io` contiene la cadena `dart`— y esa conflacion se hizo visible cuando `vcs` necesito correr `git`: no se podia habilitar sin perder la otra proteccion. Dos invariantes distintos, dos controles.",
             "residuo_declarado": "Una de las bibliotecas de la lista usada para algo que si es conocimiento del stack. No hay check para eso: es revision."
           }
         ],
@@ -331,7 +331,7 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado: hoy no hay etapa que lo consuma —no existe `ship`— asi que no hay nada que probar contra un fake, y una suite de contrato con una sola implementacion no contrasta nada: corre la misma logica dos veces. El fake llega con `ship`, que es la primera etapa que lo va a usar. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -341,7 +341,7 @@
         "AgentRunner": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "HookInstaller": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextProjector": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "ChangeSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "PullRequestSink": "fase 2, rebanada de la forja · el adapter del proveedor vive en su propio paquete, no en vcs",
         "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "CredentialStore": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -413,7 +413,7 @@
           "por_que": "Es una excepcion, no dato del dominio. Nunca cruza un limite de proceso: se lanza y se atrapa en el mismo. Sin esta declaracion, «no tiene toJson» seria indistinguible de un olvido."
         },
         "UnreadableToolOutput": {
-         "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
+          "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
         }
       },
       "violacion_canonica": {
@@ -488,6 +488,49 @@
         "como": "archivo_ilegible",
         "por_que_ciega": "Un nodo que no se puede leer hace el grafo más chico, y `regenerado == commiteado` sigue coincidiendo porque LOS DOS LADOS quedan igual de ciegos: el check deja de comparar contra la realidad y compara contra sí mismo.",
         "debe_mencionar": "no pude leer"
+      }
+    },
+    "nucleo-sin-entrada-salida": {
+      "enunciado": "core no importa bibliotecas de entrada/salida. Lo que necesita del mundo lo pide por un puerto.",
+      "origen": "docs/03 §2 y el puerto Workspace. Separada de `lenguaje-en-plugin-dart`, que la cumplia de rebote.",
+      "tipo": "cadenas_acotadas",
+      "alternativa": "Declara un puerto y que alguien de afuera lo satisfaga. Para el arbol de trabajo ya existe `Workspace`; para procesos, el paquete que los corre.",
+      "cadenas": [
+        "dart:io",
+        "dart:ffi",
+        "dart:isolate",
+        "dart:mirrors"
+      ],
+      "solo_en": [],
+      "por_que": [
+        "`nucleo-sin-externas` mira las dependencias que resuelve pub, y una",
+        "biblioteca del SDK no es una dependencia: core podia abrir archivos sin",
+        "declarar nada. Lo unico que lo impedia era que `dart:io` contiene la",
+        "cadena `dart` y tropezaba la regla del stack — proteccion real, pero de",
+        "rebote y por el motivo equivocado.",
+        "",
+        "Se hizo visible cuando `vcs` necesito correr `git`: `dart:io` fuera de",
+        "core es legitimo, y no habia forma de permitirlo sin perder esto."
+      ],
+      "alcance": {
+        "raiz": "packages/core/lib",
+        "extensiones": [
+          ".dart"
+        ],
+        "_": "Solo core. Afuera, entrada y salida es el trabajo de alguien.",
+        "residuo_declarado": "Mira IMPORTACIONES por su nombre. Una biblioteca del SDK que haga entrada y salida sin llamarse asi pasaria; hoy no hay ninguna. Y no cubre que un puerto este bien usado: eso es revision."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_io.dart",
+        "contenido": "import 'dart:io';\n\nclass CanarioIo {\n  final String ruta;\n  const CanarioIo(this.ruta);\n  bool existe() => File(ruta).existsSync();\n}\n",
+        "debe_mencionar": "dart:io"
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
+        "que": "`alcance.raiz` apunta a un directorio que no existe.",
+        "como": "alcance_inexistente",
+        "por_que_ciega": "Mismo canal que las demas reglas de cadenas: recorrido de archivos bajo una raiz. Sin archivos que recorrer devuelve cero coincidencias, que se lee igual que «no hay entrada ni salida».",
+        "debe_mencionar": "sin mirar"
       }
     },
     "colecciones-inmutables": {
