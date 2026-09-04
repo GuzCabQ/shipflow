@@ -965,7 +965,61 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 100 sabotajes.**
+y su caso ciego. **El arnés aplica 102 sabotajes.**
+
+---
+
+## Lo que este arnés todavía no sabe de sí mismo
+
+Tres propiedades del código construido que **nadie había enunciado**. Las
+encontró un contraste con documentación externa sobre grafos de agentes, y
+ninguna es un falso verde: son cosas ciertas que no estaban escritas.
+
+### El presupuesto es por paso, y se multiplica
+
+`cascadaPorDefecto` recibe un `Duration` con un default de **5 minutos**, y le
+pasa **el mismo** a cada paso. Con los 2 pasos de hoy, una corrida puede tardar
+10 minutos; con los 7 que `docs/03` declara, 35.
+
+**No hay tope de corrida**, y ese timeout por invocación es hoy el único
+mecanismo que detiene algo — es decir, el disyuntor físico haciendo de política.
+Construir el tope de corrida sería el presupuesto de cascada, que `D-101`
+congeló por no tener base en el corpus. Lo que sí corresponde es que la cifra
+esté escrita y **derivada**: `capas.py` la saca de `verify.dart`, porque una
+cantidad en prosa que nadie deriva ya envejeció cuatro veces en este README.
+
+`--budget` está declarada en la superficie del CLI y no existe, así que hoy el
+valor solo se puede cambiar desde Dart.
+
+### `PullRequestSlice.id` no tiene lectores
+
+Viaja en el dominio, se serializa, y ningún consumidor lo usa. **Se queda sin
+uso a propósito.** Es la llave natural para saber si una rebanada ya se aplicó,
+pero usarla exige marcar el commit con su identidad —metadata nuestra en el
+historial del usuario, para siempre— y eso es una decisión de diseño que
+pertenece a la política de reanudación, que el corpus declara faltante
+(`D-032`). Inventarle un consumidor ahora para que no parezca muerto sería peor
+que dejarlo declarado.
+
+### La reanudación le impone a `apply` una condición que nadie enunció
+
+`useBranch` es idempotente **a propósito**, y su comentario dice por qué:
+*«la orquestación la pide al empezar y `--resume` la vuelve a pedir»*. A `apply`
+nunca se le hizo la misma pregunta, y es la operación con el efecto
+irreversible.
+
+Medido: aplicar dos veces la misma rebanada **no** produce un segundo commit.
+Lo impide la cláusula «ni uno menos» — que entró por un review, por una razón
+distinta, y que nadie diseñó para esto. Una mutación lo confirma: sin ella, el
+segundo `apply` commitea.
+
+**Esa protección era accidental y ahora tiene su propio test.** Una guardia que
+protege algo que su autor no sabía que protegía se puede quitar en la próxima
+refactorización sin que nada lo note, porque su prueba habla de otro escenario.
+
+Lo que sí quedaba mal era el diagnóstico: decía que la rebanada estaba mal
+armada, cuando en una reanudación no hay nada que arreglar. Ahora nombra **las
+dos lecturas**, que es lo único que desde ahí se puede afirmar con verdad.
 
 ---
 

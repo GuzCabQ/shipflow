@@ -528,6 +528,33 @@ def casos() -> list[dict]:
         "menciona": "ya no afirma",
     })
 
+    # La cuarta cifra que el README afirma sobre sí mismo. Las tres anteriores
+    # envejecieron solas; esta se deriva de `verify.dart`, y su sabotaje ataca
+    # los DOS lados: que mienta la prosa, y que cambie la fuente sin que la
+    # prosa se entere. Un solo caso probaría medio control.
+    m_min = re.search(r"un default de \*\*(\d+) minutos\*\*", readme)
+    assert m_min, "no encontré el presupuesto por paso en el README"
+    c.append({
+        "nombre": "readme · el presupuesto por paso, dicho de más",
+        "archivos": {"README.md": readme.replace(
+            m_min.group(0),
+            m_min.group(0).replace(m_min.group(1),
+                                   str(int(m_min.group(1)) + 4)), 1)},
+        "menciona": "el presupuesto por paso da",
+    })
+    verify_rel = "packages/cli/lib/src/verify.dart"
+    verify = (RAIZ / verify_rel).read_text(encoding="utf-8")
+    m_src = re.search(r"const Duration\(minutes: (\d+)\)", verify)
+    assert m_src, "no encontré el presupuesto en verify.dart"
+    c.append({
+        "nombre": "cascada · el presupuesto cambia y la prosa no se entera",
+        "archivos": {verify_rel: verify.replace(
+            m_src.group(0),
+            m_src.group(0).replace(m_src.group(1),
+                                   str(int(m_src.group(1)) + 4)), 1)},
+        "menciona": "el presupuesto por paso da",
+    })
+
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     c.append({

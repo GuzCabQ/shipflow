@@ -421,12 +421,27 @@ class RepositorioGit implements ChangeSink {
             'un índice que además tocaría ${demas.join(", ")}');
       }
       if (faltan.isNotEmpty) {
+        // **Dos lecturas, y desde acá son indistinguibles.**
+        //
+        // «No hay nada que commitear» puede querer decir que el plan declaró
+        // algo que no tocó, o que **esta rebanada ya se aplicó** —lo segundo es
+        // lo que vería una reanudación tras morir entre el commit y el PR—. El
+        // mensaje nombraba solo la primera, y en una reanudación mandaba a
+        // arreglar una rebanada que no tiene nada malo.
+        //
+        // Distinguirlas de verdad exige marcar el commit con la identidad de
+        // la rebanada, y eso es escribir metadata nuestra en el historial del
+        // usuario para siempre: es una decisión de diseño, no un arreglo, y
+        // pertenece a la política de reanudación que el corpus declara
+        // faltante (`D-032`). Hasta entonces se dicen las dos.
         throw RebanadaNoAplicable(
             'la rebanada declara ${faltan.join(", ")} y no hay nada que '
                 'commitear ahí.',
-            'La cláusula dice EXACTAMENTE, y eso vale en los dos sentidos: un '
-                'archivo declarado que no cambió es un plan que no pasó. '
-                'Sacalo de la rebanada, o revisá por qué no se escribió.');
+            'Puede ser que el plan haya declarado algo que no tocó —la '
+                'cláusula dice EXACTAMENTE, y eso vale en los dos sentidos— o '
+                'que esta rebanada YA se haya aplicado, que es lo que se ve al '
+                'reintentarla. Mirá `git log` antes de tocar la rebanada: si '
+                'el cambio ya está commiteado, no hay nada que arreglar.');
       }
 
       await _exigirSinSecretos(rutas, entorno);

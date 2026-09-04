@@ -429,6 +429,48 @@ def _check_readme() -> None:
     # silencio: la regla `puertos-sin-implementacion` compara la lista contra
     # el ÁRBOL SINTÁCTICO en los dos sentidos, así que un puerto declarado de
     # otra forma la pone roja antes de llegar a esta cuenta.
+    # **El presupuesto por paso, y lo que se multiplica.** Es la cuarta cifra
+    # que este README afirma sobre sí mismo, y las tres anteriores envejecieron
+    # solas. Sale de `verify.dart`, que es donde de verdad está, y de cuántos
+    # pasos compone la cascada: el producto es lo que una corrida puede tardar
+    # en el peor caso, y afirmarlo a mano sería volver a apostar a la memoria.
+    fuente_verify = RAIZ / "packages" / "cli" / "lib" / "src" / "verify.dart"
+    if not fuente_verify.exists():
+        fallos.append("no encontré packages/cli/lib/src/verify.dart, así que no "
+                      "puedo derivar el presupuesto por paso. No mirar no es lo "
+                      "mismo que no encontrar nada.")
+        return
+    texto_verify = fuente_verify.read_text(encoding="utf-8")
+    m_pres = re.search(r"Duration presupuesto = const Duration\(minutes: (\d+)\)",
+                       texto_verify)
+    if not m_pres:
+        fallos.append("no encontré el presupuesto por defecto en verify.dart. "
+                      "Si cambió de forma, esta derivación dejó de mirar algo y "
+                      "hay que arreglarla, no borrarla.")
+        return
+    minutos = int(m_pres.group(1))
+    # Los pasos de la cascada por defecto: las entradas de la lista literal.
+    cuerpo = texto_verify[texto_verify.index("Cascada(["):]
+    n_pasos = len(re.findall(r"^      Paso[A-Za-z]+\(", cuerpo, re.M))
+    if n_pasos == 0:
+        fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
+                      "igual que «no miré».")
+        return
+
+    for patron, esperado, que in [
+        (r"un default de \*\*(\d+) minutos\*\*", minutos, "el presupuesto por paso"),
+        (r"Con los (\d+) pasos de hoy", n_pasos, "los pasos de la cascada"),
+        (r"una corrida puede tardar\s+(\d+) minutos", minutos * n_pasos,
+         "el peor caso de una corrida"),
+    ]:
+        m = re.search(patron, texto)
+        if not m:
+            fallos.append(f"README.md ya no afirma {que} en la forma que esta "
+                          f"derivación reconoce. Un patrón que no encuentra nada "
+                          f"no comprueba nada, y se lee igual que uno que sí.")
+        elif int(m.group(1)) != esperado:
+            fallos.append(f"README.md dice «{m.group(0)}»; {que} da {esperado}.")
+
     pendientes = REGLAS["puertos-sin-implementacion"]["sin_implementacion"]
     n_pendientes = len([k for k in pendientes if k != "_"])
     fuente_puertos = RAIZ / "packages" / "core" / "lib" / "src" / "puertos.dart"

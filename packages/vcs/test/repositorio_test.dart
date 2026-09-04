@@ -604,6 +604,35 @@ exec git "$@"
     });
   });
 
+  group('aplicar dos veces la misma rebanada', () {
+    setUp(() async => repo.useBranch('shipflow/x'));
+
+    test('NO hace un segundo commit, y lo dice sin culpar a la rebanada',
+        () async {
+      // Es lo que vería una reanudación tras morir entre el commit y el PR.
+      //
+      // **La protección existía y era accidental.** La cierra la cláusula «ni
+      // uno menos», que entró por un review y por otra razón: un plan que
+      // declara un archivo y no lo toca. Nadie la diseñó para esto, y una
+      // guardia que protege algo que su autor no sabía que protegía se puede
+      // quitar en la próxima refactorización sin que nada lo note — porque su
+      // test habla de otro escenario. Este test es el que faltaba.
+      escribir('a.txt', 'cambio\n');
+      final rebanadaFija = rebanada(['a.txt']);
+      final primera = await repo.apply(rebanadaFija);
+      final commitsAntes = correr('git', ['rev-list', '--count', 'HEAD']);
+
+      await expectLater(
+          repo.apply(rebanadaFija),
+          throwsA(isA<RebanadaNoAplicable>().having((e) => e.queHacer,
+              'nombra la reanudación', contains('YA se haya aplicado'))));
+
+      expect(correr('git', ['rev-list', '--count', 'HEAD']), commitsAntes,
+          reason: 'ningún segundo commit');
+      expect(correr('git', ['rev-parse', 'HEAD']), primera);
+    });
+  });
+
   group('las tres formas de colar un secreto que encontró un review', () {
     setUp(() async => repo.useBranch('shipflow/x'));
 
