@@ -54,12 +54,23 @@ void main() {
     expect(o.witness!.subjects, isEmpty);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  test('el analizador sí delata el alcance inexistente, con su código',
+  test('un alcance inexistente lo delata el ARNÉS, no la herramienta',
       () async {
+    // Antes esto se apoyaba en que el analizador saliera con código 64: la
+    // ruta inexistente le llegaba a la herramienta y ella se quejaba. Ahora el
+    // arnés la descarta antes de invocar —un sujeto descartado no puede llegar
+    // a la toolchain— y lo delata por su propia cuenta.
+    //
+    // Es más fuerte, no menos: el caso ciego deja de depender de que una
+    // herramienta ajena se moleste en avisar. Lo que se comprueba es la
+    // propiedad, no el mecanismo.
     final o = await analisis().run(['no/existe/']);
     expect(o.verdict, Verdict.noConcluyente);
-    expect(o.witness!.exitCode, 64,
-        reason: 'es el único caso ciego que esta herramienta delata sola');
+    expect(o.witness!.ownSubjects, isNull,
+        reason: 'no se pudo establecer cuántos había: no es cero');
+    expect(o.witness!.omitted.join(' '), contains('no existe'));
+    expect(o.witness!.invocation, isEmpty,
+        reason: 'no había nada utilizable que pasarle a la herramienta');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('código limpio y formateado da verde en los dos pasos', () async {

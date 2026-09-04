@@ -1088,7 +1088,39 @@ Ahora hay una foto y **viaja**: `cobertura` recibe el `Alcance` ya separado y no
 tiene con qué volver a mirar. La propiedad la sostiene la firma, no un
 comentario — y la mutación que reintroduce el segundo `separar` muere.
 
-Once mutaciones sobre el clasificador y la separación del alcance, ninguna
+### Y todavía había cuatro combinaciones más
+
+Un segundo review sobre la misma rebanada encontró que la corrección abría el
+falso verde por otras puertas. Las cuatro reproducidas:
+
+| | Qué pasaba |
+|---|---|
+| `verify README.md` | el sujeto descartado **llegaba igual a la herramienta**: `separar` lo clasificaba y la invocación se armaba con los pedidos enteros. Cinco diagnósticos sobre un markdown |
+| alcance con una parte inobservable | el plugin calculaba bien el «no sé» y **la cascada nunca lo consumía**: con otro paso en verde, la corrida salía verde sobre un alcance parcialmente no observado |
+| un testigo que cubrió algo **y** dice cero propios | dos afirmaciones incompatibles, clasificado como salto igual |
+| la prosa de `PasoSaltado` | afirmaba que la herramienta corrió, y el clasificador no lo comprobaba |
+
+La primera es la más vieja y la que más pega: afecta a cualquier cambio normal
+que mezcle código y documentación. Ahora la herramienta recibe **solo los
+sujetos utilizables**, y lo descartado sigue en `omitted` con su motivo — sale
+de «cubierto», que es donde importa, no del reporte.
+
+La segunda es la política que `docs/03` §6 dejaba explícitamente acá: *«si una
+omisión debe detener algo es política de `orchestration`»*. Está tomada: un
+alcance que no se pudo observar entero **no da verde**.
+
+Y la cuarta se resolvió al revés de lo esperable — **no** agregando la
+comprobación, sino corrigiendo la prosa: cuando no queda ningún sujeto
+utilizable no hay nada que invocar, y llamar a la herramienta sin rutas la haría
+mirar el directorio entero. Un salto no afirma que algo corrió: afirma que **la
+ausencia de trabajo quedó establecida**.
+
+Un caso ciego cambió de mecanismo: la ruta inexistente la delataba el código 64
+del analizador, y ahora la delata el arnés antes de invocar. **Es más fuerte, no
+menos** — deja de depender de que una herramienta ajena se moleste en avisar — y
+el test comprueba la propiedad en vez del mecanismo.
+
+Quince mutaciones sobre el clasificador y la separación del alcance, ninguna
 sobrevive.
 
 ### Lo que NO instala, y por qué
@@ -1160,13 +1192,17 @@ dos lecturas**, que es lo único que desde ahí se puede afirmar con verdad.
 ## Lo que `apply` pregunta antes de commitear
 
 El pseudocódigo del corpus le da a `ChangeSink` seis líneas antes del PR. La
-rebanada anterior entregó una: `commit + push`. Esta entrega dos más.
+rebanada anterior entregó una: el **commit local**. Esta entrega dos más.
+
+El `push` no es de acá: `D-097` lo asignó a la forja, que ya necesita
+credencial. `ChangeSink` funciona sin red, y eso es lo que hace observable el
+estado que ADR-014 exige tras una detención.
 
 ```
 SNK → PLG:  ArtifactPolicy → qué se commitea          ← esta
 SNK → PLG:  ProjectTopology → límites de paquete         declarada, no hecha
 SNK:        escanea secretos                          ← esta
-SNK:        commit + push                                ya estaba
+SNK:        commit LOCAL                                  ya estaba
 SNK:        arma el artefacto de DOS SUPERFICIES         falta
 SNK → HOST: PR en draft                                  falta
 ```
@@ -1262,7 +1298,9 @@ agujeros — lo comprobé midiendo, no leyéndolo.
 **La tercera cambió el diseño.** No era la concurrencia futura: era la propia
 operación invocando al gancho adentro suyo. `apply` arma ahora un **índice
 aparte** con `GIT_INDEX_FILE`, lo inspecciona y commitea **ese** índice con
-`--no-verify`. Deja de haber dos consultas cercanas en el tiempo sobre
+`core.hooksPath` a un directorio que no existe — `--no-verify` no alcanzaba,
+porque no frena `prepare-commit-msg` ni `post-commit`. Deja de haber dos
+consultas cercanas en el tiempo sobre
 representaciones distintas: hay un objeto.
 
 Y tuvo una consecuencia que no busqué: **el índice del usuario ya no se toca**,
@@ -1590,8 +1628,13 @@ Los checks de este repo cubren la arquitectura del código. Los que verifican el
 corpus de diseño viven en `../sdlc-agentico/` con su propio CI. Tener uno solo
 en verde **no significa que el arnés esté completo**. Lo único que hoy cruza los
 dos es `estados.py`, que compara el inventario del arnés contra las reglas
-instaladas acá — y **se degrada a «no disponible» si los repos dejan de estar
-uno al lado del otro**, lo cual está impreso pero no falla.
+instaladas acá. **Si los repos dejan de estar uno al lado del otro, falla**: no
+poder mirar no es «no disponible». La única evasión es `--sin-repo-de-codigo`,
+que hay que escribir a mano y que imprime que no miró.
+
+Este párrafo decía lo contrario —que se degradaba en silencio— y lo encontró un
+review. Es la peor clase de documentación vencida: describía un agujero que ya
+no existe, y quien la leyera creería el arnés más débil de lo que es.
 
 ---
 

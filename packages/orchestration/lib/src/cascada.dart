@@ -45,9 +45,15 @@ enum EstadoDeCorrida {
 ///
 /// **Confundirlo con «no pude mirar» es el falso rojo simétrico del falso verde
 /// que ADR-011 caza**, y estaba ocurriendo: un alcance sin archivos del stack
-/// daba «no concluyente: algún paso no pudo observar su alcance» cuando la
-/// herramienta había corrido, terminado completa con código 0, y no tenía nada
-/// suyo que mirar.
+/// daba «no concluyente: algún paso no pudo observar su alcance» cuando el paso
+/// había terminado completo y no tenía nada suyo que mirar.
+///
+/// **No afirma que la herramienta haya corrido**, y decirlo era falso: cuando
+/// no queda ningún sujeto utilizable no hay nada que invocar, y llamarla sin
+/// rutas la haría mirar el directorio entero. Un review encontró la
+/// contradicción entre esta prosa y lo que el clasificador comprueba. Lo que un
+/// salto sí afirma es que **la ausencia de trabajo quedó establecida**: cero
+/// elementos propios, nada cubierto, ningún diagnóstico, y un motivo escrito.
 ///
 /// **Lo clasifica la cascada, no el paso.** ADR-011 corolario 4: ningún
 /// verificador juzga su propia cobertura. El paso declara un hecho contable
@@ -162,6 +168,21 @@ class ResultadoDeCascada {
     // verde que la rama de arriba impide para la cascada vacía, por la otra
     // puerta: acá hay pasos registrados y ninguno tuvo nada que hacer.
     if (resultados.isEmpty) return EstadoDeCorrida.noConcluyente;
+
+    // **Un alcance que no se pudo observar entero no da verde.**
+    //
+    // `docs/03` §6 dejaba esta decisión explícitamente acá —*«si una omisión
+    // debe detener algo es política de `orchestration`»*— y hasta ahora
+    // `orchestration` no consumía el dato: un paso que cubría `lib/` y no
+    // podía mirar `no/existe` atestiguaba igual, y con otro paso en verde la
+    // corrida salía VERDE sobre un alcance parcialmente no observado. La
+    // seguridad dependía de que OTRO paso tropezara con el mismo obstáculo.
+    //
+    // `null` no es cero: es «no pude establecerlo». Un verde sobre eso es
+    // exactamente el verde que nadie miró.
+    if (resultados.any((r) => r.witness?.ownSubjects == null)) {
+      return EstadoDeCorrida.noConcluyente;
+    }
 
     if (resultados.any((r) => r.verdict == Verdict.noConcluyente)) {
       return EstadoDeCorrida.noConcluyente;
@@ -283,6 +304,11 @@ class Cascada {
         if (w != null &&
             r.diagnostics.isEmpty &&
             w.ownSubjects == 0 &&
+            // **Un paso que cubrió algo no se saltó.** Sin esto, un testigo
+            // que declarara sujetos cubiertos Y cero elementos propios —dos
+            // cosas incompatibles— se clasificaba igual, y lo cubierto
+            // desaparecía del reporte junto con el resultado.
+            w.subjects.isEmpty &&
             w.termination == Termination.completa &&
             w.omitted.any((m) => m.trim().isNotEmpty)) {
           saltados

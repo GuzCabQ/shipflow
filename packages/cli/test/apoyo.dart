@@ -7,12 +7,17 @@ import 'package:cli/cli.dart';
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 
-Witness testigo({List<String> sujetos = const ['lib/']}) => Witness(
+/// **Declara cuántos elementos eran suyos.** Omitirlo lo deja en `null`, que
+/// significa «no se pudo establecer» y por sí solo impide el verde: un doble
+/// que no lo declara estaría probando otra cosa.
+Witness testigo({List<String> sujetos = const ['lib/'], int propios = 2}) =>
+    Witness(
       invocation: 'herramienta --sobre lib/',
       subjects: sujetos,
       omitted: const ['algo que no se miró'],
       termination: Termination.completa,
       exitCode: 0,
+      ownSubjects: propios,
       finishedAt: DateTime.utc(2026),
     );
 

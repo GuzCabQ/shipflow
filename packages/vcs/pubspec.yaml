@@ -1,5 +1,5 @@
 name: vcs
-description: "Rama, commits, PR. Agnostico del lenguaje y del agente."
+description: "Rama y commits LOCALES. No conoce la forja ni empuja nada. Agnostico del lenguaje y del agente."
 publish_to: none
 version: 0.1.0
 

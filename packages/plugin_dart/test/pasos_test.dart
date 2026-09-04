@@ -61,6 +61,25 @@ void main() {
       PasoDeAnalisis(ejecutor: EjecutorDeclarado(r), directorio: raiz.path);
 
   group('lo que vale para cualquier paso', () {
+    test('lo descartado NO llega a la herramienta', () async {
+      // `separar` clasificaba bien y la invocación se armaba igual con TODOS
+      // los pedidos: `verify README.md` le daba el markdown a la herramienta
+      // del stack, que intentaba parsearlo y devolvía diagnósticos sobre un
+      // archivo que no es de su incumbencia. Afecta a cualquier cambio normal
+      // que mezcle código y documentación. Lo cobró un review.
+      File('${raiz.path}/lib/LEEME.md').writeAsStringSync('# prosa\n');
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+          directorio: raiz.path);
+      final r = await paso.run(['lib/a.dart', 'lib/LEEME.md']);
+
+      expect(r.witness!.invocation, contains('lib/a.dart'));
+      expect(r.witness!.invocation, isNot(contains('LEEME.md')),
+          reason: 'lo descartado no puede llegar a la toolchain');
+      expect(r.witness!.omitted.join(' '), contains('LEEME.md'),
+          reason: 'pero sigue declarado: sale de cubierto, no del reporte');
+    });
+
     test('un sujeto que NO EXISTE deja el conteo en «no sé», no en cero',
         () async {
       // Cero significa «no había nada mío». Una ruta que no existe no aporta un
@@ -76,19 +95,20 @@ void main() {
     });
 
     test('un código de salida desconocido deja el conteo en «no sé»', () async {
-      // Un alcance legítimamente vacío MÁS una herramienta que devuelve algo que
-      // no entendemos no es «no tuve nada que hacer»: es «no sé». Dejar ahí el
-      // conteo del alcance permitía que un paso con la herramienta devolviendo
-      // basura se clasificara como saltado, y el ruido desapareciera. Lo pidió
-      // una mutación.
-      Directory('${raiz.path}/prosa2').createSync();
+      // Una herramienta que devuelve algo que no entendemos no dice «no tuve
+      // nada que hacer»: dice «no sé». Dejar ahí el conteo del alcance
+      // permitía que un paso con la herramienta devolviendo basura se
+      // clasificara como saltado, y el ruido desapareciera. Lo pidió una
+      // mutación.
+      //
+      // Con sujetos utilizables: si no los hay no se invoca nada, y entonces
+      // no hay ningún código de salida que no entender.
       final paso = PasoDeFormato(
           ejecutor: EjecutorDeclarado(salida(codigo: 64)),
           directorio: raiz.path);
-      final r = await paso.run(['prosa2']);
+      final r = await paso.run(['lib']);
       expect(r.witness!.ownSubjects, isNull,
-          reason:
-              'el alcance estaba vacío, pero la herramienta no se entendió');
+          reason: 'había sujetos, pero la herramienta no se entendió');
       expect(r.verdict, Verdict.noConcluyente);
     });
 

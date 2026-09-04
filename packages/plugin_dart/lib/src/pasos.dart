@@ -255,8 +255,35 @@ abstract base class PasoDeCascada implements Verifier {
     // El programa y los argumentos se calculan UNA vez y se reusan. Se
     // calculaban dos veces —una para el texto del testigo y otra para la
     // invocación real— y nada garantizaba que dieran lo mismo.
+    // **La herramienta recibe SOLO los sujetos utilizables.**
+    //
+    // Recibía `pedidos` entero, así que un sujeto ya descartado por `separar`
+    // llegaba igual: `verify README.md` le daba el markdown a la herramienta
+    // del stack, que intentaba parsearlo y devolvía cinco diagnósticos sobre
+    // un archivo que no es de su incumbencia. Lo cobró un review, y afecta a
+    // cualquier cambio normal que mezcle código y documentación.
+    //
+    // Lo descartado no desaparece: sigue en `omitted` con su motivo, que es
+    // donde el corolario 5 de ADR-011 pide que esté.
+    if (alcance.sanos.isEmpty) {
+      // **No hay nada que invocar, y no se inventa una invocación.** Llamar a
+      // la herramienta sin rutas la haría mirar el directorio entero, que es
+      // exactamente lo contrario de lo que el alcance dice. El testigo nombra
+      // la invocación que de verdad se hizo (cláusula 4), y no se hizo
+      // ninguna.
+      return conTestigo(
+        invocacion: '',
+        cubierto: const [],
+        omitido: alcance.motivos.isEmpty
+            ? const ['No había ningún sujeto utilizable en el alcance.']
+            : alcance.motivos,
+        terminacion: Termination.completa,
+        codigo: 0,
+      );
+    }
+
     final prog = programa;
-    final args = List<String>.unmodifiable(argumentos(pedidos));
+    final args = List<String>.unmodifiable(argumentos(alcance.sanos));
     final invocacion = [prog, ...args].join(' ');
 
     final r = await ejecutor.correr(prog, args,

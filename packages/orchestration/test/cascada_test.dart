@@ -9,12 +9,17 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:test/test.dart';
 
-Witness _testigo({List<String> sujetos = const ['lib/']}) => Witness(
+/// **Declara cuántos elementos eran suyos.** Omitirlo deja el conteo en
+/// `null`, que significa «no se pudo establecer» y por sí solo impide el
+/// verde: un doble que no lo declara estaría probando otra cosa.
+Witness _testigo({List<String> sujetos = const ['lib/'], int propios = 2}) =>
+    Witness(
       invocation: 'herramienta',
       subjects: sujetos,
       omitted: const [],
       termination: Termination.completa,
       exitCode: 0,
+      ownSubjects: propios,
       finishedAt: DateTime.utc(2026),
     );
 
@@ -354,6 +359,54 @@ void main() {
           () => PasoSaltado(
               id: 'B', motivos: const ['  '], testigo: _sinNadaSuyo()),
           throwsArgumentError);
+    });
+
+    test('un alcance parcialmente inobservable NO da verde', () async {
+      // El plugin calculaba bien el «no sé» y la cascada nunca lo consumía: un
+      // paso que cubría `lib/` y no podía mirar `no/existe` atestiguaba igual,
+      // y con otro paso en verde la corrida salía VERDE sobre un alcance
+      // parcialmente no observado. La seguridad dependía de que OTRO paso
+      // tropezara con el mismo obstáculo. Lo encontró un review.
+      final parcial = _Paso('B',
+          devuelve: VerificationOutcome(
+              verifierId: 'B',
+              diagnostics: const [],
+              witness: Witness(
+                invocation: 'herramienta --sobre lib/',
+                subjects: const ['lib/'],
+                omitted: const ['no/existe: no existe en el árbol'],
+                termination: Termination.completa,
+                exitCode: 0,
+                ownSubjects: null,
+                finishedAt: DateTime.utc(2026),
+              )));
+      final r = await Cascada([_Paso.verde('A'), parcial])
+          .correr(['lib/', 'no/existe']);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.saltados, isEmpty);
+    });
+
+    test('un paso que CUBRIÓ algo no se salta, aunque diga cero propios',
+        () async {
+      // Dos afirmaciones incompatibles en el mismo testigo. Sin esta guardia
+      // se clasificaba como salto y lo cubierto desaparecía del reporte junto
+      // con el resultado.
+      final incoherente = _Paso('B',
+          devuelve: VerificationOutcome(
+              verifierId: 'B',
+              diagnostics: const [],
+              witness: Witness(
+                invocation: 'herramienta',
+                subjects: const ['lib/a.fuente'],
+                omitted: const ['algo'],
+                termination: Termination.completa,
+                exitCode: 0,
+                ownSubjects: 0,
+                finishedAt: DateTime.utc(2026),
+              )));
+      final r = await Cascada([_Paso.verde('A'), incoherente]).correr(['lib/']);
+      expect(r.saltados, isEmpty);
+      expect(r.ejecutados, ['A', 'B']);
     });
 
     test('«no lo puedo contar» NO es un salto', () async {
