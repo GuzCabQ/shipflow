@@ -68,7 +68,20 @@ class PasoSaltado {
     required this.id,
     required List<String> motivos,
     required this.testigo,
-  }) : motivos = List.unmodifiable(motivos);
+  }) : motivos = List.unmodifiable(motivos) {
+    // **Un salto sin motivo es un salto silencioso**, que es justo lo que
+    // ADR-011 corolario 1 prohíbe y lo que la documentación de este tipo
+    // promete que no pasa. La promesa estaba escrita y el tipo la dejaba
+    // romper: un review construyó uno con la lista vacía.
+    if (this.motivos.every((m) => m.trim().isEmpty)) {
+      throw ArgumentError.value(
+          motivos,
+          'motivos',
+          'Un salto sin motivo es un salto silencioso. Si el paso no supo '
+              'decir por qué no tenía nada que hacer, no se puede afirmar que '
+              'no lo tenía');
+    }
+  }
 }
 
 /// Lo que resulta de correr una cascada.
@@ -256,10 +269,22 @@ class Cascada {
         //
         // ADR-011 corolario 4 pide justamente esto: el verificador no juzga su
         // propia cobertura. Declara el número; la lectura es de acá.
+        // **Un salto es la ausencia de trabajo, no la desaparición de un
+        // hallazgo.** Sin la primera condición, un paso con un diagnóstico
+        // bloqueante y cero archivos propios se clasificaba como saltado, su
+        // resultado nunca entraba en `resultados`, y la corrida salía VERDE
+        // con el diagnóstico desaparecido. Lo encontró un review, y es el
+        // falso verde que esta rebanada vino a evitar, abierto por ella misma.
+        //
+        // Y sin la última, un salto podía no decir por qué: el corolario 1 de
+        // ADR-011 prohíbe el salto silencioso, y la promesa estaba escrita en
+        // prosa sin que nada la sostuviera.
         final w = r.witness;
         if (w != null &&
+            r.diagnostics.isEmpty &&
             w.ownSubjects == 0 &&
-            w.termination == Termination.completa) {
+            w.termination == Termination.completa &&
+            w.omitted.any((m) => m.trim().isNotEmpty)) {
           saltados
               .add(PasoSaltado(id: paso.id, motivos: w.omitted, testigo: w));
           continue;

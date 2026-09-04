@@ -1042,15 +1042,54 @@ verify: inconclusive — 0 de 2 pasos ejecutados, 2 saltado(s) con motivo,
     StaticAnalysis. No es un fallo, pero tampoco se verificó nada.
 ```
 
-### Lo que encontró la mutación
+### Y el falso verde llegó igual
 
-Cambiar `ownSubjects == 0` por `ownSubjects != null` **sobrevivía**: ningún test
-tenía un paso con archivos propios, así que «cero» y «no nulo» eran
-indistinguibles. Sin el control negativo, un paso que cubrió tres archivos se
-habría contado como saltado — un verde que nadie miró, por la puerta que esta
-rebanada vino a cerrar.
+Una mutación avisó a tiempo —cambiar `ownSubjects == 0` por `!= null`
+sobrevivía, porque ningún test tenía un paso con archivos propios— y aun así
+**un review encontró el falso verde por otra combinación**:
 
-Cinco mutaciones sobre el clasificador, ninguna sobrevive.
+```
+un paso verde  +  un paso con diagnóstico BLOQUEANTE y cero archivos propios
+→ estado: verde · diagnósticos: 0
+```
+
+El paso con el hallazgo se clasificaba como saltado, su resultado nunca entraba
+en `resultados`, y **el diagnóstico desaparecía**. Un salto es la ausencia de
+trabajo, no la desaparición de un hallazgo.
+
+Y por la misma puerta entraban otras dos: una ruta **inexistente** salía como
+«no tuvo nada que hacer» —el arnés no pudo mirar, no es que no había nada— y un
+salto podía no decir **por qué**, cuando el corolario 1 de ADR-011 prohíbe el
+salto silencioso y este README lo prometía en prosa.
+
+### La causa era una sola, y la nombró el review
+
+> *«El dato `ownSubjects` intenta representar aplicabilidad, observabilidad y
+> cantidad con un solo número. Mientras esas tres dimensiones no se distingan,
+> cada corrección local puede abrir un falso verde por otra combinación.»*
+
+Corregir los tres síntomas por separado habría dejado el cuarto. El alcance
+distingue ahora **si se lo pudo mirar entero**, y el conteo es `null` cuando no:
+una ruta que no existe o que no se deja leer no aporta un cero, aporta un
+desconocido. Los caminos anómalos —código de salida que no se entiende, salida
+ilegible— también declaran `null`: no son «no tenía nada que hacer», son «no sé».
+
+Y el clasificador exige tres cosas más: **ningún diagnóstico**, terminación
+completa, y **al menos un motivo**. El tipo `PasoSaltado` rechaza el salto mudo
+en el constructor, como `Witness` rechaza un motivo en blanco.
+
+### El testigo salía de dos fotografías del árbol
+
+`ownSubjects` se calculaba al empezar y `cobertura` volvía a separar el alcance
+**después del `await`**. Con un ejecutor que crea un archivo durante la espera,
+el mismo testigo afirmaba «cero elementos propios» y «cubrí lib» a la vez.
+
+Ahora hay una foto y **viaja**: `cobertura` recibe el `Alcance` ya separado y no
+tiene con qué volver a mirar. La propiedad la sostiene la firma, no un
+comentario — y la mutación que reintroduce el segundo `separar` muere.
+
+Once mutaciones sobre el clasificador y la separación del alcance, ninguna
+sobrevive.
 
 ### Lo que NO instala, y por qué
 

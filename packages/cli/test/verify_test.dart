@@ -248,6 +248,19 @@ void main() {
           reason: 'no puede decir «no pudo observar»: sí observó');
     }, timeout: const Timeout(Duration(minutes: 3)));
 
+    test('una ruta INEXISTENTE no es «no tuvo nada que hacer»', () async {
+      // El falso salto: el arnés no pudo mirar, no es que no había nada. Un
+      // review lo cobró — y con otro paso en verde en la cascada, esto habría
+      // sido un verde sobre una ruta que nadie miró.
+      final r = await shipflow(['verify', 'no/existe', '--json']);
+
+      final doc = lineas(r.stdout as String).last;
+      final data = doc['data']! as Map<String, Object?>;
+      expect(data['skipped'], isEmpty, reason: 'no pudo mirar ≠ no había nada');
+      expect(doc['verdict'], 'inconclusive');
+      expect(doc['nextAction'], contains('no pudo observar'));
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
     test('una bandera global ANTES del comando no es un comando', () async {
       // `--json verify` se leía como el comando «--json».
       File('${raiz.path}/lib/a.dart').writeAsStringSync('void main() {}\n');

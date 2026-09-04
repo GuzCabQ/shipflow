@@ -301,6 +301,61 @@ void main() {
       expect(r.estado, EstadoDeCorrida.verde);
     });
 
+    test('un paso CON DIAGNÓSTICO nunca se salta', () async {
+      // El falso verde que esta rebanada abrió al cerrar el falso rojo, y lo
+      // encontró un review: un paso con un diagnóstico bloqueante y cero
+      // archivos propios se clasificaba como saltado, su resultado nunca
+      // entraba en `resultados`, y la corrida salía VERDE con el diagnóstico
+      // desaparecido. Un salto es la ausencia de trabajo, no la desaparición
+      // de un hallazgo.
+      final conHallazgo = _Paso('B',
+          devuelve: VerificationOutcome(
+            verifierId: 'B',
+            witness: _sinNadaSuyo(),
+            diagnostics: [
+              Diagnostic(
+                  file: 'a',
+                  severity: Severity.bloquea,
+                  ruleId: 'r',
+                  message: QuotedText('rompe todo', source: 'h')),
+            ],
+          ));
+      final r = await Cascada([_Paso.verde('A'), conHallazgo]).correr(['lib/']);
+
+      expect(r.saltados, isEmpty);
+      expect(r.diagnosticos, hasLength(1),
+          reason: 'el hallazgo no puede desaparecer');
+      expect(r.estado, isNot(EstadoDeCorrida.verde));
+    });
+
+    test('un salto SIN motivo no es un salto', () async {
+      // ADR-011 corolario 1 prohíbe el salto silencioso. La promesa estaba
+      // escrita en prosa y el tipo la dejaba romper.
+      final mudo = _Paso('B',
+          devuelve: VerificationOutcome(
+              verifierId: 'B',
+              diagnostics: const [],
+              witness: Witness(
+                invocation: 'herramienta',
+                subjects: const [],
+                omitted: const [],
+                termination: Termination.completa,
+                exitCode: 0,
+                ownSubjects: 0,
+                finishedAt: DateTime.utc(2026),
+              )));
+      final r = await Cascada([_Paso.verde('A'), mudo]).correr(['lib/']);
+      expect(r.saltados, isEmpty);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+    });
+
+    test('y el tipo tampoco deja construir uno mudo', () {
+      expect(
+          () => PasoSaltado(
+              id: 'B', motivos: const ['  '], testigo: _sinNadaSuyo()),
+          throwsArgumentError);
+    });
+
     test('«no lo puedo contar» NO es un salto', () async {
       // `null` y cero son distintos: uno dice «no había nada mío», el otro «no
       // sé cuántos había». Tratarlos igual saltaría un paso que sí tenía

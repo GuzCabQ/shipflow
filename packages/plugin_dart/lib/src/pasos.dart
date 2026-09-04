@@ -22,7 +22,22 @@ typedef Cobertura = ({List<String> cubierto, List<String> omitido});
 /// sujetos son utilizables, por qué no lo son los demás, y **cuántos archivos
 /// hay que mirar**. Ese número es la mitad de una reconciliación; la otra la
 /// pone la herramienta.
-typedef Alcance = ({List<String> sanos, List<String> motivos, int archivos});
+typedef Alcance = ({
+  List<String> sanos,
+  List<String> motivos,
+  int archivos,
+
+  /// **Si se pudo mirar el alcance entero.** Un sujeto que no existe o que no se
+  /// deja leer no aporta un cero: aporta un desconocido, y sumarlo como cero
+  /// convertía «no pude mirar» en «no había nada mío». Un review lo cobró con
+  /// una ruta inexistente presentada como «no tuvo nada que hacer».
+  bool observable,
+});
+
+/// Centinela para distinguir «no me pasaron el conteo» de «me pasaron null».
+/// Sin él, un camino anómalo que quiera declarar «no sé» sería indistinguible
+/// de uno que se olvidó del parámetro.
+const Object _sinTocar = Object();
 
 /// Un paso de la cascada que invoca una herramienta y normaliza su salida.
 abstract base class PasoDeCascada implements Verifier {
@@ -62,7 +77,14 @@ abstract base class PasoDeCascada implements Verifier {
   /// Devolver `cubierto` vacío es la forma de decir «no concluyente»: el
   /// testigo deja de atestiguar y el veredicto se deriva solo. No hay que
   /// acordarse de ponerlo en rojo.
-  Cobertura cobertura(List<String> pedidos, QuotedText salida);
+  /// Recibe **el alcance ya separado**, no los pedidos.
+  ///
+  /// Antes lo volvía a separar por su cuenta, después del `await`: el mismo
+  /// testigo podía afirmar «cero elementos propios» y «cubrí lib» a la vez,
+  /// porque las dos afirmaciones salían de dos fotografías distintas del
+  /// árbol. Lo encontró un review con un ejecutor que creaba un archivo
+  /// durante la espera. Ahora hay una foto y viaja.
+  Cobertura cobertura(Alcance alcance, QuotedText salida);
 
   /// Cuántos archivos de fuente hay bajo un sujeto, o el motivo por el que no
   /// se pudo saber.
@@ -76,21 +98,29 @@ abstract base class PasoDeCascada implements Verifier {
   /// Sin esta fidelidad la reconciliación sería siempre distinta de cero y
   /// todo terminaría no concluyente. Es un fallo ruidoso, no silencioso, pero
   /// igual inservible.
-  ({int archivos, String? problema}) _mirar(String pedido) {
+  /// [pudoMirar] es lo que separa un cero real de un cero que no se pudo
+  /// establecer. Un archivo que existe y no es de este stack aporta cero de
+  /// verdad; uno que no existe no aporta nada.
+  ({int archivos, String? problema, bool pudoMirar}) _mirar(String pedido) {
     final absoluto =
         rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
     try {
       if (File(absoluto).existsSync()) {
         return absoluto.endsWith(sufijoDeFuente)
-            ? (archivos: 1, problema: null)
+            ? (archivos: 1, problema: null, pudoMirar: true)
             : (
                 archivos: 0,
-                problema: 'no es un archivo de fuente de este stack'
+                problema: 'no es un archivo de fuente de este stack',
+                pudoMirar: true,
               );
       }
       final carpeta = Directory(absoluto);
       if (!carpeta.existsSync()) {
-        return (archivos: 0, problema: 'no existe en el árbol');
+        return (
+          archivos: 0,
+          problema: 'no existe en el árbol',
+          pudoMirar: false,
+        );
       }
       final cuantos = carpeta
           .listSync(recursive: true, followLinks: false)
@@ -101,8 +131,12 @@ abstract base class PasoDeCascada implements Verifier {
               .any((parte) => parte.startsWith('.')))
           .length;
       return cuantos == 0
-          ? (archivos: 0, problema: 'no contiene ningún archivo de fuente')
-          : (archivos: cuantos, problema: null);
+          ? (
+              archivos: 0,
+              problema: 'no contiene ningún archivo de fuente',
+              pudoMirar: true,
+            )
+          : (archivos: cuantos, problema: null, pudoMirar: true);
     } on FileSystemException catch (e) {
       // **No poder mirar es un dato, no una excepción que se escapa.** Un
       // directorio sin permisos hacía que `run` lanzara y el paso no
@@ -112,6 +146,7 @@ abstract base class PasoDeCascada implements Verifier {
       return (
         archivos: 0,
         problema: 'no se pudo mirar: ${e.osError?.message ?? e.message}',
+        pudoMirar: false,
       );
     }
   }
@@ -122,8 +157,10 @@ abstract base class PasoDeCascada implements Verifier {
     final sanos = <String>[];
     final motivos = <String>[];
     var archivos = 0;
+    var observable = true;
     for (final pedido in pedidos) {
       final r = _mirar(pedido);
+      if (!r.pudoMirar) observable = false;
       if (r.problema == null) {
         sanos.add(pedido);
         archivos += r.archivos;
@@ -131,7 +168,12 @@ abstract base class PasoDeCascada implements Verifier {
         motivos.add('$pedido: ${r.problema}');
       }
     }
-    return (sanos: sanos, motivos: motivos, archivos: archivos);
+    return (
+      sanos: sanos,
+      motivos: motivos,
+      archivos: archivos,
+      observable: observable,
+    );
   }
 
   @override
@@ -154,7 +196,16 @@ abstract base class PasoDeCascada implements Verifier {
     // El paso **declara el número y no lo interpreta**: quién decide que cero
     // significa «saltado» es la cascada, porque ADR-011 corolario 4 dice que
     // ningún verificador juzga su propia cobertura.
-    final propios = separar(pedidos).archivos;
+    // **Una sola foto del árbol, y viaja.** De acá salen el conteo del
+    // testigo, la cobertura y la reconciliación: si cada una volviera a mirar,
+    // podrían discrepar y el testigo afirmaría dos cosas incompatibles.
+    final alcance = separar(pedidos);
+
+    // **`null` cuando no se pudo mirar todo.** Cero significa «no había nada
+    // mío»; un sujeto que no existe o que no se deja leer no aporta un cero,
+    // aporta un desconocido. Sumarlos convertía «no pude mirar» en «no tuve
+    // nada que hacer», y una ruta inexistente salía como salto legítimo.
+    final propiosDelAlcance = alcance.observable ? alcance.archivos : null;
 
     VerificationOutcome conTestigo({
       required String invocacion,
@@ -163,6 +214,11 @@ abstract base class PasoDeCascada implements Verifier {
       required Termination terminacion,
       required int codigo,
       List<Diagnostic> diagnosticos = const [],
+      // **`null` explícito en todo camino anómalo.** Un código de salida que
+      // no se entiende o una salida ilegible no son «no tenía nada que hacer»:
+      // son «no sé». Dejar ahí el conteo del alcance permitía que un paso con
+      // la herramienta devolviendo basura se clasificara como saltado.
+      Object? propios = _sinTocar,
     }) =>
         VerificationOutcome(
           verifierId: id,
@@ -173,7 +229,9 @@ abstract base class PasoDeCascada implements Verifier {
             omitted: omitido,
             termination: terminacion,
             exitCode: codigo,
-            ownSubjects: propios,
+            ownSubjects: identical(propios, _sinTocar)
+                ? propiosDelAlcance
+                : propios as int?,
             finishedAt: DateTime.now().toUtc(),
           ),
         );
@@ -216,6 +274,7 @@ abstract base class PasoDeCascada implements Verifier {
         ],
         terminacion: r.terminacion,
         codigo: r.codigo,
+        propios: null,
       );
     }
 
@@ -236,6 +295,7 @@ abstract base class PasoDeCascada implements Verifier {
         ],
         terminacion: Termination.completa,
         codigo: r.codigo,
+        propios: null,
       );
     }
 
@@ -253,10 +313,11 @@ abstract base class PasoDeCascada implements Verifier {
         omitido: ['No se pudo interpretar la salida: ${e.reason}'],
         terminacion: Termination.completa,
         codigo: r.codigo,
+        propios: null,
       );
     }
 
-    final c = cobertura(pedidos, salida);
+    final c = cobertura(alcance, salida);
     return conTestigo(
       invocacion: invocacion,
       cubierto: c.cubierto,
@@ -308,9 +369,9 @@ final class PasoDeFormato extends PasoDeCascada {
       '${r.salidaEstandar}\n${r.salidaDeError}';
 
   @override
-  Cobertura cobertura(List<String> pedidos, QuotedText salida) {
+  Cobertura cobertura(Alcance alcance, QuotedText salida) {
     const norma = NormalizadorDeFormato();
-    final (:sanos, :motivos, :archivos) = separar(pedidos);
+    final (:sanos, :motivos, :archivos, observable: _) = alcance;
     final mirados = norma.archivosMirados(salida);
     final sinParsear = norma.archivosQueNoParsean(salida).length;
 
@@ -413,8 +474,8 @@ final class PasoDeAnalisis extends PasoDeCascada {
   String ensamblar(ResultadoDeProceso r) => r.salidaEstandar;
 
   @override
-  Cobertura cobertura(List<String> pedidos, QuotedText salida) {
-    final (:sanos, :motivos, :archivos) = separar(pedidos);
+  Cobertura cobertura(Alcance alcance, QuotedText salida) {
+    final (:sanos, :motivos, :archivos, observable: _) = alcance;
     // **No hay nada que reconciliar acá, y ese es el punto.** El formateador
     // informa cuántos archivos miró y por eso su cobertura se puede comprobar;
     // este no informa nada, así que la única cuenta es la del arnés y queda

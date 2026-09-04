@@ -28,6 +28,23 @@ ResultadoDeProceso salida({
 const formatoLimpio = 'Formatted 1 file (0 changed) in 0.00 seconds.\n';
 const analisisLimpio = '{"version":1,"diagnostics":[]}';
 
+/// Un ejecutor que **cambia el árbol mientras la herramienta corre**.
+///
+/// Existe para una sola pregunta: si el alcance se mira dos veces —una antes y
+/// otra después del `await`— el testigo puede afirmar dos cosas incompatibles.
+class _EjecutorQueCreaUnArchivo implements EjecutorDeProceso {
+  final String donde;
+  final ResultadoDeProceso resultado;
+  _EjecutorQueCreaUnArchivo(this.donde, this.resultado);
+
+  @override
+  Future<ResultadoDeProceso> correr(String programa, List<String> args,
+      {required String directorio, required Duration presupuesto}) async {
+    File('$donde/aparecio.dart').writeAsStringSync('void main() {}\n');
+    return resultado;
+  }
+}
+
 void main() {
   late Directory raiz;
 
@@ -44,6 +61,83 @@ void main() {
       PasoDeAnalisis(ejecutor: EjecutorDeclarado(r), directorio: raiz.path);
 
   group('lo que vale para cualquier paso', () {
+    test('un sujeto que NO EXISTE deja el conteo en «no sé», no en cero',
+        () async {
+      // Cero significa «no había nada mío». Una ruta que no existe no aporta un
+      // cero: aporta un desconocido, y sumarlos convertía «no pude mirar» en «no
+      // tuve nada que hacer». Lo cobró un review con una ruta inexistente
+      // presentada como un salto legítimo.
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+          directorio: raiz.path);
+      final r = await paso.run(['no/existe']);
+      expect(r.witness!.ownSubjects, isNull);
+      expect(r.witness!.omitted.join(' '), contains('no existe'));
+    });
+
+    test('un código de salida desconocido deja el conteo en «no sé»', () async {
+      // Un alcance legítimamente vacío MÁS una herramienta que devuelve algo que
+      // no entendemos no es «no tuve nada que hacer»: es «no sé». Dejar ahí el
+      // conteo del alcance permitía que un paso con la herramienta devolviendo
+      // basura se clasificara como saltado, y el ruido desapareciera. Lo pidió
+      // una mutación.
+      Directory('${raiz.path}/prosa2').createSync();
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(codigo: 64)),
+          directorio: raiz.path);
+      final r = await paso.run(['prosa2']);
+      expect(r.witness!.ownSubjects, isNull,
+          reason:
+              'el alcance estaba vacío, pero la herramienta no se entendió');
+      expect(r.verdict, Verdict.noConcluyente);
+    });
+
+    test('un directorio que NO SE DEJA LEER tampoco da cero', () async {
+      // El otro obstáculo, y lo pidió una mutación: sin este caso, marcar el
+      // permiso denegado como «se pudo mirar» no ponía nada en rojo, y un
+      // directorio ilegible se habría contado como «no había nada mío».
+      final cerrado = Directory('${raiz.path}/cerrado')..createSync();
+      File('${cerrado.path}/x.dart').writeAsStringSync('void main() {}\n');
+      Process.runSync('chmod', ['000', cerrado.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', cerrado.path]));
+      expect(() => cerrado.listSync(), throwsA(isA<FileSystemException>()),
+          reason: 'la premisa: de verdad no se deja leer');
+
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+          directorio: raiz.path);
+      final r = await paso.run(['cerrado']);
+      expect(r.witness!.ownSubjects, isNull);
+    });
+
+    test('un directorio real SIN archivos del stack sí da cero', () async {
+      // El control negativo: la corrección no puede volverse «todo es no sé».
+      Directory('${raiz.path}/prosa').createSync();
+      File('${raiz.path}/prosa/LEEME.md').writeAsStringSync('# hola\n');
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+          directorio: raiz.path);
+      final r = await paso.run(['prosa']);
+      expect(r.witness!.ownSubjects, 0);
+    });
+
+    test('el testigo sale de UNA sola foto del árbol', () async {
+      // Si el alcance se mira dos veces —una para el conteo y otra para la
+      // cobertura, con un `await` en el medio— el testigo puede afirmar «cero
+      // elementos propios» y «cubrí lib» a la vez. Lo reprodujo un review con un
+      // ejecutor que creaba un archivo durante la espera.
+      Directory('${raiz.path}/vacio').createSync();
+      final paso = PasoDeFormato(
+          ejecutor: _EjecutorQueCreaUnArchivo(
+              '${raiz.path}/vacio', salida(estandar: formatoLimpio)),
+          directorio: raiz.path);
+      final r = await paso.run(['vacio']);
+
+      final w = r.witness!;
+      expect(w.ownSubjects == 0 && w.subjects.isNotEmpty, isFalse,
+          reason: 'no puede decir «no había nada mío» y «cubrí esto» a la vez');
+    });
+
     test('sin sujetos no se invoca nada, y el testigo NO nombra un comando',
         () async {
       final ejecutor = EjecutorDeclarado(salida());
@@ -339,6 +433,6 @@ final class _ProgramaInestable extends PasoDeCascada {
   String ensamblar(ResultadoDeProceso r) => r.salidaEstandar;
 
   @override
-  Cobertura cobertura(List<String> pedidos, QuotedText salida) =>
-      (cubierto: pedidos, omitido: const []);
+  Cobertura cobertura(Alcance alcance, QuotedText salida) =>
+      (cubierto: alcance.sanos, omitido: const []);
 }
