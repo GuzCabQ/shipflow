@@ -174,6 +174,59 @@ class Finding {
       );
 }
 
+/// Por qué un paso **no tuvo nada que hacer**. No es un [Witness].
+///
+/// **Un testigo atestigua una invocación, y acá no hubo ninguna.** Cuando no
+/// queda ningún sujeto de la incumbencia del paso no hay herramienta que
+/// llamar —hacerlo sin rutas la haría mirar el directorio entero— así que no
+/// hay terminación ni código de salida que registrar.
+///
+/// Existe porque se estaba fabricando: el paso devolvía un testigo con
+/// `Termination.completa` y código 0, que significa literalmente «la
+/// herramienta corrió y produjo un resultado». Peor: la cascada **exigía ese
+/// hecho falso** para clasificar bien el salto, así que lo correcto dependía
+/// de una mentira. Lo encontró un review, y la raíz que nombró es esta: querer
+/// representar ejecución, inaplicabilidad y observabilidad con los mismos
+/// campos empuja la contradicción hacia el CLI y la documentación.
+class NotApplicable {
+  /// Sobre qué se preguntó. Vacío es un dato: no le dieron alcance.
+  final List<String> subjects;
+
+  /// Por qué ninguno era suyo, uno por sujeto. **Vacía no se acepta**: un paso
+  /// que no dice por qué no tuvo nada que hacer es un salto silencioso, y el
+  /// corolario 1 de ADR-011 lo prohíbe.
+  final List<String> reasons;
+
+  final DateTime decidedAt;
+
+  NotApplicable({
+    required List<String> subjects,
+    required List<String> reasons,
+    required this.decidedAt,
+  })  : subjects = List.unmodifiable(subjects),
+        reasons = List.unmodifiable(reasons) {
+    if (this.reasons.every((m) => m.trim().isEmpty)) {
+      throw ArgumentError.value(
+          reasons,
+          'reasons',
+          'Un paso que no dice por qué no tuvo nada que hacer es un salto '
+              'silencioso. Escribí el motivo, o no declares que no aplicaba');
+    }
+  }
+
+  Map<String, Object?> toJson() => {
+        'subjects': subjects,
+        'reasons': reasons,
+        'decidedAt': decidedAt.toUtc().toIso8601String(),
+      };
+
+  factory NotApplicable.fromJson(Map<String, Object?> json) => NotApplicable(
+        subjects: List<String>.from(json['subjects']! as List<Object?>),
+        reasons: List<String>.from(json['reasons']! as List<Object?>),
+        decidedAt: DateTime.parse(json['decidedAt']! as String),
+      );
+}
+
 /// El resultado de un paso de la cascada: **par (diagnósticos, testigo)**.
 ///
 /// [verdict] se **deriva**; no es un campo que alguien pueda escribir en verde.
@@ -191,13 +244,27 @@ class VerificationOutcome {
   /// registró que corriera**, y las dos cosas son lo mismo para el veredicto.
   final Witness? witness;
 
+  /// **No tenía nada que hacer.** Excluyente con [witness]: o hubo invocación
+  /// y hay testigo, o no la hubo y hay motivo.
+  final NotApplicable? notApplicable;
+
   /// Los diagnósticos se copian: el veredicto se deriva de ellos, y una lista
   /// mutable desde afuera es un veredicto mutable desde afuera.
   VerificationOutcome({
     required this.verifierId,
     required List<Diagnostic> diagnostics,
     this.witness,
-  }) : diagnostics = List.unmodifiable(diagnostics);
+    this.notApplicable,
+  }) : diagnostics = List.unmodifiable(diagnostics) {
+    // **No se puede haber invocado Y no haber tenido nada que hacer.** Un
+    // resultado que declarara las dos cosas dejaría a quien lo lea eligiendo
+    // cuál creer, que es peor que no declarar ninguna.
+    if (witness != null && notApplicable != null) {
+      throw ArgumentError(
+          'Un paso o invocó una herramienta —y hay testigo— o no tuvo nada que '
+          'hacer —y hay motivo—. Declarar las dos cosas no significa nada');
+    }
+  }
 
   /// El veredicto, calculado. No hay forma de fijarlo desde afuera.
   Verdict get verdict {
@@ -211,6 +278,7 @@ class VerificationOutcome {
         'verifierId': verifierId,
         'diagnostics': [for (final d in diagnostics) d.toJson()],
         'witness': witness?.toJson(),
+        'notApplicable': notApplicable?.toJson(),
       };
 
   factory VerificationOutcome.fromJson(Map<String, Object?> json) =>
@@ -224,5 +292,9 @@ class VerificationOutcome {
             ? null
             : Witness.fromJson(
                 Map<String, Object?>.from(json['witness']! as Map)),
+        notApplicable: json['notApplicable'] == null
+            ? null
+            : NotApplicable.fromJson(
+                Map<String, Object?>.from(json['notApplicable']! as Map)),
       );
 }

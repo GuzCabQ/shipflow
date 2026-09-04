@@ -162,22 +162,43 @@ Future<int> correrVerify(
       ),
       '  ...       $id',
     ),
-    alTerminar: (paso) {
+    alTerminar: (desenlace) {
+      // **Cada desenlace se dice como lo que es.** Antes solo se avisaba de
+      // los pasos con resultado, así que un salto y un fallo interno dejaban
+      // su `started` sin cerrar — y `--verbose`, que promete el testigo de
+      // cada paso, no daba nada para los saltos.
       imp.evento(
         EventEnvelope(
           command: nombreDelComando,
           type: 'progress',
-          data: {
-            'verifier': paso.verifierId,
-            'stage': 'finished',
-            'verdict': paso.verdict.name,
-            'diagnostics': paso.diagnostics.length,
-            if (o.detallado) 'witness': paso.witness?.toJson(),
+          data: switch (desenlace) {
+            PasoEjecutado(:final resultado) => {
+                'verifier': resultado.verifierId,
+                'stage': 'finished',
+                'verdict': resultado.verdict.name,
+                'diagnostics': resultado.diagnostics.length,
+                if (o.detallado) 'witness': resultado.witness?.toJson(),
+              },
+            PasoSinNadaQueHacer(:final declaracion) => {
+                'verifier': desenlace.id,
+                'stage': 'skipped',
+                'reasons': declaracion.reasons,
+                if (o.detallado) 'notApplicable': declaracion.toJson(),
+              },
+            PasoRoto(:final causa) => {
+                'verifier': desenlace.id,
+                'stage': 'internalError',
+                'cause': causa,
+              },
           },
         ),
-        _pasoEnTexto(paso, detallado: o.detallado),
+        _desenlaceEnTexto(desenlace, detallado: o.detallado),
       );
-      for (final d in paso.diagnostics
+      final diagnosticos = switch (desenlace) {
+        PasoEjecutado(:final resultado) => resultado.diagnostics,
+        _ => const <Diagnostic>[],
+      };
+      for (final d in diagnosticos
           .where((d) => seMuestra(d, silencioso: o.silencioso))) {
         imp.evento(
           EventEnvelope(
@@ -228,6 +249,21 @@ Future<int> correrVerify(
 bool seMuestra(Diagnostic d, {required bool silencioso}) =>
     d.severity != Severity.silencia &&
     (!silencioso || d.severity == Severity.bloquea);
+
+/// El desenlace de un paso, en texto. **Los tres se dicen distinto**: un salto
+/// que se imprimiera como un veredicto sería exactamente la confusión que el
+/// tipo vino a deshacer.
+String _desenlaceEnTexto(DesenlaceDePaso d, {required bool detallado}) =>
+    switch (d) {
+      PasoEjecutado(:final resultado) =>
+        _pasoEnTexto(resultado, detallado: detallado),
+      PasoSinNadaQueHacer(:final declaracion) => [
+          '  SALTADO   ${d.id}',
+          if (detallado)
+            for (final m in declaracion.reasons) '            motivo: $m',
+        ].join('\n'),
+      PasoRoto(:final causa) => '  ROTO      ${d.id}\n            $causa',
+    };
 
 String _pasoEnTexto(VerificationOutcome paso, {required bool detallado}) {
   final marca = switch (paso.verdict) {

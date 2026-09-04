@@ -43,15 +43,26 @@ void main() {
       directorio: raiz.path,
       presupuesto: const Duration(minutes: 2));
 
-  test('un alcance que NO existe sale con código 0 y aun así no es verde',
-      () async {
-    // El hallazgo entero de esta rebanada, contra la herramienta real.
+  test('la herramienta calla sobre lo que no existe, y el paso no', () async {
+    // **La premisa, medida contra la herramienta real y no supuesta.** Es la
+    // razón de ser de toda la defensa: sobre una ruta inexistente esta
+    // herramienta sale con CERO, así que creerle al código de salida sería un
+    // verde sobre algo que nadie miró. Si esto dejara de ser 0, la herramienta
+    // cambió y este paso necesita menos defensa de la que tiene.
+    final r = await const EjecutorDelSistema().correr(
+        'dart', const ['format', '--output=none', 'no/existe/'],
+        directorio: raiz.path, presupuesto: const Duration(minutes: 2));
+    expect(r.codigo, 0);
+
+    // Y la propiedad: el paso no le cree. Ya ni siquiera la invoca — descarta
+    // el sujeto antes— pero lo que se comprueba es el desenlace, no el
+    // mecanismo: un test que fija el mecanismo convierte toda mejora en una
+    // falsa alarma.
     final o = await formato().run(['no/existe/']);
-    expect(o.witness!.exitCode, 0,
-        reason: 'si esto dejara de ser 0, la herramienta cambió y este paso '
-            'necesita menos defensa de la que tiene');
     expect(o.verdict, Verdict.noConcluyente);
     expect(o.witness!.subjects, isEmpty);
+    expect(o.witness!.ownSubjects, isNull,
+        reason: 'no se pudo establecer cuántos había: no es cero');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un alcance inexistente lo delata el ARNÉS, no la herramienta',

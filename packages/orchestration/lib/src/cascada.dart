@@ -48,12 +48,12 @@ enum EstadoDeCorrida {
 /// daba «no concluyente: algún paso no pudo observar su alcance» cuando el paso
 /// había terminado completo y no tenía nada suyo que mirar.
 ///
-/// **No afirma que la herramienta haya corrido**, y decirlo era falso: cuando
-/// no queda ningún sujeto utilizable no hay nada que invocar, y llamarla sin
-/// rutas la haría mirar el directorio entero. Un review encontró la
-/// contradicción entre esta prosa y lo que el clasificador comprueba. Lo que un
-/// salto sí afirma es que **la ausencia de trabajo quedó establecida**: cero
-/// elementos propios, nada cubierto, ningún diagnóstico, y un motivo escrito.
+/// **La herramienta NO corrió, y ahora el tipo lo dice.** Antes esto se
+/// representaba con un testigo de `Termination.completa` y código 0 —«la
+/// herramienta corrió y produjo un resultado»— y la cascada **exigía ese hecho
+/// falso** para clasificar bien. Dos reviews seguidos lo señalaron: primero la
+/// prosa que no se comprobaba, y después la mentira de la que dependía lo
+/// correcto.
 ///
 /// **Lo clasifica la cascada, no el paso.** ADR-011 corolario 4: ningún
 /// verificador juzga su propia cobertura. El paso declara un hecho contable
@@ -66,14 +66,15 @@ class PasoSaltado {
   /// propio paso declaró haber omitido.
   final List<String> motivos;
 
-  /// El testigo del paso. Existe: la herramienta corrió. Lo que no hay es
-  /// nada que atestiguar.
-  final Witness testigo;
+  /// Lo que el paso declaró. **No es un testigo**: no hubo invocación que
+  /// atestiguar, y fabricar una era el hecho falso del que dependía esta
+  /// clasificación.
+  final NotApplicable declaracion;
 
   PasoSaltado({
     required this.id,
     required List<String> motivos,
-    required this.testigo,
+    required this.declaracion,
   }) : motivos = List.unmodifiable(motivos) {
     // **Un salto sin motivo es un salto silencioso**, que es justo lo que
     // ADR-011 corolario 1 prohíbe y lo que la documentación de este tipo
@@ -88,6 +89,36 @@ class PasoSaltado {
               'no lo tenía');
     }
   }
+}
+
+/// Cómo terminó **un paso**, para quien mira la corrida mientras ocurre.
+///
+/// **Todo `started` necesita un desenlace observable.** Solo se avisaba de los
+/// pasos que producían resultado: un salto y un fallo interno dejaban el
+/// evento de inicio abierto para siempre, y un consumidor del protocolo en
+/// streaming se quedaba esperando. Lo encontró un review sobre `--verbose`, que
+/// además prometía el testigo de cada paso y no lo daba para los saltos.
+sealed class DesenlaceDePaso {
+  final String id;
+  const DesenlaceDePaso(this.id);
+}
+
+/// Corrió y produjo su veredicto.
+class PasoEjecutado extends DesenlaceDePaso {
+  final VerificationOutcome resultado;
+  PasoEjecutado(this.resultado) : super(resultado.verifierId);
+}
+
+/// No tuvo nada que hacer.
+class PasoSinNadaQueHacer extends DesenlaceDePaso {
+  final NotApplicable declaracion;
+  PasoSinNadaQueHacer(super.id, this.declaracion);
+}
+
+/// Se rompió. **No es un veredicto sobre el cambio**: es el arnés.
+class PasoRoto extends DesenlaceDePaso {
+  final String causa;
+  PasoRoto(super.id, this.causa);
 }
 
 /// Lo que resulta de correr una cascada.
@@ -256,7 +287,7 @@ class Cascada {
   Future<ResultadoDeCascada> correr(
     List<String> sujetos, {
     void Function(String id)? alEmpezar,
-    void Function(VerificationOutcome resultado)? alTerminar,
+    void Function(DesenlaceDePaso desenlace)? alTerminar,
   }) async {
     // **Se congela al entrar.** La lista es del llamador, que puede mutarla
     // entre paso y paso: el primero correría sobre un alcance y el segundo
@@ -270,7 +301,7 @@ class Cascada {
 
     for (final paso in pasos) {
       alEmpezar?.call(paso.id);
-      VerificationOutcome? logrado;
+      DesenlaceDePaso? desenlace;
       try {
         final r = await paso.run(alcance);
         // Un paso que devuelve el resultado de OTRO paso rompe la cuenta.
@@ -278,59 +309,45 @@ class Cascada {
           fallos[paso.id] = 'devolvió un resultado con id «${r.verifierId}»; '
               'la cuenta de registrados contra ejecutados se apoya en que '
               'coincidan.';
-          continue;
+          desenlace = PasoRoto(paso.id, fallos[paso.id]!);
+        } else {
+          // **La clasificación es una distinción de tipo, no un conjunto de
+          // condiciones.** Eran cuatro —cero propios, nada cubierto,
+          // terminación completa, algún motivo— y cada review encontraba la
+          // combinación que faltaba, porque intentaban reconstruir desde los
+          // campos un hecho que el tipo no sabía expresar.
+          //
+          // Queda una sola condición extra: un salto es la ausencia de
+          // trabajo, **no la desaparición de un hallazgo**.
+          final na = r.notApplicable;
+          if (na != null && r.diagnostics.isEmpty) {
+            saltados.add(
+                PasoSaltado(id: paso.id, motivos: na.reasons, declaracion: na));
+            desenlace = PasoSinNadaQueHacer(paso.id, na);
+          } else {
+            resultados.add(r);
+            desenlace = PasoEjecutado(r);
+          }
         }
-        // **Acá se clasifica el salto, y por eso no lo clasifica el paso.**
-        //
-        // El testigo trae un hecho contable sobre la entrada —cuántos
-        // elementos del alcance eran de la incumbencia del paso— y esta es la
-        // única decisión que se toma con él: cero de los suyos, con la
-        // herramienta terminada, es «no tuve nada que hacer». No es «no pude
-        // mirar», y tratarlos igual era un falso rojo.
-        //
-        // ADR-011 corolario 4 pide justamente esto: el verificador no juzga su
-        // propia cobertura. Declara el número; la lectura es de acá.
-        // **Un salto es la ausencia de trabajo, no la desaparición de un
-        // hallazgo.** Sin la primera condición, un paso con un diagnóstico
-        // bloqueante y cero archivos propios se clasificaba como saltado, su
-        // resultado nunca entraba en `resultados`, y la corrida salía VERDE
-        // con el diagnóstico desaparecido. Lo encontró un review, y es el
-        // falso verde que esta rebanada vino a evitar, abierto por ella misma.
-        //
-        // Y sin la última, un salto podía no decir por qué: el corolario 1 de
-        // ADR-011 prohíbe el salto silencioso, y la promesa estaba escrita en
-        // prosa sin que nada la sostuviera.
-        final w = r.witness;
-        if (w != null &&
-            r.diagnostics.isEmpty &&
-            w.ownSubjects == 0 &&
-            // **Un paso que cubrió algo no se saltó.** Sin esto, un testigo
-            // que declarara sujetos cubiertos Y cero elementos propios —dos
-            // cosas incompatibles— se clasificaba igual, y lo cubierto
-            // desaparecía del reporte junto con el resultado.
-            w.subjects.isEmpty &&
-            w.termination == Termination.completa &&
-            w.omitted.any((m) => m.trim().isNotEmpty)) {
-          saltados
-              .add(PasoSaltado(id: paso.id, motivos: w.omitted, testigo: w));
-          continue;
-        }
-        resultados.add(r);
-        logrado = r;
       } on Object catch (e) {
-        // Se atrapa cualquier excepción a propósito, y solo acá: un paso
-        // que se rompe es un error del arnés, no un veredicto sobre el
-        // cambio, y confundirlos es lo que el código de salida `70` existe
-        // para impedir.
+        // Se atrapa cualquier excepción a propósito, y solo acá: un paso que
+        // se rompe es un error del arnés, no un veredicto sobre el cambio, y
+        // confundirlos es lo que el código de salida `70` existe para impedir.
         fallos[paso.id] = '$e';
+        desenlace = PasoRoto(paso.id, '$e');
       }
 
-      // **El observador se llama FUERA del `try`.** Adentro, una excepción
-      // suya se atribuía al verificador: el mismo paso quedaba registrado como
-      // ejecutado Y como fallido, y el reporte culpaba a quien había hecho su
-      // trabajo. Si el observador se rompe, que suba a la frontera y sea un
-      // error del arnés, que es lo que es.
-      if (logrado != null) alTerminar?.call(logrado);
+      // **Todo `started` termina con un desenlace.** Antes esto vivía dentro
+      // del cuerpo y los `continue` lo salteaban: un salto y un fallo interno
+      // dejaban el evento de inicio abierto para siempre, y quien consumiera
+      // el protocolo en streaming se quedaba esperando. Por eso ya no hay
+      // `continue`: las tres ramas asignan y la notificación es una sola, al
+      // final, fuera del `try` —una excepción del observador es del arnés, no
+      // del verificador que hizo su trabajo—.
+      // Sin `!`: el analizador prueba que las tres ramas asignan. **La
+      // garantía de que todo `started` cierra la sostiene el compilador**, no
+      // un comentario ni una prueba.
+      alTerminar?.call(desenlace);
     }
 
     return ResultadoDeCascada(

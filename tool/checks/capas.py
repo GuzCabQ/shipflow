@@ -450,12 +450,44 @@ def _check_readme() -> None:
         return
     minutos = int(m_pres.group(1))
     # Los pasos de la cascada por defecto: las entradas de la lista literal.
-    cuerpo = texto_verify[texto_verify.index("Cascada(["):]
+    # **Acotado al literal, no al resto del archivo.** Sin el corte, el
+    # `switch` que imprime los desenlaces —`PasoEjecutado(`, `PasoRoto(`— caía
+    # en el mismo patrón y la cuenta pasó de 2 a 5 sin que nadie tocara la
+    # cascada. Un patrón que mira de más se equivoca igual que uno que mira de
+    # menos, y este contaba pasos que no existen.
+    _desde = texto_verify.index("Cascada([")
+    cuerpo = texto_verify[_desde:texto_verify.index("]);", _desde)]
     n_pasos = len(re.findall(r"^      Paso[A-Za-z]+\(", cuerpo, re.M))
     if n_pasos == 0:
         fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
                       "igual que «no miré».")
         return
+
+    # **Y que cada paso reciba EXACTAMENTE ese presupuesto.**
+    #
+    # La derivación contaba los constructores y multiplicaba, sin mirar qué se
+    # les pasa: cambiar un solo paso a `presupuesto * 2` dejaba el check en
+    # verde y la cifra del README mintiendo. Lo reprodujo un review. Contar
+    # constructores y no leer sus argumentos es comprobar la forma y no el
+    # hecho — el mismo error que este arnés persigue en otras partes.
+    # Se captura hasta la coma o el paréntesis, ESPACIOS INCLUIDOS: con
+    # `[^,)\s]+` la expresión cortaba en el primer espacio y `presupuesto * 2`
+    # se leía como `presupuesto`. El sabotaje pasaba en verde y el patrón
+    # parecía funcionar.
+    distintos = [v.strip() for v in re.findall(
+        r"^      Paso[A-Za-z]+\(\s*\n?[^)]*?presupuesto:\s*([^,)]+)",
+        cuerpo, re.M)]
+    if len(distintos) != n_pasos:
+        fallos.append(f"conté {n_pasos} pasos en `cascadaPorDefecto` y solo "
+                      f"{len(distintos)} le pasan un presupuesto. Un paso sin "
+                      f"presupuesto explícito no está cubierto por esta cuenta.")
+    for valor in set(distintos):
+        if valor != "presupuesto":
+            fallos.append(f"un paso de `cascadaPorDefecto` recibe "
+                          f"«{valor}» como presupuesto y no el parámetro. La "
+                          f"cifra del README multiplica UN valor por la "
+                          f"cantidad de pasos: con presupuestos distintos deja "
+                          f"de significar lo que dice.")
 
     for patron, esperado, que in [
         (r"un default de \*\*(\d+) minutos\*\*", minutos, "el presupuesto por paso"),

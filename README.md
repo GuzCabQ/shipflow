@@ -965,7 +965,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 102 sabotajes.**
+y su caso ciego. **El arnés aplica 103 sabotajes.**
 
 ---
 
@@ -1120,8 +1120,52 @@ del analizador, y ahora la delata el arnés antes de invocar. **Es más fuerte, 
 menos** — deja de depender de que una herramienta ajena se moleste en avisar — y
 el test comprueba la propiedad en vez del mecanismo.
 
-Quince mutaciones sobre el clasificador y la separación del alcance, ninguna
-sobrevive.
+### Y al final la corrección no era otra guardia: era un tipo
+
+Un tercer review encontró que **la clasificación correcta dependía de un hecho
+falso**. Cuando no quedaba ningún sujeto utilizable, el paso devolvía un testigo
+con `Termination.completa` y código 0 — que significa literalmente *«la
+herramienta corrió y produjo un resultado»*— y la cascada **exigía ese valor**
+para aceptar el salto.
+
+Su diagnóstico nombra la raíz de las tres rondas:
+
+> *«El sistema necesita un desenlace de paso más rico que `VerificationOutcome`;
+> intentar representar ejecución, inaplicabilidad y observabilidad con los
+> mismos campos está trasladando contradicciones hacia el CLI y la
+> documentación.»*
+
+Tenía razón, y explica por qué cada corrección abría una combinación nueva: el
+clasificador reconstruía desde cuatro campos —cero propios, nada cubierto,
+terminación completa, algún motivo— un hecho que el tipo no sabía expresar.
+
+`VerificationOutcome` gana `notApplicable`, **excluyente con `witness`**: o hubo
+invocación y hay testigo, o no la hubo y hay motivo. Las cuatro condiciones
+colapsan en una distinción de tipo más una sola guardia — *un salto es la
+ausencia de trabajo, no la desaparición de un hallazgo*.
+
+**Y el `started` que nunca cerraba.** Solo se avisaba de los pasos con
+resultado: un salto y un fallo interno dejaban su evento de inicio abierto para
+siempre. Ahora hay un desenlace por paso —ejecutado, saltado, roto— y el
+analizador **prueba** que las tres ramas lo asignan: la garantía la sostiene el
+compilador, no un comentario.
+
+```
+$ shipflow verify README.md --verbose
+  SALTADO   FormatCheck
+            motivo: README.md: no es un archivo de fuente de este stack
+```
+
+**Y el meta-check del presupuesto tenía su propio falso verde**: contaba
+constructores y multiplicaba, sin leer qué se les pasa. Cambiar un solo paso a
+`presupuesto * 2` lo dejaba en verde. Al arreglarlo, el patrón nuevo contó
+**cinco** pasos donde hay dos —el `switch` que imprime los desenlaces tiene
+`PasoEjecutado(` en la misma indentación— y después cortaba en el primer
+espacio, así que `presupuesto * 2` se leía como `presupuesto`. Dos formas de
+mirar mal antes de mirar bien, las dos encontradas midiendo.
+
+Veintiuna mutaciones sobre el clasificador, la separación del alcance y los
+desenlaces. Ninguna sobrevive.
 
 ### Lo que NO instala, y por qué
 

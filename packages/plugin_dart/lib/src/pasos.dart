@@ -265,20 +265,53 @@ abstract base class PasoDeCascada implements Verifier {
     //
     // Lo descartado no desaparece: sigue en `omitted` con su motivo, que es
     // donde el corolario 5 de ADR-011 pide que esté.
-    if (alcance.sanos.isEmpty) {
-      // **No hay nada que invocar, y no se inventa una invocación.** Llamar a
-      // la herramienta sin rutas la haría mirar el directorio entero, que es
-      // exactamente lo contrario de lo que el alcance dice. El testigo nombra
-      // la invocación que de verdad se hizo (cláusula 4), y no se hizo
-      // ninguna.
+    if (alcance.sanos.isEmpty && !alcance.observable) {
+      // **Nada que invocar, y tampoco se puede afirmar que no era nuestro.**
+      //
+      // Sin esta rama el flujo caía al `argumentos([])` de más abajo, que
+      // invoca la herramienta **sin rutas** — y sin rutas mira el directorio
+      // entero. Lo destapó un test del CLI colgándose tres minutos sobre una
+      // ruta inexistente, y es la clase de error que este archivo ya cometió
+      // en la dirección contraria.
+      //
+      // No es `NotApplicable`: para decir «no era mío» hay que haber podido
+      // mirar. Es la misma convención que el alcance vacío usa desde siempre —
+      // `interrumpida`, invocación vacía, código -1— porque el paso se
+      // interrumpió antes de invocar nada.
       return conTestigo(
         invocacion: '',
         cubierto: const [],
-        omitido: alcance.motivos.isEmpty
-            ? const ['No había ningún sujeto utilizable en el alcance.']
-            : alcance.motivos,
-        terminacion: Termination.completa,
-        codigo: 0,
+        omitido: alcance.motivos,
+        terminacion: Termination.interrumpida,
+        codigo: -1,
+        propios: null,
+      );
+    }
+
+    if (alcance.sanos.isEmpty) {
+      // **No hay nada que invocar, y no se fabrica un testigo.**
+      //
+      // Llamar a la herramienta sin rutas la haría mirar el directorio entero,
+      // que es lo contrario de lo que el alcance dice. Y devolver un testigo
+      // con `Termination.completa` y código 0 —como se hacía— era declarar que
+      // la herramienta corrió y produjo un resultado, que es literalmente lo
+      // que ese valor significa. Peor: la cascada EXIGÍA ese hecho falso para
+      // clasificar bien el salto, así que lo correcto dependía de una mentira.
+      //
+      // `NotApplicable` no es un testigo porque no hay invocación que
+      // atestiguar. Se pide `observable`: si no se pudo mirar el alcance, no
+      // se puede afirmar que no había nada — eso es «no sé», y sigue el camino
+      // normal hasta el testigo que lo declara.
+      return VerificationOutcome(
+        verifierId: id,
+        diagnostics: const [],
+        notApplicable: NotApplicable(
+          subjects: pedidos,
+          reasons: alcance.motivos.isEmpty
+              ? const ['No había ningún sujeto utilizable en el alcance.']
+              : alcance.motivos,
+          decidedAt: DateTime.now().toUtc(),
+        ),
       );
     }
 

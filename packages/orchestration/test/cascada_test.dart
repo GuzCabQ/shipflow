@@ -67,35 +67,21 @@ class _Paso implements Verifier {
   }
 }
 
-/// El testigo de un paso que **corrió y no tenía nada suyo que mirar**.
-///
-/// Terminación completa, y cero elementos del alcance de su incumbencia. No es
-/// «no pude mirar»: la herramienta corrió y terminó.
-Witness _sinNadaSuyo({
-  int? propios = 0,
-  Termination terminacion = Termination.completa,
+/// Lo que declara un paso que **no tuvo nada que hacer**. No es un testigo:
+/// no hubo invocación que atestiguar.
+NotApplicable _sinNadaSuyo({
+  List<String> motivos = const ['lib/: no contiene ningún archivo de fuente'],
 }) =>
-    Witness(
-      invocation: 'herramienta --sobre lib/',
-      subjects: const [],
-      omitted: const ['lib/: no contiene ningún archivo de fuente'],
-      termination: terminacion,
-      exitCode: 0,
-      ownSubjects: propios,
-      finishedAt: DateTime.utc(2026),
+    NotApplicable(
+      subjects: const ['lib/'],
+      reasons: motivos,
+      decidedAt: DateTime.utc(2026),
     );
 
-/// Un paso que corre y no tiene nada suyo que hacer.
-_Paso _pasoSinNadaSuyo(
-  String id, {
-  int? propios = 0,
-  Termination terminacion = Termination.completa,
-}) =>
-    _Paso(id,
-        devuelve: VerificationOutcome(
-            verifierId: id,
-            diagnostics: const [],
-            witness: _sinNadaSuyo(propios: propios, terminacion: terminacion)));
+/// Un paso que no tiene nada suyo que hacer.
+_Paso _pasoSinNadaSuyo(String id) => _Paso(id,
+    devuelve: VerificationOutcome(
+        verifierId: id, diagnostics: const [], notApplicable: _sinNadaSuyo()));
 
 void main() {
   group('el registro', () {
@@ -189,10 +175,31 @@ void main() {
     await Cascada([_Paso.verde('A'), _Paso.verde('B')]).correr(
       ['lib/'],
       alEmpezar: (id) => orden.add('empieza:$id'),
-      alTerminar: (r) => orden.add('termina:${r.verifierId}'),
+      alTerminar: (d) => orden.add('termina:${d.id}'),
     );
     expect(orden, ['empieza:A', 'termina:A', 'empieza:B', 'termina:B'],
         reason: 'B no puede anunciarse antes de que A haya terminado');
+  });
+
+  test('TODO paso avisa su desenlace, incluidos el saltado y el roto',
+      () async {
+    // Solo se avisaba de los que producían resultado: un salto y un fallo
+    // interno dejaban el `started` abierto para siempre, y un consumidor del
+    // protocolo en streaming se quedaba esperando. Lo encontró un review.
+    final desenlaces = <String>[];
+    await Cascada([
+      _Paso.verde('A'),
+      _pasoSinNadaSuyo('B'),
+      _Paso('C', lanza: StateError('se rompió')),
+    ]).correr(
+      ['lib/'],
+      alTerminar: (d) => desenlaces.add('${d.id}:${d.runtimeType}'),
+    );
+    expect(desenlaces, [
+      'A:PasoEjecutado',
+      'B:PasoSinNadaQueHacer',
+      'C:PasoRoto',
+    ]);
   });
 
   test('un fallo del OBSERVADOR no se le atribuye al verificador', () async {
@@ -268,7 +275,7 @@ void main() {
           .correr(['lib/']);
       expect(r.saltados.single.motivos,
           contains('lib/: no contiene ningún archivo de fuente'));
-      expect(r.saltados.single.testigo.ownSubjects, 0);
+      expect(r.saltados.single.declaracion.subjects, ['lib/']);
     });
 
     test('si se saltan todos, la corrida NO es verde', () async {
@@ -316,7 +323,7 @@ void main() {
       final conHallazgo = _Paso('B',
           devuelve: VerificationOutcome(
             verifierId: 'B',
-            witness: _sinNadaSuyo(),
+            notApplicable: _sinNadaSuyo(),
             diagnostics: [
               Diagnostic(
                   file: 'a',
@@ -357,7 +364,7 @@ void main() {
     test('y el tipo tampoco deja construir uno mudo', () {
       expect(
           () => PasoSaltado(
-              id: 'B', motivos: const ['  '], testigo: _sinNadaSuyo()),
+              id: 'B', motivos: const ['  '], declaracion: _sinNadaSuyo()),
           throwsArgumentError);
     });
 
@@ -409,25 +416,25 @@ void main() {
       expect(r.ejecutados, ['A', 'B']);
     });
 
-    test('«no lo puedo contar» NO es un salto', () async {
-      // `null` y cero son distintos: uno dice «no había nada mío», el otro «no
-      // sé cuántos había». Tratarlos igual saltaría un paso que sí tenía
-      // trabajo, que es el falso verde por la puerta contraria.
-      final r = await Cascada([_pasoSinNadaSuyo('A', propios: null)])
-          .correr(['lib/']);
-      expect(r.saltados, isEmpty);
-      expect(r.ejecutados, ['A']);
-      expect(r.estado, EstadoDeCorrida.noConcluyente,
-          reason: 'sin sujetos cubiertos, el testigo no atestigua');
-    });
-
-    test('cero de los suyos SIN terminar completa tampoco es un salto',
-        () async {
-      // Una herramienta que murió por timeout no dijo que no había nada suyo:
-      // no dijo nada.
-      final r = await Cascada([
-        _pasoSinNadaSuyo('A', terminacion: Termination.tiempoAgotado),
-      ]).correr(['lib/']);
+    test('un paso que SÍ invocó algo nunca es un salto', () async {
+      // La distinción es de tipo: hay testigo, entonces hubo invocación, y una
+      // invocación que no cubrió nada es «no pude», no «no había nada mío».
+      // Antes esto se reconstruía desde cuatro campos y cada review encontraba
+      // la combinación que faltaba.
+      final murio = _Paso('A',
+          devuelve: VerificationOutcome(
+              verifierId: 'A',
+              diagnostics: const [],
+              witness: Witness(
+                invocation: 'herramienta --sobre lib/',
+                subjects: const [],
+                omitted: const ['la herramienta no llegó a producir nada'],
+                termination: Termination.tiempoAgotado,
+                exitCode: -1,
+                ownSubjects: 0,
+                finishedAt: DateTime.utc(2026),
+              )));
+      final r = await Cascada([murio]).correr(['lib/']);
       expect(r.saltados, isEmpty);
       expect(r.estado, EstadoDeCorrida.noConcluyente);
     });

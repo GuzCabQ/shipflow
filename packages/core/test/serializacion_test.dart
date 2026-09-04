@@ -126,6 +126,12 @@ void main() {
   final rebanada =
       PullRequestSlice(id: 'PR-1', intent: 'por qué existe', files: ['a.txt']);
 
+  final noAplicaba = NotApplicable(
+    subjects: const ['lib/prosa'],
+    reasons: const ['lib/prosa: no contiene ningún archivo de fuente'],
+    decidedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
+  );
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -181,16 +187,60 @@ void main() {
       ).toJson(),
       VerificationOutcome.fromJson
     ),
+    // **Dos instancias canónicas, y es el invariante hablando.** `witness` y
+    // `notApplicable` son excluyentes: o el paso invocó algo, o no tuvo nada
+    // que hacer. Una sola instancia no puede tener los dos campos con valor,
+    // así que la precondición de este check —ningún campo en su default— se
+    // cumple entre las dos y no dentro de una.
+    'VerificationOutcome · sin nada que hacer': (
+      VerificationOutcome(
+        verifierId: 'V',
+        diagnostics: const [],
+        notApplicable: noAplicaba,
+      ).toJson(),
+      VerificationOutcome.fromJson
+    ),
+    'NotApplicable': (noAplicaba.toJson(), NotApplicable.fromJson),
   };
+
+  /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
+  /// todos con valor, así que la precondición se cumple **sobre el conjunto**
+  /// de sus instancias canónicas y no dentro de una.
+  ///
+  /// Es una excepción declarada, no un silencio: si mañana alguien agrega un
+  /// tercer campo excluyente y no suma su instancia, este check lo caza igual
+  /// —el campo nuevo quedaría en su default en TODAS—.
+  const excluyentes = {'VerificationOutcome'};
 
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
     // o a `0` coincide consigo mismo en la ida y vuelta y no lo nota nadie.
     for (final e in canonicas.entries) {
+      final clase = e.key.split(' · ').first;
+      if (excluyentes.contains(clase)) continue;
       test(e.key, () {
         expect(valoresPorDefecto(e.value.$1), isEmpty,
             reason: 'estos campos salen con su valor por defecto, así que no '
                 'distinguen «viajó» de «se perdió»');
+      });
+    }
+
+    for (final clase in excluyentes) {
+      test('$clase · entre todas sus instancias', () {
+        final instancias = [
+          for (final e in canonicas.entries)
+            if (e.key.split(' · ').first == clase) e.value.$1,
+        ];
+        expect(instancias, hasLength(greaterThan(1)),
+            reason: 'una clase con campos excluyentes necesita más de una '
+                'instancia canónica, o la precondición no se puede cumplir');
+        final enDefectoEnTodas = valoresPorDefecto(instancias.first)
+            .where((ruta) =>
+                instancias.every((i) => valoresPorDefecto(i).contains(ruta)))
+            .toList();
+        expect(enDefectoEnTodas, isEmpty,
+            reason: 'estos campos salen con su valor por defecto en TODAS las '
+                'instancias, así que no distinguen «viajó» de «se perdió»');
       });
     }
   });

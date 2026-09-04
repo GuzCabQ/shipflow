@@ -542,6 +542,23 @@ def casos() -> list[dict]:
                                    str(int(m_min.group(1)) + 4)), 1)},
         "menciona": "el presupuesto por paso da",
     })
+    # La propagación por paso, que el sabotaje del default no cubría: un review
+    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
+        encoding="utf-8")
+    _d = verify_prop.index("Cascada([")
+    _lit = verify_prop[_d:verify_prop.index("]);", _d)]
+    _uno = re.search(r"^      Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
+                     _lit, re.M)
+    assert _uno, "no encontré la propagación del presupuesto en verify.dart"
+    c.append({
+        "nombre": "cascada · un paso con un presupuesto distinto del resto",
+        "archivos": {"packages/cli/lib/src/verify.dart": verify_prop.replace(
+            _lit, _lit.replace(_uno.group(1), "presupuesto: presupuesto * 2", 1),
+            1)},
+        "menciona": "como presupuesto y no el parámetro",
+    })
+
     verify_rel = "packages/cli/lib/src/verify.dart"
     verify = (RAIZ / verify_rel).read_text(encoding="utf-8")
     m_src = re.search(r"const Duration\(minutes: (\d+)\)", verify)

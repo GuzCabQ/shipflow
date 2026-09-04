@@ -130,7 +130,7 @@ void main() {
       expect(r.witness!.ownSubjects, isNull);
     });
 
-    test('un directorio real SIN archivos del stack sí da cero', () async {
+    test('un directorio real SIN archivos del stack: no aplicaba', () async {
       // El control negativo: la corrección no puede volverse «todo es no sé».
       Directory('${raiz.path}/prosa').createSync();
       File('${raiz.path}/prosa/LEEME.md').writeAsStringSync('# hola\n');
@@ -138,7 +138,12 @@ void main() {
           ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
           directorio: raiz.path);
       final r = await paso.run(['prosa']);
-      expect(r.witness!.ownSubjects, 0);
+      // **No hay testigo, y es el punto.** No se invocó nada, así que no hay
+      // terminación ni código que registrar: fabricarlos era el hecho falso
+      // del que dependía la clasificación.
+      expect(r.witness, isNull);
+      expect(r.notApplicable, isNotNull);
+      expect(r.notApplicable!.reasons.join(' '), contains('prosa'));
     });
 
     test('el testigo sale de UNA sola foto del árbol', () async {
@@ -146,12 +151,13 @@ void main() {
       // cobertura, con un `await` en el medio— el testigo puede afirmar «cero
       // elementos propios» y «cubrí lib» a la vez. Lo reprodujo un review con un
       // ejecutor que creaba un archivo durante la espera.
-      Directory('${raiz.path}/vacio').createSync();
+      // Sobre un alcance CON archivos, para que la herramienta se invoque de
+      // verdad y el `await` exista.
       final paso = PasoDeFormato(
           ejecutor: _EjecutorQueCreaUnArchivo(
-              '${raiz.path}/vacio', salida(estandar: formatoLimpio)),
+              '${raiz.path}/lib', salida(estandar: formatoLimpio)),
           directorio: raiz.path);
-      final r = await paso.run(['vacio']);
+      final r = await paso.run(['lib']);
 
       final w = r.witness!;
       expect(w.ownSubjects == 0 && w.subjects.isNotEmpty, isFalse,

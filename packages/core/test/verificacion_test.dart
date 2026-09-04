@@ -73,6 +73,35 @@ void main() {
     expect(conCero.attests, isTrue);
   });
 
+  test('un paso no puede haber invocado Y no haber tenido nada que hacer', () {
+    // Declarar las dos cosas deja a quien lea el resultado eligiendo cuál
+    // creer, que es peor que no declarar ninguna.
+    expect(
+        () => VerificationOutcome(
+              verifierId: 'V',
+              diagnostics: const [],
+              witness: testigo(),
+              notApplicable: NotApplicable(
+                subjects: const ['lib/'],
+                reasons: const ['no había nada mío'],
+                decidedAt: DateTime.utc(2026),
+              ),
+            ),
+        throwsArgumentError);
+  });
+
+  test('un «no tenía nada que hacer» SIN motivo no se puede construir', () {
+    // ADR-011 corolario 1: el salto nunca es silencioso. La promesa estaba en
+    // la prosa del tipo y el constructor la dejaba romper.
+    expect(
+        () => NotApplicable(
+              subjects: const ['lib/'],
+              reasons: const ['  '],
+              decidedAt: DateTime.utc(2026),
+            ),
+        throwsArgumentError);
+  });
+
   test('sin testigo: no concluyente, aunque no haya diagnósticos', () {
     final r = VerificationOutcome(verifierId: 'V', diagnostics: []);
     expect(r.verdict, equals(Verdict.noConcluyente));
