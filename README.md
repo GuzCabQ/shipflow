@@ -858,7 +858,7 @@ Lo instalado va en dos capas, y la segunda es la que importa:
 | | Qué hace | Qué cubre |
 |---|---|---|
 | **Validar** | `--literal-pathspecs`, forma canónica de ruta, se rechaza un directorio, y un borrado tiene que ser el de **un** archivo rastreado; el nombre lo valida `git check-ref-format` y la rama se busca en `refs/heads/` | los casos que alguien enumeró, con un «qué hacer» en cada rechazo |
-| **Preguntar** | `git commit --dry-run --porcelain -z` dice qué entraría; se compara contra lo declarado en **las dos direcciones** y recién después se commitea | **la cláusula**, incluido el caso que nadie enumeró |
+| **Preguntar** | el índice aislado **es** el contenido del commit: `git diff --cached --name-only -z` sobre él dice qué va a entrar, y se compara contra lo declarado en **las dos direcciones** antes de commitear | **la cláusula**, incluido el caso que nadie enumeró |
 
 ### Y la segunda capa estaba del lado equivocado del commit
 
@@ -875,11 +875,16 @@ Y traía dos fallos propios, los dos reproducidos:
 | `á.txt` | `git show --name-only` **cita** lo que no es ASCII: devolvía `"\303\241.txt"` y un archivo válido daba incumplimiento falso |
 | `files: ['dir']` con `dir/` ya borrado | `ls-files --error-unmatch` coincide por **prefijo**: el borrado del directorio pasaba como si fuera un archivo |
 
-`git commit --dry-run --porcelain -z` responde lo mismo sin tocar nada: su
-primera columna es lo que va al commit, su segunda lo que se queda en el árbol,
-y `-z` devuelve las rutas crudas. **Queda un hueco, declarado:** entre la
-pregunta y el commit nada más puede tocar el árbol, y eso es el lock de
-concurrencia que el plan ya tiene como decisión abierta `A-5` para la fase 4.
+La primera respuesta a esto fue `git commit --dry-run --porcelain`, que dice
+qué entraría sin tocar nada. **Duró hasta el review siguiente**, que mostró que
+seguían siendo dos consultas sobre dos objetos: `commit -- <rutas>` vuelve a
+leer el árbol. Lo que quedó instalado —el índice aislado— está más abajo.
+
+**Y queda un hueco, declarado:** entre la inspección y el commit nada más puede
+tocar el árbol. Eso es un lock de concurrencia que **no es `A-5`**, y un review
+lo cobró: `A-5` es el lock sobre `.sdlc/` para que dos corridas no se pisen la
+configuración de ganchos, no un lock del árbol ni del índice. Queda como
+decisión propia y abierta.
 
 ### «Exactamente» tenía una sola dirección
 
@@ -889,14 +894,11 @@ plan que dijo que iba a tocar algo y no lo tocó. Ahora las dos direcciones, con
 dos desenlaces distintos — **de más** es la cláusula rota y **de menos** es la
 rebanada mal armada.
 
-Y al rechazar se **desmonta el índice**, solo en las rutas que pusimos. Sin eso,
-el rechazo dejaba preparado justo lo que se acababa de declarar inaceptable,
-esperando al próximo `git commit` hecho a mano.
-
 Se prueba con envoltorios que le sacan a `git` una salvaguarda —el que le hace
-contestar de más a la consulta previa, el que desprende `HEAD` en el `switch`—
-para que la promesa tenga cómo romperse; un control que nunca se vio en rojo no
-está instalado. Y cada caso comprueba también que **`HEAD` no se movió**.
+contestar de más a la consulta, el que desprende `HEAD` en el `switch`, el que
+rompe el `reset` final— para que la promesa tenga cómo romperse; un control que
+nunca se vio en rojo no está instalado. Y cada caso comprueba también que
+**`HEAD` no se movió**.
 
 Y un **control negativo**: un archivo que de verdad se llama `*.txt` sí se
 commitea, y uno con acento o con espacios también. La corrección no podía
@@ -930,49 +932,18 @@ fallaba a medias dejaba rastro —está medido que `git add -- a.txt ignorado.tx
 sale con 1 y deja `a.txt` preparado igual—, y el `reset` usaba la llamada que
 **no lanza** por código distinto de cero: un reparador que no podía fallar.
 
-### Y la foto tampoco podía ser una lectura
+### Y hubo una foto del índice, que también se fue
 
-La primera frontera guardaba `modo`, `objeto` y `ruta` con `ls-files --stage` y
-los reponía con `update-index --cacheinfo`. Un cuarto review la rompió con un
-caso legítimo:
+Entre medio existió una tercera capa: fotografiar el índice del usuario antes de
+tocarlo y reponerlo ante cualquier fallo. La pidió un review, se construyó, se
+probó y se mutó — y encontró de paso que reponerlo desde `ls-files --stage`
+pierde `intent-to-add`, porque el índice tiene más estado del que esa lectura
+muestra.
 
-```
-$ git add --intent-to-add nueva.txt     # «va a existir», sin contenido preparado
-$ # …rebanada rechazada, índice «restaurado»…
-$ git diff --cached --name-only
-nueva.txt                               # ahora sí está preparado, y vacío
-```
-
-`intent-to-add` se ve en `ls-files --stage` **idéntico** a una entrada normal
-con el blob vacío. Reponerlo desde esa lectura lo convierte en un archivo vacío
-de verdad, que el usuario nunca preparó y que su próximo `git commit` a mano se
-llevaría.
-
-Y no es una bandera que faltara enumerar: el índice tiene `skip-worktree`,
-`assume-unchanged`, las tres entradas de un conflicto. **Cualquier
-reconstrucción a partir de su lectura pierde algo.** Es la lección de toda esta
-sección una vez más, cometida en la reparación: no reimplementar la semántica
-de la herramienta, usar su estado.
-
-Ahora la foto son **los bytes del archivo del índice** —cuya ruta se le
-pregunta a `git`, porque un worktree enlazado lo tiene en otro lado— y se
-reponen con un `rename`, que es atómico. La reposición **se verifica contra lo
-que ve `git`**, no contra los bytes que se acaban de escribir: comparar un
-archivo consigo mismo solo prueba que el disco no miente.
-
-Y **cualquier** excepción de la reposición sale junto con el motivo del
-rechazo. Antes eso valía solo si la verificación llegaba a correr; si fallaba la
-escritura, el motivo del rechazo se perdía en el camino. Un fallo de limpieza no
-puede borrar por qué se rechazó.
-
-Un merge sin resolver aborta antes de tocar nada. **Ya no por la reposición** —
-los bytes traen las tres entradas del conflicto sin que haya que entenderlas—
-sino porque `git` mismo se niega a hacer un commit parcial durante un merge, y
-decirlo antes con un «qué hacer» es mejor que un `GitFallo` crudo.
-
-En el camino de éxito no se restaura nada, y es lo correcto: está medido que
-`git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo `HEAD`.
-**El adapter se comporta como `git`**, no como una idea nuestra de `git`.
+**Se borró entera al llegar el índice aislado**, que no toca el índice del
+usuario y deja la reposición sin nada que reparar. Queda anotado porque el
+recorrido dice algo: la pregunta *«¿cómo reparo el daño?»* tuvo tres respuestas
+cada vez mejores, y la buena era *«¿por qué hay daño?»*.
 
 ### Dos pruebas que anunciaban un escenario y ejercían otro
 
@@ -995,6 +966,139 @@ abrir archivos sin declarar nada.
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
 y su caso ciego. **El arnés aplica 100 sabotajes.**
+
+---
+
+## Lo que `apply` pregunta antes de commitear
+
+El pseudocódigo del corpus le da a `ChangeSink` seis líneas antes del PR. La
+rebanada anterior entregó una: `commit + push`. Esta entrega dos más.
+
+```
+SNK → PLG:  ArtifactPolicy → qué se commitea          ← esta
+SNK → PLG:  ProjectTopology → límites de paquete         declarada, no hecha
+SNK:        escanea secretos                          ← esta
+SNK:        commit + push                                ya estaba
+SNK:        arma el artefacto de DOS SUPERFICIES         falta
+SNK → HOST: PR en draft                                  falta
+```
+
+### Rechaza, no excluye
+
+El pseudocódigo dice *«excluye generados del stage»* y **el corpus nunca dijo
+si eso es en silencio**. No hay texto que lo autorice ni que lo prohíba.
+
+Lo decide la cláusula 1, que ya estaba instalada: *exactamente los archivos de
+la rebanada, en los dos sentidos*. Quitar un archivo que la rebanada declara la
+rompería. Y `docs/03` tiene el principio general, aunque nunca lo aplicó a
+`vcs`: *«se reporta como hallazgo, no se absorbe en silencio»*.
+
+Se le pregunta `isEditable` y no `isGenerated`, que son dos cosas: `isEditable`
+es la negación de las dos —lo generado se regenera, lo de build no es fuente— y
+preguntar solo por lo generado dejaba pasar los directorios de build. Hay un
+test que le pasa una política **al revés** y comprueba que el veredicto se da
+vuelta sobre el mismo nombre: `vcs` no sabe qué hace que algo sea generado, y
+esa ignorancia es comprobable.
+
+### Los secretos cortan el commit, y esa decisión no estaba tomada
+
+El corpus asigna la detección a `vcs` en cuatro lugares y **nunca le dio
+severidad**: no hay ADR, ni delta, ni invariante; no figura en la tabla de
+severidades de `docs/08` ni entre los seis deltas que ADR-013 reconcilió. La
+única pista era que el plan la ubica en «Requiere criterio», que por ADR-012 es
+la superficie de **mirar**.
+
+Bloquea. Un secreto commiteado no se des-commitea: queda en el historial, y
+reportarlo entonces no es un control sino una crónica — es el mismo argumento
+por el que el check de anonimato de este repositorio mira el historial y no el
+árbol. Cumple INV-8 porque la alternativa la escribe el propio corpus en `P-07`
+y `L-09`: *«leé de `env` vía provider de configuración»*.
+
+**El hallazgo nunca lleva el secreto.** INV-5 le exige eso a las credenciales
+del arnés; vale igual para las del usuario. Un detector que para avisarte de una
+filtración te la escribe en un log la filtra otra vez, y en un lugar que nadie
+está mirando. Hay un test que lo comprueba sobre el mensaje entero.
+
+**No es exhaustivo, y va escrito.** Reconoce formas con estructura —encabezados
+de clave privada, prefijos de token de proveedores— y asignaciones a nombres que
+declaran su contenido. Una cadena sin ninguna de esas dos cosas pasa: un secreto
+sin forma reconocible es indistinguible de cualquier otra cadena, y prometer lo
+contrario sería el falso verde que este arnés existe para cazar.
+
+La suite **se deriva de la tabla de patrones**, no de una lista paralela: hay un
+test que compara las muestras contra `DetectorDeSecretos.loQueReconoce`, así que
+un patrón nuevo sin caso deja la suite en rojo en vez de entrar sin que nadie lo
+haya visto fallar.
+
+### Y `ProjectTopology` no entra, con su motivo
+
+Su única función descrita es *«corta commits atómicos por unidad coherente»*
+(`happy-path.md`, una sola línea en todo el corpus). **«Unidad coherente» no
+está definida en ninguna parte**, y hay una contradicción sin resolver:
+`docs/05` §4 asigna la descomposición a `orchestration`, y el plan la congela —
+*«un PR por corrida hasta que el corpus muestre que hace falta»*—. Construirla
+ahora sería inventar el criterio que falta.
+
+### Lo que la regla de cadenas cobró en el camino
+
+Los fixtures de los tests se llamaban `generado.g.dart` y `config.dart`, y
+`lenguaje-en-plugin-dart` los rechazó. Tenía razón: `vcs` no puede saber qué
+extensión significa «generado» —eso es justamente lo que la política inyectada
+viene a decidir— y un fixture con esa forma lo enseñaba de contrabando. Ahora se
+llaman `generado.gen` y `ajustes.conf`, y el test es más honesto que antes.
+
+También cobró un comentario que decía *«una credencial filtrada no es una
+pregunta sobre X ni sobre Y»*: al escribirlo, `vcs` conocía X e Y. Es el mismo
+caso que ya había corregido `ArtifactPolicy` en `core`, palabra por palabra.
+
+### Tres formas de colar un secreto, y una cuarta que salió midiendo
+
+Un review encontró que el detector se podía evadir de tres maneras. Las tres
+reproducidas contra `git` de verdad, y **la raíz de las tres es la misma**: el
+detector inspeccionaba una *representación* del cambio, y el commit consumía
+otra.
+
+| La evasión | Por qué pasaba |
+|---|---|
+| contenido `++ AKIA…` | `git` lo representa como `+++ AKIA…`, y el detector descartaba toda línea `+++` por su **forma**, dando por hecho que solo el encabezado la tiene |
+| un `textconv` en `.gitattributes` | el repositorio inspeccionado configura cómo se ve su propio diff; con uno que no imprime nada, el detector recibía un diff vacío |
+| un gancho `pre-commit` | reescribe el archivo y hace `git add` **entre** la inspección y el commit: se escaneaba «inocente» y `HEAD` quedaba con la clave |
+| **un driver de diff externo** | la cuarta, que el review no nombró: `diff.<driver>.command` también oculta el contenido, y **`--no-textconv` no lo tapa** |
+
+La primera se arregla con estado del parser en vez de forma de la línea: el
+encabezado `+++ b/…` aparece **siempre antes** del primer `@@`, así que lo que
+distingue no es cómo se ve la línea sino dónde está. La segunda y la cuarta,
+con `--no-textconv` y `--no-ext-diff`, que son dos banderas porque son dos
+agujeros — lo comprobé midiendo, no leyéndolo.
+
+**La tercera cambió el diseño.** No era la concurrencia futura: era la propia
+operación invocando al gancho adentro suyo. `apply` arma ahora un **índice
+aparte** con `GIT_INDEX_FILE`, lo inspecciona y commitea **ese** índice con
+`--no-verify`. Deja de haber dos consultas cercanas en el tiempo sobre
+representaciones distintas: hay un objeto.
+
+Y tuvo una consecuencia que no busqué: **el índice del usuario ya no se toca**,
+así que la maquinaria de fotografiarlo y reponerlo —que otro review había
+pedido, y que construí y probé— quedó sin nada que reparar. Se fue con sus
+tests de reposición. Los que comprueban que el índice del usuario sobrevive a
+un rechazo se quedan, y ahora pasan por construcción en vez de por reparación.
+
+**Costo declarado:** los ganchos del usuario no corren sobre los commits del
+arnés. INV-10 ya dice que ningún control cuya ausencia sea inaceptable se funda
+en ganchos; acá el gancho no era el control, era lo que lo evadía.
+
+### Doce mutaciones, y dos encontraron lo que 70 tests verdes no
+
+| La mutación | Lo que reveló |
+|---|---|
+| saltar los binarios → no saltarlos | **rama muerta**: sin `--binary`, `git diff` no emite ninguna línea de contenido para un binario, así que no había nada que saltar |
+| `{12,}` → `*` en el literal | ningún test daba un valor **corto** a un nombre sensible, así que el umbral no estaba probado |
+| `break` → `continue` por línea | una línea que encaja en dos patrones se contaba dos veces, inflando el «hay N secretos» |
+
+La primera es la tercera rama muerta que este proyecto borra en dos días. Una
+redundancia que no puede fallar se lee como defensa en profundidad y no defiende
+nada. Ahora la premisa —que `git` no emite contenido de binarios— **está
+comprobada en la suite** en vez de asumida por una rama que la protegía de nada.
 
 ---
 
@@ -1287,7 +1391,9 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **19 de los 24 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`ship`.** `verify` existe y corre; falta el resto de la etapa: el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ProjectTopology` en `vcs`.** Declarada y no hecha: su única función descrita es «cortar commits por unidad coherente», que no está definida en el corpus, y la descomposición está asignada a `orchestration` y congelada por el plan | Cuando el corpus defina «unidad coherente» |
+| **La omisión del detector de secretos, por corrida.** Hoy es un límite declarado del método —lo binario no se revisa— y no una omisión reportada en cada ejecución, que es lo que pide el corolario 5 de ADR-011 | Con el artefacto de revisión, en `ship` |
 | **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 

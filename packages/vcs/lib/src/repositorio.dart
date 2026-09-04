@@ -23,6 +23,8 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'secretos.dart';
+
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///
 /// **Lleva el comando y lo que dijo.** Un fallo de repositorio sin la salida
@@ -74,7 +76,35 @@ class RepositorioGit implements ChangeSink {
   /// nada que hacer.
   final String programa;
 
-  const RepositorioGit({required this.directorio, this.programa = 'git'});
+  /// Qué es fuente y qué no, según el stack. **Obligatoria y sin valor por
+  /// defecto.**
+  ///
+  /// `docs/04` §«solo PR» lo dice sin ambigüedad para la política: hace falta
+  /// **incluso** en el caso que entra sin `WorkItem`, sin plan y sin agente.
+  /// (Esa misma frase nombra también `ProjectTopology`, que acá **no** se
+  /// recibe: su única función descrita —cortar commits por «unidad
+  /// coherente»— no está definida en el corpus y la descomposición está
+  /// asignada a `orchestration` y congelada. Es `D-095`.) Un valor por defecto
+  /// —una política que dijera que todo es fuente— haría que un llamador
+  /// distraído commiteara artefactos generados sin que nadie lo hubiera
+  /// afirmado, que es el mismo agujero que `Witness.omitted` cerró del otro
+  /// lado: un hecho que se asume no es un hecho declarado.
+  ///
+  /// **`vcs` no sabe qué la hace decir que sí.** Recibe el puerto de `core`;
+  /// los sufijos y directorios que definen «generado» viven en el plugin del
+  /// stack, que este paquete ni siquiera puede ver.
+  final ArtifactPolicy politica;
+
+  /// Qué reconoce como secreto. Inyectable **para poder probar que su
+  /// ausencia se nota**, igual que [programa].
+  final DetectorDeSecretos detector;
+
+  const RepositorioGit({
+    required this.directorio,
+    required this.politica,
+    this.programa = 'git',
+    this.detector = const DetectorDeSecretos(),
+  });
 
   /// **Todo pasa por `--literal-pathspecs`.** Sin eso, `git` lee cada ruta
   /// como un patrón: `*.txt` commitea dos archivos y `:(glob)…` commitea lo
@@ -83,12 +113,17 @@ class RepositorioGit implements ChangeSink {
   ///
   /// El efecto secundario es el que hacía falta: con pathspecs literales, un
   /// archivo que de verdad se llame `*.txt` se commitea, y hoy no se puede.
-  Future<ProcessResult> _git(List<String> args) async {
+  /// [entorno] se **suma** al del proceso, no lo reemplaza: es para
+  /// `GIT_INDEX_FILE`, que es como se le dice a `git` que trabaje sobre un
+  /// índice que no es el del usuario.
+  Future<ProcessResult> _git(List<String> args,
+      {Map<String, String> entorno = const {}}) async {
     final completos = ['--literal-pathspecs', ...args];
     final ProcessResult r;
     try {
       r = await Process.run(programa, completos,
           workingDirectory: directorio,
+          environment: entorno,
           stdoutEncoding: utf8,
           stderrEncoding: utf8);
     } on ProcessException catch (e) {
@@ -100,13 +135,25 @@ class RepositorioGit implements ChangeSink {
 
   /// Corre `git` y **exige que haya salido bien**. Un código distinto de cero
   /// que se ignora es un cambio que se cree hecho y no está.
-  Future<String> _exigir(List<String> args) async {
-    final r = await _git(args);
+  Future<String> _exigir(List<String> args,
+          {Map<String, String> entorno = const {}}) async =>
+      (await _exigirCrudo(args, entorno: entorno)).trim();
+
+  /// Igual, pero **sin recortar**.
+  ///
+  /// Las salidas separadas por NUL son bytes, no texto para leer: un archivo
+  /// que se llame « a.txt» sale con su espacio, y recortarlo lo convierte en
+  /// otro archivo. Un review lo encontró — la comparación decía que se pidió
+  /// « a.txt» y que el índice además tocaba «a.txt», que es el mismo archivo
+  /// escrito de dos maneras por culpa nuestra.
+  Future<String> _exigirCrudo(List<String> args,
+      {Map<String, String> entorno = const {}}) async {
+    final r = await _git(args, entorno: entorno);
     if (r.exitCode != 0) {
       throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}',
           r.exitCode, '${r.stdout}${r.stderr}'.trim());
     }
-    return (r.stdout as String).trim();
+    return r.stdout as String;
   }
 
   @override
@@ -185,11 +232,40 @@ class RepositorioGit implements ChangeSink {
           'Escribila sin `./`, sin `..` y sin barras repetidas ni al final.');
     }
 
+    // **Lo que no es fuente no se commitea, y no se quita en silencio.**
+    //
+    // `isEditable` es la pregunta correcta y no `isGenerated`: es la negación
+    // de dos cosas —lo generado se regenera, lo de build no es fuente— y las
+    // dos van afuera. Preguntar solo por lo generado dejaba pasar los
+    // directorios de build, que no son generados y tampoco se versionan.
+    //
+    // **Se rechaza, no se excluye.** El pseudocódigo dice «excluye generados
+    // del stage» y el corpus nunca dijo si eso es en silencio; quitar un
+    // archivo que la rebanada declara rompería la cláusula 1, que exige
+    // exactamente los archivos de la rebanada en los dos sentidos. Y `docs/03`
+    // tiene el principio: se reporta como hallazgo, no se absorbe en silencio.
+    // **El borrado de algo ya versionado sí se permite.** La política dice qué
+    // no se escribe; si un repositorio ya tenía un generado commiteado, sacarlo
+    // es exactamente lo que la política quiere y prohibirlo dejaba al arnés sin
+    // manera de limpiarlo. Lo señaló un review, y `D-094` se enmienda con esto.
+    final existeEnDisco =
+        FileSystemEntity.typeSync('$directorio/$entrada', followLinks: false) !=
+            FileSystemEntityType.notFound;
+    if (existeEnDisco && !politica.isEditable(entrada)) {
+      throw no(
+          'no es fuente: el stack lo declara generado o artefacto de build.',
+          'Lo generado se regenera, así que versionarlo duplica la verdad y la '
+              'deja envejecer. Sacalo de la rebanada; si de verdad tiene que '
+              'viajar, lo que hay que cambiar es la política del stack, no '
+              'esta rebanada.');
+    }
+
     // Qué hay del otro lado. `followLinks: false` a propósito: `git` guarda un
     // enlace como enlace y no mira a dónde apunta, así que uno que apunte a un
     // directorio sigue siendo un archivo para esto.
     final tipo =
         FileSystemEntity.typeSync('$directorio/$entrada', followLinks: false);
+    assert(existeEnDisco == (tipo != FileSystemEntityType.notFound));
     if (tipo == FileSystemEntityType.directory) {
       throw no(
           'es un directorio.',
@@ -226,142 +302,64 @@ class RepositorioGit implements ChangeSink {
     return entrada;
   }
 
-  /// Qué rutas entrarían al commit si se hiciera ahora. **Sin hacerlo.**
+  /// **El índice aislado: el objeto que se escanea es el que se commitea.**
   ///
-  /// `git commit --dry-run --porcelain` responde exactamente eso y no toca
-  /// nada. La primera columna es lo que va al commit y la segunda lo que se
-  /// queda en el árbol: está medido que un archivo que alguien dejó staged y
-  /// que la rebanada no nombra sale con la primera en blanco. La cláusula 1
-  /// sostenida por la propia herramienta, en vez de por una creencia sobre
-  /// ella.
+  /// Antes esto preparaba el índice real, preguntaba con `commit --dry-run` y
+  /// después commiteaba con `commit -- <rutas>`, que **vuelve a leer el árbol
+  /// de trabajo**. Un review lo rompió con un gancho `pre-commit` que reescribe
+  /// el archivo y hace `git add`: el escaneo veía una cosa, el commit se
+  /// llevaba otra, y el secreto quedaba en `HEAD`. No era la concurrencia
+  /// futura — era la propia operación invocando al gancho adentro suyo.
   ///
-  /// **`-z` no es un detalle de formato.** Sin él git *cita* las rutas que no
-  /// son ASCII: `á.txt` sale como la cadena `"\303\241.txt"`, y comparar eso
-  /// contra la ruta declarada fallaba sobre un archivo perfectamente válido.
-  /// Lo encontró un review, y es la misma clase de error que todo lo demás
-  /// acá: la salida de una herramienta no es el dato, es una representación
-  /// del dato.
-  Future<Set<String>> _loQueEntraria(List<String> rutas) async {
-    final r = await _git([
-      'commit',
-      '--dry-run',
-      '--porcelain',
-      '-z',
-      '--untracked-files=no',
-      '--',
-      ...rutas,
-    ]);
-    // Sale 1 cuando no hay nada que commitear, y eso es una respuesta.
-    if (r.exitCode != 0 && r.exitCode != 1) {
-      throw GitFallo('$programa commit --dry-run', r.exitCode,
-          '${r.stdout}${r.stderr}'.trim());
-    }
-    final campos = (r.stdout as String)
-        .split('\u0000')
-        .where((s) => s.isNotEmpty)
-        .toList();
-    final entran = <String>{};
-    for (var i = 0; i < campos.length; i++) {
-      final campo = campos[i];
-      if (campo.length < 4) {
-        throw GitFallo('$programa commit --dry-run', r.exitCode,
-            'no entiendo «$campo» en el estado que devolvió');
-      }
-      final x = campo[0], y = campo[1];
-      // Solo la primera columna: es lo que va al commit. Lo no rastreado no
-      // aparece porque se lo pedimos a git con `--untracked-files=no`, y no
-      // se filtra acá además — una segunda defensa que nunca puede fallar no
-      // es defensa, es una línea que se lee como si protegiera algo.
-      final entra = x != ' ';
-      // Un renombrado trae la ruta de origen en un campo aparte y toca las
-      // dos: hay que consumir el campo, y contarlo.
-      if (x == 'R' || x == 'C' || y == 'R' || y == 'C') {
-        i++;
-        if (i < campos.length && entra) entran.add(campos[i]);
-      }
-      if (entra) entran.add(campo.substring(3));
-    }
-    return entran;
-  }
-
-  /// El índice, **entero y en bytes**, más lo que `git` ve.
+  /// Acá se arma un índice aparte con `GIT_INDEX_FILE`, se lo inspecciona y se
+  /// commitea **ese mismo índice**. Deja de haber dos consultas cercanas en el
+  /// tiempo sobre representaciones distintas: hay un objeto.
   ///
-  /// La primera versión guardaba `modo`, `objeto` y `ruta` leídos con
-  /// `ls-files --stage` y los reponía con `update-index --cacheinfo`. Un review
-  /// lo rompió con un caso legítimo: `git add --intent-to-add` deja una entrada
-  /// que en `ls-files` se ve **idéntica** a una normal con el blob vacío, y
-  /// reponerla con `--cacheinfo` la convierte en un archivo vacío de verdad. El
-  /// usuario terminaba con algo preparado que nunca preparó.
-  ///
-  /// El índice tiene más estado del que `ls-files` muestra —`intent-to-add`,
-  /// `skip-worktree`, `assume-unchanged`, las tres entradas de un conflicto—,
-  /// así que **cualquier reconstrucción a partir de su lectura pierde algo**.
-  /// Es la lección de todo este archivo otra vez: no reimplementar la
-  /// semántica de la herramienta, usar su estado.
-  ///
-  /// Se guardan dos cosas: los bytes, que son lo que se repone, y la vista de
-  /// `git status`, que es contra lo que se comprueba que reponerlos sirvió.
-  Future<({List<int>? bytes, String vista})> _fotoDelIndice() async {
-    final archivo = File(await _rutaDelIndice());
-    return (
-      bytes: archivo.existsSync() ? archivo.readAsBytesSync() : null,
-      vista: await _exigir(['status', '--porcelain', '-z']),
-    );
-  }
-
-  /// Dónde vive el archivo del índice. **Se le pregunta a `git`**: no siempre
-  /// es `.git/index` —un worktree enlazado lo tiene en otro lado.
-  Future<String> _rutaDelIndice() async {
-    final relativa = await _exigir(['rev-parse', '--git-path', 'index']);
-    return relativa.startsWith('/') ? relativa : '$directorio/$relativa';
-  }
-
-  /// Devuelve el índice a la foto, **y comprueba que haya servido**.
-  ///
-  /// Se escribe a un temporal y se renombra encima, porque `rename` es
-  /// atómico: si el proceso muere a mitad no queda un índice cortado. Un
-  /// repositorio recién creado no tiene índice todavía, y ahí «reponer» es
-  /// borrarlo.
-  ///
-  /// **Todo está envuelto.** Antes, un fallo acá —de `git`, del disco, de la
-  /// ruta— se propagaba solo y el motivo del rechazo se perdía: la promesa de
-  /// informar las dos cosas se cumplía solo cuando la verificación llegaba a
-  /// correr. Lo encontró un review. Ahora **cualquier** excepción de la
-  /// reposición sale como [PromesaIncumplida] nombrando las dos.
-  Future<void> _restaurarIndice(
-      ({List<int>? bytes, String vista}) foto, Object porQue) async {
-    Object? problema;
+  /// **Y el índice del usuario no se toca.** Eso vuelve innecesaria la
+  /// maquinaria de fotografiarlo y reponerlo que pedía un review anterior: no
+  /// hay daño que deshacer si no hay daño. En el camino de éxito sí se
+  /// sincroniza, porque es lo que hace `git commit -- <ruta>` y este adapter
+  /// se comporta como `git`.
+  Future<T> _conIndiceAislado<T>(
+      Future<T> Function(Map<String, String>, String) usar) async {
+    final ruta = '${await _rutaDeGit('index')}.shipflow';
+    final entorno = {'GIT_INDEX_FILE': ruta};
+    final archivo = File(ruta);
+    // **A dónde va a buscar ganchos `git`, y no los va a encontrar.**
+    //
+    // No se crea: está medido que con una ruta inexistente `git` commitea
+    // igual y no dispara nada. Crearla era código muerto y una mutación lo
+    // demostró — nada se ponía rojo al sacarlo. Lo que sí hace falta es
+    // **borrarla si existe**: si alguien dejó un gancho justo ahí, correría, y
+    // «ningún gancho del usuario corre» dejaría de ser cierto por la puerta que
+    // abrimos nosotros. Esa guardia sí tiene su caso y sí se la vio fallar.
+    final sinGanchos = Directory('$ruta.sin-ganchos');
     try {
-      final archivo = File(await _rutaDelIndice());
-      if (foto.bytes == null) {
-        if (archivo.existsSync()) archivo.deleteSync();
-      } else {
-        final temporal = File('${archivo.path}.shipflow-restaura');
-        temporal.writeAsBytesSync(foto.bytes!, flush: true);
-        temporal.renameSync(archivo.path);
+      if (archivo.existsSync()) archivo.deleteSync();
+      if (sinGanchos.existsSync()) sinGanchos.deleteSync(recursive: true);
+      // Un repositorio sin commits todavía no tiene de dónde leer un árbol, y
+      // ahí el índice vacío ES el punto de partida correcto.
+      if ((await _git(['rev-parse', '--verify', '--quiet', 'HEAD'])).exitCode ==
+          0) {
+        await _exigir(['read-tree', 'HEAD'], entorno: entorno);
       }
-      // **Contra lo que ve `git`, no contra los bytes que acabo de escribir.**
-      // Comparar el archivo contra sí mismo solo prueba que el disco no miente.
-      final vista = await _exigir(['status', '--porcelain', '-z']);
-      if (vista != foto.vista) {
-        problema = 'git ve el repositorio distinto de como estaba';
-      }
-    } catch (e) {
-      problema = e;
+      return await usar(entorno, sinGanchos.path);
+    } finally {
+      if (archivo.existsSync()) archivo.deleteSync();
+      if (sinGanchos.existsSync()) sinGanchos.deleteSync(recursive: true);
     }
-    if (problema != null) {
-      throw PromesaIncumplida(
-          'dejar el índice como estaba al rechazar la rebanada '
-              '(${porQue.runtimeType}: $porQue)',
-          'un índice que no pude devolver a su lugar: $problema');
-    }
+  }
+
+  /// Una ruta interna de `git`. **Se le pregunta**: no siempre cuelga de
+  /// `.git/` —un worktree enlazado la tiene en otro lado.
+  Future<String> _rutaDeGit(String que) async {
+    final relativa = await _exigir(['rev-parse', '--git-path', que]);
+    return relativa.startsWith('/') ? relativa : '$directorio/$relativa';
   }
 
   /// Un merge sin resolver no admite rebanadas.
   ///
-  /// **Ya no es por la reposición** —los bytes del índice traen las tres
-  /// entradas del conflicto sin que haya que entenderlas—. Es porque `git`
-  /// mismo se niega: *«cannot do a partial commit during a merge»*. Está acá
+  /// `git` mismo se niega a hacer un commit parcial durante un merge. Está acá
   /// para decirlo antes y decir qué hacer, que es lo que un `GitFallo` crudo no
   /// hace.
   Future<void> _exigirSinConflictos() async {
@@ -400,70 +398,121 @@ class RepositorioGit implements ChangeSink {
       rutas.add(ruta);
     }
 
-    // **La foto del índice, antes de tocarlo.** Todo lo que sigue está dentro
-    // de una frontera: si algo falla —el propio `add`, la consulta, el
-    // commit— el índice vuelve a esto. Antes la limpieza estaba solo en la
-    // rama del rechazo, así que un `add` que fallaba a medias dejaba staged
-    // lo que había alcanzado a preparar. Está medido: `git add -- a.txt
-    // ignorado.txt` sale con 1 **y deja `a.txt` preparado igual**.
-    //
-    // En el camino de éxito no se repone nada, y es lo correcto: está medido
-    // que `git commit -- <ruta>` sincroniza el índice de esa ruta con el nuevo
-    // `HEAD`. El adapter se comporta como `git`, no como una idea de `git`.
     await _exigirSinConflictos();
-    final foto = await _fotoDelIndice();
-    try {
-      return await _aplicarSobreElIndice(slice, rutas);
-    } catch (porQue) {
-      await _restaurarIndice(foto, porQue);
-      rethrow;
+
+    final revision = await _conIndiceAislado((entorno, sinGanchos) async {
+      await _exigir(['add', '--', ...rutas], entorno: entorno);
+
+      // **Lo que este índice va a commitear, que es este índice.** Ya no hay
+      // que preguntarle a `commit --dry-run` qué haría: el índice ES el
+      // contenido del commit. `-z` porque `git` cita las rutas que no son
+      // ASCII y comparar la cita contra la ruta falla sobre archivos válidos.
+      final entra = (await _exigirCrudo(
+              ['diff', '--cached', '--name-only', '-z', '--', ...rutas],
+              entorno: entorno))
+          .split('\u0000')
+          .where((s) => s.isNotEmpty)
+          .toSet();
+      final pedidas = rutas.toSet();
+      final demas = entra.difference(pedidas).toList()..sort();
+      final faltan = pedidas.difference(entra).toList()..sort();
+      if (demas.isNotEmpty) {
+        throw PromesaIncumplida('commitear exactamente ${rutas.join(", ")}',
+            'un índice que además tocaría ${demas.join(", ")}');
+      }
+      if (faltan.isNotEmpty) {
+        throw RebanadaNoAplicable(
+            'la rebanada declara ${faltan.join(", ")} y no hay nada que '
+                'commitear ahí.',
+            'La cláusula dice EXACTAMENTE, y eso vale en los dos sentidos: un '
+                'archivo declarado que no cambió es un plan que no pasó. '
+                'Sacalo de la rebanada, o revisá por qué no se escribió.');
+      }
+
+      await _exigirSinSecretos(rutas, entorno);
+
+      // **Ningún gancho del usuario corre, y hace falta más que `--no-verify`.**
+      //
+      // `--no-verify` frena `pre-commit` y `commit-msg`, y nada más. Un review
+      // lo midió: con `prepare-commit-msg` el gancho reescribía el archivo en
+      // el árbol de trabajo y `apply` devolvía éxito dejando el repositorio con
+      // la clave. El objeto commiteado seguía siendo el inspeccionado —el
+      // índice aislado aguantó— pero el costo que `D-096` declaraba era falso.
+      // `post-commit` también corría.
+      //
+      // Un `core.hooksPath` a un directorio vacío los frena a todos, y es UN
+      // mecanismo en vez de dos: `--no-verify` al lado de esto sería una línea
+      // que no puede fallar.
+      await _exigir([
+        '-c',
+        'core.hooksPath=$sinGanchos',
+        'commit',
+        '--message',
+        slice.intent,
+      ], entorno: entorno);
+      return _exigir(['rev-parse', 'HEAD']);
+    });
+
+    // **Sincronizar el índice real con el nuevo `HEAD`, solo en estas rutas.**
+    // Está medido que es exactamente lo que deja `git commit -- <ruta>`. Sin
+    // esto, `git status` reporta las rutas recién commiteadas como borradas.
+    // **Y su fallo no se ignora.** Estaba con la llamada que NO lanza, así que
+    // un `reset` que fallara dejaba el commit hecho, el índice desincronizado y
+    // a `apply` devolviendo una revisión como si todo hubiera salido bien. Lo
+    // encontró un review, y contradecía la regla que este mismo archivo se
+    // impone unas líneas más arriba.
+    //
+    // La revisión ya existe y no se deshace: son dos efectos distintos y el
+    // primero salió bien. Lo que no se puede es afirmar éxito total, así que el
+    // estado parcial se nombra entero, con la revisión adentro.
+    final sincronizado = await _git(['reset', '--quiet', '--', ...rutas]);
+    if (sincronizado.exitCode != 0) {
+      throw PromesaIncumplida(
+          'dejar el índice al día con el commit $revision',
+          'la revisión $revision creada y el índice sin sincronizar en '
+              '${rutas.join(", ")}: '
+              '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}');
     }
+    return revision;
   }
 
-  /// El cuerpo de [apply], **con el índice ya fotografiado**. Todo lo de acá
-  /// puede lanzar: quien llama devuelve el índice a su lugar.
-  Future<String> _aplicarSobreElIndice(
-      PullRequestSlice slice, List<String> rutas) async {
-    await _exigir(['add', '--', ...rutas]);
-
-    // **Se le pregunta a git qué va a commitear, ANTES de commitear.**
-    //
-    // Esto estaba después, comparando el commit ya hecho, y un review lo cobró
-    // con el argumento correcto: una postcondición que solo puede informar
-    // convierte un fallo visible en un estado parcial. La excepción decía la
-    // verdad y `HEAD` se había movido igual. Acá no se comprueba el resultado
-    // de la operación: se comprueba la operación antes de que exista, que es
-    // lo único que deja el invariante en pie.
-    //
-    // **Queda un hueco declarado**: entre la pregunta y el commit, nada más
-    // tiene que tocar el árbol. Eso es el lock de concurrencia, que el plan ya
-    // tiene como decisión abierta `A-5` para la fase 4. No se disimula acá.
-    final entraria = await _loQueEntraria(rutas);
-    final pedidas = rutas.toSet();
-    final demas = entraria.difference(pedidas).toList()..sort();
-    final faltan = pedidas.difference(entraria).toList()..sort();
-    if (demas.isNotEmpty || faltan.isNotEmpty) {
-      if (demas.isNotEmpty) {
-        // Nadie enumeró este caso: la rota es la cláusula, no la rebanada.
-        throw PromesaIncumplida('commitear exactamente ${rutas.join(", ")}',
-            'un commit que además tocaría ${demas.join(", ")}');
+  /// Escanea **una ruta por vez**, pasándole al detector la ruta que ya
+  /// conoce.
+  ///
+  /// Sacarla del encabezado `diff --git a/x b/x` era otro parser de más: con
+  /// una ruta que no es ASCII, `git` la **cita** —`"a/\303\241.conf"`— y el
+  /// hallazgo quedaba señalando una cadena que no es un archivo. La ruta ya la
+  /// tenemos; no hay que volver a deducirla de la salida de la herramienta.
+  ///
+  /// **`--no-textconv` y `--no-ext-diff` no son detalles.** Un repositorio
+  /// puede declarar en `.gitattributes` un `textconv` que reemplace lo que
+  /// `git diff` muestra, y está medido que con uno que no imprime nada el
+  /// detector recibe un diff vacío y el secreto pasa. Una inspección de
+  /// seguridad no puede leer una **representación** configurable por el propio
+  /// repositorio que está inspeccionando.
+  Future<void> _exigirSinSecretos(
+      List<String> rutas, Map<String, String> entorno) async {
+    for (final ruta in rutas) {
+      final diff = await _exigir([
+        'diff',
+        '--cached',
+        '--unified=0',
+        '--no-textconv',
+        '--no-ext-diff',
+        '--',
+        ruta,
+      ], entorno: entorno);
+      final hallazgos = detector.revisar(diff, archivo: ruta);
+      if (hallazgos.isNotEmpty) {
+        final primero = hallazgos.first;
+        throw RebanadaNoAplicable(
+            hallazgos.length == 1
+                ? 'hay ${primero.queEs} en ${primero.archivo}:${primero.linea}.'
+                : 'hay ${hallazgos.length} secretos en ${primero.archivo}, el '
+                    'primero ${primero.queEs} en la línea ${primero.linea}.',
+            primero.queHacer);
       }
-      // Esto en cambio sí es la rebanada: declaró algo que no cambió.
-      throw RebanadaNoAplicable(
-          'la rebanada declara ${faltan.join(", ")} y no hay nada que '
-              'commitear ahí.',
-          'La cláusula dice EXACTAMENTE, y eso vale en los dos sentidos: un '
-              'archivo declarado que no cambió es un plan que no pasó. Sacalo '
-              'de la rebanada, o revisá por qué no se escribió.');
     }
-
-    // **`-- <rutas>` es la cláusula 1 hecha comando.** Sin eso, `git commit`
-    // se lleva lo que hubiera quedado en el índice de antes, y el artefacto de
-    // revisión declararía cubiertos cambios que nadie planeó. Está medido: con
-    // rutas explícitas, un archivo staged de antes queda afuera.
-    await _exigir(['commit', '--message', slice.intent, '--', ...rutas]);
-
-    return _exigir(['rev-parse', 'HEAD']);
   }
 
   /// La rama actual. **Vacía si `HEAD` está suelto**, que es un estado y no un

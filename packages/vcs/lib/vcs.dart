@@ -7,3 +7,4 @@
 library;
 
 export 'src/repositorio.dart';
+export 'src/secretos.dart';
