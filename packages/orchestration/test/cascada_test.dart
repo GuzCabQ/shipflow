@@ -62,6 +62,36 @@ class _Paso implements Verifier {
   }
 }
 
+/// El testigo de un paso que **corrió y no tenía nada suyo que mirar**.
+///
+/// Terminación completa, y cero elementos del alcance de su incumbencia. No es
+/// «no pude mirar»: la herramienta corrió y terminó.
+Witness _sinNadaSuyo({
+  int? propios = 0,
+  Termination terminacion = Termination.completa,
+}) =>
+    Witness(
+      invocation: 'herramienta --sobre lib/',
+      subjects: const [],
+      omitted: const ['lib/: no contiene ningún archivo de fuente'],
+      termination: terminacion,
+      exitCode: 0,
+      ownSubjects: propios,
+      finishedAt: DateTime.utc(2026),
+    );
+
+/// Un paso que corre y no tiene nada suyo que hacer.
+_Paso _pasoSinNadaSuyo(
+  String id, {
+  int? propios = 0,
+  Termination terminacion = Termination.completa,
+}) =>
+    _Paso(id,
+        devuelve: VerificationOutcome(
+            verifierId: id,
+            diagnostics: const [],
+            witness: _sinNadaSuyo(propios: propios, terminacion: terminacion)));
+
 void main() {
   group('el registro', () {
     test('dos pasos con el mismo id no forman un registro', () {
@@ -207,6 +237,91 @@ void main() {
       ]).correr(['lib/']);
       expect(r.estado, EstadoDeCorrida.errorInterno,
           reason: 'que el arnés se rompa no es un veredicto sobre el cambio');
+    });
+  });
+
+  group('un paso que no tuvo nada que hacer', () {
+    // El tercer estado, distinto de «corrió» y de «no pudo mirar». Confundirlo
+    // con el segundo es el falso rojo simétrico del falso verde que ADR-011
+    // caza, y estaba ocurriendo: un alcance sin archivos del stack daba «no
+    // concluyente: algún paso no pudo observar su alcance», cuando la
+    // herramienta había corrido, terminado completa, y no tenía nada suyo.
+
+    test('se cuenta como SALTADO, no como discrepancia', () async {
+      final r = await Cascada([_Paso.verde('A'), _pasoSinNadaSuyo('B')])
+          .correr(['lib/']);
+
+      expect(r.ejecutados, ['A']);
+      expect(r.saltados.map((s) => s.id), ['B']);
+      expect(r.sinEjecutar, isEmpty,
+          reason: 'un salto está contado: no es una discrepancia');
+      expect(r.estado, EstadoDeCorrida.verde);
+    });
+
+    test('el salto lleva su MOTIVO, sacado del testigo', () async {
+      final r = await Cascada([_Paso.verde('A'), _pasoSinNadaSuyo('B')])
+          .correr(['lib/']);
+      expect(r.saltados.single.motivos,
+          contains('lib/: no contiene ningún archivo de fuente'));
+      expect(r.saltados.single.testigo.ownSubjects, 0);
+    });
+
+    test('si se saltan todos, la corrida NO es verde', () async {
+      // Cada salto por separado es legítimo; todos juntos son una corrida que
+      // no verificó nada. Es el falso verde de la cascada vacía por la otra
+      // puerta: hay pasos registrados y ninguno tuvo nada que hacer.
+      final r = await Cascada([_pasoSinNadaSuyo('A'), _pasoSinNadaSuyo('B')])
+          .correr(['lib/']);
+
+      expect(r.saltados, hasLength(2));
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+    });
+
+    test('un paso que SÍ tenía archivos suyos no se salta', () async {
+      // El control negativo, y lo pidió una mutación: sin él, «cero» y «no
+      // nulo» eran indistinguibles, y un paso que cubrió tres archivos se
+      // habría contado como saltado — un verde que nadie miró, por la puerta
+      // que esta rebanada vino a cerrar.
+      final conTrabajo = _Paso('A',
+          devuelve: VerificationOutcome(
+              verifierId: 'A',
+              diagnostics: const [],
+              witness: Witness(
+                invocation: 'herramienta --sobre lib/',
+                subjects: const ['lib/a.fuente'],
+                omitted: const [],
+                termination: Termination.completa,
+                exitCode: 0,
+                ownSubjects: 3,
+                finishedAt: DateTime.utc(2026),
+              )));
+      final r = await Cascada([conTrabajo]).correr(['lib/']);
+      expect(r.saltados, isEmpty);
+      expect(r.ejecutados, ['A']);
+      expect(r.estado, EstadoDeCorrida.verde);
+    });
+
+    test('«no lo puedo contar» NO es un salto', () async {
+      // `null` y cero son distintos: uno dice «no había nada mío», el otro «no
+      // sé cuántos había». Tratarlos igual saltaría un paso que sí tenía
+      // trabajo, que es el falso verde por la puerta contraria.
+      final r = await Cascada([_pasoSinNadaSuyo('A', propios: null)])
+          .correr(['lib/']);
+      expect(r.saltados, isEmpty);
+      expect(r.ejecutados, ['A']);
+      expect(r.estado, EstadoDeCorrida.noConcluyente,
+          reason: 'sin sujetos cubiertos, el testigo no atestigua');
+    });
+
+    test('cero de los suyos SIN terminar completa tampoco es un salto',
+        () async {
+      // Una herramienta que murió por timeout no dijo que no había nada suyo:
+      // no dijo nada.
+      final r = await Cascada([
+        _pasoSinNadaSuyo('A', terminacion: Termination.tiempoAgotado),
+      ]).correr(['lib/']);
+      expect(r.saltados, isEmpty);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
     });
   });
 }

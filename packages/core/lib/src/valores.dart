@@ -196,6 +196,30 @@ class Witness {
   /// omisión. Un paso que no puede, lo dice acá.
   final List<String> omitted;
 
+  /// **Cuántos elementos del alcance eran de la incumbencia del paso.**
+  ///
+  /// `null` significa que el paso **no lo puede contar**, y eso es un dato: ya
+  /// hay un paso así —el que no puede comprobar su propia cobertura porque su
+  /// herramienta no informa qué leyó—. No es lo mismo que cero.
+  ///
+  /// Existe porque el hecho ya se estaba diciendo **en prosa**. Un alcance sin
+  /// archivos del stack producía un testigo que decía, en [omitted], «no
+  /// contiene ningún archivo de fuente», y la corrida entera salía «no
+  /// concluyente: algún paso no pudo observar su alcance» — que es falso: la
+  /// herramienta corrió, terminó completa con código 0, y no había nada suyo
+  /// que mirar.
+  ///
+  /// `docs/03` §2 le pone nombre a eso: *«un adapter que empieza a codificar
+  /// información en cadenas de texto está chocando contra el techo del
+  /// contrato»*. El techo era este campo.
+  ///
+  /// **No cambia [attests], y es deliberado.** Distinguir «no había nada mío»
+  /// de «no pude mirar» es de quien compone la corrida, no del testigo:
+  /// ADR-011 corolario 4 dice que ningún verificador juzga su propia
+  /// cobertura. Acá el paso declara un hecho contable sobre su entrada —que
+  /// cualquiera puede falsar contando— y la clasificación la hace otro.
+  final int? ownSubjects;
+
   /// Cuándo terminó, en UTC.
   final DateTime finishedAt;
 
@@ -209,8 +233,16 @@ class Witness {
     required this.finishedAt,
     required this.termination,
     required List<String> omitted,
+    this.ownSubjects,
   })  : subjects = List.unmodifiable(subjects),
         omitted = List.unmodifiable(omitted) {
+    if (ownSubjects != null && ownSubjects! < 0) {
+      throw ArgumentError.value(
+          ownSubjects,
+          'ownSubjects',
+          'Un conteo negativo no significa nada. Si el paso no lo puede '
+              'contar, el valor es null, que significa algo distinto de cero');
+    }
     if (this.omitted.any((m) => m.trim().isEmpty)) {
       throw ArgumentError.value(
           omitted,
@@ -239,6 +271,7 @@ class Witness {
         'termination': termination.name,
         'exitCode': exitCode,
         'omitted': omitted,
+        'ownSubjects': ownSubjects,
         'finishedAt': finishedAt.toUtc().toIso8601String(),
       };
 
@@ -248,6 +281,7 @@ class Witness {
         termination: Termination.values.byName(json['termination']! as String),
         exitCode: json['exitCode']! as int,
         omitted: List<String>.from(json['omitted']! as List<Object?>),
+        ownSubjects: json['ownSubjects'] as int?,
         finishedAt: DateTime.parse(json['finishedAt']! as String),
       );
 }

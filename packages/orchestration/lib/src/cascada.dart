@@ -36,6 +36,41 @@ enum EstadoDeCorrida {
   errorInterno,
 }
 
+/// Un paso que **no tuvo nada que hacer**, con su motivo.
+///
+/// Es un tercer estado, distinto de «corrió» y de «no pudo mirar», y el corpus
+/// lo traza: *«sin anotaciones tocadas → SALTAR · testigo: motivo registrado»*,
+/// y su meta-check lo cuenta aparte —*«registrados: 7 · ejecutados: 6 ·
+/// saltados: 1 con motivo → sin discrepancia»*—.
+///
+/// **Confundirlo con «no pude mirar» es el falso rojo simétrico del falso verde
+/// que ADR-011 caza**, y estaba ocurriendo: un alcance sin archivos del stack
+/// daba «no concluyente: algún paso no pudo observar su alcance» cuando la
+/// herramienta había corrido, terminado completa con código 0, y no tenía nada
+/// suyo que mirar.
+///
+/// **Lo clasifica la cascada, no el paso.** ADR-011 corolario 4: ningún
+/// verificador juzga su propia cobertura. El paso declara un hecho contable
+/// sobre su entrada —`Witness.ownSubjects`— y quien compone la corrida decide
+/// qué significa.
+class PasoSaltado {
+  final String id;
+
+  /// Por qué. **Sale del testigo, no de una frase escrita acá**: es lo que el
+  /// propio paso declaró haber omitido.
+  final List<String> motivos;
+
+  /// El testigo del paso. Existe: la herramienta corrió. Lo que no hay es
+  /// nada que atestiguar.
+  final Witness testigo;
+
+  PasoSaltado({
+    required this.id,
+    required List<String> motivos,
+    required this.testigo,
+  }) : motivos = List.unmodifiable(motivos);
+}
+
 /// Lo que resulta de correr una cascada.
 ///
 /// [estado] se **deriva**, igual que `VerificationOutcome.verdict`. No hay
@@ -52,27 +87,36 @@ class ResultadoDeCascada {
   /// un veredicto: produjo un error del arnés.
   final Map<String, String> fallosInternos;
 
+  /// Los pasos que **no tuvieron nada que hacer**, con su motivo.
+  final List<PasoSaltado> saltados;
+
   ResultadoDeCascada({
     required List<String> registrados,
     required List<VerificationOutcome> resultados,
     Map<String, String> fallosInternos = const {},
+    List<PasoSaltado> saltados = const [],
   })  : registrados = List.unmodifiable(registrados),
         resultados = List.unmodifiable(resultados),
-        fallosInternos = Map.unmodifiable(fallosInternos);
+        fallosInternos = Map.unmodifiable(fallosInternos),
+        saltados = List.unmodifiable(saltados);
 
   /// Qué pasos produjeron un resultado.
   List<String> get ejecutados =>
       List.unmodifiable([for (final r in resultados) r.verifierId]);
 
-  /// **Registrados menos ejecutados.** Es el corolario 2 de ADR-011: la
-  /// diferencia se reporta. Sin esto, un paso que no corre se lee igual que un
-  /// paso que corrió y no encontró nada — que es el modo de fallo que
-  /// `docs/03` §6 nombra con nombre y apellido.
+  /// **Registrados menos ejecutados menos saltados.** Es el corolario 2 de
+  /// ADR-011: la diferencia se reporta. Sin esto, un paso que no corre se lee
+  /// igual que un paso que corrió y no encontró nada — que es el modo de fallo
+  /// que `docs/03` §6 nombra con nombre y apellido.
+  ///
+  /// **Un salto está contado**: Un salto está contado:
+  /// no es una discrepancia, es un desenlace declarado con su motivo. Lo que
+  /// queda acá es lo que no corrió **y nadie explicó**.
   List<String> get sinEjecutar {
-    final hechos = ejecutados.toSet();
+    final contados = {...ejecutados, for (final s in saltados) s.id};
     return List.unmodifiable([
       for (final id in registrados)
-        if (!hechos.contains(id)) id,
+        if (!contados.contains(id)) id,
     ]);
   }
 
@@ -100,6 +144,12 @@ class ResultadoDeCascada {
     // directamente, porque un guardia que otro tapa no está probado.
     if (sinEjecutar.isNotEmpty) return EstadoDeCorrida.noConcluyente;
 
+    // **Si se saltaron los pasos enteros, no se verificó nada.** Cada salto por separado es
+    // legítimo; todos juntos son una corrida que no miró. Es el mismo falso
+    // verde que la rama de arriba impide para la cascada vacía, por la otra
+    // puerta: acá hay pasos registrados y ninguno tuvo nada que hacer.
+    if (resultados.isEmpty) return EstadoDeCorrida.noConcluyente;
+
     if (resultados.any((r) => r.verdict == Verdict.noConcluyente)) {
       return EstadoDeCorrida.noConcluyente;
     }
@@ -117,11 +167,13 @@ class ResultadoDeCascada {
 /// Un registro ordenado de pasos.
 ///
 /// El orden es de costo creciente y lo decide quien compone. **No hay corte
-/// temprano todavía**: todos los pasos corren. El corte es política de este
-/// paquete y llega con su presupuesto; agregarlo ahora significaría que un
-/// paso registrado deje de ejecutarse, y eso necesita que el reporte de
-/// registrados contra ejecutados exista primero — que es lo que instala esta
-/// rebanada.
+/// temprano todavía**: todos los pasos corren. `D-099` lo congeló — aparece dos
+/// veces en el corpus y ninguna dice **cuándo** corta—, y su precondición sí
+/// está: un paso que no ejecuta y no es una falla.
+///
+/// **El orden no está «medido», aunque `D-050` lo pida.** Los tiempos salen de
+/// la línea base A0, que el plan declara fuera de alcance; se declara a mano y
+/// queda dicho (`D-100`).
 class Cascada {
   final List<Verifier> pasos;
 
@@ -180,6 +232,7 @@ class Cascada {
     final alcance = List<String>.unmodifiable(sujetos);
     final resultados = <VerificationOutcome>[];
     final fallos = <String, String>{};
+    final saltados = <PasoSaltado>[];
 
     for (final paso in pasos) {
       alEmpezar?.call(paso.id);
@@ -191,6 +244,24 @@ class Cascada {
           fallos[paso.id] = 'devolvió un resultado con id «${r.verifierId}»; '
               'la cuenta de registrados contra ejecutados se apoya en que '
               'coincidan.';
+          continue;
+        }
+        // **Acá se clasifica el salto, y por eso no lo clasifica el paso.**
+        //
+        // El testigo trae un hecho contable sobre la entrada —cuántos
+        // elementos del alcance eran de la incumbencia del paso— y esta es la
+        // única decisión que se toma con él: cero de los suyos, con la
+        // herramienta terminada, es «no tuve nada que hacer». No es «no pude
+        // mirar», y tratarlos igual era un falso rojo.
+        //
+        // ADR-011 corolario 4 pide justamente esto: el verificador no juzga su
+        // propia cobertura. Declara el número; la lectura es de acá.
+        final w = r.witness;
+        if (w != null &&
+            w.ownSubjects == 0 &&
+            w.termination == Termination.completa) {
+          saltados
+              .add(PasoSaltado(id: paso.id, motivos: w.omitted, testigo: w));
           continue;
         }
         resultados.add(r);
@@ -215,6 +286,7 @@ class Cascada {
       registrados: registrados,
       resultados: resultados,
       fallosInternos: fallos,
+      saltados: saltados,
     );
   }
 }

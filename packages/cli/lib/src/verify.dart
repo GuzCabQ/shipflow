@@ -200,6 +200,13 @@ Future<int> correrVerify(
         'registered': r.registrados,
         'executed': r.ejecutados,
         'notExecuted': r.sinEjecutar,
+        // **Los saltados van con su motivo, no como una cuenta.** Un consumidor
+        // automático tiene que poder distinguir «no tuvo nada que hacer» de «no
+        // pudo mirar» sin leer prosa, que es exactamente lo que este campo vino
+        // a arreglar un nivel más abajo.
+        'skipped': {
+          for (final s in r.saltados) s.id: s.motivos,
+        },
         'internalFailures': r.fallosInternos,
         'diagnostics': r.diagnosticos.length,
       },
@@ -258,18 +265,33 @@ String? _queHacer(ResultadoDeCascada r) => switch (r.estado) {
               ? 'Estos pasos están registrados y no se ejecutaron: '
                   '${r.sinEjecutar.join(", ")}. Un paso que no corre no es un '
                   'paso que no encontró nada.'
-              : 'Algún paso no pudo observar su alcance. Mirá lo que omitió '
-                  'cada testigo con `--verbose`; no hay verde sin alguien que '
-                  'haya mirado.',
+              : r.resultados.isEmpty
+                  // **Todos los pasos se saltaron.** Cada uno por separado es
+                  // legítimo; todos juntos es una corrida que no verificó
+                  // nada. Decir «no pudo observar» acá era falso: observaron, y
+                  // no había nada suyo.
+                  ? 'Ningún paso tuvo nada que hacer sobre este alcance: '
+                      '${r.saltados.map((s) => s.id).join(", ")}. No es un '
+                      'fallo, pero tampoco se verificó nada. Revisá el alcance '
+                      'que le diste a `verify`.'
+                  : 'Algún paso no pudo observar su alcance. Mirá lo que omitió '
+                      'cada testigo con `--verbose`; no hay verde sin alguien '
+                      'que haya mirado.',
       EstadoDeCorrida.rojo =>
         'Hay diagnósticos bloqueantes. Arreglalos y volvé a correr `verify`.',
     };
 
 String _resumenEnTexto(ResultadoDeCascada r) {
   final estado = r.estado;
+  // **Los saltados se nombran en el resumen.** El meta-check del corpus los
+  // cuenta aparte —«registrados: 7 · ejecutados: 6 · saltados: 1 con motivo»—
+  // y esconderlos dejaría la resta sin explicar: quien lea «0 de 2» tiene que
+  // poder saber si faltaron o si no tenían nada que hacer.
+  final saltos =
+      r.saltados.isEmpty ? '' : '${r.saltados.length} saltado(s) con motivo, ';
   final cabeza = 'verify: ${veredictoDe(estado)} — '
       '${r.ejecutados.length} de ${r.registrados.length} pasos ejecutados, '
-      '${r.diagnosticos.length} diagnóstico(s).';
+      '$saltos${r.diagnosticos.length} diagnóstico(s).';
   final accion = _queHacer(r);
   return accion == null ? cabeza : '$cabeza\n  → $accion';
 }

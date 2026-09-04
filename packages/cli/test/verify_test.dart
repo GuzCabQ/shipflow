@@ -223,6 +223,31 @@ void main() {
               'formatear, no solo estar registrados');
     }, timeout: const Timeout(Duration(minutes: 3)));
 
+    test('un alcance sin archivos del stack se SALTA, y lo dice', () async {
+      // Antes de esta rebanada, esto salía «no concluyente: algún paso no pudo
+      // observar su alcance» — falso: las dos herramientas corrieron,
+      // terminaron completas con código 0, y no tenían nada suyo que mirar.
+      // Es el falso rojo simétrico del falso verde que el arnés caza.
+      File('${raiz.path}/lib/LEEME.md').writeAsStringSync('# solo prosa\n');
+      final r = await shipflow(['verify', 'lib', '--json']);
+
+      final doc = lineas(r.stdout as String).last;
+      final data = doc['data']! as Map<String, Object?>;
+      final saltados = data['skipped']! as Map<String, Object?>;
+      expect(saltados.keys, ['FormatCheck', 'StaticAnalysis']);
+      expect(saltados['FormatCheck'], isNotEmpty,
+          reason: 'un salto sin motivo es un salto silencioso');
+      expect(data['notExecuted'], isEmpty,
+          reason: 'un salto está contado: no es una discrepancia');
+
+      // Y la corrida NO es verde: cada salto por separado es legítimo, todos
+      // juntos son una corrida que no verificó nada.
+      expect(doc['verdict'], 'inconclusive');
+      expect(doc['exitCode'], 2);
+      expect(doc['nextAction'], contains('tuvo nada que hacer'),
+          reason: 'no puede decir «no pudo observar»: sí observó');
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
     test('una bandera global ANTES del comando no es un comando', () async {
       // `--json verify` se leía como el comando «--json».
       File('${raiz.path}/lib/a.dart').writeAsStringSync('void main() {}\n');

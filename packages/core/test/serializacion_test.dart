@@ -83,6 +83,9 @@ void main() {
     omitted: const ['lib/ilegible.fuente: no se pudo leer'],
     exitCode: 3,
     termination: Termination.completa,
+    // Distinto del default —que es `null`— porque si no, el viaje de ida y
+    // vuelta no distingue «llegó» de «se perdió». Lo cazó este mismo check.
+    ownSubjects: 7,
     finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
   );
 

@@ -969,6 +969,101 @@ y su caso ciego. **El arnés aplica 102 sabotajes.**
 
 ---
 
+## El falso rojo simétrico
+
+El arnés entero está construido contra un error de dirección: **un verde que
+nadie miró**. Este es el mismo error en la otra dirección, y estaba en
+producción.
+
+```
+$ shipflow verify lib          # lib solo tiene markdown
+
+verify: inconclusive — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
+  → Algún paso no pudo observar su alcance.
+```
+
+**Falso.** Los dos pasos observaron. El testigo lo decía:
+
+```
+terminación: completa · código 0     ← la herramienta corrió
+cubrió: (nada)
+omitió: lib: no contiene ningún archivo de fuente
+```
+
+La herramienta corrió, terminó completa con código 0, y no tenía nada suyo que
+mirar. Eso no es «no pude observar»: es **no había nada que observar**, y son
+cosas distintas.
+
+### El techo del contrato
+
+El hecho ya se estaba diciendo — **en prosa**, dentro de `omitted`, donde nadie
+aguas arriba puede leerlo. `docs/03` §2 le pone nombre exacto a eso:
+
+> *«Un adapter que empieza a **codificar información en cadenas de texto** está
+> chocando contra el techo del contrato. Se reporta como hallazgo, no se
+> absorbe en silencio.»*
+
+El techo era un campo que no existía. `Witness` gana `ownSubjects`: cuántos
+elementos del alcance eran de la incumbencia del paso. **`null` y cero son
+distintos** — uno dice «no lo puedo contar» y el otro «no había nada mío» — y
+ya hay un paso que no puede contar, porque su herramienta no informa qué leyó.
+
+### Quién decide que eso es un salto
+
+**No el paso.** ADR-011 corolario 4: *«ningún verificador juzga su propia
+cobertura; un oráculo autorreportado no es un oráculo»*. Un salto es una
+exención de ser mirado, que es la superficie `cubierto` de ADR-012 vista desde
+el otro lado.
+
+El paso **declara un número contable sobre su entrada**, que cualquiera puede
+falsar contando. La cascada lo lee y clasifica: cero de los suyos, con la
+herramienta terminada, es un paso saltado con su motivo.
+
+| | Qué significa | Cómo lo cuenta el meta-check |
+|---|---|---|
+| ejecutado | corrió y produjo veredicto | numerador |
+| **saltado** | corrió y no tenía nada suyo | contado aparte, **sin discrepancia** |
+| sin ejecutar | no corrió y nadie lo explicó | discrepancia |
+| fallo interno | se rompió | error del arnés |
+
+Es el trazado del corpus, ahora ejecutable: *«registrados: 7 · ejecutados: 6 ·
+saltados: 1 con motivo → sin discrepancia»*.
+
+### Y el falso verde que se abría al cerrarlo
+
+Si **todos** los pasos se saltan, la corrida no verificó nada. Cada salto por
+separado es legítimo; todos juntos son una cascada que no miró — el mismo falso
+verde que la cascada vacía ya tenía prohibido, entrando por la otra puerta.
+
+```
+verify: inconclusive — 0 de 2 pasos ejecutados, 2 saltado(s) con motivo,
+                       0 diagnóstico(s).
+  → Ningún paso tuvo nada que hacer sobre este alcance: FormatCheck,
+    StaticAnalysis. No es un fallo, pero tampoco se verificó nada.
+```
+
+### Lo que encontró la mutación
+
+Cambiar `ownSubjects == 0` por `ownSubjects != null` **sobrevivía**: ningún test
+tenía un paso con archivos propios, así que «cero» y «no nulo» eran
+indistinguibles. Sin el control negativo, un paso que cubrió tres archivos se
+habría contado como saltado — un verde que nadie miró, por la puerta que esta
+rebanada vino a cerrar.
+
+Cinco mutaciones sobre el clasificador, ninguna sobrevive.
+
+### Lo que NO instala, y por qué
+
+**El corte temprano.** `D-099` lo congeló: aparece dos veces en el corpus y
+ninguna dice **cuándo** corta. Esta rebanada instala su precondición —un paso
+que no ejecuta y no es una falla— y nada más.
+
+**La aplicabilidad general.** El corpus tiene un solo puerto que responde «¿le
+toca a este paso?», `CodegenTrigger`, y es específico. Un mecanismo general
+sería inventar el criterio que falta.
+
+---
+
 ## Lo que este arnés todavía no sabe de sí mismo
 
 Tres propiedades del código construido que **nadie había enunciado**. Las

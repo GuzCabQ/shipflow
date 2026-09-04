@@ -143,6 +143,19 @@ abstract base class PasoDeCascada implements Verifier {
     // exige en `core`, acá en el punto donde se construye la evidencia.
     final pedidos = List<String>.unmodifiable(subjects);
 
+    // **Cuántos archivos de los suyos había, contado UNA vez.**
+    //
+    // Va en el testigo porque el hecho ya se estaba diciendo en prosa —«no
+    // contiene ningún archivo de fuente»— y nadie aguas arriba podía leerlo:
+    // una corrida sobre un alcance sin nada de este stack salía «no
+    // concluyente: algún paso no pudo observar», que es falso. La herramienta
+    // corre, termina completa, y no tiene nada suyo que mirar.
+    //
+    // El paso **declara el número y no lo interpreta**: quién decide que cero
+    // significa «saltado» es la cascada, porque ADR-011 corolario 4 dice que
+    // ningún verificador juzga su propia cobertura.
+    final propios = separar(pedidos).archivos;
+
     VerificationOutcome conTestigo({
       required String invocacion,
       required List<String> cubierto,
@@ -160,6 +173,7 @@ abstract base class PasoDeCascada implements Verifier {
             omitted: omitido,
             termination: terminacion,
             exitCode: codigo,
+            ownSubjects: propios,
             finishedAt: DateTime.now().toUtc(),
           ),
         );

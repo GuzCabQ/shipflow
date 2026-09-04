@@ -41,6 +41,38 @@ void main() {
     expect(() => testigo(omitido: const ['  ']), throwsArgumentError);
   });
 
+  test('un conteo negativo de lo propio no significa nada', () {
+    // `null` ya significa «no lo puedo contar». Un negativo no significa nada,
+    // y dejarlo entrar daría un tercer valor sin lectura para quien clasifica.
+    expect(
+        () => Witness(
+              invocation: 'x',
+              subjects: const ['a'],
+              omitted: const [],
+              termination: Termination.completa,
+              exitCode: 0,
+              ownSubjects: -1,
+              finishedAt: DateTime.utc(2026),
+            ),
+        throwsArgumentError);
+  });
+
+  test('cuántos eran suyos NO cambia si el testigo atestigua', () {
+    // Deliberado: distinguir «no había nada mío» de «no pude mirar» es de
+    // quien compone la corrida, no del testigo. ADR-011 corolario 4 — ningún
+    // verificador juzga su propia cobertura. Acá solo declara el número.
+    final conCero = Witness(
+      invocation: 'herramienta',
+      subjects: const ['lib/a.fuente'],
+      omitted: const [],
+      termination: Termination.completa,
+      exitCode: 0,
+      ownSubjects: 0,
+      finishedAt: DateTime.utc(2026),
+    );
+    expect(conCero.attests, isTrue);
+  });
+
   test('sin testigo: no concluyente, aunque no haya diagnósticos', () {
     final r = VerificationOutcome(verifierId: 'V', diagnostics: []);
     expect(r.verdict, equals(Verdict.noConcluyente));
