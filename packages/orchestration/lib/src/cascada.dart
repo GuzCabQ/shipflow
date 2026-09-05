@@ -80,13 +80,13 @@ class PasoSaltado {
     // ADR-011 corolario 1 prohíbe y lo que la documentación de este tipo
     // promete que no pasa. La promesa estaba escrita y el tipo la dejaba
     // romper: un review construyó uno con la lista vacía.
-    if (this.motivos.every((m) => m.trim().isEmpty)) {
+    if (this.motivos.isEmpty || this.motivos.any((m) => m.trim().isEmpty)) {
       throw ArgumentError.value(
           motivos,
           'motivos',
-          'Un salto sin motivo es un salto silencioso. Si el paso no supo '
-              'decir por qué no tenía nada que hacer, no se puede afirmar que '
-              'no lo tenía');
+          'Un salto sin motivo es un salto silencioso, y un motivo en blanco '
+              'no es un motivo. Si el paso no supo decir por qué no tenía nada '
+              'que hacer, no se puede afirmar que no lo tenía');
     }
   }
 }

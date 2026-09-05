@@ -205,12 +205,13 @@ class NotApplicable {
     required this.decidedAt,
   })  : subjects = List.unmodifiable(subjects),
         reasons = List.unmodifiable(reasons) {
-    if (this.reasons.every((m) => m.trim().isEmpty)) {
+    if (this.reasons.isEmpty || this.reasons.any((m) => m.trim().isEmpty)) {
       throw ArgumentError.value(
           reasons,
           'reasons',
           'Un paso que no dice por qué no tuvo nada que hacer es un salto '
-              'silencioso. Escribí el motivo, o no declares que no aplicaba');
+              'silencioso. Y un motivo en blanco ocupa lugar en la lista sin '
+              'decir nada: sacalo, o escribí por qué');
     }
   }
 

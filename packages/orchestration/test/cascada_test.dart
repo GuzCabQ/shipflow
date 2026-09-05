@@ -368,6 +368,23 @@ void main() {
           throwsArgumentError);
     });
 
+    test('un salto con un motivo en blanco entre válidos tampoco se construye',
+        () {
+      expect(
+          () => PasoSaltado(
+              id: 'B',
+              motivos: const ['no es de este stack', '  '],
+              declaracion: _sinNadaSuyo()),
+          throwsArgumentError);
+    });
+
+    test('un salto sin ningún motivo tampoco', () {
+      expect(
+          () => PasoSaltado(
+              id: 'B', motivos: const [], declaracion: _sinNadaSuyo()),
+          throwsArgumentError);
+    });
+
     test('un alcance parcialmente inobservable NO da verde', () async {
       // El plugin calculaba bien el «no sé» y la cascada nunca lo consumía: un
       // paso que cubría `lib/` y no podía mirar `no/existe` atestiguaba igual,

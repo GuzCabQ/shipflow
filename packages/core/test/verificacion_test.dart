@@ -102,6 +102,31 @@ void main() {
         throwsArgumentError);
   });
 
+  test('un motivo en blanco entre motivos válidos tampoco se acepta', () {
+    // `Witness.omitted` rechaza cualquier blanco; esto aceptaba la lista si
+    // al menos un motivo era válido. Dos reglas para el mismo hecho.
+    expect(
+        () => NotApplicable(
+              subjects: const ['lib/'],
+              reasons: const ['no es de este stack', '   '],
+              decidedAt: DateTime.utc(2026),
+            ),
+        throwsArgumentError);
+  });
+
+  test('una lista de motivos vacía sigue sin aceptarse', () {
+    // El control negativo del arreglo: `any` sobre una lista vacía es falso,
+    // así que cambiar `every` por `any` sin esto abre el agujero que el
+    // cambio venía a cerrar.
+    expect(
+        () => NotApplicable(
+              subjects: const ['lib/'],
+              reasons: const [],
+              decidedAt: DateTime.utc(2026),
+            ),
+        throwsArgumentError);
+  });
+
   test('sin testigo: no concluyente, aunque no haya diagnósticos', () {
     final r = VerificationOutcome(verifierId: 'V', diagnostics: []);
     expect(r.verdict, equals(Verdict.noConcluyente));
