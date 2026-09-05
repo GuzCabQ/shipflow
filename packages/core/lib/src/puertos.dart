@@ -14,6 +14,7 @@
 /// solo, y este archivo ya lo hizo una vez.
 library;
 
+import 'alcance.dart';
 import 'entidades.dart';
 import 'credencial.dart';
 import 'observacion.dart';
@@ -85,6 +86,29 @@ abstract interface class ProjectTopology {
 abstract interface class ArtifactPolicy {
   bool isGenerated(String path);
   bool isEditable(String path);
+}
+
+/// Mira el alcance y devuelve **hechos por sujeto**, no conclusiones.
+///
+/// Existe porque el corolario 4 de ADR-011 dice que ningún verificador juzga
+/// su propia cobertura, y declarar «este archivo no es mío» es exactamente
+/// eso. El paso dejaba de ser juez de su ejecución y seguía siendo juez de su
+/// incumbencia.
+///
+/// **Cláusulas del contrato:**
+///
+/// 1. **La observación es una partición de lo pedido**, y lo hace cumplir el
+///    tipo. Un sujeto que se pierde acá no lo ve ninguna guardia posterior.
+/// 2. **El sujeto vuelve tal como se pidió.** Canonizar para decidir el hecho
+///    es necesario; renombrar lo devuelto rompe la partición.
+/// 3. **No se pudo mirar y no era mío son distintos.** Lo primero es un sujeto
+///    no observado con su causa; lo segundo, uno observado y ajeno con su
+///    motivo. Confundirlos es el falso rojo simétrico del falso verde.
+/// 4. **Se llama UNA vez por corrida.** Dos lecturas del árbol pueden diferir,
+///    y entonces dos pasos verifican alcances distintos que el reporte declara
+///    iguales.
+abstract interface class ScopeObserver {
+  Future<ScopeObservation> observe(List<String> requested);
 }
 
 /// Un paso de la cascada. **Devuelve su testigo junto con sus diagnósticos**:
