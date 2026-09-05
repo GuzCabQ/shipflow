@@ -457,7 +457,7 @@ def _check_readme() -> None:
     # menos, y este contaba pasos que no existen.
     _desde = texto_verify.index("Cascada([")
     cuerpo = texto_verify[_desde:texto_verify.index("]);", _desde)]
-    n_pasos = len(re.findall(r"^      Paso[A-Za-z]+\(", cuerpo, re.M))
+    n_pasos = len(re.findall(r"^\s+Paso[A-Za-z]+\(", cuerpo, re.M))
     if n_pasos == 0:
         fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
                       "igual que «no miré».")
@@ -475,7 +475,7 @@ def _check_readme() -> None:
     # se leía como `presupuesto`. El sabotaje pasaba en verde y el patrón
     # parecía funcionar.
     distintos = [v.strip() for v in re.findall(
-        r"^      Paso[A-Za-z]+\(\s*\n?[^)]*?presupuesto:\s*([^,)]+)",
+        r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?presupuesto:\s*([^,)]+)",
         cuerpo, re.M)]
     if len(distintos) != n_pasos:
         fallos.append(f"conté {n_pasos} pasos en `cascadaPorDefecto` y solo "

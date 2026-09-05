@@ -7,11 +7,9 @@
 /// pedirle a cada uno que se acuerde del invariante, y eso ya falló.
 library;
 
-import 'dart:io';
-
 import 'package:core/core.dart';
-import 'package:path/path.dart' as rutas;
 
+import 'alcance.dart';
 import 'ejecutor.dart';
 import 'normalizadores.dart';
 
@@ -45,15 +43,16 @@ abstract base class PasoDeCascada implements Verifier {
   final String directorio;
   final Duration presupuesto;
 
-  const PasoDeCascada({
+  /// Quién mira el alcance. **No lo mira el paso**: ADR-011 corolario 4.
+  final ScopeObserver observador;
+
+  PasoDeCascada({
     required this.ejecutor,
     required this.directorio,
+    ScopeObserver? observador,
     this.presupuesto = const Duration(minutes: 5),
-  });
-
-  /// El sufijo de los archivos que estas herramientas leen. Vive en la base
-  /// porque los dos pasos necesitan contar el alcance por su cuenta.
-  static const sufijoDeFuente = '.dart';
+  }) : observador =
+            observador ?? ObservadorDeAlcanceDart(directorio: directorio);
 
   /// El programa y sus argumentos para un alcance dado.
   String get programa;
@@ -86,96 +85,6 @@ abstract base class PasoDeCascada implements Verifier {
   /// durante la espera. Ahora hay una foto y viaja.
   Cobertura cobertura(Alcance alcance, QuotedText salida);
 
-  /// Cuántos archivos de fuente hay bajo un sujeto, o el motivo por el que no
-  /// se pudo saber.
-  ///
-  /// **Los componentes ocultos no se cuentan al recorrer un directorio**, y
-  /// eso está medido: la herramienta salta todo lo que cuelga de una carpeta
-  /// que empieza con punto. Un sujeto nombrado explícitamente SÍ se procesa
-  /// aunque sea oculto, también medido, y por eso la regla se aplica a lo que
-  /// hay debajo del sujeto y no al sujeto.
-  ///
-  /// Sin esta fidelidad la reconciliación sería siempre distinta de cero y
-  /// todo terminaría no concluyente. Es un fallo ruidoso, no silencioso, pero
-  /// igual inservible.
-  /// [pudoMirar] es lo que separa un cero real de un cero que no se pudo
-  /// establecer. Un archivo que existe y no es de este stack aporta cero de
-  /// verdad; uno que no existe no aporta nada.
-  ({int archivos, String? problema, bool pudoMirar}) _mirar(String pedido) {
-    final absoluto =
-        rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
-    try {
-      if (File(absoluto).existsSync()) {
-        return absoluto.endsWith(sufijoDeFuente)
-            ? (archivos: 1, problema: null, pudoMirar: true)
-            : (
-                archivos: 0,
-                problema: 'no es un archivo de fuente de este stack',
-                pudoMirar: true,
-              );
-      }
-      final carpeta = Directory(absoluto);
-      if (!carpeta.existsSync()) {
-        return (
-          archivos: 0,
-          problema: 'no existe en el árbol',
-          pudoMirar: false,
-        );
-      }
-      final cuantos = carpeta
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .where((f) => f.path.endsWith(sufijoDeFuente))
-          .where((f) => !rutas
-              .split(rutas.relative(f.path, from: absoluto))
-              .any((parte) => parte.startsWith('.')))
-          .length;
-      return cuantos == 0
-          ? (
-              archivos: 0,
-              problema: 'no contiene ningún archivo de fuente',
-              pudoMirar: true,
-            )
-          : (archivos: cuantos, problema: null, pudoMirar: true);
-    } on FileSystemException catch (e) {
-      // **No poder mirar es un dato, no una excepción que se escapa.** Un
-      // directorio sin permisos hacía que `run` lanzara y el paso no
-      // devolviera testigo NINGUNO, que rompe la primera cláusula del puerto.
-      // Se atrapa esta familia y no `Object`: un error de programación tiene
-      // que seguir subiendo.
-      return (
-        archivos: 0,
-        problema: 'no se pudo mirar: ${e.osError?.message ?? e.message}',
-        pudoMirar: false,
-      );
-    }
-  }
-
-  /// El alcance separado en lo utilizable y lo que no, con la cuenta de
-  /// archivos de lo utilizable.
-  Alcance separar(List<String> pedidos) {
-    final sanos = <String>[];
-    final motivos = <String>[];
-    var archivos = 0;
-    var observable = true;
-    for (final pedido in pedidos) {
-      final r = _mirar(pedido);
-      if (!r.pudoMirar) observable = false;
-      if (r.problema == null) {
-        sanos.add(pedido);
-        archivos += r.archivos;
-      } else {
-        motivos.add('$pedido: ${r.problema}');
-      }
-    }
-    return (
-      sanos: sanos,
-      motivos: motivos,
-      archivos: archivos,
-      observable: observable,
-    );
-  }
-
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
     // **Se copia y se congela antes de nada.** La lista es del llamador, que
@@ -199,7 +108,21 @@ abstract base class PasoDeCascada implements Verifier {
     // **Una sola foto del árbol, y viaja.** De acá salen el conteo del
     // testigo, la cobertura y la reconciliación: si cada una volviera a mirar,
     // podrían discrepar y el testigo afirmaría dos cosas incompatibles.
-    final alcance = separar(pedidos);
+    final observacion = await observador.observe(pedidos);
+    final alcance = (
+      sanos: observacion.usable(),
+      motivos: <String>[
+        for (final o in observacion.observed)
+          if (!o.ofStack) '${o.subject}: ${o.reason}',
+        for (final u in observacion.unobserved) '${u.subject}: ${u.cause}',
+      ],
+      archivos: observacion.observed
+          .where((o) => o.ofStack)
+          .fold(0, (n, o) => n + o.files),
+      // `null` no es cero: si algo no se pudo mirar, el conteo no se puede
+      // establecer. Es la misma distinción, ahora sostenida por el tipo.
+      observable: observacion.unobserved.isEmpty,
+    );
 
     // **`null` cuando no se pudo mirar todo.** Cero significa «no había nada
     // mío»; un sujeto que no existe o que no se deja leer no aporta un cero,
@@ -397,9 +320,10 @@ abstract base class PasoDeCascada implements Verifier {
 /// lee. Cero archivos mirados deja el testigo sin sujetos, y sin sujetos no
 /// hay verde.
 final class PasoDeFormato extends PasoDeCascada {
-  const PasoDeFormato({
+  PasoDeFormato({
     required super.ejecutor,
     required super.directorio,
+    super.observador,
     super.presupuesto,
   });
 
@@ -501,9 +425,10 @@ final class PasoDeFormato extends PasoDeCascada {
 /// Lo que sigue sin cubrirse —que haya leído todos los que contamos— es
 /// residuo declarado, no un hueco silencioso.
 final class PasoDeAnalisis extends PasoDeCascada {
-  const PasoDeAnalisis({
+  PasoDeAnalisis({
     required super.ejecutor,
     required super.directorio,
+    super.observador,
     super.presupuesto,
   });
 

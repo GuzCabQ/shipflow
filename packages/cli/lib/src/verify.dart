@@ -27,14 +27,23 @@ const nombreDelComando = 'verify';
 Cascada cascadaPorDefecto({
   required String directorio,
   EjecutorDeProceso ejecutor = const EjecutorDelSistema(),
+  ScopeObserver? observador,
   Duration presupuesto = const Duration(minutes: 5),
-}) =>
-    Cascada([
-      PasoDeFormato(
-          ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
-      PasoDeAnalisis(
-          ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
-    ]);
+}) {
+  final obs = observador ?? ObservadorDeAlcanceDart(directorio: directorio);
+  return Cascada([
+    PasoDeFormato(
+        ejecutor: ejecutor,
+        directorio: directorio,
+        observador: obs,
+        presupuesto: presupuesto),
+    PasoDeAnalisis(
+        ejecutor: ejecutor,
+        directorio: directorio,
+        observador: obs,
+        presupuesto: presupuesto),
+  ]);
+}
 
 /// Lo que `verify` entendió de la línea de comandos.
 ///

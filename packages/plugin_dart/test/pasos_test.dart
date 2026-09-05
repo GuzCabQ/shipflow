@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 import 'package:plugin_dart/plugin_dart.dart';
+import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
 ResultadoDeProceso salida({
@@ -61,6 +62,27 @@ void main() {
       PasoDeAnalisis(ejecutor: EjecutorDeclarado(r), directorio: raiz.path);
 
   group('lo que vale para cualquier paso', () {
+    test('el paso NO mira el árbol por su cuenta: le pregunta al observador',
+        () async {
+      // Si el paso siguiera decidiendo qué es suyo, seguiría siendo juez de su
+      // propia incumbencia. Con un observador que declara `lib` ajeno, el
+      // paso no puede invocar nada, por más que `lib` exista y tenga fuentes.
+      final falso = ObservadorDeAlcanceFalso(observados: {
+        'lib': ObservedSubject(
+            subject: 'lib',
+            ofStack: false,
+            files: 0,
+            reason: 'el observador dice que no'),
+      });
+      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+      final paso = PasoDeFormato(
+          ejecutor: ejecutor, directorio: raiz.path, observador: falso);
+      await paso.run(['lib']);
+      expect(ejecutor.invocaciones, isEmpty);
+      expect(falso.llamadas, hasLength(1),
+          reason: 'una sola foto del árbol por corrida de paso');
+    });
+
     test('lo descartado NO llega a la herramienta', () async {
       // `separar` clasificaba bien y la invocación se armaba igual con TODOS
       // los pedidos: `verify README.md` le daba el markdown a la herramienta
@@ -80,20 +102,6 @@ void main() {
           reason: 'pero sigue declarado: sale de cubierto, no del reporte');
     });
 
-    test('un sujeto que NO EXISTE deja el conteo en «no sé», no en cero',
-        () async {
-      // Cero significa «no había nada mío». Una ruta que no existe no aporta un
-      // cero: aporta un desconocido, y sumarlos convertía «no pude mirar» en «no
-      // tuve nada que hacer». Lo cobró un review con una ruta inexistente
-      // presentada como un salto legítimo.
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-          directorio: raiz.path);
-      final r = await paso.run(['no/existe']);
-      expect(r.witness!.ownSubjects, isNull);
-      expect(r.witness!.omitted.join(' '), contains('no existe'));
-    });
-
     test('un código de salida desconocido deja el conteo en «no sé»', () async {
       // Una herramienta que devuelve algo que no entendemos no dice «no tuve
       // nada que hacer»: dice «no sé». Dejar ahí el conteo del alcance
@@ -110,40 +118,6 @@ void main() {
       expect(r.witness!.ownSubjects, isNull,
           reason: 'había sujetos, pero la herramienta no se entendió');
       expect(r.verdict, Verdict.noConcluyente);
-    });
-
-    test('un directorio que NO SE DEJA LEER tampoco da cero', () async {
-      // El otro obstáculo, y lo pidió una mutación: sin este caso, marcar el
-      // permiso denegado como «se pudo mirar» no ponía nada en rojo, y un
-      // directorio ilegible se habría contado como «no había nada mío».
-      final cerrado = Directory('${raiz.path}/cerrado')..createSync();
-      File('${cerrado.path}/x.dart').writeAsStringSync('void main() {}\n');
-      Process.runSync('chmod', ['000', cerrado.path]);
-      addTearDown(() => Process.runSync('chmod', ['700', cerrado.path]));
-      expect(() => cerrado.listSync(), throwsA(isA<FileSystemException>()),
-          reason: 'la premisa: de verdad no se deja leer');
-
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-          directorio: raiz.path);
-      final r = await paso.run(['cerrado']);
-      expect(r.witness!.ownSubjects, isNull);
-    });
-
-    test('un directorio real SIN archivos del stack: no aplicaba', () async {
-      // El control negativo: la corrección no puede volverse «todo es no sé».
-      Directory('${raiz.path}/prosa').createSync();
-      File('${raiz.path}/prosa/LEEME.md').writeAsStringSync('# hola\n');
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-          directorio: raiz.path);
-      final r = await paso.run(['prosa']);
-      // **No hay testigo, y es el punto.** No se invocó nada, así que no hay
-      // terminación ni código que registrar: fabricarlos era el hecho falso
-      // del que dependía la clasificación.
-      expect(r.witness, isNull);
-      expect(r.notApplicable, isNotNull);
-      expect(r.notApplicable!.reasons.join(' '), contains('prosa'));
     });
 
     test('el testigo sale de UNA sola foto del árbol', () async {
@@ -348,19 +322,6 @@ void main() {
           reason: 'tres archivos: dos formateados y uno que no parsea');
       expect(o.witness!.subjects, ['lib/', 'dos']);
       expect(o.witness!.omitted.join(), contains('no parsean'));
-    });
-
-    test('lo que cuelga de una carpeta oculta no se cuenta', () async {
-      // Está medido: la herramienta salta los componentes ocultos al recorrer.
-      // Contarlos haría que la reconciliación no cerrara NUNCA, y todo saldría
-      // no concluyente — un fallo ruidoso, pero igual de inservible.
-      Directory('${raiz.path}/dos/.oculto').createSync();
-      File('${raiz.path}/dos/.oculto/c.dart')
-          .writeAsStringSync('void main() {}\n');
-      final o = await formato(salida(
-              estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n'))
-          .run(['lib/', 'dos']);
-      expect(o.verdict, Verdict.verde);
     });
   });
 

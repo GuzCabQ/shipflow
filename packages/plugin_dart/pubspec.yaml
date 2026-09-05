@@ -26,3 +26,5 @@ dependencies:
 # a la suite de contrato, donde el fake no tendría nada equivalente que hacer.
 dev_dependencies:
   test: ^1.25.0
+  plugin_fake:
+    path: ../plugin_fake
