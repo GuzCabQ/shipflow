@@ -16,6 +16,7 @@
 ///   `arquitectura.json`, y verificado en los dos sentidos.
 library;
 
+export 'src/alcance.dart';
 export 'src/credencial.dart';
 export 'src/entidades.dart';
 export 'src/observacion.dart';

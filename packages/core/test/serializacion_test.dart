@@ -201,6 +201,57 @@ void main() {
       VerificationOutcome.fromJson
     ),
     'NotApplicable': (noAplicaba.toJson(), NotApplicable.fromJson),
+    'ObservedSubject · del stack': (
+      ObservedSubject(subject: 'lib/codigo', ofStack: true, files: 2).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'ObservedSubject · ajeno al stack': (
+      ObservedSubject(
+        subject: 'lib/ajeno',
+        ofStack: false,
+        files: 0,
+        reason: 'está fuera del stack',
+      ).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'UnobservedSubject': (
+      UnobservedSubject(
+        subject: 'no/existe',
+        cause: 'no existe en el árbol',
+      ).toJson(),
+      UnobservedSubject.fromJson
+    ),
+    'ScopeObservation · con sujetos del stack': (
+      ScopeObservation(
+        requested: const ['lib', 'no/existe'],
+        observed: [
+          ObservedSubject(subject: 'lib', ofStack: true, files: 2),
+        ],
+        unobserved: [
+          UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
+    ),
+    'ScopeObservation · con sujetos ajenos': (
+      ScopeObservation(
+        requested: const ['lib', 'LEEME.md'],
+        observed: [
+          ObservedSubject(
+            subject: 'lib',
+            ofStack: false,
+            files: 0,
+            reason: 'está fuera del stack',
+          ),
+        ],
+        unobserved: [
+          UnobservedSubject(subject: 'LEEME.md', cause: 'no es código fuente'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
+    ),
   };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
@@ -210,7 +261,7 @@ void main() {
   /// Es una excepción declarada, no un silencio: si mañana alguien agrega un
   /// tercer campo excluyente y no suma su instancia, este check lo caza igual
   /// —el campo nuevo quedaría en su default en TODAS—.
-  const excluyentes = {'VerificationOutcome'};
+  const excluyentes = {'VerificationOutcome', 'ObservedSubject', 'ScopeObservation'};
 
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
@@ -266,5 +317,23 @@ void main() {
   test('un enum viaja por nombre, no por índice', () {
     // Reordenar un enum no debe cambiar el significado de una traza vieja.
     expect(diagnostico.toJson()['severity'], equals('bloquea'));
+  });
+
+  test('la observación de alcance no pierde nada, y no trae vacíos', () {
+    final o = ScopeObservation(
+      requested: const ['lib', 'no/existe'],
+      observed: [ObservedSubject(subject: 'lib', ofStack: true, files: 3)],
+      unobserved: [
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+      ],
+      observedAt: DateTime.utc(2026, 9, 5),
+    );
+    // `reason` es nulo cuando el sujeto SÍ es del stack, y eso es correcto:
+    // se excluye de la comprobación de vacíos porque su ausencia es el dato.
+    final json = o.toJson();
+    (json['observed']! as List).forEach((e) =>
+        (e as Map).remove('reason'));
+    expect(valoresPorDefecto(json), isEmpty);
+    expect(ScopeObservation.fromJson(o.toJson()).toJson(), o.toJson());
   });
 }
