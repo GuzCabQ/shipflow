@@ -26,6 +26,8 @@ $ shipflow verify lib
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
 
+**Lo que sigue está planificado y sin construir:** el desenlace de un paso pasa a ser un tipo cerrado y la aplicabilidad sale del verificador. El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md), y el diseño que implementa vive en el otro repositorio.
+
 **No existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
