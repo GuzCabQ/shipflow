@@ -174,14 +174,37 @@ void main() {
     });
   });
 
-  group('`--json --quiet` deja SOLO el resultado', () {
-    test('es el modo no streaming de la superficie, sin bandera nueva',
-        () async {
-      // `--quiet` ya significa callar el progreso.
+  group('`--json --quiet` calla el progreso, no los diagnósticos', () {
+    test(
+        'con un paso verde, sin diagnósticos que callar, deja solo el '
+        'resultado', () async {
+      // `--quiet` calla el progreso. Sin diagnósticos que emitir, no queda
+      // otra cosa que el resultado — pero eso no hace de esto el modo no
+      // streaming de la superficie: no hay flag que lo pida, y la prueba de
+      // al lado muestra que con un paso rojo la salida NO se reduce a una
+      // sola línea.
       final (_, salida) =
           await correr(const ['--json', '--quiet'], [Paso.verde('A')]);
       expect(lineas(salida), hasLength(1));
       expect(lineas(salida).single['type'], 'result');
+    });
+
+    test(
+        'con un paso rojo, el diagnóstico bloqueante viaja igual: el '
+        'evento y el resultado, dos líneas', () async {
+      // Este grupo afirmaba que `--json --quiet` era el modo no streaming
+      // y que dejaba «solo el resultado» — falso, y la prueba de al lado
+      // nunca lo ejercitó porque corría sobre un paso verde, sin
+      // diagnósticos. `Impresora.evento()` calla `type: progress` con
+      // `--quiet`, no `type: diagnostic`: silenciar un bloqueante dejaría
+      // un resultado que afirma que hubo errores sin decir cuáles.
+      final (c, salida) =
+          await correr(const ['--json', '--quiet'], [Paso.rojo('A')]);
+      expect(c, 1);
+      final ls = lineas(salida);
+      expect(ls, hasLength(2));
+      expect(ls.first['type'], 'diagnostic');
+      expect(ls.last['type'], 'result');
     });
   });
 
