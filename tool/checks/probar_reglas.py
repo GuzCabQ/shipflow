@@ -667,6 +667,32 @@ def casos() -> list[dict]:
         "menciona": "por referencia",
     })
 
+    # La canónica de `opacidad-declarada` es una clase CONCRETA con un campo,
+    # así que nunca ejerce la rama de las clases SELLADAS: `d.abstractKeyword`
+    # queda `null` para una `sealed class`, y antes del arreglo eso la exímía
+    # igual que a una interfaz de puerto sin datos propios que perder. Dos
+    # clases de core —`StepOutcome` y `VerificationOutcome`— sobrevivían así:
+    # ni serializaban ni estaban declaradas opacas. Sin este caso, la
+    # distinción entre "abstracta" y "sellada" se puede deshacer en
+    # `check.dart` sin que nada falle — se verificó a mano revirtiéndola.
+    c.append({
+        "nombre": "opacidad-declarada · clase sellada sin campos, sin serializar, "
+                  "sin declarar opaca",
+        "archivos": {"packages/core/lib/src/_canario_sellado.dart":
+                     "sealed class CanarioSellado {\n"
+                     "  const CanarioSellado();\n"
+                     "}\n"},
+        # **El `menciona` es lo que salva a este caso, no el código de salida.**
+        # Una clase sellada sin miembros se lee además como un PUERTO, así que
+        # este canario dispara de rebote la regla de puertos sin implementación.
+        # Con el arreglo de selladas revertido, el verificador SIGUE saliendo
+        # con error —por esa otra regla— y un caso que solo mirara el código de
+        # salida daría falsa protección: parecería cuidar algo que dejó de
+        # cuidar. Lo que desaparece al revertir es este texto, y por eso la
+        # atribución se sostiene. Medido las dos veces, con y sin el arreglo.
+        "menciona": "base de una jerarquía sellada",
+    })
+
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
     c += casos_ciegos()
     return c

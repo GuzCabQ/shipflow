@@ -967,7 +967,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 103 sabotajes.**
+y su caso ciego. **El arnés aplica 104 sabotajes.**
 
 ---
 
@@ -1260,9 +1260,16 @@ sitio de uso:
 | Un `expectedScope` fabricado —más chico que lo utilizable— vacía el libro sin que nadie lo note | El constructor exige `expectedScope == alcance.usable()`, en las dos direcciones: ni le faltan sujetos utilizables ni le sobran inventados |
 | Un `Skipped`/`Unobservable` nombra un sujeto que la observación de esa corrida no respalda; `causas` queda vacía y deriva verde | El constructor cruza cada desenlace contra `alcance.observed`/`unobserved` y **lanza** si no coincide. El test lo dice en el nombre: `un Skipped no puede declarar ajeno a un sujeto que la observación no dio como tal — antes daba VERDE` |
 
-Los tres viven en `packages/orchestration/test/cascada_test.dart`, en los
-grupos «el libro de obligaciones», «el invariante del alcance esperado» y «el
-desenlace no puede contradecir a la observación».
+El primero, `C3 · cubrir la mitad sin explicar el resto no da verde`, vive en
+`packages/cli/test/verify_test.dart`, grupo «los ataques que antes
+funcionaban» —la suite de la cascada tiene el mismo caso con otro nombre:
+`un paso que cubre un subconjunto SIN explicar el resto no da verde`, en su
+grupo «el libro de obligaciones»—. Los otros dos sí viven en
+`packages/orchestration/test/cascada_test.dart`: `un alcance esperado más
+CHICO que lo utilizable no se deja construir`, en el grupo «el invariante del
+alcance esperado», y `un Skipped no puede declarar ajeno a un sujeto que la
+observación no dio como tal — antes daba VERDE`, en el grupo «el desenlace no
+puede contradecir a la observación».
 
 ### Una causa solo se dispara si existe la evidencia que va a nombrar
 
