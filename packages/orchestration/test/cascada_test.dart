@@ -270,6 +270,35 @@ void main() {
     expect(r.desenlaces.keys.single, 'A');
   });
 
+  // **No alcanza con `throwsArgumentError`.** Con un paso registrado, el
+  // `Skipped(notOfStack: [])` que arma el cuerpo de `correr` ya lanzaba un
+  // `ArgumentError` por su cuenta —el suyo, sobre `notOfStack`, sin decirle
+  // nada a quien llamó— así que un matcher que solo mirara el TIPO habría
+  // seguido en verde aunque se sacara la precondición de acá. Se pide el
+  // `name` para asegurarse de que el que se atrapó es el de `sujetos`.
+  final esPrecondicionDeSujetosVacios =
+      isArgumentError.having((e) => e.name, 'name', 'sujetos');
+
+  test('un alcance pedido vacío es precondición violada, no un desenlace', () {
+    // Verificar nada no es ni verde ni no concluyente: es un error de quien
+    // llama, igual que un alcance sin sujetos utilizables lo es para un paso.
+    expect(
+        () => Cascada([_Paso.verde('A')], observador: _obsDeLib())
+            .correr(const []),
+        throwsA(esPrecondicionDeSujetosVacios));
+  });
+
+  test(
+      'lo mismo vale con el registro vacío: no hay no-concluyente silencioso '
+      'sobre la nada', () {
+    // Antes esta rama NO lanzaba —devolvía noConcluyente por sinVerificadores,
+    // sin que nadie hubiera dicho que verificar sobre una lista vacía era un
+    // error—, mientras que con pasos registrados sí lanzaba, aunque con la
+    // excepción equivocada. Las dos ramas tienen que comportarse igual.
+    expect(() => Cascada(const [], observador: _obsDeLib()).correr(const []),
+        throwsA(esPrecondicionDeSujetosVacios));
+  });
+
   test('avisa MIENTRAS corre, no al final', () async {
     final orden = <String>[];
     await Cascada([_Paso.verde('A'), _Paso.verde('B')], observador: _obsDeLib())
@@ -415,6 +444,104 @@ void main() {
           .correr(['lib']);
       expect(r.estado, EstadoDeCorrida.verde);
       expect(r.causas, isEmpty);
+    });
+  });
+
+  group('el invariante del alcance esperado', () {
+    // `ResultadoDeCascada` ya no confía en que `RegisteredStep.expectedScope`
+    // venga bien armado: antes el denominador del libro de obligaciones era
+    // literalmente `alcance.usable()`, y su corrección salía gratis de que
+    // `ScopeObservation` valida su partición contra lo pedido.
+    // `expectedScope` es un campo libre, así que estas pruebas construyen
+    // `ResultadoDeCascada` DIRECTAMENTE —sin pasar por `Cascada.correr`, que
+    // siempre arma el campo bien— para comprobar que el propio constructor lo
+    // rechaza cuando no coincide con lo utilizable.
+
+    ScopeObservation obsConDosUtilizables() => ScopeObservation(
+          requested: const ['a.fuente', 'b.fuente'],
+          observed: [
+            ObservedSubject(subject: 'a.fuente', ofStack: true, files: 1),
+            ObservedSubject(subject: 'b.fuente', ofStack: true, files: 1),
+          ],
+          unobserved: const [],
+          observedAt: DateTime.utc(2026),
+        );
+
+    test(
+        'un alcance esperado más CHICO que lo utilizable no se deja '
+        'construir', () {
+      // El falso verde que abrió la puerta el cambio de tipo: con
+      // `expectedScope` vacío, un paso que cubre uno solo de los dos sujetos
+      // utilizables no debía nada sobre el otro, y la corrida salía verde con
+      // cero obligaciones sin saldar.
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [RegisteredStep(id: 'A', expectedScope: const [])],
+          alcance: obsConDosUtilizables(),
+          desenlaces: {
+            'A': Executed(
+                witness: _testigo(sujetos: const ['a.fuente']),
+                diagnostics: const []),
+          },
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+        'un alcance esperado con sujetos que la observación no dio como '
+        'utilizables no se deja construir', () {
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [
+            RegisteredStep(id: 'A', expectedScope: const ['a.fuente', 'zzz'])
+          ],
+          alcance: obsConDosUtilizables(),
+          desenlaces: {
+            'A': Executed(
+                witness: _testigo(sujetos: const ['a.fuente']),
+                diagnostics: const []),
+          },
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('un sujeto esperado en blanco tampoco se deja construir', () {
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [
+            RegisteredStep(id: 'A', expectedScope: const ['a.fuente', '   '])
+          ],
+          alcance: obsConDosUtilizables(),
+          desenlaces: {
+            'A': Executed(
+                witness: _testigo(sujetos: const ['a.fuente']),
+                diagnostics: const []),
+          },
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('el alcance esperado igual al utilizable sí se deja construir', () {
+      // El control negativo: sin él, no se sabría si las pruebas de arriba
+      // fallan porque el invariante funciona o porque CUALQUIER cosa falla.
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [
+            RegisteredStep(
+                id: 'A', expectedScope: const ['a.fuente', 'b.fuente'])
+          ],
+          alcance: obsConDosUtilizables(),
+          desenlaces: {
+            'A': Executed(
+                witness: _testigo(sujetos: const ['a.fuente', 'b.fuente']),
+                diagnostics: const []),
+          },
+        ),
+        returnsNormally,
+      );
     });
   });
 }

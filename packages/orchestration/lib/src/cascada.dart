@@ -124,6 +124,61 @@ class ResultadoDeCascada {
       throw ArgumentError.value(sobran.toList(), 'desenlaces',
           'Hay desenlaces de pasos que no están registrados');
     }
+
+    // **El alcance esperado deja de ser gratis.** Antes el denominador del
+    // libro de obligaciones era literalmente `alcance.usable()`, y su
+    // corrección salía gratis de que `ScopeObservation` valida su partición
+    // contra lo pedido. `expectedScope` es un campo libre en cada
+    // [RegisteredStep], así que esa garantía hay que reponerla acá, a mano,
+    // en las dos direcciones:
+    //
+    // - **Ningún sujeto en blanco.** No nombra nada, y no se le puede pedir
+    //   cuenta de él a nadie.
+    // - **Ni más chico ni más grande que lo utilizable de esta corrida.** Un
+    //   `expectedScope` más CHICO —el caso límite es la lista vacía— deja
+    //   sujetos utilizables sin obligación: el libro los saltea en silencio y
+    //   la corrida puede salir verde sobre algo que nadie prometió cubrir. Uno
+    //   más GRANDE fabrica una obligación sobre un sujeto que la observación
+    //   nunca dio como utilizable. Hoy —sin aplicabilidad por paso— el único
+    //   valor que no incurre en ninguno de los dos es la igualdad exacta con
+    //   `alcance.usable()`, y es lo que el comentario de [RegisteredStep] ya
+    //   documenta: «el alcance esperado de TODOS los pasos es el mismo: el
+    //   utilizable». El día que un paso pueda declarar que un sujeto no es su
+    //   incumbencia, esta comprobación se afloja para permitir un subconjunto
+    //   propio DECLARADO — no uno que se coló por no validarse.
+    final utilizable = alcance.usable().toSet();
+    for (final registro in this.registrados) {
+      final enBlanco =
+          registro.expectedScope.where((s) => s.trim().isEmpty).toList();
+      if (enBlanco.isNotEmpty) {
+        throw ArgumentError.value(
+            registro.expectedScope,
+            'registrados',
+            'El paso «${registro.id}» espera un sujeto en blanco. Un sujeto '
+                'en blanco no nombra nada, y el libro de obligaciones no le '
+                'puede pedir cuenta de él a nadie.');
+      }
+      final esperado = registro.expectedScope.toSet();
+      final excedentes = esperado.difference(utilizable);
+      final faltantes = utilizable.difference(esperado);
+      if (excedentes.isNotEmpty || faltantes.isNotEmpty) {
+        throw ArgumentError.value(
+            registro.expectedScope,
+            'registrados',
+            'El alcance esperado del paso «${registro.id}» no coincide con '
+                'lo utilizable de esta corrida (${utilizable.join(", ")}).'
+                '${excedentes.isEmpty ? '' : ' Espera sujetos que la '
+                    'observación no dio como utilizables: '
+                    '${excedentes.join(", ")}.'}'
+                '${faltantes.isEmpty ? '' : ' No incluye sujetos utilizables '
+                    'que esta corrida sí observó: ${faltantes.join(", ")}.'}'
+                ' Sin aplicabilidad por paso todavía, el alcance esperado de '
+                'todo paso registrado tiene que ser exactamente el '
+                'utilizable: uno más chico deja obligaciones sin nombrar, y '
+                'uno más grande fabrica obligaciones sobre algo que nadie '
+                'observó.');
+      }
+    }
   }
 
   /// Qué pasos ejecutaron de verdad, es decir, corrieron hasta el final.
@@ -271,6 +326,29 @@ class Cascada {
     void Function(String id)? alEmpezar,
     void Function(String id, StepOutcome desenlace)? alTerminar,
   }) async {
+    // **Un alcance pedido vacío es precondición violada, no un desenlace.**
+    // Se rechaza ACÁ, antes de llamar al observador y sin condicionar al
+    // registro: verificar nada no es ni verde ni no concluyente, es un error
+    // de quien llama, igual que un alcance sin sujetos utilizables lo es para
+    // un paso (`PasoDeCascada.run` ya lo rechaza así, un nivel más abajo). Sin
+    // esto había una asimetría: con pasos registrados, la nada escapaba como
+    // una excepción de OTRO tipo —el invariante de `Skipped`, que no le habla
+    // a quien llamó—, y con el registro vacío ni siquiera eso: devolvía un
+    // resultado no concluyente en silencio.
+    //
+    // **No es el contrato del observador lo que cambia.** `ScopeObserver`
+    // sabe particionar la nada —una lista vacía es una partición válida de sí
+    // misma— y eso sigue valiendo: acá no se lo llama, así que no se le pide
+    // que decida nada.
+    if (sujetos.isEmpty) {
+      throw ArgumentError.value(
+          sujetos,
+          'sujetos',
+          'No hay ningún sujeto para verificar. Correr una cascada sobre una '
+              'lista de sujetos vacía no es un desenlace de nadie: es una '
+              'precondición violada de quien llama.');
+    }
+
     // **Se congela al entrar.** La lista es del llamador, que puede mutarla
     // mientras la corrida está en curso.
     final alcance = List<String>.unmodifiable(sujetos);
