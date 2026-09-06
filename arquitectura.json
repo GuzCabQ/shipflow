@@ -422,6 +422,12 @@
         },
         "UnreadableToolOutput": {
           "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
+        },
+        "StepOutcome": {
+          "por_que": "Es la base de una jerarquia sellada, sin campo propio: cada variante concreta (Executed, Aborted, Skipped, Unobservable, Broken) trae su propio toJson/fromJson, discriminados por kind. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear-, y dejarlo sin declarar seria la tercera opcion silenciosa que esta misma regla prohibe."
+        },
+        "VerificationOutcome": {
+          "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
         }
       },
       "violacion_canonica": {

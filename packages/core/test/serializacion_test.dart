@@ -193,27 +193,18 @@ void main() {
       Aborted(attempt: intento).toJson(),
       Aborted.fromJson
     ),
-    // **Dos instancias canónicas, y es el invariante hablando** — el mismo
-    // motivo que ya obliga a `ObservedSubject` acá abajo. `notOfStack` solo
-    // tiene sentido con sujetos ajenos al stack, y esos SIEMPRE traen
-    // `files: 0` y `ofStack: false`: ningún sujeto ajeno real puede probar
-    // que esos dos campos sobreviven el viaje con un valor distinto del
-    // default. La segunda instancia usa un sujeto DEL stack —tipo-válido para
-    // este campo, aunque no sea el uso real de `Skipped`— solo para que
-    // `files` y `ofStack` viajen con un valor no default al menos una vez.
-    'Skipped · con un sujeto ajeno al stack': (
-      Skipped(notOfStack: [
-        ObservedSubject(
-            subject: 'lib/ajeno', ofStack: false, files: 0, reason: 'no es del stack')
-      ]).toJson(),
-      Skipped.fromJson
-    ),
-    'Skipped · con un sujeto del stack': (
-      Skipped(notOfStack: [
-        ObservedSubject(subject: 'lib/candidato', ofStack: true, files: 4)
-      ]).toJson(),
-      Skipped.fromJson
-    ),
+    // **`Skipped` NO entra acá.** `Skipped` ahora rechaza cualquier sujeto
+    // que el observador haya declarado del stack (invariante nueva, ver la
+    // suite de verificación), así que la única instancia válida de
+    // `notOfStack` trae exclusivamente sujetos ajenos — y esos SIEMPRE traen
+    // `files: 0` y `ofStack: false` por el invariante de `ObservedSubject`.
+    // Ninguna instancia canónica válida puede entonces hacer viajar esos dos
+    // campos con un valor no default, así que este check —que exige
+    // exactamente eso— no se le puede aplicar. Antes esta entrada usaba una
+    // segunda instancia con un sujeto contradictorio (del stack) para
+    // esquivarlo; era el síntoma del hallazgo crítico de la ronda 1,
+    // convertido en dato de prueba. Ver el caso dedicado más abajo, que hace
+    // lo mismo que ya hace `ScopeObservation` con su propio campo forzoso.
     'Unobservable': (
       Unobservable(causes: [
         UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
@@ -288,7 +279,7 @@ void main() {
   /// Es una excepción declarada, no un silencio: si mañana alguien agrega un
   /// tercer campo excluyente y no suma su instancia, este check lo caza igual
   /// —el campo nuevo quedaría en su default en TODAS—.
-  const excluyentes = {'Skipped', 'ObservedSubject', 'ScopeObservation'};
+  const excluyentes = {'ObservedSubject', 'ScopeObservation'};
 
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
@@ -362,5 +353,27 @@ void main() {
         (e as Map).remove('reason'));
     expect(valoresPorDefecto(json), isEmpty);
     expect(ScopeObservation.fromJson(o.toJson()).toJson(), o.toJson());
+  });
+
+  test("'Skipped' no pierde nada, y no trae vacíos que no sean forzosos", () {
+    // Mismo caso que el de arriba, para el mismo motivo: `notOfStack` solo
+    // admite sujetos ajenos al stack (la invariante que cerró el hallazgo
+    // crítico de la ronda 1), y esos siempre traen `files: 0` y
+    // `ofStack: false` — no hay ninguna instancia VÁLIDA de `Skipped` que
+    // pueda demostrar que esos dos campos no son un valor por defecto
+    // aplastado. Se excluyen de la comprobación de vacíos por la misma razón
+    // que arriba excluye `reason`, y el round-trip se verifica a mano en vez
+    // de por la lista `canonicas`.
+    final s = Skipped(notOfStack: [
+      ObservedSubject(
+          subject: 'lib/ajeno-a', ofStack: false, files: 0, reason: 'motivo a'),
+      ObservedSubject(
+          subject: 'lib/ajeno-b', ofStack: false, files: 0, reason: 'motivo b'),
+    ]);
+    final json = s.toJson();
+    (json['notOfStack']! as List)
+        .forEach((e) => (e as Map)..remove('files')..remove('ofStack'));
+    expect(valoresPorDefecto(json), isEmpty);
+    expect(Skipped.fromJson(s.toJson()).toJson(), s.toJson());
   });
 }

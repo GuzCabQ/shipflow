@@ -73,6 +73,14 @@ class Attempt {
     required this.note,
     required this.finishedAt,
   }) : subjects = List.unmodifiable(subjects) {
+    if (this.subjects.isEmpty) {
+      throw ArgumentError.value(
+          subjects,
+          'subjects',
+          'Un alcance vacío es precondición violada, no un desenlace: no se '
+              'invoca nada sobre una lista de sujetos vacía, así que tampoco '
+              'hay un intento que registrar sobre ella');
+    }
     if (termination == Termination.completa) {
       throw ArgumentError.value(termination, 'termination',
           'Un intento que terminó completo no es un intento: es un testigo. '
@@ -113,11 +121,11 @@ enum StepKind { executed, aborted, skipped, unobservable, broken }
 sealed class StepOutcome {
   StepKind get kind;
 
-  /// **No hay `toJson` declarado acá arriba.** El verificador de campos de
-  /// este repositorio lee un `toJson` desde su literal de mapa devuelto, y
-  /// una firma abstracta sin cuerpo no tiene ninguno que leer. Cada variante
-  /// trae el suyo, con cuerpo; serializar un `StepOutcome` genérico es el
-  /// `switch` exhaustivo de siempre sobre una clase sellada.
+  /// Cada variante trae su propio cuerpo. El verificador de campos de este
+  /// repositorio sabe leer un literal de mapa devuelto por una implementación
+  /// concreta, y sabe saltear una firma abstracta sin cuerpo como esta en vez
+  /// de fallar al intentarlo.
+  Map<String, Object?> toJson();
 
   /// Despacha por [kind]. **Un discriminador que no nombra ninguna variante
   /// lanza**: `StepKind.values.byName` no tiene una lectura benigna para eso,
@@ -141,7 +149,25 @@ sealed class StepOutcome {
 /// El salto, lo no observable y lo roto **no están acá a propósito**: los
 /// produce quien compone la corrida. Un verificador que pudiera devolverlos
 /// estaría pidiendo y aprobando su propia exención.
-sealed class VerificationOutcome extends StepOutcome {}
+sealed class VerificationOutcome extends StepOutcome {
+  /// Despacha por [StepOutcome.fromJson] y **lanza** si lo que llegó es una
+  /// de las tres variantes que un `Verifier` no puede devolver.
+  ///
+  /// Sin esto, rechazar un `Skipped` disfrazado de resultado de verificador
+  /// dependía de un `as VerificationOutcome` en el sitio de uso —un error de
+  /// tipo lejos de donde se leyó el JSON— y nada impedía que un consumidor
+  /// futuro lo esquivara con una comprobación de respaldo que fabricara un
+  /// verde nuevo sobre algo que un verificador nunca afirmó.
+  static VerificationOutcome fromJson(Map<String, Object?> json) {
+    final outcome = StepOutcome.fromJson(json);
+    if (outcome is VerificationOutcome) return outcome;
+    throw ArgumentError.value(
+        outcome.kind.name,
+        'kind',
+        'Un Verifier no puede devolver esto: el salto, lo no observable y lo '
+            'roto los decide quien compone la corrida, no un verificador');
+  }
+}
 
 /// El paso corrió hasta el final, con o sin diagnósticos.
 class Executed extends VerificationOutcome {
@@ -166,6 +192,7 @@ class Executed extends VerificationOutcome {
         : Verdict.verde;
   }
 
+  @override
   Map<String, Object?> toJson() => {
         'kind': kind.name,
         'witness': witness.toJson(),
@@ -198,6 +225,7 @@ class Aborted extends VerificationOutcome {
 
   Aborted({required this.attempt});
 
+  @override
   Map<String, Object?> toJson() =>
       {'kind': kind.name, 'attempt': attempt.toJson()};
 
@@ -232,8 +260,18 @@ class Skipped extends StepOutcome {
           'Un salto sin sujetos ajenos no es un salto: no hay nada que '
           'explique por qué el paso no tenía nada que hacer');
     }
+    final propios = this.notOfStack.where((o) => o.ofStack).toList();
+    if (propios.isNotEmpty) {
+      throw ArgumentError.value(
+          propios,
+          'notOfStack',
+          'Estos sujetos el observador los declaró del stack. Un salto '
+              'afirma «ninguno de estos era mío»: no puede listar uno que sí '
+              'lo era');
+    }
   }
 
+  @override
   Map<String, Object?> toJson() => {
         'kind': kind.name,
         'notOfStack': [for (final o in notOfStack) o.toJson()],
@@ -270,6 +308,7 @@ class Unobservable extends StepOutcome {
     }
   }
 
+  @override
   Map<String, Object?> toJson() => {
         'kind': kind.name,
         'causes': [for (final c in causes) c.toJson()],
@@ -318,6 +357,7 @@ class Broken extends StepOutcome {
     }
   }
 
+  @override
   Map<String, Object?> toJson() => {
         'kind': kind.name,
         'component': component,

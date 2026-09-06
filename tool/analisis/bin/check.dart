@@ -35,6 +35,15 @@ class Clase {
   final String nombre;
   final String archivo;
   final bool esAbstracta;
+
+  /// `sealed class`. Dart no permite escribir `abstract` junto a `sealed`
+  /// —la palabra sobra, el modificador ya lo implica— así que
+  /// `abstractKeyword` queda `null` para estas clases y [esAbstracta] las
+  /// cuenta igual. Esto se guarda aparte porque una jerarquía sellada SÍ
+  /// tiene que elegir entre serializar o declararse opaca aunque no tenga
+  /// campos propios: a diferencia de una interfaz de puerto, es una base de
+  /// datos, no de comportamiento.
+  final bool esSellada;
   final List<String> camposPublicos;
 
   /// Campos cuyo tipo es una colección y que el constructor recibe por
@@ -49,6 +58,7 @@ class Clase {
       this.nombre,
       this.archivo,
       this.esAbstracta,
+      this.esSellada,
       this.camposPublicos,
       this.coleccionesAliasadas,
       this.clavesToJson,
@@ -153,7 +163,15 @@ List<Clase> clasesDe(File archivo, String rel) {
             tiposDeCampo[n] = tipo;
           }
         }
-      } else if (m is MethodDeclaration && m.name.lexeme == 'toJson') {
+      } else if (m is MethodDeclaration &&
+          m.name.lexeme == 'toJson' &&
+          m.body is! EmptyFunctionBody) {
+        // Una firma sin cuerpo (`Map<String, Object?> toJson();`, en la base
+        // de una jerarquía sellada) no tiene ningún mapa que leer todavía:
+        // cada variante concreta trae el suyo, y ESE es el que este check
+        // valida cuando le toque su turno. Tratarla como una promesa
+        // incumplida sería fallar por una firma que a propósito no tiene
+        // cuerpo, no por un campo perdido.
         tieneToJson = true;
         toJson = _clavesDeMapa(m.body, '$rel · $nombre.toJson');
       } else if (m is MethodDeclaration && m.name.lexeme == 'toString') {
@@ -220,10 +238,12 @@ List<Clase> clasesDe(File archivo, String rel) {
       for (final t in d.withClause?.mixinTypes ?? const <NamedType>[])
         _nombreDeTipo(t),
     };
+    final esSellada = d.sealedKeyword != null;
     salida.add(Clase(
         nombre,
         rel,
-        d.abstractKeyword != null,
+        d.abstractKeyword != null || esSellada,
+        esSellada,
         campos,
         aliasadas,
         tieneToJson ? toJson : null,
@@ -418,13 +438,25 @@ void main(List<String> args) {
   }
 
   // --- 2 · opacidad declarada -------------------------------------------
+  //
+  // **Una clase sellada NO se exime por ser abstracta.** La exención existe
+  // para las interfaces de puerto —comportamiento, sin datos propios que
+  // perder—, pero la base de una jerarquía sellada es justo lo contrario: es
+  // dato, aunque hoy no tenga un campo propio. Eximirla dejaba a
+  // `StepOutcome`/`VerificationOutcome` sin serializar y sin declararse
+  // opacas, la tercera opción silenciosa que esta regla existe para prohibir
+  // — y sobrevivían solo porque `sealed` no admite escribir `abstract`, así
+  // que el análisis nunca las contaba como clases con campos que perder.
   for (final c in clasesCore) {
-    if (c.esAbstracta) continue;
+    if (c.esAbstracta && !c.esSellada) continue;
     final declarada = opacos[c.nombre] as Map<String, Object?>?;
+    final necesitaElegir = c.esSellada || c.camposPublicos.isNotEmpty;
     if (declarada == null) {
-      if (c.camposPublicos.isNotEmpty &&
-          (c.clavesToJson == null || c.clavesFromJson == null)) {
-        fallos.add('${c.archivo} · ${c.nombre}: tiene campos y no serializa, y '
+      if (necesitaElegir && (c.clavesToJson == null || c.clavesFromJson == null)) {
+        final que = c.esSellada
+            ? 'es la base de una jerarquía sellada'
+            : 'tiene campos';
+        fallos.add('${c.archivo} · ${c.nombre}: $que y no serializa, y '
             'no está declarada opaca. Escribile toJson y fromJson, o declarala '
             'en «opacidad-declarada.opacos» con su motivo.');
       }

@@ -202,6 +202,18 @@ class Witness {
               'mandando a leer una lista vacía. Si no cubriste, escribí qué '
               'quedó afuera');
     }
+    final cubiertos = this.subjects.toSet();
+    final contradictorios = [
+      for (final o in this.omitted)
+        if (o.subject != null && cubiertos.contains(o.subject)) o.subject!,
+    ];
+    if (contradictorios.isNotEmpty) {
+      throw ArgumentError.value(
+          contradictorios,
+          'omitted',
+          'Estos sujetos están en subjects Y en omitted: el testigo afirma '
+              '«lo cubrí» y «no lo cubrí» del mismo sujeto a la vez');
+    }
   }
 
   Map<String, Object?> toJson() => {
