@@ -1,5 +1,11 @@
 # Desenlace cerrado y observador de alcance · plan de implementación
 
+> **ESTADO: ejecutado. Las casillas nunca se usaron, y quedan sin marcar a propósito.**
+>
+> Las trece tareas se ejecutaron con `superpowers:subagent-driven-development`, que lleva su progreso en un registro aparte —uno por tarea, con sus commits— y no en las casillas de este archivo. Ninguna se marcó, así que las sesenta y ocho de abajo dicen «nada hecho» mientras el `README` dice que la parte de código está terminada. **Lo cierto es el `README` y el `git log`**, no estas casillas: lo encontró un review, que leyó las dos cosas y no pudo decidir cuál valía.
+>
+> Se dejan sin marcar en vez de marcarlas ahora: marcarlas retroactivamente sería fabricar un registro de ejecución que nadie llevó, que es la misma clase de afirmación sin respaldo que este plan existe para eliminar del código.
+>
 > **Para quien ejecute esto:** usá `superpowers:subagent-driven-development` (recomendado) o `superpowers:executing-plans`, tarea por tarea. Los pasos llevan casilla (`- [ ]`) para marcarlos.
 
 **Objetivo.** Hacer imposibles por construcción los dos falsos verdes que hoy se pueden ejecutar en la cascada de verificación, moviendo la aplicabilidad fuera del verificador y cerrando el desenlace de un paso en un tipo sellado.
