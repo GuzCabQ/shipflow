@@ -23,11 +23,17 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
     final observados = <ObservedSubject>[];
     final noObservados = <UnobservedSubject>[];
 
-    // Se congela al entrar: la lista es del llamador, que puede mutarla
-    // mientras esta observación está en curso. Lo que se recorre y lo que se
-    // le pasa a `ScopeObservation` tienen que ser la MISMA copia congelada:
-    // pasarle el parámetro original de vuelta dejaba la promesa del
-    // comentario sin cumplir en el propio código que la hace.
+    // **Defensiva, no una propiedad que hoy se pueda comprobar.** Este método
+    // no tiene ningún `await`: corre de punta a punta antes de que el
+    // llamador recupere el control, así que copiar `requested` o no copiarlo
+    // da exactamente el mismo resultado, y ninguna prueba puede distinguir
+    // las dos versiones —lo confirmaron 350 pruebas en verde con esta copia
+    // revertida—. La copia es contra el día en que este método gane una
+    // espera real (una lectura async del árbol, por ejemplo): recién ahí el
+    // llamador podría mutar `requested` mientras la observación sigue en
+    // curso, y lo que se recorre dejaría de coincidir con lo que se le pasa a
+    // `ScopeObservation`. Se usa la MISMA copia en las dos partes para que,
+    // si ese día llega, el código ya diga lo que promete.
     final pedido = List<String>.unmodifiable(requested);
     for (final sujeto in pedido) {
       final r = _mirar(sujeto);

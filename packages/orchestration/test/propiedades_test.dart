@@ -4,6 +4,27 @@
 /// El generador es exhaustivo y no aleatorio: el espacio es chico y una
 /// corrida reproducible vale más que una muestra.
 ///
+/// **Dos escenarios, para cubrir los cinco `StepKind`.** El escenario A tiene
+/// dos sujetos y los dos son del stack: sobre él se puede construir
+/// `Executed`, `Aborted` y `Broken`, pero NO `Skipped` ni `Unobservable` —esos
+/// dos exigen, respectivamente, un ajeno y un no observado que la
+/// coherencia desenlace↔observación de `ResultadoDeCascada` (ver «el
+/// desenlace no puede contradecir a la observación» en la suite de la
+/// cascada) rechazaría si se inventaran sobre este alcance. El escenario B
+/// agrega un tercer sujeto de cada clase —uno del stack, uno ajeno, uno no
+/// observado— para que esas dos variantes también entren al generador.
+///
+/// Ronda 1 de revisión lo pidió con el precedente que lo decide: el tercero
+/// de los tres falsos verdes que esta rebanada cierra fue justo un salto
+/// incoherente con su observación. Sin el escenario B, la propiedad «todo
+/// estado construible tiene semántica» cubría 3 de 5 variantes, y un mañana
+/// que rompiera cómo se tratan un salto o un no observable solo lo cazarían
+/// las pruebas dirigidas —casos puntuales, no el espacio—. El escenario B no
+/// repite esa guardia de coherencia: construye un `Skipped`/`Unobservable`
+/// coherentes A PROPÓSITO, reusando los mismos `ObservedSubject`/
+/// `UnobservedSubject` que la propia observación produjo, así que no hay
+/// invención de sujetos que discutir.
+///
 /// **Notas de adaptación.** El brief de esta tarea se escribió antes de tres
 /// cosas que este archivo tiene que respetar:
 ///
@@ -28,55 +49,67 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:test/test.dart';
 
-const sujetos = ['a.fuente', 'b.fuente'];
+/// Escenario A: dos sujetos, los dos del stack.
+const sujetosA = ['a.fuente', 'b.fuente'];
+
+/// Escenario B: uno del stack, uno ajeno, uno no observado.
+const sujetoDelStackB = 'x.fuente';
+const sujetoAjenoB = 'y.ajeno';
+const sujetoPerdidoB = 'z.perdido';
+const sujetosB = [sujetoDelStackB, sujetoAjenoB, sujetoPerdidoB];
 
 /// Un observador de alcance que responde de una tabla. **No toca el disco.**
 /// Copiado de la suite de la cascada: `orchestration` no puede depender de
 /// ningún plugin, así que cada suite trae el suyo.
 class ObservadorDeAlcanceFalso implements ScopeObserver {
   final Map<String, ObservedSubject> observados;
+  final Map<String, String> noObservados;
 
-  ObservadorDeAlcanceFalso({required Map<String, ObservedSubject> observados})
-      : observados = Map.unmodifiable(observados);
+  ObservadorDeAlcanceFalso({
+    required Map<String, ObservedSubject> observados,
+    Map<String, String> noObservados = const {},
+  })  : observados = Map.unmodifiable(observados),
+        noObservados = Map.unmodifiable(noObservados);
 
   @override
   Future<ScopeObservation> observe(List<String> requested) async {
     final vistos = <ObservedSubject>[];
+    final ciegos = <UnobservedSubject>[];
     for (final s in requested) {
+      final causa = noObservados[s];
+      if (causa != null) {
+        ciegos.add(UnobservedSubject(subject: s, cause: causa));
+        continue;
+      }
       final o = observados[s];
       if (o == null) {
         throw ArgumentError.value(
             s,
             'requested',
             'El fake no tiene declarado este sujeto. Declaralo en '
-                '`observados`: adivinar sería clasificar por su cuenta');
+                '`observados` o en `noObservados`: adivinar sería '
+                'clasificar por su cuenta');
       }
       vistos.add(o);
     }
     return ScopeObservation(
       requested: requested,
       observed: vistos,
-      unobserved: const [],
+      unobserved: ciegos,
       observedAt: DateTime.utc(2026),
     );
   }
 }
 
-/// Todos los desenlaces que un paso puede tener, con su cobertura.
+/// Los desenlaces del escenario A: `Executed`, `Aborted` y `Broken`.
 ///
-/// **Solo tres de los cinco `StepKind`.** El alcance fijo de este archivo
-/// declara los dos sujetos del stack: no hay ningún ajeno ni ningún no
-/// observado con el que `Skipped` o `Unobservable` pudieran construirse sin
-/// violar la coherencia que `ResultadoDeCascada` exige entre un desenlace y
-/// la observación de su corrida (ver el grupo «el desenlace no puede
-/// contradecir a la observación» en la suite de la cascada). Forzarlos acá
-/// probaría una excepción de construcción ajena a esta propiedad, no un
-/// estado real.
-Iterable<(String, StepOutcome)> desenlacesPosibles() sync* {
+/// Es la rejilla completa de cobertura × diagnósticos × omisiones sobre los
+/// dos sujetos del escenario A, más un `Aborted` y un `Broken` sueltos.
+Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
   final coberturas = <List<String>>[
     const [],
     const ['a.fuente'],
-    sujetos,
+    sujetosA,
   ];
   final diagnosticos = <List<Diagnostic>>[
     const [],
@@ -122,7 +155,7 @@ Iterable<(String, StepOutcome)> desenlacesPosibles() sync* {
     Aborted(
         attempt: Attempt(
       invocation: 'herramienta',
-      subjects: sujetos,
+      subjects: sujetosA,
       termination: Termination.tiempoAgotado,
       exitCode: -1,
       note: 'se acabó el presupuesto',
@@ -132,12 +165,37 @@ Iterable<(String, StepOutcome)> desenlacesPosibles() sync* {
   yield ('broken', Broken(component: 'X', error: 'se rompió', context: 'lib'));
 }
 
+/// Los desenlaces del escenario B: `Skipped` y `Unobservable`, coherentes con
+/// [alcanceB] por construcción — se arman a partir de lo que la propia
+/// observación clasificó, no de sujetos inventados.
+Iterable<(String, StepOutcome)> desenlacesPosiblesB(
+    ScopeObservation alcanceB) sync* {
+  final ajeno = alcanceB.observed.singleWhere((o) => !o.ofStack);
+  yield ('skipped', Skipped(notOfStack: [ajeno]));
+
+  final perdido = alcanceB.unobserved.single;
+  yield ('unobservable', Unobservable(causes: [perdido]));
+}
+
 Diagnostic _diag(Severity s) => Diagnostic(
       file: 'a.fuente',
       severity: s,
       ruleId: 'r',
       message: const QuotedText('m', source: 'test'),
     );
+
+/// Todos los casos de los dos escenarios, cada uno con SU PROPIA observación:
+/// un desenlace del escenario B no tiene sentido evaluado contra el alcance
+/// del escenario A, y viceversa.
+Iterable<(String, ScopeObservation, StepOutcome)> todosLosCasos(
+    ScopeObservation alcanceA, ScopeObservation alcanceB) sync* {
+  for (final (nombre, d) in desenlacesPosiblesA()) {
+    yield ('A·$nombre', alcanceA, d);
+  }
+  for (final (nombre, d) in desenlacesPosiblesB(alcanceB)) {
+    yield ('B·$nombre', alcanceB, d);
+  }
+}
 
 /// Arma un `ResultadoDeCascada` de un único paso `A` con desenlace [d], sobre
 /// [alcance]. **Coherente por construcción**: el alcance esperado del paso es
@@ -151,15 +209,51 @@ ResultadoDeCascada _resultadoCon(ScopeObservation alcance, StepOutcome d) =>
     );
 
 void main() {
-  final observador = ObservadorDeAlcanceFalso(observados: {
-    for (final s in sujetos)
+  final observadorA = ObservadorDeAlcanceFalso(observados: {
+    for (final s in sujetosA)
       s: ObservedSubject(subject: s, ofStack: true, files: 1),
+  });
+  final observadorB = ObservadorDeAlcanceFalso(
+    observados: {
+      sujetoDelStackB:
+          ObservedSubject(subject: sujetoDelStackB, ofStack: true, files: 1),
+      sujetoAjenoB: ObservedSubject(
+          subject: sujetoAjenoB,
+          ofStack: false,
+          files: 0,
+          reason: 'no es de este stack'),
+    },
+    noObservados: const {sujetoPerdidoB: 'no se pudo mirar'},
+  );
+
+  late ScopeObservation alcanceA;
+  late ScopeObservation alcanceB;
+
+  setUpAll(() async {
+    alcanceA = await observadorA.observe(sujetosA);
+    alcanceB = await observadorB.observe(sujetosB);
   });
 
   test('a · todo desenlace construible tiene estado y causa. Función total',
-      () async {
-    final alcance = await observador.observe(sujetos);
-    for (final (nombre, d) in desenlacesPosibles()) {
+      () {
+    // **Esta propiedad no tiene una guardia que se le pueda quitar.** No es
+    // una debilidad de la prueba: `estado` y `causas` (en el archivo de la cascada) son
+    // funciones sin ningún camino parcial —ni `.first` sin resguardo, ni
+    // `as` inseguro, ni acceso a una clave que pudiera faltar— sobre un
+    // conjunto de variantes que `sealed` cierra para siempre: nada fuera de
+    // el archivo de desenlace puede agregar un sexto `StepOutcome`. Y si
+    // alguna vez se agregara uno ADENTRO de ese archivo, los `switch`
+    // exhaustivos sobre `StepKind` que ya existen —`StepOutcome.fromJson`
+    // acá, `_etapaDe` y `_desenlaceEnTexto` en `cli`— dejan de compilar
+    // hasta que alguien lo
+    // atienda en cada uno. La totalidad de esta función la sostiene el
+    // compilador, no un `if` que esta prueba pueda desarmar; por eso el
+    // ejercicio de mordida de esta rebanada la deja aparte, y por eso sigue
+    // acá: sin este comentario, el próximo que lo revise la va a encontrar
+    // muda —sin nada que remover y ver caer— y la va a borrar por inútil,
+    // cuando lo que pasa es lo contrario: el invariante es más fuerte que
+    // una prueba.
+    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
       final r = _resultadoCon(alcance, d);
       expect(() => r.estado, returnsNormally, reason: nombre);
       expect(() => r.causas, returnsNormally, reason: nombre);
@@ -167,10 +261,8 @@ void main() {
     }
   });
 
-  test('b · verde implica toda obligación saldada y nada sin concluir',
-      () async {
-    final alcance = await observador.observe(sujetos);
-    for (final (nombre, d) in desenlacesPosibles()) {
+  test('b · verde implica toda obligación saldada y nada sin concluir', () {
+    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
       final r = _resultadoCon(alcance, d);
       if (r.estado != EstadoDeCorrida.verde) continue;
       expect(r.obligacionesSinSaldar, isEmpty, reason: nombre);
@@ -180,28 +272,32 @@ void main() {
     }
   });
 
-  test('c · la cuenta de diagnósticos es la suma de los ejecutados', () async {
-    final alcance = await observador.observe(sujetos);
-    for (final (nombre, d) in desenlacesPosibles()) {
+  test('c · la cuenta de diagnósticos es la suma de los ejecutados', () {
+    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
       final r = _resultadoCon(alcance, d);
       final esperados = d is Executed ? d.diagnostics.length : 0;
       expect(r.diagnosticos, hasLength(esperados), reason: nombre);
     }
   });
 
-  test('d · ningún desenlace sin cobertura completa termina verde', () async {
+  test('d · ningún desenlace sin cobertura completa termina verde', () {
     // La propiedad que cierra el falso verde: cubrir la mitad sin explicar el
     // resto no puede dar verde, sea cual sea el resto de la combinación.
-    final alcance = await observador.observe(sujetos);
+    // **Contra `alcance.usable()`, no contra una constante**: en el escenario
+    // B lo utilizable es solo `sujetoDelStackB` —el ajeno y el no observado
+    // no son utilizables por definición—, así que medir contra una lista fija
+    // de sujetos sería incorrecto ahí. Solo el escenario A aporta `Executed`,
+    // así que en la práctica es el único que ejercita esta propiedad, pero la
+    // expresión vale para los dos.
     var ejercitados = 0;
-    for (final (nombre, d) in desenlacesPosibles()) {
+    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
       if (d is! Executed) continue;
       final saldados = {
         ...d.witness.subjects,
         for (final o in d.witness.omitted)
           if (o.subject != null) o.subject!,
       };
-      if (saldados.containsAll(sujetos)) continue;
+      if (saldados.containsAll(alcance.usable())) continue;
       ejercitados++;
       final r = _resultadoCon(alcance, d);
       expect(r.estado, isNot(EstadoDeCorrida.verde), reason: nombre);
@@ -210,28 +306,26 @@ void main() {
     // ningún caso con cobertura incompleta sobre sujetos reales, el `for` de
     // arriba no ejecuta ningún `expect` y la propiedad pasa sin haber
     // probado nada — exactamente el falso verde que esta rebanada existe
-    // para cazar, pero en el propio archivo de propiedades. `sujetos` tiene
-    // dos elementos reales y la rejilla de `desenlacesPosibles` incluye
-    // cobertura vacía y cobertura parcial, así que esto tiene que ser mayor
-    // que cero; si baja a cero, el generador dejó de ejercitar la propiedad
-    // y hay que arreglarlo, no relajar el `expect`.
+    // para cazar, pero en el propio archivo de propiedades. El escenario A
+    // tiene sujetos reales y su rejilla incluye cobertura vacía y parcial,
+    // así que esto tiene que ser mayor que cero; si baja a cero, el
+    // generador dejó de ejercitar la propiedad y hay que arreglarlo, no
+    // relajar el `expect`.
     expect(ejercitados, greaterThan(0),
         reason: 'el generador tiene que producir al menos un desenlace con '
             'cobertura incompleta sobre sujetos reales, o esta propiedad no '
             'está probando nada');
   });
 
-  test('e · un registrado sin desenlace no se puede construir', () async {
-    // `await` no puede ir dentro de `expect`: se saca la observación afuera.
-    final alcance = await observador.observe(sujetos);
+  test('e · un registrado sin desenlace no se puede construir', () {
     expect(
         () => ResultadoDeCascada(
               registrados: [
-                RegisteredStep(id: 'A', expectedScope: alcance.usable()),
-                RegisteredStep(id: 'B', expectedScope: alcance.usable()),
+                RegisteredStep(id: 'A', expectedScope: alcanceA.usable()),
+                RegisteredStep(id: 'B', expectedScope: alcanceA.usable()),
               ],
-              alcance: alcance,
-              desenlaces: {'A': desenlacesPosibles().first.$2},
+              alcance: alcanceA,
+              desenlaces: {'A': desenlacesPosiblesA().first.$2},
             ),
         throwsArgumentError);
   });
