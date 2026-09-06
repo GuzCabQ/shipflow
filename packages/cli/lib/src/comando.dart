@@ -10,6 +10,7 @@
 /// construye envelopes, ningún camino puede no construirlos.
 library;
 
+import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 
 import 'salida.dart';
@@ -61,6 +62,12 @@ Future<int> ejecutar(
   required StringSink salida,
   required StringSink error,
   Cascada Function(String directorio)? construirCascada,
+
+  /// Se compone con el observador de progreso que `verify` ya instala para
+  /// imprimir. **Existe solo para poder romper el canal a propósito**: una
+  /// garantía de entrega que no se puede romper en una prueba es una garantía
+  /// que nadie comprobó.
+  void Function(String id, StepOutcome desenlace)? alTerminarDeProgreso,
 }) async {
   // `--json` y `--quiet` se detectan antes de interpretar, porque hasta un
   // error de interpretación tiene que salir por el canal que se pidió. Su
@@ -138,6 +145,7 @@ Future<int> ejecutar(
       directorio: directorio,
       impresora: imp,
       construirCascada: construirCascada,
+      alTerminarDeProgreso: alTerminarDeProgreso,
     );
   } on Object catch (e, pila) {
     return _rescatar(imp, e, pila);

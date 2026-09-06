@@ -6,85 +6,186 @@ import 'dart:convert';
 import 'package:cli/cli.dart';
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
+import 'package:plugin_fake/plugin_fake.dart';
 
-/// **Declara cuántos elementos eran suyos.** Omitirlo lo deja en `null`, que
-/// significa «no se pudo establecer» y por sí solo impide el verde: un doble
-/// que no lo declara estaría probando otra cosa.
-Witness testigo({List<String> sujetos = const ['lib/'], int propios = 2}) =>
+/// Un testigo, con lo mínimo para que el invariante no lo rechace: si no
+/// cubre ningún sujeto, tiene que traer al menos una omisión.
+Witness testigo({
+  List<String> sujetos = const ['.'],
+  List<Omission> omite = const [],
+}) =>
     Witness(
-      invocation: 'herramienta --sobre lib/',
+      invocation: 'herramienta --sobre ${sujetos.join(" ")}',
       subjects: sujetos,
-      omitted: const ['algo que no se miró'],
-      termination: Termination.completa,
+      omitted: omite,
       exitCode: 0,
-      ownSubjects: propios,
       finishedAt: DateTime.utc(2026),
     );
 
+/// Un paso de doble propósito: sus fábricas cubren `subjects` tal como
+/// llegan, así que sirven con cualquier alcance que la corrida les dé, no
+/// solo con uno fijado de antemano.
 class Paso implements Verifier {
   @override
   final String id;
-  final VerificationOutcome? devuelve;
+  final List<Diagnostic> diagnosticos;
+  final bool ciego;
   final Object? lanza;
-  Paso(this.id, {this.devuelve, this.lanza});
 
-  factory Paso.verde(String id) => Paso(id,
-      devuelve: VerificationOutcome(
-          verifierId: id, diagnostics: const [], witness: testigo()));
+  Paso(
+    this.id, {
+    this.diagnosticos = const [],
+    this.ciego = false,
+    this.lanza,
+  });
 
-  factory Paso.rojo(String id) => Paso(id,
-      devuelve: VerificationOutcome(
-        verifierId: id,
-        witness: testigo(),
-        diagnostics: [
-          Diagnostic(
-              file: 'lib/a.txt',
-              line: 3,
-              severity: Severity.bloquea,
-              ruleId: 'regla-x',
-              message: const QuotedText('el mensaje', source: 'test')),
-        ],
-      ));
+  factory Paso.verde(String id) => Paso(id);
+
+  factory Paso.rojo(String id) => Paso(id, diagnosticos: [
+        Diagnostic(
+            file: 'lib/a.txt',
+            line: 3,
+            severity: Severity.bloquea,
+            ruleId: 'regla-x',
+            message: const QuotedText('el mensaje', source: 'test')),
+      ]);
 
   /// Un paso con las tres severidades a la vez.
-  factory Paso.mixto(String id) => Paso(id,
-      devuelve: VerificationOutcome(
-        verifierId: id,
-        witness: testigo(),
-        diagnostics: [
-          for (final s in Severity.values)
-            Diagnostic(
-                file: 'lib/${s.name}.txt',
-                severity: s,
-                ruleId: 'r-${s.name}',
-                message: QuotedText('mensaje-${s.name}', source: 'test')),
-        ],
-      ));
+  factory Paso.mixto(String id) => Paso(id, diagnosticos: [
+        for (final s in Severity.values)
+          Diagnostic(
+              file: 'lib/${s.name}.txt',
+              severity: s,
+              ruleId: 'r-${s.name}',
+              message: QuotedText('mensaje-${s.name}', source: 'test')),
+      ]);
 
-  factory Paso.ciego(String id) => Paso(id,
-      devuelve: VerificationOutcome(
-          verifierId: id,
-          diagnostics: const [],
-          witness: testigo(sujetos: const [])));
+  /// Un paso cuya herramienta no informa qué miró: testigo sin sujetos,
+  /// noConcluyente por construcción.
+  factory Paso.ciego(String id) => Paso(id, ciego: true);
 
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
     if (lanza != null) throw lanza!;
-    return devuelve!;
+    if (ciego) {
+      return Executed(
+        witness: Witness(
+          invocation: 'herramienta --sobre ${subjects.join(" ")}',
+          subjects: const [],
+          omitted: [
+            Omission(reason: 'algo que no se miró'),
+          ],
+          exitCode: 0,
+          finishedAt: DateTime.utc(2026),
+        ),
+        diagnostics: diagnosticos,
+      );
+    }
+    return Executed(
+      witness: testigo(sujetos: subjects),
+      diagnostics: diagnosticos,
+    );
   }
+}
+
+/// Un paso que cubre exactamente los sujetos que se le declaran.
+///
+/// Sirve para las pruebas del libro de obligaciones, donde importa que un
+/// paso cubra un subconjunto propio del alcance y no «lo que le llegó».
+class PasoQueCubre implements Verifier {
+  @override
+  final String id;
+  final List<String> cubre;
+  final List<Omission> omite;
+  PasoQueCubre(this.id, this.cubre, {this.omite = const []});
+
+  @override
+  Future<VerificationOutcome> run(List<String> subjects) async => Executed(
+        witness: Witness(
+          invocation: 'herramienta ${cubre.join(" ")}',
+          subjects: cubre,
+          omitted: omite,
+          exitCode: 0,
+          finishedAt: DateTime.utc(2026),
+        ),
+        diagnostics: const [],
+      );
+}
+
+/// Un observador falso que declara del stack, con un archivo cada uno, los
+/// sujetos dados.
+ObservadorDeAlcanceFalso _observadorPara(List<String> sujetos) =>
+    ObservadorDeAlcanceFalso(observados: {
+      for (final s in sujetos)
+        s: ObservedSubject(subject: s, ofStack: true, files: 1),
+    });
+
+/// Los sujetos que le tocan a `verify` a partir de sus argumentos: los que no
+/// empiezan con `-`, o `.` si no hay ninguno. Es la misma regla que
+/// `opcionesDe` aplica — reproducida acá para que el doble por defecto
+/// declare exactamente lo que la corrida real va a pedir.
+List<String> _sujetosDe(List<String> args) {
+  final i = args.indexOf('verify');
+  final resto = i < 0 ? args : args.sublist(i + 1);
+  final sujetos = resto.where((a) => !a.startsWith('-')).toList();
+  return sujetos.isEmpty ? const ['.'] : sujetos;
+}
+
+/// Corre `verify` con un observador de alcance falso que declara del stack
+/// los sujetos dados. Sin esto, cada prueba del CLI tendría que tocar el
+/// disco.
+Future<(int, String)> correrConAlcance(
+    List<String> sujetos, List<Verifier> pasos) {
+  final obs = _observadorPara(sujetos);
+  return correr(sujetos, pasos,
+      construir: (_) => Cascada(pasos, observador: obs));
+}
+
+/// Corre `verify` con un observador de progreso que lanza en el primer
+/// desenlace. Es el canal roto: el consumidor recibe el `started` y nunca su
+/// terminal.
+Future<(int, String)> invocarConObservadorRoto() async {
+  final obs = _observadorPara(const ['lib']);
+  final out = StringBuffer();
+  var primero = true;
+  final c = await ejecutar(
+    const ['verify', 'lib', '--json'],
+    directorio: '.',
+    salida: out,
+    error: StringBuffer(),
+    construirCascada: (_) => Cascada([
+      PasoQueCubre('A', const ['lib']),
+      PasoQueCubre('B', const ['lib'])
+    ], observador: obs),
+    alTerminarDeProgreso: (_, __) {
+      if (primero) {
+        primero = false;
+        throw StateError('canal roto');
+      }
+    },
+  );
+  return (c, out.toString());
 }
 
 /// Corre la invocación ENTERA por la frontera, no solo `verify`. Es lo que
 /// hace el binario, y es donde estaban los agujeros del protocolo.
+///
+/// **Sin `construir` explícito**, arma un observador que declara del stack,
+/// con un archivo cada uno, exactamente los sujetos que esta invocación va a
+/// pedir — el mismo cálculo que hace `opcionesDe`. Así, cualquier prueba que
+/// no le importe el alcance puede ignorarlo del todo.
 Future<(int, String, String)> invocar(List<String> args, List<Verifier> pasos,
     {Cascada Function(String)? construir}) async {
   final out = StringBuffer();
   final err = StringBuffer();
-  final c = await ejecutar(args,
-      directorio: '.',
-      salida: out,
-      error: err,
-      construirCascada: construir ?? (_) => Cascada(pasos));
+  final c = await ejecutar(
+    args,
+    directorio: '.',
+    salida: out,
+    error: err,
+    construirCascada: construir ??
+        (_) => Cascada(pasos, observador: _observadorPara(_sujetosDe(args))),
+  );
   return (c, out.toString(), err.toString());
 }
 

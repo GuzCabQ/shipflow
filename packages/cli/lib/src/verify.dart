@@ -42,7 +42,7 @@ Cascada cascadaPorDefecto({
         directorio: directorio,
         observador: obs,
         presupuesto: presupuesto),
-  ]);
+  ], observador: obs);
 }
 
 /// Lo que `verify` entendió de la línea de comandos.
@@ -113,6 +113,7 @@ Future<int> correrVerify(
   required String directorio,
   required Impresora impresora,
   Cascada Function(String directorio)? construirCascada,
+  void Function(String id, StepOutcome desenlace)? alTerminarDeProgreso,
 }) async {
   final OpcionesDeVerify o;
   try {
@@ -157,6 +158,20 @@ Future<int> correrVerify(
   final cascada =
       (construirCascada ?? (d) => cascadaPorDefecto(directorio: d))(directorio);
 
+  // **Identifica esta corrida.** Nulo hasta acá: ni el error de uso ni la
+  // ayuda llegaron a componer una cascada, así que no había nada que
+  // correlacionar.
+  final runId = generarRunId();
+
+  // **Ningún desenlace queda sin declarar, ni siquiera cuando el canal se
+  // rompe.** `alTerminar` imprime el progreso y compone el observador externo
+  // que el llamador haya dado —existe solo para poder romper el canal a
+  // propósito en una prueba—. Si cualquiera de los dos lanza, el paso YA
+  // corrió y su desenlace es real: perderlo del todo sería peor que avisar
+  // que su entrega falló. Se registra el id y se sigue, en vez de dejar que
+  // la excepción tire abajo el resto de la corrida.
+  final sinTerminalEntregado = <String>[];
+
   // **Los eventos salen mientras la corrida ocurre**, no al final. Antes se
   // recorrían los resultados después de que todo había terminado: no había
   // nada que mirar mientras una herramienta tardaba, y la marca de tiempo era
@@ -167,85 +182,110 @@ Future<int> correrVerify(
       EventEnvelope(
         command: nombreDelComando,
         type: 'progress',
+        runId: runId,
         data: {'verifier': id, 'stage': 'started'},
       ),
       '  ...       $id',
     ),
-    alTerminar: (desenlace) {
-      // **Cada desenlace se dice como lo que es.** Antes solo se avisaba de
-      // los pasos con resultado, así que un salto y un fallo interno dejaban
-      // su `started` sin cerrar — y `--verbose`, que promete el testigo de
-      // cada paso, no daba nada para los saltos.
-      imp.evento(
-        EventEnvelope(
-          command: nombreDelComando,
-          type: 'progress',
-          data: switch (desenlace) {
-            PasoEjecutado(:final resultado) => {
-                'verifier': resultado.verifierId,
-                'stage': 'finished',
-                'verdict': resultado.verdict.name,
-                'diagnostics': resultado.diagnostics.length,
-                if (o.detallado) 'witness': resultado.witness?.toJson(),
-              },
-            PasoSinNadaQueHacer(:final declaracion) => {
-                'verifier': desenlace.id,
-                'stage': 'skipped',
-                'reasons': declaracion.reasons,
-                if (o.detallado) 'notApplicable': declaracion.toJson(),
-              },
-            PasoRoto(:final causa) => {
-                'verifier': desenlace.id,
-                'stage': 'internalError',
-                'cause': causa,
-              },
-          },
-        ),
-        _desenlaceEnTexto(desenlace, detallado: o.detallado),
-      );
-      final diagnosticos = switch (desenlace) {
-        PasoEjecutado(:final resultado) => resultado.diagnostics,
-        _ => const <Diagnostic>[],
-      };
-      for (final d in diagnosticos
-          .where((d) => seMuestra(d, silencioso: o.silencioso))) {
+    alTerminar: (id, desenlace) {
+      try {
+        // **Cada uno de los cinco desenlaces se dice como lo que es.** Antes
+        // solo se avisaba de los pasos con resultado, así que un salto y un
+        // fallo interno dejaban su `started` sin cerrar.
         imp.evento(
           EventEnvelope(
-              command: nombreDelComando, type: 'diagnostic', data: d.toJson()),
-          '  ${d.severity.name} ${d.file}${d.line == null ? '' : ':${d.line}'} '
-          '· ${d.ruleId} · ${d.message.content}',
+            command: nombreDelComando,
+            type: 'progress',
+            runId: runId,
+            data: {
+              'verifier': id,
+              'stage': _etapaDe(desenlace),
+              ...desenlace.toJson(),
+            },
+          ),
+          _desenlaceEnTexto(id, desenlace, detallado: o.detallado),
         );
+        final diagnosticos = switch (desenlace) {
+          Executed(:final diagnostics) => diagnostics,
+          _ => const <Diagnostic>[],
+        };
+        for (final d in diagnosticos
+            .where((d) => seMuestra(d, silencioso: o.silencioso))) {
+          imp.evento(
+            EventEnvelope(
+                command: nombreDelComando,
+                type: 'diagnostic',
+                runId: runId,
+                data: d.toJson()),
+            '  ${d.severity.name} ${d.file}${d.line == null ? '' : ':${d.line}'} '
+            '· ${d.ruleId} · ${d.message.content}',
+          );
+        }
+        alTerminarDeProgreso?.call(id, desenlace);
+      } on Object {
+        sinTerminalEntregado.add(id);
       }
     },
   );
 
+  final huboFalloDeEntrega = sinTerminalEntregado.isNotEmpty;
   final estado = r.estado;
+  final exitCode =
+      huboFalloDeEntrega ? Codigo.errorInterno : Codigo.deCorrida(estado);
+  final verdict = huboFalloDeEntrega
+      ? veredictoDe(EstadoDeCorrida.errorInterno)
+      : veredictoDe(estado);
+  final accion = huboFalloDeEntrega
+      ? 'El canal de progreso se rompió antes de entregar el desenlace final '
+          'de estos pasos: ${sinTerminalEntregado.join(", ")}. La cascada sí '
+          'terminó de correr: `outcomes`, en este mismo documento, tiene lo '
+          'que cada uno produjo.'
+      : _queHacer(r);
+
   imp.resultado(
     ResultEnvelope(
       command: nombreDelComando,
-      exitCode: Codigo.deCorrida(estado),
-      verdict: veredictoDe(estado),
-      nextAction: _queHacer(r),
+      exitCode: exitCode,
+      verdict: verdict,
+      nextAction: accion,
+      runId: runId,
       data: {
-        'registered': r.registrados,
+        // **Ya no es una lista de ids.** Cada paso registrado trae el
+        // alcance que se esperaba que cubriera, y sin eso el libro de
+        // obligaciones que sigue no se podría leer desde este documento.
+        'registered': [
+          for (final reg in r.registrados)
+            {'id': reg.id, 'expectedScope': reg.expectedScope},
+        ],
         'executed': r.ejecutados,
-        'notExecuted': r.sinEjecutar,
-        // **Los saltados van con su motivo, no como una cuenta.** Un consumidor
-        // automático tiene que poder distinguir «no tuvo nada que hacer» de «no
-        // pudo mirar» sin leer prosa, que es exactamente lo que este campo vino
-        // a arreglar un nivel más abajo.
-        'skipped': {
-          for (final s in r.saltados) s.id: s.motivos,
+        'diagnostics': [for (final d in r.diagnosticos) d.toJson()],
+        // **La causa estructurada, no solo su texto.** Es lo que permite que
+        // `nextAction` nombre evidencia y que quien lo consuma no tenga que
+        // volver a correr nada para confirmarla.
+        'inconclusiveBecause': [for (final c in r.causas) c.name],
+        'obligations': [
+          for (final ob in r.obligacionesSinSaldar)
+            {'step': ob.paso, 'subject': ob.sujeto},
+        ],
+        // **El libro completo, por paso.** Un `Attempt` roto, un testigo
+        // ciego o un paso `Broken` viven acá con todos sus campos: es de
+        // donde `nextAction` saca lo que nombra, y de donde lo puede leer
+        // cualquiera que quiera comprobarlo sin correr nada de nuevo.
+        'outcomes': {
+          for (final e in r.desenlaces.entries) e.key: e.value.toJson(),
         },
-        'internalFailures': r.fallosInternos,
-        'diagnostics': r.diagnosticos.length,
+        // **La foto del alcance, completa.** Es de donde `nextAction` saca
+        // lo ajeno y lo no observable: sin esto, esas dos ramas nombrarían
+        // algo que este documento no contiene.
+        'scope': r.alcance.toJson(),
+        if (huboFalloDeEntrega) 'unterminated': sinTerminalEntregado,
       },
     ),
-    _resumenEnTexto(r),
+    _resumenEnTexto(r, accion),
   );
   imp.cerrar();
 
-  return Codigo.deCorrida(estado);
+  return exitCode;
 }
 
 /// Qué diagnósticos se muestran. **La decisión es de la severidad, no del tipo
@@ -259,84 +299,150 @@ bool seMuestra(Diagnostic d, {required bool silencioso}) =>
     d.severity != Severity.silencia &&
     (!silencioso || d.severity == Severity.bloquea);
 
-/// El desenlace de un paso, en texto. **Los tres se dicen distinto**: un salto
-/// que se imprimiera como un veredicto sería exactamente la confusión que el
-/// tipo vino a deshacer.
-String _desenlaceEnTexto(DesenlaceDePaso d, {required bool detallado}) =>
-    switch (d) {
-      PasoEjecutado(:final resultado) =>
-        _pasoEnTexto(resultado, detallado: detallado),
-      PasoSinNadaQueHacer(:final declaracion) => [
-          '  SALTADO   ${d.id}',
-          if (detallado)
-            for (final m in declaracion.reasons) '            motivo: $m',
-        ].join('\n'),
-      PasoRoto(:final causa) => '  ROTO      ${d.id}\n            $causa',
+/// La etapa del protocolo que le corresponde a cada uno de los cinco
+/// desenlaces. **El `switch` es exhaustivo**: un sexto desenlace no compila
+/// hasta que alguien le decida su etapa acá.
+String _etapaDe(StepOutcome d) => switch (d) {
+      Executed() => 'executed',
+      Aborted() => 'aborted',
+      Skipped() => 'skipped',
+      Unobservable() => 'unobservable',
+      Broken() => 'internalError',
     };
 
-String _pasoEnTexto(VerificationOutcome paso, {required bool detallado}) {
-  final marca = switch (paso.verdict) {
+/// El desenlace de un paso, en texto. **Los cinco se dicen distinto**: un
+/// salto que se imprimiera como un veredicto sería exactamente la confusión
+/// que el tipo vino a deshacer.
+String _desenlaceEnTexto(String id, StepOutcome d, {required bool detallado}) =>
+    switch (d) {
+      Executed() => _ejecutadoEnTexto(id, d, detallado: detallado),
+      Aborted(:final attempt) => [
+          '  ABORTADO $id',
+          if (detallado) '            ${attempt.note}',
+        ].join('\n'),
+      Skipped(:final notOfStack) => [
+          '  SALTADO   $id',
+          if (detallado)
+            for (final o in notOfStack)
+              '            ajeno: ${o.subject} (${o.reason})',
+        ].join('\n'),
+      Unobservable(:final causes) => [
+          '  NO OBS.   $id',
+          if (detallado)
+            for (final c in causes) '            ${c.subject}: ${c.cause}',
+        ].join('\n'),
+      Broken(:final component, :final error) => [
+          '  ROTO      $id',
+          '            $component: $error',
+        ].join('\n'),
+    };
+
+String _ejecutadoEnTexto(String id, Executed e, {required bool detallado}) {
+  final marca = switch (e.verdict) {
     Verdict.verde => 'ok        ',
     Verdict.rojo => 'FALLA     ',
     Verdict.noConcluyente => 'NO CONCL. ',
   };
-  final linea = '  $marca${paso.verifierId}';
-  final w = paso.witness;
-  if (!detallado || w == null) return linea;
+  final linea = '  $marca$id';
+  if (!detallado) return linea;
+  final w = e.witness;
   return [
     linea,
-    '            invocación: ${w.invocation.isEmpty ? "(ninguna)" : w.invocation}',
-    '            terminación: ${w.termination.name} · código ${w.exitCode}',
+    '            invocación: ${w.invocation}',
     '            cubrió: ${w.subjects.isEmpty ? "(nada)" : w.subjects.join(", ")}',
-    for (final m in w.omitted) '            omitió: $m',
+    for (final o in w.omitted)
+      '            omitió: ${o.subject == null ? '' : '${o.subject}: '}'
+          '${o.reason}',
   ].join('\n');
 }
 
 /// **Toda salida que no sea verde dice qué hacer.** Es lo mismo que INV-8 le
 /// exige a una regla que bloquea: detener sin poder decir qué hacer deja a
 /// quien lo choca sin salida.
-String? _queHacer(ResultadoDeCascada r) => switch (r.estado) {
-      EstadoDeCorrida.verde => null,
-      EstadoDeCorrida.errorInterno =>
-        'Se rompió un paso del arnés, no la verificación del cambio. '
-            'Revisá: ${r.fallosInternos.keys.join(", ")}.',
-      // Una cascada vacía NO es «algún paso no pudo observar»: no hay pasos ni
-      // testigos que mirar. Mandaba a correr `--verbose` para leer testigos
-      // que no existen — un error indicando una acción imposible.
-      EstadoDeCorrida.noConcluyente => r.registrados.isEmpty
-          ? 'No hay ningún verificador registrado, así que no se miró nada. '
-              'Los pasos se registran en el composition root: `cli`.'
-          : r.sinEjecutar.isNotEmpty
-              ? 'Estos pasos están registrados y no se ejecutaron: '
-                  '${r.sinEjecutar.join(", ")}. Un paso que no corre no es un '
-                  'paso que no encontró nada.'
-              : r.resultados.isEmpty
-                  // **Todos los pasos se saltaron.** Cada uno por separado es
-                  // legítimo; todos juntos es una corrida que no verificó
-                  // nada. Decir «no pudo observar» acá era falso: observaron, y
-                  // no había nada suyo.
-                  ? 'Ningún paso tuvo nada que hacer sobre este alcance: '
-                      '${r.saltados.map((s) => s.id).join(", ")}. No es un '
-                      'fallo, pero tampoco se verificó nada. Revisá el alcance '
-                      'que le diste a `verify`.'
-                  : 'Algún paso no pudo observar su alcance. Mirá lo que omitió '
-                      'cada testigo con `--verbose`; no hay verde sin alguien '
-                      'que haya mirado.',
-      EstadoDeCorrida.rojo =>
-        'Hay diagnósticos bloqueantes. Arreglalos y volvé a correr `verify`.',
-    };
+///
+/// **El error interno se atiende ANTES que las causas.** Con
+/// [EstadoDeCorrida.errorInterno] la lista de causas puede venir no vacía —un
+/// paso roto no impide que otro haya quedado no concluyente— y leer la
+/// primera causa en ese caso hablaría de otra cosa que la que de verdad
+/// interrumpió la corrida: el arnés, no la verificación del cambio.
+String? _queHacer(ResultadoDeCascada r) {
+  if (r.estado == EstadoDeCorrida.verde) return null;
 
-String _resumenEnTexto(ResultadoDeCascada r) {
+  if (r.estado == EstadoDeCorrida.errorInterno) {
+    final rotos = [
+      for (final e in r.desenlaces.entries)
+        if (e.value is Broken) e.key,
+    ];
+    return 'Se rompió un paso del arnés, no la verificación del cambio. '
+        'Reportalo con la traza: ${rotos.join(", ")}.';
+  }
+
+  // **Rojo, o no concluyente: la acción sale de la primera causa.** El rojo
+  // sin causas concurrentes no tiene ninguna que leer —`causas` viene vacía—
+  // y por eso el `null` del `switch` es también su rama. `causas` viene en
+  // el orden del flujo de decisión, así que solo puede nombrar evidencia
+  // presente.
+  final causa = r.causas.isEmpty ? null : r.causas.first;
+  return switch (causa) {
+    null => 'Hay '
+        '${r.diagnosticos.where((d) => d.severity == Severity.bloquea).length} '
+        'diagnóstico(s) bloqueante(s). Arreglalos y volvé a correr `verify`.',
+    CausaNoConcluyente.sinVerificadores =>
+      'No hay ningún verificador registrado, así que no se miró nada. Los '
+          'pasos se registran en el composition root: `cli`.',
+    // **`nadaEjecutado` puede concurrir con `alcanceNoObservable`.** Nada
+    // ejecutó también cuando la razón real es que nada se pudo OBSERVAR —no
+    // hay ningún sujeto «ajeno» que nombrar, y decir «ningún sujeto es de
+    // este stack: (nada)» estaría nombrando una lista vacía como si fuera
+    // evidencia. Cuando pasa eso, la causa real es la que sigue en la lista.
+    CausaNoConcluyente.nadaEjecutado => () {
+        final ajenos = r.alcance.observed.where((o) => !o.ofStack).toList();
+        if (ajenos.isEmpty) return _accionDeAlcanceNoObservable(r);
+        return 'Ningún sujeto del alcance es de este stack: '
+            '${ajenos.map((o) => o.subject).join(", ")}. No es un fallo, '
+            'pero tampoco se verificó nada. Revisá el alcance.';
+      }(),
+    CausaNoConcluyente.alcanceNoObservable => _accionDeAlcanceNoObservable(r),
+    CausaNoConcluyente.pasoAbortado => _accionDeAborto(r),
+    CausaNoConcluyente.pasoNoConcluyente => _accionDeNoConcluyente(r),
+    CausaNoConcluyente.obligacionSinSaldar => () {
+        final ob = r.obligacionesSinSaldar.first;
+        return '${ob.paso} no cubrió ${ob.sujeto} y no dijo por qué. Un '
+            'sujeto que nadie miró no puede quedar en verde.';
+      }(),
+  };
+}
+
+String _accionDeAlcanceNoObservable(ResultadoDeCascada r) =>
+    'No se pudo observar '
+    '${r.alcance.unobserved.map((u) => '${u.subject}: ${u.cause}').join('; ')}. '
+    'Corregí la ruta o los permisos y volvé a correr.';
+
+/// Nombra el paso abortado y **la nota de su propio `Attempt`**: es lo que
+/// hace que la acción no pueda nombrar algo ausente, porque sale del
+/// desenlace y no de una constante.
+String _accionDeAborto(ResultadoDeCascada r) {
+  final entrada = r.desenlaces.entries.firstWhere((e) => e.value is Aborted);
+  final abortado = entrada.value as Aborted;
+  return '${entrada.key} no llegó a terminar: ${abortado.attempt.note} '
+      'Revisá eso antes de volver a correr `verify`.';
+}
+
+/// Nombra el paso no concluyente y **el primer motivo de su propio testigo**.
+String _accionDeNoConcluyente(ResultadoDeCascada r) {
+  final entrada = r.desenlaces.entries.firstWhere((e) =>
+      e.value is Executed &&
+      (e.value as Executed).verdict == Verdict.noConcluyente);
+  final ejecutado = entrada.value as Executed;
+  final motivo = ejecutado.witness.omitted.first.reason;
+  return '${entrada.key} no pudo concluir: $motivo Revisá eso antes de '
+      'volver a correr `verify`.';
+}
+
+String _resumenEnTexto(ResultadoDeCascada r, String? accion) {
   final estado = r.estado;
-  // **Los saltados se nombran en el resumen.** El meta-check del corpus los
-  // cuenta aparte —«registrados: 7 · ejecutados: 6 · saltados: 1 con motivo»—
-  // y esconderlos dejaría la resta sin explicar: quien lea «0 de 2» tiene que
-  // poder saber si faltaron o si no tenían nada que hacer.
-  final saltos =
-      r.saltados.isEmpty ? '' : '${r.saltados.length} saltado(s) con motivo, ';
   final cabeza = 'verify: ${veredictoDe(estado)} — '
       '${r.ejecutados.length} de ${r.registrados.length} pasos ejecutados, '
-      '$saltos${r.diagnosticos.length} diagnóstico(s).';
-  final accion = _queHacer(r);
+      '${r.diagnosticos.length} diagnóstico(s).';
   return accion == null ? cabeza : '$cabeza\n  → $accion';
 }

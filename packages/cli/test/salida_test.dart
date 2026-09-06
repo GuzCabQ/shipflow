@@ -42,15 +42,40 @@ void main() {
       expect(r['verdict'], isNull,
           reason: 'un error de uso no alcanzó el dominio: no tiene veredicto '
               'que dar, y la superficie no declara ninguno para el código 5');
+      expect(r['runId'], isNull,
+          reason: 'un error de uso no llegó a componer ninguna cascada, así '
+              'que no hay ninguna corrida que identificar');
     });
 
     test('el result lleva registrados Y ejecutados', () async {
       final (_, salida) = await correr(const ['--json'],
           [Paso.verde('A'), Paso('B', lanza: StateError('x'))]);
       final data = lineas(salida).last['data']! as Map<String, Object?>;
-      expect(data['registered'], ['A', 'B']);
+      final registrados = (data['registered']! as List)
+          .cast<Map<String, Object?>>()
+          .map((e) => e['id'])
+          .toList();
+      expect(registrados, ['A', 'B']);
       expect(data['executed'], ['A']);
-      expect(data['notExecuted'], ['B']);
+      final outcomes = data['outcomes']! as Map<String, Object?>;
+      expect((outcomes['A']! as Map<String, Object?>)['kind'], 'executed');
+      expect((outcomes['B']! as Map<String, Object?>)['kind'], 'broken');
+    });
+
+    test('cada paso registrado lleva su alcance esperado', () async {
+      final (_, salida) = await correr(const ['--json'], [Paso.verde('A')]);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      final registrados = data['registered']! as List;
+      expect(registrados.single, {
+        'id': 'A',
+        'expectedScope': ['.'],
+      });
+    });
+
+    test('un resultado normal SÍ lleva runId', () async {
+      final (_, salida) = await correr(const ['--json'], [Paso.verde('A')]);
+      final r = lineas(salida).last;
+      expect(r['runId'], isNotNull);
     });
 
     test('no se cuela texto suelto', () async {

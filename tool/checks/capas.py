@@ -455,8 +455,30 @@ def _check_readme() -> None:
     # en el mismo patrón y la cuenta pasó de 2 a 5 sin que nadie tocara la
     # cascada. Un patrón que mira de más se equivoca igual que uno que mira de
     # menos, y este contaba pasos que no existen.
+    #
+    # **El cierre se busca por profundidad de corchetes, no por `]);` literal.**
+    # `Cascada` ganó un segundo argumento obligatorio —el observador de
+    # alcance— así que la lista ya no es lo único entre paréntesis: cierra con
+    # `], observador: obs)`, no con `]);`. Buscar el corchete que de verdad
+    # cierra al que abre la lista es correcto con las dos formas, la de antes
+    # y la de ahora, y con cualquier otro argumento que se agregue después.
     _desde = texto_verify.index("Cascada([")
-    cuerpo = texto_verify[_desde:texto_verify.index("]);", _desde)]
+    _apertura = _desde + len("Cascada(")
+    _profundidad = 0
+    _cierre = None
+    for _i in range(_apertura, len(texto_verify)):
+        if texto_verify[_i] == "[":
+            _profundidad += 1
+        elif texto_verify[_i] == "]":
+            _profundidad -= 1
+            if _profundidad == 0:
+                _cierre = _i
+                break
+    if _cierre is None:
+        fallos.append("la lista de pasos de `cascadaPorDefecto` no cierra: "
+                      "no encontré el `]` que hace juego con `Cascada([`.")
+        return
+    cuerpo = texto_verify[_desde:_cierre + 1]
     n_pasos = len(re.findall(r"^\s+Paso[A-Za-z]+\(", cuerpo, re.M))
     if n_pasos == 0:
         fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
