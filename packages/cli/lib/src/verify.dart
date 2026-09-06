@@ -397,13 +397,11 @@ String? _queHacer(ResultadoDeCascada r) {
     CausaNoConcluyente.sinVerificadores =>
       'No hay ningún verificador registrado, así que no se miró nada. Los '
           'pasos se registran en el composition root: `cli`.',
-    // **Si `alcanceNoObservable` no ganó ya más arriba, acá SIEMPRE hay
-    // algún ajeno que nombrar.** `causas` pone lo no observable antes que
-    // nada ejecutado (ver su comentario en `cascada.dart`): que
-    // `nadaEjecutado` sea la primera causa significa que no hubo ningún
-    // sujeto inobservable, y sin utilizables ni inobservables lo único que
-    // puede haber dejado al alcance vacío es que todo lo pedido resultó
-    // ajeno al stack.
+    // **Acá SIEMPRE hay algún ajeno que nombrar, por construcción.**
+    // `nadaEjecutado` solo se agrega a `causas` cuando existe al menos un
+    // sujeto ajeno al stack (ver el comentario del getter en
+    // `cascada.dart`): no es una cuestión de que esta rama gane por posición
+    // sobre otra, es que la causa ni siquiera se agrega sin esa evidencia.
     CausaNoConcluyente.nadaEjecutado =>
       'Ningún sujeto del alcance es de este stack: '
           '${r.alcance.observed.where((o) => !o.ofStack).map((o) => o.subject).join(", ")}. '

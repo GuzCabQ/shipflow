@@ -469,6 +469,32 @@ void main() {
               'primera');
     });
 
+    test(
+        'alcance SANO y todos los pasos ABORTAN: `nadaEjecutado` no dispara '
+        '—no hay ningún ajeno que nombrar—', () async {
+      // Reordenar `alcanceNoObservable` antes que `nadaEjecutado` cerró la
+      // combinación anterior (un ajeno + una ruta inobservable), pero no la
+      // CLASE de bug: acá el alcance es enteramente sano —todo de stack,
+      // nada inobservable— así que `alcanceNoObservable` ni siquiera entra
+      // en juego, y sin embargo `ejecutados` queda vacío porque los dos
+      // pasos abortan. Antes de este fix, `nadaEjecutado` disparaba igual y
+      // su texto enumeraba una lista de ajenos vacía: el error original
+      // exacto, con otra combinación que un reordenamiento no podía cazar.
+      final obs = ObservadorDeAlcanceFalso(observados: {
+        'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+      });
+      final r = await Cascada([_Paso.abortado('A'), _Paso.abortado('B')],
+              observador: obs)
+          .correr(['lib']);
+      expect(r.causas, isNot(contains(CausaNoConcluyente.nadaEjecutado)),
+          reason: 'no hay ningún sujeto ajeno al stack que nombrar');
+      expect(r.causas, contains(CausaNoConcluyente.pasoAbortado));
+      expect(r.causas, isNotEmpty,
+          reason: 'sin ajenos, `Skipped` no se pudo haber construido —exige '
+              'al menos uno—, así que todo lo que no ejecutó abortó, no '
+              'observó o se rompió, y cada uno dispara su propia causa');
+    });
+
     test('verde solo cuando ninguna pregunta negativa se contesta que sí',
         () async {
       final r = await Cascada([

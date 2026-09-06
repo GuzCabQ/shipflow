@@ -229,21 +229,43 @@ class ResultadoDeCascada {
   /// Las causas, en el orden del flujo de decisión. La acción siguiente sale
   /// de la primera, y por eso solo puede nombrar evidencia presente.
   ///
-  /// **Lo no observable va ANTES que nada ejecutado.** Es la misma
-  /// precedencia que `correr` ya aplica un nivel más abajo, por paso: «no
-  /// pude mirar» gana sobre «no había nada mío» (ver el comentario de esa
-  /// rama). Con un alcance mixto —un sujeto ajeno al stack y una ruta que ni
-  /// se pudo observar— las dos causas concurren, y si `nadaEjecutado` fuera
-  /// primera, [ResultadoDeCascada.causas] nombraría solo los ajenos: una
-  /// afirmación parcial que calla justo la ruta que no se pudo mirar. Un
-  /// review lo encontró.
+  /// **Regla de esta lista, para la próxima causa que se agregue: una causa
+  /// solo se agrega si existe la evidencia que su acción va a nombrar.** No
+  /// es una jerarquía por posición — es un catálogo de cosas que salieron
+  /// mal, y reordenarlo apuesta a que la próxima combinación problemática
+  /// involucre una causa que hoy está más abajo, sin nada que lo garantice
+  /// según crezca el enum. La condición correcta ata el disparo al CONTENIDO
+  /// que el texto de esa causa va a citar, no a su posición relativa a otra.
+  ///
+  /// Las otras cinco ya lo hacían así: `alcanceNoObservable` solo dispara si
+  /// `alcance.unobserved` tiene algo; `pasoAbortado`, si hay un `Aborted`
+  /// real; `pasoNoConcluyente`, si hay un `Executed` no concluyente real;
+  /// `obligacionSinSaldar`, si el libro tiene una obligación real.
+  /// `nadaEjecutado` era la excepción: su texto enumera los sujetos ajenos
+  /// al stack, y disparaba con solo `ejecutados.isEmpty`, sin mirar si había
+  /// alguno que nombrar. Con un alcance sano —todo de stack, nada
+  /// inobservable— donde todos los pasos abortan, `ejecutados` también
+  /// queda vacío, y esa causa nombraba una lista vacía: el error original
+  /// exacto, con otra combinación. Un review lo encontró después de que
+  /// reordenar la lista ya había tapado la combinación anterior sin cerrar
+  /// la clase de bug.
   List<CausaNoConcluyente> get causas {
     final c = <CausaNoConcluyente>[];
     if (registrados.isEmpty) c.add(CausaNoConcluyente.sinVerificadores);
     if (alcance.unobserved.isNotEmpty) {
       c.add(CausaNoConcluyente.alcanceNoObservable);
     }
-    if (ejecutados.isEmpty && registrados.isNotEmpty) {
+    // **Solo si hay al menos un ajeno que nombrar.** Sin este `&&`, «nada
+    // ejecutó» disparaba también cuando la razón real era que todo abortó,
+    // no observó o se rompió sobre un alcance perfectamente sano — y su
+    // texto habría enumerado una lista vacía. Que quede vacía la lista de
+    // causas enteras no es un riesgo acá: si nada ejecutó y no hay ningún
+    // ajeno, ningún paso pudo haber sido saltado (`Skipped` exige al menos
+    // un sujeto ajeno para construirse), así que todos abortaron, no
+    // observaron o se rompieron — y cada uno de esos dispara su propia
+    // causa más abajo.
+    final hayAjenos = alcance.observed.any((o) => !o.ofStack);
+    if (ejecutados.isEmpty && registrados.isNotEmpty && hayAjenos) {
       c.add(CausaNoConcluyente.nadaEjecutado);
     }
     if (desenlaces.values.any((d) => d is Aborted)) {

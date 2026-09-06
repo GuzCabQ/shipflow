@@ -30,16 +30,25 @@ class Paso implements Verifier {
   final String id;
   final List<Diagnostic> diagnosticos;
   final bool ciego;
+  final String? nota;
   final Object? lanza;
 
   Paso(
     this.id, {
     this.diagnosticos = const [],
     this.ciego = false,
+    this.nota,
     this.lanza,
   });
 
   factory Paso.verde(String id) => Paso(id);
+
+  /// Un paso que empezó y no llegó a terminar. El alcance que recibe no
+  /// importa para el desenlace —el `Attempt` no lo declara sano ni ajeno—,
+  /// así que sirve igual con un alcance enteramente del stack.
+  factory Paso.abortado(String id,
+          {String nota = 'la herramienta no llegó a producir un resultado'}) =>
+      Paso(id, nota: nota);
 
   factory Paso.rojo(String id) => Paso(id, diagnosticos: [
         Diagnostic(
@@ -67,6 +76,18 @@ class Paso implements Verifier {
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
     if (lanza != null) throw lanza!;
+    if (nota != null) {
+      return Aborted(
+        attempt: Attempt(
+          invocation: 'herramienta --sobre ${subjects.join(" ")}',
+          subjects: subjects,
+          termination: Termination.tiempoAgotado,
+          exitCode: -1,
+          note: nota!,
+          finishedAt: DateTime.utc(2026),
+        ),
+      );
+    }
     if (ciego) {
       return Executed(
         witness: Witness(

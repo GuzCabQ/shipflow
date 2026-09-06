@@ -254,6 +254,34 @@ void main() {
           isNot(contains('Ningún sujeto del alcance es de este stack')),
           reason: 'nombrar solo el ajeno callaría la ruta inobservable');
     });
+
+    test(
+        'alcance SANO y todos los pasos ABORTAN: la acción habla del '
+        'aborto, no de sujetos ajenos que no existen', () async {
+      // El caso que un review reprodujo DESPUÉS de que el reordenamiento de
+      // `cascada.dart` cerrara el caso mixto: acá no hay ningún sujeto
+      // ajeno ni ninguna ruta inobservable —el alcance es enteramente del
+      // stack— y sin embargo nada ejecutó, porque los dos pasos abortan.
+      // Antes del fix (condicionar el disparo de `nadaEjecutado` a que
+      // exista al menos un ajeno, no reordenarlo una vez más), la acción
+      // decía «Ningún sujeto del alcance es de este stack: .» — el hueco
+      // después de los dos puntos es el error original exacto: una acción
+      // que nombra evidencia que no existe.
+      final (c, salida) = await correr(
+        const ['--json'],
+        [
+          Paso.abortado('A', nota: 'la nota real del intento'),
+          Paso.abortado('B'),
+        ],
+      );
+      expect(c, 2);
+      final doc = lineas(salida).last;
+      expect(doc['nextAction'], contains('la nota real del intento'));
+      expect(doc['nextAction'],
+          isNot(contains('Ningún sujeto del alcance es de este stack')),
+          reason: 'no hay ningún sujeto ajeno que nombrar: el alcance es '
+              'sano, lo que faltó fue que los pasos terminaran');
+    });
   });
 
   group('el libro de obligaciones', () {
