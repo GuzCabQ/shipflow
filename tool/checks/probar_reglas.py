@@ -273,6 +273,15 @@ def casos() -> list[dict]:
     # Y el otro modo de fallo del grafo: no un archivo nuevo, sino el grafo
     # commiteado retocado a mano. Son distintos: uno es olvidarse de
     # regenerar, el otro es editar lo que se deriva.
+    #
+    # **Frágil en la misma forma que las de arriba, pero de menor riesgo
+    # práctico:** depende de que ALGÚN nodo de `grafo.jsonl` tenga
+    # `"saltos":0` literal. Es un campo de todo nodo derivado —no una frase de
+    # prosa que alguien reescriba con otras palabras—, así que el día que deje
+    # de aparecer es más probable que sea porque cambió el ESQUEMA del grafo
+    # (y entonces `check.dart`/`grafo.dart` ya estarían rojos por su cuenta)
+    # que porque el contenido derivó solo. Sin guardia igual: si pasa, es un
+    # `.replace` mudo, no un crash.
     c.append({
         "nombre": "grafo · grafo commiteado editado a mano",
         "archivos": {"grafo.jsonl": (RAIZ / "grafo.jsonl").read_text(encoding="utf-8")
@@ -351,6 +360,15 @@ def casos() -> list[dict]:
     # Que CI siga ejecutando lo que dice ejecutar. Tres modos de fallo, y son
     # distintos: uno borra el paso, otro lo deja corriendo sin que detenga
     # nada, y el tercero se lleva el workflow entero.
+    #
+    # **FRÁGIL, SIN GUARDIA.** Auditoría posterior al caso `Cascada([...])`
+    # que estuvo roto 24 commits sin que nadie lo notara: estos dos `.index`
+    # son la misma clase de anclaje literal, y si un nombre de step cambia acá
+    # abajo, esto revienta con un `ValueError` tan opaco como aquel — hoy
+    # (verificado al escribir esta nota) los dos nombres siguen existiendo tal
+    # cual. No se le agregó `assert` porque el `ValueError` de `.index` ya
+    # señala la línea; lo que faltaba y falta seguir es que ESTE archivo se
+    # corra, no un guardia extra.
     ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
     i = ci.index("      - name: los checks saben fallar")
     j = ci.index("      - name: pruebas de core")
@@ -423,6 +441,12 @@ def casos() -> list[dict]:
         "archivos": {"README.md": readme.replace(filas[0] + "\n", "")},
         "menciona": "no está en la tabla",
     })
+    # **FRÁGIL, SIN GUARDIA — y más silenciosa que un `.index`.** Si
+    # `` `tool/analisis` `` deja de aparecer en el README, `.replace` no
+    # lanza: devuelve el texto sin cambios, el "sabotaje" no sabotea nada, y
+    # `evaluar()` lo reporta como «la regla quedó sin efecto» — un diagnóstico
+    # que apunta al control equivocado. Hoy (verificado al escribir esta
+    # nota) la cadena sigue estando.
     c.append({
         "nombre": "readme · una ruta del repositorio que ya no existe",
         "archivos": {"README.md": readme.replace("`tool/analisis`",
@@ -436,6 +460,9 @@ def casos() -> list[dict]:
                     "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
                     "        with:\n          flutter-version: 3.44.0")
     assert ci.count(flutter_paso) == 1, "ancla del paso de flutter no encontrada"
+    # **FRÁGIL, SIN GUARDIA propia**, igual que el bloque de arriba: el ancla
+    # `"      - name: analyze\n        run: dart analyze --fatal-infos"` no
+    # tiene `assert` que la respalde. Hoy sigue apareciendo tal cual.
     c.append({
         "nombre": "ci · dos toolchains de Dart en el mismo job",
         "archivos": {CI_REL: ci.replace(
@@ -444,6 +471,12 @@ def casos() -> list[dict]:
             "        run: dart analyze --fatal-infos", 1)},
         "menciona": "instala Dart Y Flutter",
     })
+    # `"          flutter-version: 3.44.0"` está protegida DE REBOTE por el
+    # `assert ci.count(flutter_paso) == 1` de más arriba —`flutter_paso` la
+    # contiene como substring—, pero es indirecto y no obvio releyendo solo
+    # este caso. Si algún día `flutter_paso` deja de incluirla textualmente
+    # (por ejemplo, si cambia de formato sin cambiar la versión), esta
+    # protección se pierde sin que nada lo anuncie acá.
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
         "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
@@ -456,6 +489,13 @@ def casos() -> list[dict]:
     # ningún canario de Flutter, y la exención estaba escrita para un caso
     # hipotético. Un control negativo que defiende una exención que ya no está
     # es peor que no tenerlo: la haría parecer viva.
+    #
+    # **El segundo `.replace` de este caso —«el fixture se verifica a sí
+    # mismo» / `runs-on: ubuntu-latest»— NO tiene ninguna guardia, ni directa
+    # ni indirecta.** Si ese nombre de job o esa línea de `runs-on` cambian,
+    # este `.replace` no aplica y el caso queda testeando el archivo sin
+    # tocar — silencioso, no un crash. Hoy (verificado al escribir esta nota)
+    # el texto sigue igual.
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ci
@@ -544,11 +584,36 @@ def casos() -> list[dict]:
     })
     # La propagación por paso, que el sabotaje del default no cubría: un review
     # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    #
+    # **El cierre se busca por profundidad de corchetes, no por `]);` literal
+    # — la MISMA técnica que ya usa `capas.py` para este mismo literal, y por
+    # la misma razón.** `Cascada` ganó el parámetro `observador`, así que la
+    # llamada cierra con `], observador: obs);`, no con `]);`. Este caso
+    # buscaba el literal viejo y estuvo reventando con `ValueError: substring
+    # not found` desde el commit que agregó ese parámetro — sin que nadie lo
+    # notara, porque este archivo no corrió ni una vez en esos 24 commits. El
+    # indentado tampoco se cablea (`\s+`, no seis espacios fijos): un
+    # `dart format` que cambia la indentación de `verify.dart` no tiene por
+    # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
     verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
         encoding="utf-8")
     _d = verify_prop.index("Cascada([")
-    _lit = verify_prop[_d:verify_prop.index("]);", _d)]
-    _uno = re.search(r"^      Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
+    _apertura = _d + len("Cascada(")
+    _profundidad = 0
+    _cierre = None
+    for _i in range(_apertura, len(verify_prop)):
+        if verify_prop[_i] == "[":
+            _profundidad += 1
+        elif verify_prop[_i] == "]":
+            _profundidad -= 1
+            if _profundidad == 0:
+                _cierre = _i
+                break
+    assert _cierre is not None, (
+        "la lista de pasos de `Cascada([...])` no cierra en verify.dart: no "
+        "encontré el `]` que hace juego con `Cascada([`.")
+    _lit = verify_prop[_d:_cierre + 1]
+    _uno = re.search(r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
                      _lit, re.M)
     assert _uno, "no encontré la propagación del presupuesto en verify.dart"
     c.append({
@@ -574,6 +639,11 @@ def casos() -> list[dict]:
 
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
+    #
+    # **FRÁGIL, SIN GUARDIA, y silenciosa como la de `tool/analisis` más
+    # arriba:** si ese árbol de ejemplo del README deja de tener una línea
+    # `  analisis/` (con exactamente esa indentación), `.replace` no aplica y
+    # el caso no sabotea nada, sin avisar. Hoy sigue estando.
     c.append({
         "nombre": "readme · un nombre retirado, sin forma de ruta",
         "archivos": {"README.md": readme.replace("  analisis/", "  serializacion/", 1)},

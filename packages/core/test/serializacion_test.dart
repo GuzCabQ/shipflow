@@ -347,7 +347,9 @@ void main() {
     // `reason` es nulo cuando el sujeto SÍ es del stack, y eso es correcto:
     // se excluye de la comprobación de vacíos porque su ausencia es el dato.
     final json = o.toJson();
-    (json['observed']! as List).forEach((e) => (e as Map).remove('reason'));
+    for (final e in json['observed']! as List) {
+      (e as Map).remove('reason');
+    }
     expect(valoresPorDefecto(json), isEmpty);
     expect(ScopeObservation.fromJson(o.toJson()).toJson(), o.toJson());
   });
@@ -368,9 +370,11 @@ void main() {
           subject: 'lib/ajeno-b', ofStack: false, files: 0, reason: 'motivo b'),
     ]);
     final json = s.toJson();
-    (json['notOfStack']! as List).forEach((e) => (e as Map)
-      ..remove('files')
-      ..remove('ofStack'));
+    for (final e in json['notOfStack']! as List) {
+      (e as Map)
+        ..remove('files')
+        ..remove('ofStack');
+    }
     expect(valoresPorDefecto(json), isEmpty);
     expect(Skipped.fromJson(s.toJson()).toJson(), s.toJson());
   });

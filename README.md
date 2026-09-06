@@ -26,7 +26,7 @@ $ shipflow verify lib
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
 
-**Lo que sigue está planificado y sin construir:** el desenlace de un paso pasa a ser un tipo cerrado y la aplicabilidad sale del verificador. El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md), y el diseño que implementa vive en el otro repositorio.
+**El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
 
 **No existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
@@ -1024,12 +1024,20 @@ herramienta terminada, es un paso saltado con su motivo.
 | | Qué significa | Cómo lo cuenta el meta-check |
 |---|---|---|
 | ejecutado | corrió y produjo veredicto | numerador |
-| **saltado** | corrió y no tenía nada suyo | contado aparte, **sin discrepancia** |
+| **saltado** | no corrió: el observador de alcance ya lo excluyó antes de invocar nada | contado aparte, **sin discrepancia** |
 | sin ejecutar | no corrió y nadie lo explicó | discrepancia |
 | fallo interno | se rompió | error del arnés |
 
 Es el trazado del corpus, ahora ejecutable: *«registrados: 7 · ejecutados: 6 ·
 saltados: 1 con motivo → sin discrepancia»*.
+
+**Nota, para quien lea esto después de «El desenlace se cierra» más abajo:**
+lo de arriba —«el paso declara un número contable», «corrió y no tenía nada
+suyo»— describe el mecanismo tal como estaba en ese momento. Ya no es así: el
+salto lo decide el `ScopeObserver`, en una sola observación por corrida, antes
+de invocar cualquier herramienta, y un paso saltado **no corre**. El «quién
+decide» de este título seguía siendo correcto un nivel más arriba —no el
+paso—, pero el reemplazo removió también la herramienta terminando en falso.
 
 ### Y el falso verde que se abría al cerrarlo
 
@@ -1178,6 +1186,117 @@ que no ejecuta y no es una falla— y nada más.
 **La aplicabilidad general.** El corpus tiene un solo puerto que responde «¿le
 toca a este paso?», `CodegenTrigger`, y es específico. Un mecanismo general
 sería inventar el criterio que falta.
+
+---
+
+## El desenlace se cierra, y la aplicabilidad sale del verificador
+
+Todo lo anterior —`ownSubjects`, `PasoSaltado`, `NotApplicable` excluyente con
+`witness`— quedó retirado. No porque estuviera mal escrito: porque seguía
+pidiéndole al **verificador** que corriera su herramienta, contara lo suyo y se
+declarara sin trabajo. ADR-011 corolario 4 ya lo nombraba —*«ningún verificador
+juzga su propia cobertura»*— y esta rebanada lo instala como tipo, no como
+disciplina.
+
+### Dos niveles, y el segundo es un subconjunto propio del primero
+
+[`StepOutcome`](packages/core/lib/src/desenlace.dart) es todo lo que la cascada
+puede producir: `Executed`, `Aborted`, `Skipped`, `Unobservable`, `Broken`.
+[`VerificationOutcome`](packages/core/lib/src/desenlace.dart) —lo único que un
+`Verifier.run` puede devolver— es solo las dos primeras. El salto, lo no
+observable y lo roto **no cuelgan de ahí**: los decide quien compone la
+corrida.
+
+```dart
+static VerificationOutcome fromJson(Map<String, Object?> json) {
+  final outcome = StepOutcome.fromJson(json);
+  if (outcome is VerificationOutcome) return outcome;
+  throw ArgumentError.value(outcome.kind.name, 'kind',
+      'Un Verifier no puede devolver esto: el salto, lo no observable y lo '
+      'roto los decide quien compone la corrida, no un verificador');
+}
+```
+
+No es una convención: es un `sealed` con jerarquía de dos niveles, y un
+`Verifier` que intentara colar un `Skipped` como si fuera su resultado no
+compila contra la firma, y si llegara por JSON, `fromJson` lo rechaza. El
+canario que lo prueba es literal: **`C1 · un verificador no puede declarar que
+un archivo no es suyo`**, en `packages/cli/test/verify_test.dart`.
+
+### El alcance se mira una vez, y devuelve hechos — no decisiones
+
+El puerto nuevo es [`ScopeObserver`](packages/core/lib/src/puertos.dart):
+`Future<ScopeObservation> observe(List<String> requested)`. Su contrato tiene
+cuatro cláusulas, y la que cierra la clase entera de bug que motivó todo esto
+es la cuarta: **se llama UNA vez por corrida**. Antes cada paso separaba su
+propio alcance, con su propio `await` de por medio; dos lecturas del árbol
+podían diferir y dos pasos terminaban verificando alcances distintos que el
+reporte declaraba iguales.
+
+`ScopeObservation` particiona lo pedido en `ObservedSubject` (con `ofStack` y,
+si es ajeno, su motivo) y `UnobservedSubject` (lo que no se pudo mirar, con su
+causa) — **hechos por sujeto**, no un salto ya decidido. La orquestación
+(`Cascada`) es quien los lee y produce `Skipped` o `Unobservable`; un
+`Verifier` ni siquiera recibe los sujetos ajenos en su lista de `subjects`, así
+que estructuralmente no tiene sobre qué declararse incompetente.
+
+### El libro de obligaciones es por par paso-sujeto, no por unión
+
+`ResultadoDeCascada.obligacionesSinSaldar` recorre cada paso que ejecutó y,
+para cada sujeto de **su** `expectedScope`, exige que el testigo lo cubra o
+una omisión lo nombre. La versión anterior —«¿algún paso cubrió este
+sujeto?»— es existencial, y una existencial no repara nada: que otro paso
+haya cubierto un sujeto no dice qué hizo este con él.
+
+### Tres falsos verdes que las pruebas dirigidas no vieron
+
+Ninguno lo encontró una prueba escrita para ese caso. Los tres se cerraron
+**en el constructor de `ResultadoDeCascada`**, no con una guardia suelta en el
+sitio de uso:
+
+| Falso verde | Lo que lo cerró |
+|---|---|
+| Un paso cubre la mitad de su alcance y no explica el resto; otro paso cubrió todo | El libro por par paso-sujeto (arriba). Canario `C3 · cubrir la mitad sin explicar el resto no da verde` |
+| Un `expectedScope` fabricado —más chico que lo utilizable— vacía el libro sin que nadie lo note | El constructor exige `expectedScope == alcance.usable()`, en las dos direcciones: ni le faltan sujetos utilizables ni le sobran inventados |
+| Un `Skipped`/`Unobservable` nombra un sujeto que la observación de esa corrida no respalda; `causas` queda vacía y deriva verde | El constructor cruza cada desenlace contra `alcance.observed`/`unobserved` y **lanza** si no coincide. El test lo dice en el nombre: `un Skipped no puede declarar ajeno a un sujeto que la observación no dio como tal — antes daba VERDE` |
+
+Los tres viven en `packages/orchestration/test/cascada_test.dart`, en los
+grupos «el libro de obligaciones», «el invariante del alcance esperado» y «el
+desenlace no puede contradecir a la observación».
+
+### Una causa solo se dispara si existe la evidencia que va a nombrar
+
+`nadaEjecutado` enumera los sujetos ajenos al stack en su texto, y disparaba
+con solo `ejecutados.isEmpty` — sin mirar si había alguno que nombrar. Con un
+alcance sano donde todos los pasos abortan, `ejecutados` también queda vacío,
+y la causa citaba una lista vacía: el mismo error original, con otra
+combinación, y lo encontró un review después de que reordenar la lista de
+causas ya había tapado la anterior sin cerrar la clase de bug.
+
+La regla que queda escrita para la próxima causa que se agregue: **se agrega
+solo si existe el contenido que su texto va a citar**, no una posición en la
+lista. Es la misma disciplina que `docs/03` exige de la acción siguiente sobre
+un documento —no nombrar lo que no está ahí— movida un nivel adentro, a la
+causa que la habilita.
+
+### Y la propia cobertura de las propiedades falló dos veces por el mismo mecanismo
+
+Vale contarlo con la misma honestidad que el resto de este archivo: las
+propiedades exhaustivas de `Cascada` (`propiedades_test.dart`) no llegaron
+bien a la primera. Dos rondas de revisión encontraron **el mismo tipo de
+hueco** en generadores distintos —dos guardias que se disparan siempre
+juntas, así que una mutación que rompe solo una queda tapada por la otra—:
+
+- **Ronda 2.** Un escenario mixto (un sujeto ajeno y uno no observado a la
+  vez) hacía que `nadaEjecutado` y `alcanceNoObservable` dispararan siempre
+  juntas. Se separó en dos escenarios angostos, uno por causa.
+- **Ronda 3.** La rejilla de omisiones nunca nombraba los dos sujetos a la
+  vez, así que con cobertura vacía `pasoNoConcluyente` y `obligacionSinSaldar`
+  disparaban siempre juntas. Se agregó una omisión que nombra a los dos.
+
+Se cerró verificando, para cada causa, que existe **al menos un caso donde
+dispara sola** — no alcanza con que dispare; tiene que poder hacerlo sin
+compañía, o una mutación sobre la otra la tapa sin que nadie lo note.
 
 ---
 
