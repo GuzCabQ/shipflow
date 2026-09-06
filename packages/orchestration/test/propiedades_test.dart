@@ -4,26 +4,47 @@
 /// El generador es exhaustivo y no aleatorio: el espacio es chico y una
 /// corrida reproducible vale más que una muestra.
 ///
-/// **Dos escenarios, para cubrir los cinco `StepKind`.** El escenario A tiene
-/// dos sujetos y los dos son del stack: sobre él se puede construir
-/// `Executed`, `Aborted` y `Broken`, pero NO `Skipped` ni `Unobservable` —esos
-/// dos exigen, respectivamente, un ajeno y un no observado que la
-/// coherencia desenlace↔observación de `ResultadoDeCascada` (ver «el
-/// desenlace no puede contradecir a la observación» en la suite de la
-/// cascada) rechazaría si se inventaran sobre este alcance. El escenario B
-/// agrega un tercer sujeto de cada clase —uno del stack, uno ajeno, uno no
-/// observado— para que esas dos variantes también entren al generador.
+/// **Tres escenarios, para cubrir los cinco `StepKind` SIN enmascarar
+/// mutaciones entre sí.** El escenario A tiene dos sujetos y los dos son del
+/// stack: sobre él se puede construir `Executed`, `Aborted` y `Broken`, pero
+/// NO `Skipped` ni `Unobservable` —esos dos exigen, respectivamente, un
+/// ajeno y un no observado que la coherencia desenlace↔observación de
+/// `ResultadoDeCascada` (ver «el desenlace no puede contradecir a la
+/// observación» en la suite de la cascada) rechazaría si se inventaran sobre
+/// este alcance.
 ///
-/// Ronda 1 de revisión lo pidió con el precedente que lo decide: el tercero
-/// de los tres falsos verdes que esta rebanada cierra fue justo un salto
-/// incoherente con su observación. Sin el escenario B, la propiedad «todo
-/// estado construible tiene semántica» cubría 3 de 5 variantes, y un mañana
-/// que rompiera cómo se tratan un salto o un no observable solo lo cazarían
-/// las pruebas dirigidas —casos puntuales, no el espacio—. El escenario B no
-/// repite esa guardia de coherencia: construye un `Skipped`/`Unobservable`
-/// coherentes A PROPÓSITO, reusando los mismos `ObservedSubject`/
-/// `UnobservedSubject` que la propia observación produjo, así que no hay
-/// invención de sujetos que discutir.
+/// Ronda 1 de revisión pidió cubrir esas dos variantes con el precedente que
+/// lo decide: el tercero de los tres falsos verdes que esta rebanada cierra
+/// fue justo un salto incoherente con su observación. La primera versión de
+/// esa cobertura juntaba un ajeno Y un no observado en la MISMA observación
+/// —un solo escenario B para los dos—, y ronda 2 encontró que eso es
+/// cobertura HUECA: con un ajeno y un no observado presentes a la vez, las
+/// causas `nadaEjecutado` y `alcanceNoObservable` se disparan siempre
+/// juntas para cualquier desenlace que no sea `Executed`, así que son
+/// redundantes entre sí ahí. Romper cualquiera de las dos por separado —el
+/// bug realista, de una línea— quedaba enmascarado por la otra: la mutación
+/// de mordida «contar un salto como ejecutado» dejaba las cinco propiedades
+/// en verde, y lo mismo «desactivar la causa del alcance no observable»; solo
+/// romper las DOS a la vez —un fallo compuesto que no es el que ocurre en la
+/// práctica— hacía caer alguna.
+///
+/// Por eso son DOS escenarios angostos, no uno:
+///
+/// - [alcanceSalto] tiene un único sujeto, y es ajeno al stack. No hay ningún
+///   no observado, así que `alcanceNoObservable` no puede dispararse nunca
+///   ahí — la única causa que le queda disponible a un `Skipped` mal tratado
+///   es `nadaEjecutado`, y romperla sola queda expuesto.
+/// - [alcanceNoObservable] tiene un único sujeto, y no se pudo observar. No
+///   hay ningún ajeno, así que `nadaEjecutado` no puede dispararse —exige al
+///   menos un ajeno REAL, ver el comentario de `causas` en el archivo de la
+///   cascada—,
+///   y lo simétrico vale para `alcanceNoObservable`.
+///
+/// Cada uno construye su `Skipped`/`Unobservable` reusando el
+/// `ObservedSubject`/`UnobservedSubject` que la propia observación
+/// clasificó, no sujetos inventados: no repiten la guardia de coherencia que
+/// ya prueba la suite de la cascada, solo llenan el hueco de variantes de
+/// este archivo.
 ///
 /// **Notas de adaptación.** El brief de esta tarea se escribió antes de tres
 /// cosas que este archivo tiene que respetar:
@@ -52,11 +73,15 @@ import 'package:test/test.dart';
 /// Escenario A: dos sujetos, los dos del stack.
 const sujetosA = ['a.fuente', 'b.fuente'];
 
-/// Escenario B: uno del stack, uno ajeno, uno no observado.
-const sujetoDelStackB = 'x.fuente';
-const sujetoAjenoB = 'y.ajeno';
-const sujetoPerdidoB = 'z.perdido';
-const sujetosB = [sujetoDelStackB, sujetoAjenoB, sujetoPerdidoB];
+/// Escenario del salto: un único sujeto, ajeno al stack. Sin ningún no
+/// observado, `alcanceNoObservable` no puede dispararse acá — la mutación
+/// que rompe `nadaEjecutado` no tiene otra causa que la tape.
+const sujetoDelSalto = 'y.ajeno';
+
+/// Escenario de lo no observable: un único sujeto, que no se pudo mirar. Sin
+/// ningún ajeno, `nadaEjecutado` no puede dispararse acá —exige al menos un
+/// ajeno real— así que la mutación simétrica tampoco tiene dónde esconderse.
+const sujetoPerdido = 'z.perdido';
 
 /// Un observador de alcance que responde de una tabla. **No toca el disco.**
 /// Copiado de la suite de la cascada: `orchestration` no puede depender de
@@ -165,17 +190,21 @@ Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
   yield ('broken', Broken(component: 'X', error: 'se rompió', context: 'lib'));
 }
 
-/// Los desenlaces del escenario B: `Skipped` y `Unobservable`, coherentes con
-/// [alcanceB] por construcción — se arman a partir de lo que la propia
-/// observación clasificó, no de sujetos inventados.
-Iterable<(String, StepOutcome)> desenlacesPosiblesB(
-    ScopeObservation alcanceB) sync* {
-  final ajeno = alcanceB.observed.singleWhere((o) => !o.ofStack);
-  yield ('skipped', Skipped(notOfStack: [ajeno]));
+/// El único desenlace del escenario del salto: `Skipped`, coherente con
+/// [alcanceSalto] por construcción — reusa el `ObservedSubject` ajeno que la
+/// propia observación clasificó.
+(String, StepOutcome) desenlaceDeSalto(ScopeObservation alcanceSalto) =>
+    ('skipped', Skipped(notOfStack: [alcanceSalto.observed.single]));
 
-  final perdido = alcanceB.unobserved.single;
-  yield ('unobservable', Unobservable(causes: [perdido]));
-}
+/// El único desenlace del escenario de lo no observable: `Unobservable`,
+/// coherente con [alcanceNoObservable] por construcción — reusa el
+/// `UnobservedSubject` que la propia observación produjo.
+(String, StepOutcome) desenlaceDeNoObservable(
+        ScopeObservation alcanceNoObservable) =>
+    (
+      'unobservable',
+      Unobservable(causes: [alcanceNoObservable.unobserved.single])
+    );
 
 Diagnostic _diag(Severity s) => Diagnostic(
       file: 'a.fuente',
@@ -184,17 +213,20 @@ Diagnostic _diag(Severity s) => Diagnostic(
       message: const QuotedText('m', source: 'test'),
     );
 
-/// Todos los casos de los dos escenarios, cada uno con SU PROPIA observación:
-/// un desenlace del escenario B no tiene sentido evaluado contra el alcance
-/// del escenario A, y viceversa.
+/// Todos los casos de los tres escenarios, cada uno con SU PROPIA
+/// observación: un desenlace de un escenario no tiene sentido evaluado
+/// contra el alcance de otro.
 Iterable<(String, ScopeObservation, StepOutcome)> todosLosCasos(
-    ScopeObservation alcanceA, ScopeObservation alcanceB) sync* {
+    ScopeObservation alcanceA,
+    ScopeObservation alcanceSalto,
+    ScopeObservation alcanceNoObservable) sync* {
   for (final (nombre, d) in desenlacesPosiblesA()) {
     yield ('A·$nombre', alcanceA, d);
   }
-  for (final (nombre, d) in desenlacesPosiblesB(alcanceB)) {
-    yield ('B·$nombre', alcanceB, d);
-  }
+  final (nombreSalto, salto) = desenlaceDeSalto(alcanceSalto);
+  yield ('Salto·$nombreSalto', alcanceSalto, salto);
+  final (nombreNoObs, noObs) = desenlaceDeNoObservable(alcanceNoObservable);
+  yield ('NoObservable·$nombreNoObs', alcanceNoObservable, noObs);
 }
 
 /// Arma un `ResultadoDeCascada` de un único paso `A` con desenlace [d], sobre
@@ -213,47 +245,49 @@ void main() {
     for (final s in sujetosA)
       s: ObservedSubject(subject: s, ofStack: true, files: 1),
   });
-  final observadorB = ObservadorDeAlcanceFalso(
-    observados: {
-      sujetoDelStackB:
-          ObservedSubject(subject: sujetoDelStackB, ofStack: true, files: 1),
-      sujetoAjenoB: ObservedSubject(
-          subject: sujetoAjenoB,
-          ofStack: false,
-          files: 0,
-          reason: 'no es de este stack'),
-    },
-    noObservados: const {sujetoPerdidoB: 'no se pudo mirar'},
+  final observadorSalto = ObservadorDeAlcanceFalso(observados: {
+    sujetoDelSalto: ObservedSubject(
+        subject: sujetoDelSalto,
+        ofStack: false,
+        files: 0,
+        reason: 'no es de este stack'),
+  });
+  final observadorNoObservable = ObservadorDeAlcanceFalso(
+    observados: const {},
+    noObservados: const {sujetoPerdido: 'no se pudo mirar'},
   );
 
   late ScopeObservation alcanceA;
-  late ScopeObservation alcanceB;
+  late ScopeObservation alcanceSalto;
+  late ScopeObservation alcanceNoObservable;
 
   setUpAll(() async {
     alcanceA = await observadorA.observe(sujetosA);
-    alcanceB = await observadorB.observe(sujetosB);
+    alcanceSalto = await observadorSalto.observe(const [sujetoDelSalto]);
+    alcanceNoObservable =
+        await observadorNoObservable.observe(const [sujetoPerdido]);
   });
 
   test('a · todo desenlace construible tiene estado y causa. Función total',
       () {
     // **Esta propiedad no tiene una guardia que se le pueda quitar.** No es
-    // una debilidad de la prueba: `estado` y `causas` (en el archivo de la cascada) son
-    // funciones sin ningún camino parcial —ni `.first` sin resguardo, ni
-    // `as` inseguro, ni acceso a una clave que pudiera faltar— sobre un
-    // conjunto de variantes que `sealed` cierra para siempre: nada fuera de
-    // el archivo de desenlace puede agregar un sexto `StepOutcome`. Y si
-    // alguna vez se agregara uno ADENTRO de ese archivo, los `switch`
-    // exhaustivos sobre `StepKind` que ya existen —`StepOutcome.fromJson`
-    // acá, `_etapaDe` y `_desenlaceEnTexto` en `cli`— dejan de compilar
-    // hasta que alguien lo
-    // atienda en cada uno. La totalidad de esta función la sostiene el
-    // compilador, no un `if` que esta prueba pueda desarmar; por eso el
-    // ejercicio de mordida de esta rebanada la deja aparte, y por eso sigue
-    // acá: sin este comentario, el próximo que lo revise la va a encontrar
-    // muda —sin nada que remover y ver caer— y la va a borrar por inútil,
-    // cuando lo que pasa es lo contrario: el invariante es más fuerte que
-    // una prueba.
-    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
+    // una debilidad de la prueba: `estado` y `causas` (en el archivo de la
+    // cascada) son funciones sin ningún camino parcial —ni `.first` sin
+    // resguardo, ni `as` inseguro, ni acceso a una clave que pudiera
+    // faltar— sobre un conjunto de variantes que `sealed` cierra para
+    // siempre: nada fuera de el archivo de desenlace puede agregar un sexto
+    // `StepOutcome`. Y si alguna vez se agregara uno ADENTRO de ese archivo,
+    // los `switch` exhaustivos sobre `StepKind` que ya existen
+    // —`StepOutcome.fromJson` acá, `_etapaDe` y `_desenlaceEnTexto` en
+    // `cli`— dejan de compilar hasta que alguien lo atienda en cada uno. La
+    // totalidad de esta función la sostiene el compilador, no un `if` que
+    // esta prueba pueda desarmar; por eso el ejercicio de mordida de esta
+    // rebanada la deja aparte, y por eso sigue acá: sin este comentario, el
+    // próximo que lo revise la va a encontrar muda —sin nada que remover y
+    // ver caer— y la va a borrar por inútil, cuando lo que pasa es lo
+    // contrario: el invariante es más fuerte que una prueba.
+    for (final (nombre, alcance, d)
+        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
       final r = _resultadoCon(alcance, d);
       expect(() => r.estado, returnsNormally, reason: nombre);
       expect(() => r.causas, returnsNormally, reason: nombre);
@@ -262,7 +296,8 @@ void main() {
   });
 
   test('b · verde implica toda obligación saldada y nada sin concluir', () {
-    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
+    for (final (nombre, alcance, d)
+        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
       final r = _resultadoCon(alcance, d);
       if (r.estado != EstadoDeCorrida.verde) continue;
       expect(r.obligacionesSinSaldar, isEmpty, reason: nombre);
@@ -273,7 +308,8 @@ void main() {
   });
 
   test('c · la cuenta de diagnósticos es la suma de los ejecutados', () {
-    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
+    for (final (nombre, alcance, d)
+        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
       final r = _resultadoCon(alcance, d);
       final esperados = d is Executed ? d.diagnostics.length : 0;
       expect(r.diagnosticos, hasLength(esperados), reason: nombre);
@@ -283,14 +319,15 @@ void main() {
   test('d · ningún desenlace sin cobertura completa termina verde', () {
     // La propiedad que cierra el falso verde: cubrir la mitad sin explicar el
     // resto no puede dar verde, sea cual sea el resto de la combinación.
-    // **Contra `alcance.usable()`, no contra una constante**: en el escenario
-    // B lo utilizable es solo `sujetoDelStackB` —el ajeno y el no observado
-    // no son utilizables por definición—, así que medir contra una lista fija
-    // de sujetos sería incorrecto ahí. Solo el escenario A aporta `Executed`,
-    // así que en la práctica es el único que ejercita esta propiedad, pero la
-    // expresión vale para los dos.
+    // **Contra `alcance.usable()`, no contra una constante**: en los
+    // escenarios del salto y de lo no observable lo utilizable es vacío
+    // —ninguno de los dos tiene un sujeto del stack—, así que medir contra
+    // una lista fija de sujetos sería incorrecto ahí. Solo el escenario A
+    // aporta `Executed`, así que en la práctica es el único que ejercita
+    // esta propiedad, pero la expresión vale para los tres.
     var ejercitados = 0;
-    for (final (nombre, alcance, d) in todosLosCasos(alcanceA, alcanceB)) {
+    for (final (nombre, alcance, d)
+        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
       if (d is! Executed) continue;
       final saldados = {
         ...d.witness.subjects,
