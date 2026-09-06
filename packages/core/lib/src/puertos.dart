@@ -150,15 +150,23 @@ abstract interface class ScopeObserver {
 /// 4. **Lo que el paso NO pudo cubrir va en `witness.omitted`, con su
 ///    motivo.** Es el corolario 5 de ADR-011 vuelto dato: cada control
 ///    declara si puede detectar una omisión. El que no puede, lo escribe.
-/// 5. **Recibe la observación del alcance; no la pide.** Es la cláusula 4 de
-///    [ScopeObserver] vuelta firma: un verificador que tomara los sujetos y
-///    mirara el árbol por su cuenta agregaría una lectura por paso, y ningún
-///    invariante posterior puede reparar dos fotografías distintas del mismo
-///    alcance. Los sujetos sobre los que invocar salen de
-///    [ScopeObservation.usable].
+/// 5. **Recibe su alcance ya resuelto; no lo pide ni lo clasifica.** Es la
+///    cláusula 4 de [ScopeObserver] vuelta firma: un verificador que tomara
+///    los sujetos y mirara el árbol por su cuenta agregaría una lectura por
+///    paso, y ningún invariante posterior puede reparar dos fotografías
+///    distintas del mismo alcance.
+///
+///    **Y recibe un [VerificationScope], no la [ScopeObservation] entera.**
+///    La primera versión de esta cláusula entregaba la observación completa,
+///    con sus ajenos y sus no observados adentro. Eso deshizo en silencio una
+///    garantía estructural que el `README` afirmaba —«un verificador ni
+///    siquiera recibe los sujetos ajenos»— y dejó un falso verde a una
+///    palabra de distancia: un paso que escriba `requested` donde quería
+///    `usable()` certifica un ajeno, y el libro de obligaciones, que solo
+///    mira lo que falta, lo daba por bueno. Lo encontró un review.
 abstract interface class Verifier {
   String get id;
-  Future<VerificationOutcome> run(ScopeObservation alcance);
+  Future<VerificationOutcome> run(VerificationScope alcance);
 }
 
 /// Se lanza cuando un [DiagnosticNormalizer] **no puede interpretar** lo que

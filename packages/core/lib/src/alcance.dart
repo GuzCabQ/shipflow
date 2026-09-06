@@ -192,3 +192,84 @@ class ScopeObservation {
         observedAt: DateTime.parse(json['observedAt']! as String),
       );
 }
+
+/// **Lo único que un [Verifier] ve del alcance: lo suyo.**
+///
+/// Existe porque una corrección abrió un agujero. Para que la observación se
+/// hiciera una sola vez por corrida, `Verifier.run` pasó a recibir la
+/// [ScopeObservation] entera — y con ella los sujetos ajenos y los que no se
+/// pudieron mirar. El `README` decía, y con razón, que un verificador «ni
+/// siquiera recibe los sujetos ajenos, así que estructuralmente no tiene sobre
+/// qué declararse incompetente»; ese *estructuralmente* dejó de ser cierto sin
+/// que nadie tocara la frase.
+///
+/// Con la observación entera a mano, un paso que escriba `requested` donde
+/// quería `usable()` certifica un archivo que el observador declaró ajeno.
+/// Reproducido: alcance esperado `[lib]`, testigo `[lib, README.md]`, cero
+/// obligaciones abiertas, corrida VERDE. Es un error de una palabra, no de
+/// mala fe, y esa es exactamente la clase que un tipo tiene que hacer
+/// imposible.
+///
+/// **Cláusulas del contrato:**
+///
+/// 1. **Solo sujetos utilizables.** Quien lo construye ya decidió la
+///    partición; acá no hay nada que clasificar y no hay ajenos que confundir.
+/// 2. **Nunca vacío.** Un alcance sin sujetos no es un desenlace de nadie: es
+///    precondición violada de quien llama. Vivía como un `throw` adentro de
+///    `run`, que es «comprobado después de invocar»; acá es «no se puede
+///    construir», que es lo que aquel comentario decía querer.
+/// 3. **Sin repetidos y sin sujetos en blanco.** Un repetido haría contar dos
+///    veces la misma obligación; uno en blanco no nombra nada.
+class VerificationScope {
+  /// Los sujetos sobre los que invocar, tal como se pidieron.
+  final List<String> subjects;
+
+  /// Cuántos archivos del stack contó la observación en ellos. Es con lo que
+  /// un paso reconcilia lo que la herramienta dice haber mirado.
+  final int files;
+
+  VerificationScope({required List<String> subjects, required this.files})
+      : subjects = List.unmodifiable(subjects) {
+    if (this.subjects.isEmpty) {
+      throw ArgumentError.value(
+          subjects,
+          'subjects',
+          'Un alcance de verificación no puede estar vacío. Verificar nada no '
+              'es ni verde ni no concluyente: es precondición violada de '
+              'quien llama');
+    }
+    if (this.subjects.any((s) => s.trim().isEmpty)) {
+      throw ArgumentError.value(subjects, 'subjects',
+          'Hay un sujeto en blanco. Un sujeto en blanco no nombra nada');
+    }
+    if (this.subjects.toSet().length != this.subjects.length) {
+      throw ArgumentError.value(
+          subjects,
+          'subjects',
+          'Hay un sujeto repetido. El libro de obligaciones cuenta por par '
+              'paso-sujeto: un repetido pediría cuenta dos veces de lo mismo');
+    }
+    if (files < 0) {
+      throw ArgumentError.value(
+          files, 'files', 'No se pueden haber contado archivos negativos');
+    }
+  }
+
+  /// El alcance de un paso, sacado de la observación de la corrida. **Es el
+  /// único camino**: quien compone tiene la observación, el verificador no.
+  factory VerificationScope.de(ScopeObservation observacion) =>
+      VerificationScope(
+        subjects: observacion.usable(),
+        files: observacion.observed
+            .where((o) => o.ofStack)
+            .fold(0, (n, o) => n + o.files),
+      );
+
+  Map<String, Object?> toJson() => {'subjects': subjects, 'files': files};
+
+  factory VerificationScope.fromJson(Map<String, Object?> json) =>
+      VerificationScope(
+        subjects: List<String>.from(json['subjects']! as List<Object?>),
+        files: json['files']! as int,
+      );
+}

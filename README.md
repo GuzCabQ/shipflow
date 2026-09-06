@@ -1237,8 +1237,23 @@ reporte declaraba iguales.
 si es ajeno, su motivo) y `UnobservedSubject` (lo que no se pudo mirar, con su
 causa) — **hechos por sujeto**, no un salto ya decidido. La orquestación
 (`Cascada`) es quien los lee y produce `Skipped` o `Unobservable`; un
-`Verifier` ni siquiera recibe los sujetos ajenos en su lista de `subjects`, así
-que estructuralmente no tiene sobre qué declararse incompetente.
+`Verifier` ni siquiera recibe los sujetos ajenos —le llega un
+`VerificationScope`, que solo tiene lo utilizable y su conteo—, así que
+estructuralmente no tiene sobre qué declararse incompetente.
+
+> **Esta frase fue falsa durante un arreglo, y así se encontró el quinto falso
+> verde.** Para que el árbol se observara una sola vez por corrida, `run` pasó
+> a recibir la `ScopeObservation` entera: la lectura se arregló y el
+> *estructuralmente* de arriba dejó de ser cierto sin que nadie tocara el
+> texto. Con la observación completa a mano, un paso que escriba `requested`
+> donde quería `usable()` certifica un ajeno, y el libro de obligaciones —que
+> solo mira lo que FALTA— lo daba por bueno: alcance esperado `[lib]`, testigo
+> `[lib, README.md]`, verde. Lo encontró un review, reproducido.
+>
+> Se cerró por las dos vías, porque una sola no alcanza. `VerificationScope`
+> hace que el ajeno no llegue, y `ResultadoDeCascada` rechaza un testigo que
+> certifique u omita fuera del alcance esperado del paso —lo segundo atrapa al
+> que invente un sujeto, que el tipo estrecho no puede impedir—.
 
 ### El libro de obligaciones es por par paso-sujeto, no por unión
 

@@ -48,15 +48,9 @@ class _EjecutorQueCreaUnArchivo implements EjecutorDeProceso {
 
 /// El alcance como lo observaría la cascada. **Los pasos ya no observan:
 /// reciben** — cláusula 5 de `Verifier`.
-Future<ScopeObservation> _alc(String raiz, List<String> sujetos) =>
-    ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos);
-
-/// Una observación de la nada: partición válida de la lista vacía.
-ScopeObservation _vacio() => ScopeObservation(
-    requested: const [],
-    observed: const [],
-    unobserved: const [],
-    observedAt: DateTime.utc(2026));
+Future<VerificationScope> _alc(String raiz, List<String> sujetos) async =>
+    VerificationScope.de(
+        await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos));
 
 void main() {
   late Directory raiz;
@@ -79,16 +73,16 @@ void main() {
       // Antes devolvía un testigo con terminación interrumpida y código -1
       // sobre una herramienta que nunca corrió. La cascada no puede pasarle
       // esto: si llega, es error del arnés, no un desenlace del cambio.
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida()), directorio: raiz.path);
-      expect(() => paso.run(_vacio()), throwsArgumentError);
+      // Ya no llega a `run`: el alcance vacío no se construye. La
+      // precondición se mudó del cuerpo del método al tipo de su parámetro.
+      expect(() => VerificationScope(subjects: const [], files: 0),
+          throwsArgumentError);
     });
 
     test('si NINGÚN sujeto es utilizable, también es precondición violada',
         () async {
       // Dos sujetos que no existen: ninguno del stack, ninguno mirable.
-      final alc = await _alc(raiz.path, const ['no/existe', 'tampoco/esta']);
-      expect(() => formato(salida(estandar: formatoLimpio)).run(alc),
+      await expectLater(_alc(raiz.path, const ['no/existe', 'tampoco/esta']),
           throwsArgumentError);
     });
 
@@ -101,9 +95,7 @@ void main() {
       final vedado = Directory('${raiz.path}/vedado')..createSync();
       Process.runSync('chmod', ['000', vedado.path]);
       addTearDown(() => Process.runSync('chmod', ['755', vedado.path]));
-      final alc = await _alc(raiz.path, const ['vedado']);
-      expect(() => analisis(salida(estandar: analisisLimpio)).run(alc),
-          throwsArgumentError);
+      await expectLater(_alc(raiz.path, const ['vedado']), throwsArgumentError);
     }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
   });
 
@@ -120,11 +112,10 @@ void main() {
             files: 0,
             reason: 'el observador dice que no'),
       });
-      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
-      final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
-      final alc = await falso.observe(const ['lib']);
-      await expectLater(() => paso.run(alc), throwsArgumentError);
-      expect(ejecutor.invocaciones, isEmpty);
+      // Ningún sujeto utilizable: quien compone no llega ni a poder armar el
+      // alcance del paso, que es exactamente lo que debe pasar.
+      final observacion = await falso.observe(const ['lib']);
+      expect(() => VerificationScope.de(observacion), throwsArgumentError);
       expect(falso.llamadas, hasLength(1),
           reason: 'la ÚNICA foto del árbol la sacó quien compone; el paso no '
               'tiene con qué sacar otra');
@@ -158,8 +149,8 @@ void main() {
       );
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
-      final o = await paso
-          .run(await falso.observe(const ['fantasma', 'ajeno', 'lib']));
+      final o = await paso.run(VerificationScope.de(
+          await falso.observe(const ['fantasma', 'ajeno', 'lib'])));
 
       // **El paso invoca sobre lo utilizable y sobre nada más.** No aborta ni
       // omite: 'fantasma' y 'ajeno' no son incumbencia suya, y qué significan

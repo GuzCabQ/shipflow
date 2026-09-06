@@ -48,15 +48,9 @@ final implementaciones = <String, (Construir, String)>{
 /// El alcance tal como lo observaría la cascada. **Los pasos ya no observan:
 /// reciben** (cláusula 5 de `Verifier`), así que la suite tiene que producir
 /// la observación igual que lo hace quien compone la corrida.
-Future<ScopeObservation> _alcance(String raiz, List<String> sujetos) =>
-    ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos);
-
-/// Una observación de la nada: partición válida de una lista vacía.
-ScopeObservation _vacio() => ScopeObservation(
-    requested: const [],
-    observed: const [],
-    unobserved: const [],
-    observedAt: DateTime.utc(2026));
+Future<VerificationScope> _alcance(String raiz, List<String> sujetos) async =>
+    VerificationScope.de(
+        await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos));
 
 void main() {
   // Un sujeto de verdad en disco. `StaticAnalysis` cuenta los archivos del
@@ -90,10 +84,15 @@ void main() {
         expect(o, anyOf(isA<Executed>(), isA<Aborted>()));
       });
 
-      test('cláusula 2 · un alcance sin sujetos utilizables lanza', () async {
-        final ejecutor = EjecutorDeclarado(_salida());
-        expect(() => paso(ejecutor).run(_vacio()), throwsArgumentError);
-        expect(ejecutor.invocaciones, isEmpty);
+      test('cláusula 2 · un alcance sin sujetos utilizables NO SE CONSTRUYE',
+          () {
+        // La cláusula decía «se comprueba antes de invocar nada» y se
+        // comprobaba adentro de `run`, o sea después de entrar. Ahora es
+        // literal: el alcance vacío no llega a existir, así que ninguna
+        // implementación puede recibirlo ni tiene que acordarse de rechazarlo.
+        // Por eso esta prueba ya no toca `paso`.
+        expect(() => VerificationScope(subjects: const [], files: 0),
+            throwsArgumentError);
       });
 
       test('cláusula 3 · una terminación incompleta es Abortado', () async {

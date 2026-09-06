@@ -118,7 +118,7 @@ class _Paso implements Verifier {
       ));
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation alcance) async {
+  Future<VerificationOutcome> run(VerificationScope alcance) async {
     corrio = true;
     if (lanza != null) throw lanza!;
     return devuelve!;
@@ -130,17 +130,20 @@ class _Espia implements Verifier {
   @override
   final String id;
   List<String>? recibio;
+  int? archivos;
   _Espia(this.id);
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation alcance) async {
-    // El paso recibe la observación de la corrida; los sujetos sobre los que
-    // invocar son los utilizables, que es exactamente lo que la cascada le
-    // pasaba antes.
-    final subjects = alcance.usable();
-    recibio = List.of(subjects);
+  Future<VerificationOutcome> run(VerificationScope alcance) async {
+    // **Registra lo RECIBIDO, sin filtrar.** Una versión de este espía
+    // llamaba a `usable()` por su cuenta y guardaba eso, así que la prueba
+    // «el paso recibe SOLO los sujetos utilizables» comprobaba que `usable()`
+    // filtra —cosa que nadie dudaba— y no lo que su título dice. Lo encontró
+    // un review. Si el espía filtra, la prueba no puede fallar nunca.
+    recibio = List.of(alcance.subjects);
+    archivos = alcance.files;
     return Executed(
-        witness: _testigo(sujetos: subjects), diagnostics: const []);
+        witness: _testigo(sujetos: alcance.subjects), diagnostics: const []);
   }
 }
 
@@ -154,7 +157,7 @@ class _PasoQueCubre implements Verifier {
   _PasoQueCubre(this.id, this.cubiertos, {this.omite = const []});
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation alcance) async => Executed(
+  Future<VerificationOutcome> run(VerificationScope alcance) async => Executed(
         witness: Witness(
           invocation: 'herramienta',
           subjects: cubiertos,
@@ -557,6 +560,86 @@ void main() {
           unobserved: const [],
           observedAt: DateTime.utc(2026),
         );
+
+    test('un testigo no puede certificar FUERA del alcance esperado', () async {
+      // **El quinto falso verde, y lo abrió el arreglo del cuarto.** Al pasar
+      // de una lista de sujetos a la observación entera, el verificador
+      // empezó a ver los ajenos, y un paso que use `requested` donde quería
+      // `usable()` —un error de una palabra— certifica un archivo que el
+      // observador declaró ajeno. El libro comprobaba cobertura FALTANTE y no
+      // cobertura EXCEDENTE, así que eso salía verde.
+      //
+      // Reproducido con la cascada real antes de escribir esto: expectedScope
+      // `[lib]`, testigo `[lib, README.md]`, cero obligaciones abiertas,
+      // estado verde.
+      final alcance = obsConDosUtilizables();
+      expect(
+          () => ResultadoDeCascada(
+                registrados: [
+                  RegisteredStep(id: 'A', expectedScope: const ['a.fuente']),
+                ],
+                alcance: ScopeObservation(
+                  requested: const ['a.fuente', 'ajeno.md'],
+                  observed: [
+                    ObservedSubject(
+                        subject: 'a.fuente', ofStack: true, files: 1),
+                    ObservedSubject(
+                        subject: 'ajeno.md',
+                        ofStack: false,
+                        files: 0,
+                        reason: 'no es de este stack'),
+                  ],
+                  unobserved: const [],
+                  observedAt: DateTime.utc(2026),
+                ),
+                desenlaces: {
+                  'A': Executed(
+                      witness:
+                          _testigo(sujetos: const ['a.fuente', 'ajeno.md']),
+                      diagnostics: const []),
+                },
+              ),
+          throwsArgumentError,
+          reason: 'certificar un ajeno es afirmar sobre algo que el observador '
+              'dijo que no era nuestro');
+      expect(alcance, isNotNull);
+    });
+
+    test('una omisión tampoco puede nombrar un sujeto fuera del alcance',
+        () async {
+      // Simétrico y peor: una omisión CON sujeto salda la obligación de ese
+      // par paso-sujeto. Nombrar uno que no está en el alcance esperado no
+      // salda nada y ensucia la evidencia con una afirmación sobre algo que
+      // este paso no tenía que mirar.
+      expect(
+          () => ResultadoDeCascada(
+                registrados: [
+                  RegisteredStep(id: 'A', expectedScope: const ['a.fuente']),
+                ],
+                alcance: ScopeObservation(
+                  requested: const ['a.fuente'],
+                  observed: [
+                    ObservedSubject(
+                        subject: 'a.fuente', ofStack: true, files: 1),
+                  ],
+                  unobserved: const [],
+                  observedAt: DateTime.utc(2026),
+                ),
+                desenlaces: {
+                  'A': Executed(
+                    witness: Witness(
+                      invocation: 'herramienta a.fuente',
+                      subjects: const ['a.fuente'],
+                      omitted: [Omission(subject: 'otro', reason: 'inventado')],
+                      exitCode: 0,
+                      finishedAt: DateTime.utc(2026),
+                    ),
+                    diagnostics: const [],
+                  ),
+                },
+              ),
+          throwsArgumentError);
+    });
 
     test('dos registros con el MISMO id no se dejan construir', () async {
       // **Invariante del productor confundido con invariante del tipo, otra

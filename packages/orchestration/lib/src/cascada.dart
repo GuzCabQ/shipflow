@@ -205,6 +205,54 @@ class ResultadoDeCascada {
       }
     }
 
+    // **El libro comprobaba lo que FALTA y no lo que SOBRA.** Un testigo que
+    // certifica un sujeto fuera del alcance esperado del paso afirma haber
+    // verificado algo que la observación no dio como suyo, y eso salía verde:
+    // `obligacionesSinSaldar` solo recorre `expectedScope`, así que un
+    // certificado de más no lo miraba nadie.
+    //
+    // No era alcanzable mientras el verificador recibía únicamente sus
+    // sujetos utilizables. Al pasar a recibir la observación entera —el
+    // arreglo de la triple lectura— quedó a una palabra de distancia: un paso
+    // que use `requested` donde quería `usable()` certifica los ajenos. Con
+    // `VerificationScope` el verificador ya no ve un ajeno, y esto es la
+    // segunda línea: un testigo que igual nombre uno no se puede construir.
+    //
+    // Vale para las omisiones por la misma razón, y ahí es peor: una omisión
+    // CON sujeto SALDA la obligación de ese par, así que una que nombre algo
+    // fuera del alcance no salda nada y ensucia la evidencia.
+    for (final registro in this.registrados) {
+      final desenlace = this.desenlaces[registro.id]!;
+      if (desenlace is! Executed) continue;
+      final propios = registro.expectedScope.toSet();
+      final certificados = desenlace.witness.subjects.toSet();
+      final deMas = certificados.difference(propios);
+      if (deMas.isNotEmpty) {
+        throw ArgumentError.value(
+            deMas.toList(),
+            'desenlaces',
+            'El testigo del paso «${registro.id}» certifica sujetos que no '
+                'están en su alcance esperado (${propios.join(", ")}). '
+                'Certificar de más es afirmar sobre algo que la observación '
+                'no dio como nuestro, y el libro de obligaciones —que solo '
+                'mira lo que falta— lo dejaba pasar en verde');
+      }
+      final omitidos = {
+        for (final o in desenlace.witness.omitted)
+          if (o.subject != null) o.subject!
+      };
+      final omitidosDeMas = omitidos.difference(propios);
+      if (omitidosDeMas.isNotEmpty) {
+        throw ArgumentError.value(
+            omitidosDeMas.toList(),
+            'desenlaces',
+            'El testigo del paso «${registro.id}» omite sujetos que no están '
+                'en su alcance esperado (${propios.join(", ")}). Una omisión '
+                'con sujeto salda la obligación de ese par paso-sujeto: una '
+                'que nombra algo ajeno al alcance no salda nada');
+      }
+    }
+
     // **Un desenlace tampoco es gratis contra la observación de esta
     // corrida.** `Skipped` y `Unobservable` validan su PROPIA forma —sus
     // constructores ya rechazan la lista vacía, y `Skipped` rechaza un
@@ -539,7 +587,10 @@ class Cascada {
             : Skipped(notOfStack: ajenos);
       } else {
         try {
-          desenlace = await paso.run(observacion);
+          // **Lo estrecho se arma acá, una vez, y es lo único que el paso ve.**
+          // La observación entera se queda de este lado: los ajenos y los no
+          // observados son insumo de la orquestación, no del verificador.
+          desenlace = await paso.run(VerificationScope.de(observacion));
         } on Object catch (e) {
           // Se atrapa cualquier excepción a propósito, y solo acá: un paso
           // que se rompe es un error del arnés, no un veredicto sobre el

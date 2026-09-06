@@ -74,11 +74,8 @@ class Paso implements Verifier {
   factory Paso.ciego(String id) => Paso(id, ciego: true);
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation alcance) async {
-    // El paso recibe la observación de la corrida; los sujetos sobre los que
-    // invocar son los utilizables, que es exactamente lo que la cascada le
-    // pasaba antes.
-    final subjects = alcance.usable();
+  Future<VerificationOutcome> run(VerificationScope alcance) async {
+    final subjects = alcance.subjects;
     if (lanza != null) throw lanza!;
     if (nota != null) {
       return Aborted(
@@ -125,7 +122,7 @@ class PasoQueCubre implements Verifier {
   PasoQueCubre(this.id, this.cubre, {this.omite = const []});
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation alcance) async => Executed(
+  Future<VerificationOutcome> run(VerificationScope alcance) async => Executed(
         witness: Witness(
           invocation: 'herramienta ${cubre.join(" ")}',
           subjects: cubre,

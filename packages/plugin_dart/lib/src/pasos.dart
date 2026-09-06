@@ -80,38 +80,26 @@ abstract base class PasoDeCascada implements Verifier {
   Cobertura cobertura(Alcance alcance, QuotedText salida);
 
   @override
-  Future<VerificationOutcome> run(ScopeObservation observacion) async {
-    // **La foto la trae quien compone, y es la misma para toda la corrida.**
-    // De acá salen la partición, el conteo del alcance y la reconciliación.
-    // Cuando el paso la pedía por su cuenta, cada una de esas tres cosas
-    // podía salir de una lectura distinta, y el testigo afirmaba dos cosas
-    // incompatibles sobre el mismo alcance.
+  Future<VerificationOutcome> run(VerificationScope pedido) async {
+    // **El alcance lo trae quien compone, ya resuelto, y es el mismo para
+    // toda la corrida.** De acá salen los sujetos a invocar y el conteo con
+    // el que se reconcilia lo que la herramienta dice haber mirado. Cuando el
+    // paso miraba el árbol por su cuenta, cada una de esas cosas podía salir
+    // de una lectura distinta y el testigo afirmaba dos cosas incompatibles.
     //
-    // `ScopeObservation` es inmodificable por construcción, así que no hace
-    // falta congelar nada acá: el invariante que antes sostenía la copia
-    // defensiva ahora lo sostiene el tipo.
-    final alcance = (
-      sanos: observacion.usable(),
-      archivos: observacion.observed
-          .where((o) => o.ofStack)
-          .fold(0, (n, o) => n + o.files),
-    );
+    // **Y llega estrecho: acá adentro no existe un sujeto ajeno.** Una
+    // versión anterior recibía la observación entera, y con ella la
+    // posibilidad de certificar lo que no era nuestro escribiendo `requested`
+    // donde iba `usable()`. `VerificationScope` es inmodificable y no vacío
+    // por construcción, así que tampoco hace falta congelar ni comprobar nada
+    // de eso acá.
+    final alcance = (sanos: pedido.subjects, archivos: pedido.files);
 
-    if (alcance.sanos.isEmpty) {
-      // **No hay nada que invocar, y esto NO es un desenlace: es precondición
-      // violada.** Invocar la herramienta sin rutas la haría mirar el
-      // directorio entero, que es lo contrario de lo que el alcance dice. Y
-      // fabricar un testigo sería declarar una ejecución que no ocurrió. Quien
-      // compone la corrida —no este paso— decide qué significa un alcance
-      // así: si es un salto legítimo o si el alcance esperado no se cumplió.
-      throw ArgumentError.value(
-          observacion.requested,
-          'alcance',
-          'No hay ningún sujeto utilizable. Invocar la herramienta sin rutas '
-              'la haría mirar el directorio entero, y fabricar un testigo '
-              'sería declarar una ejecución que no ocurrió. Quien compone la '
-              'corrida decide qué significa un alcance así');
-    }
+    // **Acá vivía la precondición del alcance vacío, y se mudó al tipo.**
+    // Era un `throw` adentro de `run` que decía de sí mismo «se comprueba
+    // antes de invocar nada». Se comprobaba después de entrar, que no es lo
+    // mismo: `VerificationScope` no se puede construir vacío, así que ahora
+    // la frase es literal.
 
     // **Acá vivía una guardia de divergencia, y se fue con su causa.**
     // Comparaba la lectura del paso contra la que la cascada había vetado, y

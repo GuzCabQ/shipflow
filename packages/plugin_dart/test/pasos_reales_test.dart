@@ -20,8 +20,9 @@ import 'package:test/test.dart';
 
 /// El alcance como lo observaría la cascada. Los pasos ya no observan: la
 /// cláusula 5 de `Verifier` dice que reciben la observación de la corrida.
-Future<ScopeObservation> _alcance(String raiz, List<String> sujetos) =>
-    ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos);
+Future<VerificationScope> _alcance(String raiz, List<String> sujetos) async =>
+    VerificationScope.de(
+        await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos));
 
 void main() {
   late Directory raiz;
@@ -65,8 +66,10 @@ void main() {
     // la corrida es precondición violada: lo que se comprueba es el
     // desenlace, no el mecanismo, y un test que fijara el mecanismo
     // convertiría toda mejora en una falsa alarma.
-    final alc = await _alcance(raiz.path, const ['no/existe/']);
-    expect(() => formato().run(alc), throwsArgumentError);
+    // El alcance del paso no llega a construirse: sin ningún sujeto
+    // utilizable, `VerificationScope` no existe y `run` no se invoca.
+    await expectLater(
+        _alcance(raiz.path, const ['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un alcance inexistente lo delata el ARNÉS, no la herramienta',
@@ -81,8 +84,8 @@ void main() {
     // Es más fuerte, no menos: el caso ciego deja de depender de que una
     // herramienta ajena se moleste en avisar. Lo que se comprueba es la
     // propiedad, no el mecanismo.
-    final alc = await _alcance(raiz.path, const ['no/existe/']);
-    expect(() => analisis().run(alc), throwsArgumentError);
+    await expectLater(
+        _alcance(raiz.path, const ['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('código limpio y formateado da verde en los dos pasos', () async {

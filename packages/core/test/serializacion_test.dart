@@ -236,6 +236,17 @@ void main() {
       ).toJson(),
       UnobservedSubject.fromJson
     ),
+    // **Lo único que ve un `Verifier`.** Cada campo con un valor
+    // distinguible: dos sujetos con nombres distintos entre sí y un conteo
+    // que no coincide con la cantidad de sujetos, para que una serialización
+    // que confunda «cuántos sujetos» con «cuántos archivos» no cuadre.
+    'VerificationScope': (
+      VerificationScope(
+        subjects: const ['lib', 'test'],
+        files: 7,
+      ).toJson(),
+      VerificationScope.fromJson
+    ),
     'ScopeObservation · con sujetos del stack': (
       ScopeObservation(
         requested: const ['lib', 'no/existe'],
