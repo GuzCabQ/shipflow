@@ -603,4 +603,107 @@ void main() {
       );
     });
   });
+
+  group('el desenlace no puede contradecir a la observación', () {
+    // `Skipped` y `Unobservable` validan su PROPIA forma —la lista no
+    // vacía, y que `Skipped` no marque como ajeno a un sujeto que el propio
+    // desenlace dice del stack— pero ninguno de los dos sabe, por su
+    // cuenta, si lo que declaran es lo que ESTA corrida observó de verdad.
+    // Mientras el único productor de `ResultadoDeCascada` sea
+    // `Cascada.correr`, la correspondencia sale gratis; construyéndolo
+    // directamente —como hacen ya varias pruebas de este archivo, y como
+    // va a hacerlo la tarea siguiente para sus propiedades— nada más lo
+    // garantiza. Es el mismo error que el alcance esperado ya cerró más
+    // arriba, en la otra mitad del tipo.
+    ScopeObservation obsConUnSujetoSano() => ScopeObservation(
+          requested: const ['lib'],
+          observed: [
+            ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+          ],
+          unobserved: const [],
+          observedAt: DateTime.utc(2026),
+        );
+
+    test(
+        'un Skipped no puede declarar ajeno a un sujeto que la observación '
+        'no dio como tal — antes daba VERDE', () {
+      // El contraejemplo real: alcance sano de un único sujeto, cero ajenos
+      // y nada inobservable en la observación de verdad. El único paso se
+      // «salta» declarando un ajeno INVENTADO —un sujeto que ni siquiera se
+      // pidió—. `ejecutados` queda vacío, `causas` queda vacía (no hay
+      // ningún ajeno REAL que la condición de `nadaEjecutado` pueda
+      // encontrar), y sin el invariante de este grupo la corrida entera
+      // salía verde.
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [
+            RegisteredStep(id: 'A', expectedScope: const ['lib'])
+          ],
+          alcance: obsConUnSujetoSano(),
+          desenlaces: {
+            'A': Skipped(notOfStack: [
+              ObservedSubject(
+                  subject: 'ajeno-inventado',
+                  ofStack: false,
+                  files: 0,
+                  reason: 'inventado'),
+            ]),
+          },
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+        'un Unobservable no puede declarar una causa que la observación no '
+        'tiene', () {
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [
+            RegisteredStep(id: 'A', expectedScope: const ['lib'])
+          ],
+          alcance: obsConUnSujetoSano(),
+          desenlaces: {
+            'A': Unobservable(causes: [
+              UnobservedSubject(
+                  subject: 'inexistente-inventado', cause: 'inventada'),
+            ]),
+          },
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+        'un Skipped que declara EXACTAMENTE los ajenos reales sí se deja '
+        'construir', () {
+      // El control negativo, otra vez: sin él no se sabría si el invariante
+      // funciona o si CUALQUIER `Skipped` se rechaza.
+      final obs = ScopeObservation(
+        requested: const ['LEEME.md'],
+        observed: [
+          ObservedSubject(
+              subject: 'LEEME.md', ofStack: false, files: 0, reason: 'ajeno'),
+        ],
+        unobserved: const [],
+        observedAt: DateTime.utc(2026),
+      );
+      expect(
+        () => ResultadoDeCascada(
+          registrados: [RegisteredStep(id: 'A', expectedScope: const [])],
+          alcance: obs,
+          desenlaces: {
+            'A': Skipped(notOfStack: [
+              ObservedSubject(
+                  subject: 'LEEME.md',
+                  ofStack: false,
+                  files: 0,
+                  reason: 'ajeno'),
+            ]),
+          },
+        ),
+        returnsNormally,
+      );
+    });
+  });
 }

@@ -179,6 +179,68 @@ class ResultadoDeCascada {
                 'observó.');
       }
     }
+
+    // **Un desenlace tampoco es gratis contra la observación de esta
+    // corrida.** `Skipped` y `Unobservable` validan su PROPIA forma —sus
+    // constructores ya rechazan la lista vacía, y `Skipped` rechaza un
+    // sujeto que el propio desenlace marca como del stack— pero ninguno de
+    // los dos puede saber si lo que declara es lo que esta corrida
+    // observó de verdad: eso solo lo tiene [alcance]. Mientras el único
+    // productor de este tipo sea [Cascada.correr], la correspondencia sale
+    // gratis. El día que alguien arme un [ResultadoDeCascada] por otro
+    // lado —y la tarea siguiente lo va a hacer, para sus propiedades— un
+    // `Skipped` con un sujeto ajeno inventado, o un `Unobservable` con una
+    // causa inventada, hace `ejecutados` vacío y `causas` vacía a la vez:
+    // verde sobre una corrida que no verificó nada. Es el mismo error que
+    // el alcance esperado ya cerró más arriba, en la otra mitad del tipo.
+    final ajenosDeLaObservacion = {
+      for (final o in alcance.observed)
+        if (!o.ofStack) o.subject,
+    };
+    final noObservadosDeLaObservacion = {
+      for (final u in alcance.unobserved) u.subject,
+    };
+    for (final entrada in this.desenlaces.entries) {
+      final d = entrada.value;
+      if (d is Skipped) {
+        final inventados = d.notOfStack
+            .map((o) => o.subject)
+            .where((s) => !ajenosDeLaObservacion.contains(s))
+            .toList();
+        if (inventados.isNotEmpty) {
+          final reales = ajenosDeLaObservacion.isEmpty
+              ? '(ninguno)'
+              : ajenosDeLaObservacion.join(", ");
+          throw ArgumentError.value(
+              inventados,
+              'desenlaces',
+              'El paso «${entrada.key}» se saltó declarando ajenos a '
+                  '${inventados.join(", ")}, pero la observación de esta '
+                  'corrida no los tiene como ajenos al stack (los ajenos '
+                  'reales son: $reales). Un salto no puede nombrar un sujeto '
+                  'que esta corrida no observó como ajeno.');
+        }
+      } else if (d is Unobservable) {
+        final inventados = d.causes
+            .map((c) => c.subject)
+            .where((s) => !noObservadosDeLaObservacion.contains(s))
+            .toList();
+        if (inventados.isNotEmpty) {
+          final reales = noObservadosDeLaObservacion.isEmpty
+              ? '(ninguno)'
+              : noObservadosDeLaObservacion.join(", ");
+          throw ArgumentError.value(
+              inventados,
+              'desenlaces',
+              'El paso «${entrada.key}» declara no observable a '
+                  '${inventados.join(", ")}, pero la observación de esta '
+                  'corrida no los tiene como no observados (los no '
+                  'observados reales son: $reales). Un desenlace no '
+                  'observable no puede nombrar un sujeto que esta corrida sí '
+                  'pudo observar.');
+        }
+      }
+    }
   }
 
   /// Qué pasos ejecutaron de verdad, es decir, corrieron hasta el final.
