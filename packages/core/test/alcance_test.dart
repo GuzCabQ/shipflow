@@ -76,6 +76,20 @@ void main() {
           throwsArgumentError);
     });
 
+    test('un sujeto PEDIDO dos veces se rechaza: no hay denominador', () {
+      // Distinto del caso de arriba: ahí lo repetido está en `observed`. Acá
+      // lo repetido está en `requested` mismo, así que `unicos` (una sola
+      // 'lib') y `vistos` calzan y ese primer chequeo no dispara — el que
+      // tiene que atajarlo es el que compara el tamaño de `requested` contra
+      // su propio `toSet()`. Un revisor lo ejercitó a mano; sin esta prueba,
+      // la guardia se podía quitar en una refactorización sin que nada lo
+      // note.
+      expect(
+          () =>
+              obs(pedidos: const ['lib', 'lib'], observados: [delStack('lib')]),
+          throwsArgumentError);
+    });
+
     test('la identidad es la cadena TAL COMO SE PIDIÓ', () {
       // `core` no puede normalizar rutas: no importa nada. Si el observador
       // devolviera `lib` para un pedido `./lib`, la partición no cierra y el

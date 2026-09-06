@@ -504,4 +504,89 @@ void main() {
       expect(r.exitCode, 0);
     }, timeout: const Timeout(Duration(minutes: 2)));
   });
+
+  // Los seis ataques que se reprodujeron sobre el código anterior y salían
+  // verdes, o daban acciones imposibles. Convertidos en pruebas para que no
+  // vuelvan a funcionar sin que algo lo note.
+  //
+  // **Nota de adaptación.** El brief de esta tarea traía este grupo escrito
+  // contra una forma del código que cinco cambios, ocurridos durante la
+  // ejecución del plan, dejaron desactualizada:
+  //
+  // - `Skipped` no lleva más un solo `ObservedSubject` opcional: lleva
+  //   `notOfStack`, la lista completa de ajenos que motiva el salto.
+  // - `Witness` ya no tiene campo de terminación ni de conteo: `Termination`
+  //   distinta de completa vive en `Attempt`, dentro de `Aborted`.
+  // - Los ayudantes que el brief daba por existentes —`correrConAlcance`,
+  //   `PasoQueCubre`, `invocarConObservadorRoto`, `lineas`— ya estaban en
+  //   `apoyo.dart` de una tarea previa, así que se reusan tal cual en vez de
+  //   volver a declararlos acá.
+  group('los ataques que antes funcionaban', () {
+    test('C1 · un verificador no puede declarar que un archivo no es suyo', () {
+      // No hay forma de escribir el ataque: `run` devuelve
+      // `VerificationOutcome` y `Skipped` no es uno. Si esta prueba deja de
+      // compilar porque alguien metió `Skipped` bajo `VerificationOutcome`,
+      // el invariante se perdió.
+      expect(
+          Skipped(notOfStack: [
+            ObservedSubject(
+                subject: 'a', ofStack: false, files: 0, reason: 'no es mío')
+          ]),
+          isNot(isA<VerificationOutcome>()));
+    });
+
+    test('C3 · cubrir la mitad sin explicar el resto no da verde', () async {
+      final (c, _) = await correrConAlcance(const [
+        'a.fuente',
+        'b.fuente'
+      ], [
+        PasoQueCubre('A', const ['a.fuente'])
+      ]);
+      expect(c, 2);
+    });
+
+    test('C6 · un start sin terminal queda declarado', () async {
+      final (c, salida) = await invocarConObservadorRoto();
+      expect(c, 70);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      expect(data['unterminated'], isNotEmpty);
+    });
+
+    test('C9 · un paso sin evidencia no se puede construir', () {
+      expect(
+          () => Witness(
+                invocation: 'h',
+                subjects: const [],
+                omitted: const [],
+                exitCode: 0,
+                finishedAt: DateTime.utc(2026),
+              ),
+          throwsArgumentError);
+    });
+
+    test('C12 · un testigo honesto da verde, sin campos de más', () async {
+      // El plugin de terceros que cumplía las cláusulas y nunca obtenía
+      // verde, porque le faltaba un conteo que ya no existe.
+      final (c, _) = await correrConAlcance(const [
+        'a.fuente'
+      ], [
+        PasoQueCubre('A', const ['a.fuente'])
+      ]);
+      expect(c, 0);
+    });
+
+    test('C5 · la regla del motivo en blanco vale en LOS TRES tipos', () {
+      // Antes había dos reglas para el mismo hecho: un tipo rechazaba
+      // cualquier blanco y otro solo si TODOS lo eran. `Omission` lanza antes
+      // que `Witness`, así que comprobar los dos ahí no probaría nada nuevo:
+      // lo que se recorre son los tres lugares donde se escribe un motivo.
+      expect(() => Omission(subject: 'a', reason: ' '), throwsArgumentError);
+      expect(
+          () => ObservedSubject(
+              subject: 'a', ofStack: false, files: 0, reason: '  '),
+          throwsArgumentError);
+      expect(() => UnobservedSubject(subject: 'a', cause: ' '),
+          throwsArgumentError);
+    });
+  });
 }

@@ -23,14 +23,19 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
     final observados = <ObservedSubject>[];
     final noObservados = <UnobservedSubject>[];
 
-    // Se congela al entrar: la lista es del llamador.
-    for (final pedido in List<String>.unmodifiable(requested)) {
-      final r = _mirar(pedido);
+    // Se congela al entrar: la lista es del llamador, que puede mutarla
+    // mientras esta observación está en curso. Lo que se recorre y lo que se
+    // le pasa a `ScopeObservation` tienen que ser la MISMA copia congelada:
+    // pasarle el parámetro original de vuelta dejaba la promesa del
+    // comentario sin cumplir en el propio código que la hace.
+    final pedido = List<String>.unmodifiable(requested);
+    for (final sujeto in pedido) {
+      final r = _mirar(sujeto);
       if (r.causa != null) {
-        noObservados.add(UnobservedSubject(subject: pedido, cause: r.causa!));
+        noObservados.add(UnobservedSubject(subject: sujeto, cause: r.causa!));
       } else {
         observados.add(ObservedSubject(
-          subject: pedido,
+          subject: sujeto,
           ofStack: r.archivos > 0,
           files: r.archivos,
           reason: r.archivos > 0 ? null : r.motivo,
@@ -39,7 +44,7 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
     }
 
     return ScopeObservation(
-      requested: requested,
+      requested: pedido,
       observed: observados,
       unobserved: noObservados,
       observedAt: DateTime.now().toUtc(),

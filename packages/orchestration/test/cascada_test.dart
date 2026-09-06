@@ -567,6 +567,15 @@ void main() {
     });
 
     test('un sujeto esperado en blanco tampoco se deja construir', () {
+      // Un blanco en `expectedScope` dispara DOS guardias distintas: la que
+      // rechaza cualquier sujeto en blanco, y la de igualdad contra lo
+      // utilizable —el blanco nunca puede ser utilizable, así que también es
+      // excedente—. `throwsArgumentError` no discrimina cuál de las dos
+      // disparó: si se borrara el chequeo de blancos, la de igualdad seguiría
+      // rechazando este mismo caso por la MISMA razón de superficie, y la
+      // prueba seguiría en verde sin haber probado nada sobre el chequeo que
+      // dice aislar. Se verifica el mensaje para que solo la guardia de
+      // blancos la haga pasar.
       expect(
         () => ResultadoDeCascada(
           registrados: [
@@ -579,7 +588,11 @@ void main() {
                 diagnostics: const []),
           },
         ),
-        throwsArgumentError,
+        throwsA(isA<ArgumentError>().having(
+          (e) => e.message,
+          'message',
+          contains('espera un sujeto en blanco'),
+        )),
       );
     });
 
