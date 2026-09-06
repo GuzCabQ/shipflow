@@ -967,7 +967,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 104 sabotajes.**
+y su caso ciego. **El arnés aplica 105 sabotajes.**
 
 ---
 
