@@ -436,6 +436,39 @@ void main() {
       expect(r.causas, contains(CausaNoConcluyente.alcanceNoObservable));
     });
 
+    test(
+        'alcance MIXTO —un ajeno y uno inobservable, nada utilizable—: la '
+        'primera causa es lo no observable, no nada ejecutado', () async {
+      // El caso puro (todo inobservable, ningún ajeno) ya distinguía las dos
+      // causas porque `nadaEjecutado` no tenía ningún ajeno que nombrar y el
+      // texto de más arriba lo notaba. Este caso es el que un review
+      // reprodujo y el puro no cazaba: con un ajeno DE VERDAD en la mezcla,
+      // `nadaEjecutado` primero nombra ESE ajeno con total normalidad —no
+      // nombra nada ausente— y esconde que además hubo una ruta que ni
+      // siquiera se pudo mirar. Es la misma precedencia que ya vale por paso
+      // («no pude mirar» gana sobre «no había nada mío»), y antes de este
+      // fix no valía también para el agregado de toda la corrida.
+      final obs = ObservadorDeAlcanceFalso(
+        observados: {
+          'LEEME.md': ObservedSubject(
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
+        },
+        noObservados: const {'no/existe': 'no existe'},
+      );
+      final r = await Cascada([_Paso.verde('A')], observador: obs)
+          .correr(['LEEME.md', 'no/existe']);
+      expect(r.causas.first, CausaNoConcluyente.alcanceNoObservable,
+          reason: 'nombrar solo el ajeno callaría la ruta que ni se pudo '
+              'mirar: una afirmación parcial, no el bug literal de nombrar '
+              'evidencia ausente, pero la misma familia');
+      expect(r.causas, contains(CausaNoConcluyente.nadaEjecutado),
+          reason: 'las dos causas concurren; lo que cambia es cuál es la '
+              'primera');
+    });
+
     test('verde solo cuando ninguna pregunta negativa se contesta que sí',
         () async {
       final r = await Cascada([

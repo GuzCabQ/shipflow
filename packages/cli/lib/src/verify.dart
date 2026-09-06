@@ -258,7 +258,14 @@ Future<int> correrVerify(
             {'id': reg.id, 'expectedScope': reg.expectedScope},
         ],
         'executed': r.ejecutados,
-        'diagnostics': [for (final d in r.diagnosticos) d.toJson()],
+        // **Conteo, no la lista.** Cada diagnóstico ya viajó en su propio
+        // evento mientras la corrida ocurría; repetirlo acá sería carga
+        // redundante. Lo que necesita ser verificable desde este documento
+        // es la CANTIDAD que cita `nextAction`, y para eso alcanza con los
+        // dos números.
+        'diagnostics': r.diagnosticos.length,
+        'blockingDiagnostics':
+            r.diagnosticos.where((d) => d.severity == Severity.bloquea).length,
         // **La causa estructurada, no solo su texto.** Es lo que permite que
         // `nextAction` nombre evidencia y que quien lo consuma no tenga que
         // volver a correr nada para confirmarla.
@@ -390,18 +397,17 @@ String? _queHacer(ResultadoDeCascada r) {
     CausaNoConcluyente.sinVerificadores =>
       'No hay ningún verificador registrado, así que no se miró nada. Los '
           'pasos se registran en el composition root: `cli`.',
-    // **`nadaEjecutado` puede concurrir con `alcanceNoObservable`.** Nada
-    // ejecutó también cuando la razón real es que nada se pudo OBSERVAR —no
-    // hay ningún sujeto «ajeno» que nombrar, y decir «ningún sujeto es de
-    // este stack: (nada)» estaría nombrando una lista vacía como si fuera
-    // evidencia. Cuando pasa eso, la causa real es la que sigue en la lista.
-    CausaNoConcluyente.nadaEjecutado => () {
-        final ajenos = r.alcance.observed.where((o) => !o.ofStack).toList();
-        if (ajenos.isEmpty) return _accionDeAlcanceNoObservable(r);
-        return 'Ningún sujeto del alcance es de este stack: '
-            '${ajenos.map((o) => o.subject).join(", ")}. No es un fallo, '
-            'pero tampoco se verificó nada. Revisá el alcance.';
-      }(),
+    // **Si `alcanceNoObservable` no ganó ya más arriba, acá SIEMPRE hay
+    // algún ajeno que nombrar.** `causas` pone lo no observable antes que
+    // nada ejecutado (ver su comentario en `cascada.dart`): que
+    // `nadaEjecutado` sea la primera causa significa que no hubo ningún
+    // sujeto inobservable, y sin utilizables ni inobservables lo único que
+    // puede haber dejado al alcance vacío es que todo lo pedido resultó
+    // ajeno al stack.
+    CausaNoConcluyente.nadaEjecutado =>
+      'Ningún sujeto del alcance es de este stack: '
+          '${r.alcance.observed.where((o) => !o.ofStack).map((o) => o.subject).join(", ")}. '
+          'No es un fallo, pero tampoco se verificó nada. Revisá el alcance.',
     CausaNoConcluyente.alcanceNoObservable => _accionDeAlcanceNoObservable(r),
     CausaNoConcluyente.pasoAbortado => _accionDeAborto(r),
     CausaNoConcluyente.pasoNoConcluyente => _accionDeNoConcluyente(r),

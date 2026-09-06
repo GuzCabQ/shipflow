@@ -459,9 +459,17 @@ def _check_readme() -> None:
     # **El cierre se busca por profundidad de corchetes, no por `]);` literal.**
     # `Cascada` ganó un segundo argumento obligatorio —el observador de
     # alcance— así que la lista ya no es lo único entre paréntesis: cierra con
-    # `], observador: obs)`, no con `]);`. Buscar el corchete que de verdad
-    # cierra al que abre la lista es correcto con las dos formas, la de antes
-    # y la de ahora, y con cualquier otro argumento que se agregue después.
+    # `], observador: obs)`, no con `]);`. Contar la profundidad encuentra el
+    # `]` que hace juego con el `[` de `Cascada([` con la forma de antes y con
+    # la de ahora, sea cual sea lo que venga después del `]`.
+    #
+    # **No entiende Dart, y eso es una cuenta sobre caracteres, no sobre
+    # sintaxis.** Un `[` o un `]` dentro de una cadena o un comentario, ANTES
+    # del cierre real, la confunde igual que confundiría a cualquier regex.
+    # No es silencioso: recorta `cuerpo` antes de la lista real de pasos, y el
+    # `n_pasos == 0` que sigue lo caza y falla con su propio mensaje — no deja
+    # pasar un cambio sin detectarlo, pero tampoco es correcto con cualquier
+    # entrada.
     _desde = texto_verify.index("Cascada([")
     _apertura = _desde + len("Cascada(")
     _profundidad = 0

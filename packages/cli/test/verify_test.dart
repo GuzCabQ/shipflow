@@ -219,6 +219,41 @@ void main() {
       expect(salida, contains('ningún verificador registrado'));
       expect(salida, isNot(contains('--verbose')));
     });
+
+    test(
+        'alcance MIXTO —un ajeno y una ruta inexistente—: dice qué NO se '
+        'pudo observar, no que nada era del stack', () async {
+      // **Este es el caso mixto, no el puro.** El puro —todo inobservable,
+      // ningún ajeno— ya distinguía las causas porque `nadaEjecutado` no
+      // tenía ningún ajeno que nombrar, y una prueba solo con ese caso no
+      // habría notado la diferencia entre el arreglo y lo que ya había. Acá
+      // hay un ajeno DE VERDAD (LEEME.md) además de la ruta que ni se pudo
+      // mirar: antes del fix en `cascada.dart`, `nadaEjecutado` ganaba,
+      // nombraba a LEEME.md con toda normalidad —no el bug literal de
+      // nombrar evidencia ausente— y callaba que además hubo una ruta
+      // inobservable. Es la afirmación parcial que un review encontró.
+      final obs = ObservadorDeAlcanceFalso(
+        observados: {
+          'LEEME.md': ObservedSubject(
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
+        },
+        noObservados: const {'no/existe': 'no existe'},
+      );
+      final (c, salida) = await correr(
+        const ['--json', 'LEEME.md', 'no/existe'],
+        [Paso.verde('A')],
+        construir: (_) => Cascada([Paso.verde('A')], observador: obs),
+      );
+      expect(c, 2);
+      final doc = lineas(salida).last;
+      expect(doc['nextAction'], contains('No se pudo observar'));
+      expect(doc['nextAction'],
+          isNot(contains('Ningún sujeto del alcance es de este stack')),
+          reason: 'nombrar solo el ajeno callaría la ruta inobservable');
+    });
   });
 
   group('el libro de obligaciones', () {

@@ -228,14 +228,23 @@ class ResultadoDeCascada {
 
   /// Las causas, en el orden del flujo de decisión. La acción siguiente sale
   /// de la primera, y por eso solo puede nombrar evidencia presente.
+  ///
+  /// **Lo no observable va ANTES que nada ejecutado.** Es la misma
+  /// precedencia que `correr` ya aplica un nivel más abajo, por paso: «no
+  /// pude mirar» gana sobre «no había nada mío» (ver el comentario de esa
+  /// rama). Con un alcance mixto —un sujeto ajeno al stack y una ruta que ni
+  /// se pudo observar— las dos causas concurren, y si `nadaEjecutado` fuera
+  /// primera, [ResultadoDeCascada.causas] nombraría solo los ajenos: una
+  /// afirmación parcial que calla justo la ruta que no se pudo mirar. Un
+  /// review lo encontró.
   List<CausaNoConcluyente> get causas {
     final c = <CausaNoConcluyente>[];
     if (registrados.isEmpty) c.add(CausaNoConcluyente.sinVerificadores);
-    if (ejecutados.isEmpty && registrados.isNotEmpty) {
-      c.add(CausaNoConcluyente.nadaEjecutado);
-    }
     if (alcance.unobserved.isNotEmpty) {
       c.add(CausaNoConcluyente.alcanceNoObservable);
+    }
+    if (ejecutados.isEmpty && registrados.isNotEmpty) {
+      c.add(CausaNoConcluyente.nadaEjecutado);
     }
     if (desenlaces.values.any((d) => d is Aborted)) {
       c.add(CausaNoConcluyente.pasoAbortado);
