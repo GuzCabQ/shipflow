@@ -109,12 +109,26 @@ abstract base class PasoDeCascada implements Verifier {
     // testigo, la cobertura y la reconciliación: si cada una volviera a mirar,
     // podrían discrepar y el testigo afirmaría dos cosas incompatibles.
     final observacion = await observador.observe(pedidos);
+    // **Los motivos se arman en el orden en que se pidieron, no en el orden
+    // en que el observador los clasificó.** `separar` recorría los pedidos
+    // uno por uno; concatenar `observed` y `unobserved` como dos bloques
+    // separados da el mismo contenido pero, con un alcance que mezcla un
+    // sujeto ajeno con uno inobservable, en otro orden. Un review lo cobró.
+    final ajenoPorSujeto = {
+      for (final o in observacion.observed)
+        if (!o.ofStack) o.subject: o.reason,
+    };
+    final causaPorSujeto = {
+      for (final u in observacion.unobserved) u.subject: u.cause,
+    };
     final alcance = (
       sanos: observacion.usable(),
       motivos: <String>[
-        for (final o in observacion.observed)
-          if (!o.ofStack) '${o.subject}: ${o.reason}',
-        for (final u in observacion.unobserved) '${u.subject}: ${u.cause}',
+        for (final s in observacion.requested)
+          if (ajenoPorSujeto[s] case final motivo?)
+            '$s: $motivo'
+          else if (causaPorSujeto[s] case final causa?)
+            '$s: $causa',
       ],
       archivos: observacion.observed
           .where((o) => o.ofStack)

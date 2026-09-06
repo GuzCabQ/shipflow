@@ -83,6 +83,37 @@ void main() {
           reason: 'una sola foto del árbol por corrida de paso');
     });
 
+    test(
+        'los motivos respetan el orden en que se PIDIERON, no el orden en '
+        'que el observador los clasificó', () async {
+      // `separar` recorría los pedidos uno por uno y agregaba cada motivo en
+      // ese momento. Concatenar `observed` y `unobserved` como dos bloques
+      // separados da el mismo contenido, pero en otro orden apenas una misma
+      // corrida mezcla un sujeto ajeno con uno inobservable. Acá se pide
+      // primero el inobservable y después el ajeno: si el paso agrupara por
+      // clasificación en vez de recorrer el pedido, este orden saldría
+      // invertido y ninguna otra prueba lo notaría.
+      final falso = ObservadorDeAlcanceFalso(
+        observados: {
+          'ajeno': ObservedSubject(
+              subject: 'ajeno',
+              ofStack: false,
+              files: 0,
+              reason: 'el observador dice que no es del stack'),
+        },
+        noObservados: {'fantasma': 'el observador dice que no se pudo mirar'},
+      );
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+          directorio: raiz.path,
+          observador: falso);
+      final r = await paso.run(['fantasma', 'ajeno']);
+      expect(r.witness!.omitted, [
+        'fantasma: el observador dice que no se pudo mirar',
+        'ajeno: el observador dice que no es del stack',
+      ]);
+    });
+
     test('lo descartado NO llega a la herramienta', () async {
       // `separar` clasificaba bien y la invocación se armaba igual con TODOS
       // los pedidos: `verify README.md` le daba el markdown a la herramienta

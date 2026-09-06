@@ -24,6 +24,15 @@ dependencies:
 # Pruebas UNITARIAS de esta implementación: lo que solo ella puede ejercer
 # —resolver rutas, rechazar un manifiesto ilegible— y que por eso no pertenece
 # a la suite de contrato, donde el fake no tendría nada equivalente que hacer.
+#
+# `plugin_fake` entra acá y no arriba: `flechas entre paquetes internos`
+# permite que `plugin_dart` vea `core` y nada más entre paquetes internos.
+# Subirla a `dependencies` la rechaza el check (probado). La excepción está
+# declarada explícita en `arquitectura.json`, regla `deps-hacia-core`, clave
+# `excepciones_dev_dependencies`, con su motivo: que los tests de un plugin
+# usen el doble de un puerto de `core` no es la arista que esa regla existe
+# para impedir — la que importa es que `orchestration` no vea ningún plugin,
+# y esta dependencia no la toca.
 dev_dependencies:
   test: ^1.25.0
   plugin_fake:
