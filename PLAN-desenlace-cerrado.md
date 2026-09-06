@@ -2245,6 +2245,135 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Tarea 8b · El paso no puede contradecir en silencio a la cascada
+
+**Agregada en ejecución**, por un hallazgo de la revisión de las tareas 7 y 8. No estaba en el plan original y su ausencia era un falso verde que se habría ido con la rebanada.
+
+**El problema, medido.** La cascada observa el alcance una vez y le pasa a cada paso solo los sujetos utilizables. Pero el paso **vuelve a observar** esos mismos sujetos por su cuenta, y si su foto discrepa de la de la cascada —porque el árbol cambió entre las dos lecturas— descarta el sujeto y lo declara como omisión **con su sujeto**. Una omisión con sujeto **salda** la obligación de ese par paso-sujeto. Falla abierto: el sujeto queda sin verificar y la corrida puede salir verde.
+
+El caso de divergencia total ya está cerrado: un alcance sin sujetos utilizables lanza desde la tarea 6. Lo que falta es la divergencia **parcial**.
+
+**Archivos:**
+- Modificar: `packages/plugin_dart/lib/src/pasos.dart`
+- Modificar: `packages/plugin_dart/test/pasos_test.dart`
+
+**Interfaces:**
+- Consume: `ScopeObservation`, `Aborted`, `Attempt`, `Termination`.
+- Produce: ningún tipo nuevo. Cambia qué devuelve `run` cuando su observación discrepa de lo que le entregaron.
+
+- [ ] **Paso 1: escribir la prueba que falla**
+
+```dart
+  test('si la observación del paso discrepa de lo que le entregaron, ABORTA',
+      () async {
+    // La cascada observa una vez y entrega solo los sujetos utilizables. Si el
+    // paso vuelve a mirar y ve otra cosa, el árbol cambió entre las dos
+    // lecturas y la evidencia de la corrida dejó de ser coherente.
+    //
+    // Lo que NO puede hacer es descartar el sujeto y declararlo como omisión
+    // con su sujeto: eso SALDA la obligación de ese par paso-sujeto, y el
+    // sujeto queda sin verificar con la corrida en verde. Falla abierto.
+    final discrepante = ObservadorDeAlcanceFalso(observados: {
+      'lib/a.dart': ObservedSubject(
+          subject: 'lib/a.dart', ofStack: true, files: 1),
+      'lib/b.dart': ObservedSubject(
+          subject: 'lib/b.dart',
+          ofStack: false,
+          files: 0,
+          reason: 'el árbol cambió entre las dos lecturas'),
+    });
+    final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+    final paso = PasoDeFormato(
+        ejecutor: ejecutor, directorio: raiz.path, observador: discrepante);
+
+    final o = await paso.run(['lib/a.dart', 'lib/b.dart']);
+
+    expect(o, isA<Aborted>(),
+        reason: 'no se puede concluir sobre un alcance que cambió debajo');
+    expect((o as Aborted).attempt.termination, Termination.interrumpida);
+    expect(o.attempt.note, contains('lib/b.dart'),
+        reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
+    expect(ejecutor.invocaciones, isEmpty,
+        reason: 'no se invoca la herramienta sobre un alcance incoherente');
+  });
+
+  test('y sin discrepancia sigue ejecutando normalmente', () async {
+    // El control negativo: sin esto, un paso que abortara SIEMPRE pasaría la
+    // prueba de arriba por la vía de no funcionar.
+    final coherente = ObservadorDeAlcanceFalso(observados: {
+      'lib/a.dart': ObservedSubject(
+          subject: 'lib/a.dart', ofStack: true, files: 1),
+    });
+    final o = await PasoDeFormato(
+            ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+            directorio: raiz.path,
+            observador: coherente)
+        .run(['lib/a.dart']);
+    expect(o, isA<Executed>());
+    expect((o as Executed).verdict, Verdict.verde);
+  });
+```
+
+- [ ] **Paso 2: correr y ver que falla**
+
+```
+dart test packages/plugin_dart/test/pasos_test.dart
+```
+
+Esperado: el primer caso falla porque hoy devuelve un ejecutado con `lib/b.dart` como omisión con sujeto.
+
+- [ ] **Paso 3: implementar**
+
+En `run`, después de traducir la observación y **antes** de decidir cualquier otra cosa, comprobá que todo sujeto entregado siga siendo utilizable según la propia observación del paso. Si alguno no lo es:
+
+```dart
+    // **La cascada ya vetó estos sujetos.** Que la observación del paso vea
+    // otra cosa significa que el árbol cambió entre las dos lecturas, y
+    // entonces la evidencia de la corrida no es coherente.
+    //
+    // Descartarlo como omisión con sujeto sería peor que inútil: una omisión
+    // con sujeto SALDA la obligación de ese par paso-sujeto, así que el sujeto
+    // quedaría sin verificar y la corrida podría salir verde. Falla abierto, y
+    // es justo el modo de fallo que esta rebanada existe para cerrar.
+    final discrepan = pedidos.where((s) => !alcance.sanos.contains(s)).toList();
+    if (discrepan.isNotEmpty) {
+      return Aborted(
+          attempt: Attempt(
+        invocation: '',
+        subjects: pedidos,
+        termination: Termination.interrumpida,
+        exitCode: -1,
+        note: 'El alcance cambió entre la observación de la corrida y la de '
+            'este paso: ${discrepan.join(", ")} ya no es utilizable. No se '
+            'invocó nada: no se puede concluir sobre un alcance incoherente.',
+        finishedAt: DateTime.now().toUtc(),
+      ));
+    }
+```
+
+**Cuidado con dos cosas.** `Attempt` exige una invocación no vacía en algunos diseños y una lista de sujetos no vacía siempre: comprobá qué exige el tipo real y ajustá, sin aflojar el tipo. Y este bloque va **después** del que lanza cuando no queda ningún sujeto utilizable, que ya existe y no se toca.
+
+- [ ] **Paso 4: correr, formatear, checks y commit**
+
+```
+dart test packages/core packages/orchestration packages/plugin_dart
+dart format packages tool
+dart format --output=none --set-exit-if-changed packages tool
+python3 tool/checks/capas.py
+(cd tool/analisis && dart run bin/check.dart)
+```
+
+```bash
+git add packages
+git commit -m "El paso no puede contradecir en silencio a la cascada
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
+
+**Lo que esta tarea NO hace, y queda declarado.** No elimina la doble lectura del árbol: para eso el paso tendría que recibir la observación de la cascada, y eso cambia la firma del puerto. Lo que hace es que la segunda lectura no pueda **discrepar en silencio**: pasa de fallar abierto a fallar cerrado.
+
+---
+
 ## Tarea 9 · El CLI, y el esquema 2
 
 Cierra el árbol: al terminar esta tarea todo vuelve a compilar y a correr.
