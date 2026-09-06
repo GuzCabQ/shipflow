@@ -99,7 +99,8 @@ abstract base class PasoDeCascada implements Verifier {
     // par paso-sujeto, y por eso viene del observador y no se resume a texto.
     final omisionPorSujeto = <String, Omission>{
       for (final o in observacion.observed)
-        if (!o.ofStack) o.subject: Omission(subject: o.subject, reason: o.reason!),
+        if (!o.ofStack)
+          o.subject: Omission(subject: o.subject, reason: o.reason!),
       for (final u in observacion.unobserved)
         u.subject: Omission(subject: u.subject, reason: u.cause),
     };

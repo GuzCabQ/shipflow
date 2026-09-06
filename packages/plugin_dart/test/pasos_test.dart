@@ -90,8 +90,7 @@ void main() {
       final vedado = Directory('${raiz.path}/vedado')..createSync();
       Process.runSync('chmod', ['000', vedado.path]);
       addTearDown(() => Process.runSync('chmod', ['755', vedado.path]));
-      expect(
-          () => analisis(salida(estandar: analisisLimpio)).run(['vedado']),
+      expect(() => analisis(salida(estandar: analisisLimpio)).run(['vedado']),
           throwsArgumentError);
     }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
   });
@@ -143,8 +142,7 @@ void main() {
           ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
           directorio: raiz.path,
           observador: falso);
-      final o = await paso.run(['fantasma', 'ajeno', 'lib'])
-          as Executed;
+      final o = await paso.run(['fantasma', 'ajeno', 'lib']) as Executed;
       // La forma cambió de cadenas «sujeto: motivo» a `Omission` tipada, pero
       // la propiedad que fija el orden es la misma: sigue el orden del
       // pedido, no el de la clasificación.
@@ -209,7 +207,8 @@ void main() {
               error: 'No such file or directory'))
           .run(['lib']);
       expect(o, isA<Aborted>());
-      expect((o as Aborted).attempt.termination, Termination.herramientaAusente);
+      expect(
+          (o as Aborted).attempt.termination, Termination.herramientaAusente);
       expect(o.attempt.note, isNotEmpty);
     });
 
@@ -293,8 +292,8 @@ void main() {
           reason:
               'certificar una ruta que la herramienta dijo que no encuentra '
               'es exactamente lo que ADR-011 prohíbe');
-      expect(o.witness.omitted.map((x) => x.reason).join(),
-          contains('no existe'));
+      expect(
+          o.witness.omitted.map((x) => x.reason).join(), contains('no existe'));
       expect(o.witness.omitted.single.subject, 'no/existe');
     });
 
@@ -327,8 +326,8 @@ void main() {
           .run(['lib', 'dos']) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.witness.subjects, isEmpty);
-      expect(o.witness.omitted.map((x) => x.reason).join(),
-          contains('No cierra'));
+      expect(
+          o.witness.omitted.map((x) => x.reason).join(), contains('No cierra'));
     });
 
     test('miró todos: certifica los dos sujetos', () async {
@@ -372,8 +371,8 @@ void main() {
     });
 
     test('un archivo mirado y limpio sí es verde', () async {
-      final o =
-          await formato(salida(estandar: formatoLimpio)).run(['lib']) as Executed;
+      final o = await formato(salida(estandar: formatoLimpio)).run(['lib'])
+          as Executed;
       expect(o.verdict, Verdict.verde);
       expect(o.witness.subjects, ['lib']);
       expect(o.witness.omitted, isEmpty);
@@ -404,8 +403,8 @@ void main() {
   group('StaticAnalysis · NO puede, y lo declara', () {
     test('declara siempre que no sabe qué archivos leyó la herramienta',
         () async {
-      final o =
-          await analisis(salida(estandar: analisisLimpio)).run(['lib']) as Executed;
+      final o = await analisis(salida(estandar: analisisLimpio)).run(['lib'])
+          as Executed;
       expect(o.witness.omitted.map((x) => x.reason).join(),
           contains('no informa qué archivos leyó'));
       expect(o.verdict, Verdict.verde,

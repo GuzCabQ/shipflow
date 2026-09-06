@@ -189,10 +189,7 @@ void main() {
       Executed(witness: testigo, diagnostics: [diagnostico]).toJson(),
       Executed.fromJson
     ),
-    'Aborted': (
-      Aborted(attempt: intento).toJson(),
-      Aborted.fromJson
-    ),
+    'Aborted': (Aborted(attempt: intento).toJson(), Aborted.fromJson),
     // **`Skipped` NO entra acá.** `Skipped` ahora rechaza cualquier sujeto
     // que el observador haya declarado del stack (invariante nueva, ver la
     // suite de verificación), así que la única instancia válida de
@@ -246,7 +243,8 @@ void main() {
           ObservedSubject(subject: 'lib', ofStack: true, files: 2),
         ],
         unobserved: [
-          UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol'),
+          UnobservedSubject(
+              subject: 'no/existe', cause: 'no existe en el árbol'),
         ],
         observedAt: DateTime.utc(2026, 9, 5),
       ).toJson(),
@@ -349,8 +347,7 @@ void main() {
     // `reason` es nulo cuando el sujeto SÍ es del stack, y eso es correcto:
     // se excluye de la comprobación de vacíos porque su ausencia es el dato.
     final json = o.toJson();
-    (json['observed']! as List).forEach((e) =>
-        (e as Map).remove('reason'));
+    (json['observed']! as List).forEach((e) => (e as Map).remove('reason'));
     expect(valoresPorDefecto(json), isEmpty);
     expect(ScopeObservation.fromJson(o.toJson()).toJson(), o.toJson());
   });
@@ -371,8 +368,9 @@ void main() {
           subject: 'lib/ajeno-b', ofStack: false, files: 0, reason: 'motivo b'),
     ]);
     final json = s.toJson();
-    (json['notOfStack']! as List)
-        .forEach((e) => (e as Map)..remove('files')..remove('ofStack'));
+    (json['notOfStack']! as List).forEach((e) => (e as Map)
+      ..remove('files')
+      ..remove('ofStack'));
     expect(valoresPorDefecto(json), isEmpty);
     expect(Skipped.fromJson(s.toJson()).toJson(), s.toJson());
   });

@@ -30,21 +30,27 @@ class ObservedSubject {
     this.reason,
   }) {
     if (subject.trim().isEmpty) {
-      throw ArgumentError.value(subject, 'subject', 'Un sujeto en blanco no nombra nada');
+      throw ArgumentError.value(
+          subject, 'subject', 'Un sujeto en blanco no nombra nada');
     }
     if (files < 0) {
-      throw ArgumentError.value(files, 'files', 'Un conteo negativo no significa nada');
+      throw ArgumentError.value(
+          files, 'files', 'Un conteo negativo no significa nada');
     }
     if (ofStack) {
       if (files < 1) {
-        throw ArgumentError.value(files, 'files',
+        throw ArgumentError.value(
+            files,
+            'files',
             'Un sujeto del stack con cero archivos afirma dos cosas '
-            'incompatibles. Si no hay archivos, no es del stack');
+                'incompatibles. Si no hay archivos, no es del stack');
       }
       if (reason != null) {
-        throw ArgumentError.value(reason, 'reason',
+        throw ArgumentError.value(
+            reason,
+            'reason',
             'El motivo explica por qué un sujeto NO es del stack. Uno que sí '
-            'lo es no tiene qué explicar');
+                'lo es no tiene qué explicar');
       }
     } else {
       if (files != 0) {
@@ -52,17 +58,24 @@ class ObservedSubject {
             'Un sujeto ajeno al stack no aporta archivos de fuente');
       }
       if (reason == null || reason!.trim().isEmpty) {
-        throw ArgumentError.value(reason, 'reason',
+        throw ArgumentError.value(
+            reason,
+            'reason',
             'Un sujeto que se descarta sin decir por qué es un descarte '
-            'silencioso, y el corolario 1 de ADR-011 lo prohíbe');
+                'silencioso, y el corolario 1 de ADR-011 lo prohíbe');
       }
     }
   }
 
-  Map<String, Object?> toJson() =>
-      {'subject': subject, 'ofStack': ofStack, 'files': files, 'reason': reason};
+  Map<String, Object?> toJson() => {
+        'subject': subject,
+        'ofStack': ofStack,
+        'files': files,
+        'reason': reason
+      };
 
-  factory ObservedSubject.fromJson(Map<String, Object?> json) => ObservedSubject(
+  factory ObservedSubject.fromJson(Map<String, Object?> json) =>
+      ObservedSubject(
         subject: json['subject']! as String,
         ofStack: json['ofStack']! as bool,
         files: json['files']! as int,
@@ -80,7 +93,8 @@ class UnobservedSubject {
 
   UnobservedSubject({required this.subject, required this.cause}) {
     if (subject.trim().isEmpty) {
-      throw ArgumentError.value(subject, 'subject', 'Un sujeto en blanco no nombra nada');
+      throw ArgumentError.value(
+          subject, 'subject', 'Un sujeto en blanco no nombra nada');
     }
     if (cause.trim().isEmpty) {
       throw ArgumentError.value(cause, 'cause',
@@ -120,9 +134,11 @@ class ScopeObservation {
     ];
     final unicos = vistos.toSet();
     if (unicos.length != vistos.length) {
-      throw ArgumentError.value(vistos, 'observed/unobserved',
+      throw ArgumentError.value(
+          vistos,
+          'observed/unobserved',
           'Hay un sujeto clasificado dos veces. Un sujeto se pudo mirar o no '
-          'se pudo, y no las dos cosas');
+              'se pudo, y no las dos cosas');
     }
     final pedidos = this.requested.toSet();
     if (pedidos.length != this.requested.length) {
@@ -131,23 +147,29 @@ class ScopeObservation {
     }
     final faltan = pedidos.difference(unicos);
     if (faltan.isNotEmpty) {
-      throw ArgumentError.value(faltan.toList(), 'observed/unobserved',
+      throw ArgumentError.value(
+          faltan.toList(),
+          'observed/unobserved',
           'Estos sujetos se pidieron y no se clasificaron. Un sujeto que '
-          'desaparece acá no lo ve ninguna guardia posterior, y la corrida '
-          'puede salir verde sobre algo que nadie miró');
+              'desaparece acá no lo ve ninguna guardia posterior, y la corrida '
+              'puede salir verde sobre algo que nadie miró');
     }
     final sobran = unicos.difference(pedidos);
     if (sobran.isNotEmpty) {
-      throw ArgumentError.value(sobran.toList(), 'observed/unobserved',
+      throw ArgumentError.value(
+          sobran.toList(),
+          'observed/unobserved',
           'Estos sujetos se clasificaron y no se pidieron. La identidad es la '
-          'cadena tal como se pidió: si el observador canoniza, no puede '
-          'renombrar lo que devuelve');
+              'cadena tal como se pidió: si el observador canoniza, no puede '
+              'renombrar lo que devuelve');
     }
   }
 
   /// Los sujetos sobre los que tiene sentido invocar algo.
-  List<String> usable() =>
-      List.unmodifiable([for (final o in observed) if (o.ofStack) o.subject]);
+  List<String> usable() => List.unmodifiable([
+        for (final o in observed)
+          if (o.ofStack) o.subject
+      ]);
 
   Map<String, Object?> toJson() => {
         'requested': requested,

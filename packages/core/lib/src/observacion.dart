@@ -172,4 +172,3 @@ class Finding {
             Map<String, Object?>.from(json['note']! as Map)),
       );
 }
-

@@ -120,7 +120,8 @@ void main() {
         expect(o.witness.subjects.every((s) => s == 'lib'), isTrue);
       });
 
-      test('cláusula 7 · y SÍ da verde cuando de verdad corrió y no encontró '
+      test(
+          'cláusula 7 · y SÍ da verde cuando de verdad corrió y no encontró '
           'nada', () async {
         // Sin esto, un paso que devolviera no concluyente siempre pasaría
         // todas las cláusulas de arriba, por la vía de no funcionar.

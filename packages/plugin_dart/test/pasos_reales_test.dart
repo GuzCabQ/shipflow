@@ -43,8 +43,7 @@ void main() {
       directorio: raiz.path,
       presupuesto: const Duration(minutes: 2));
 
-  test(
-      'la herramienta calla sobre lo que no existe, y el arnés no lo invoca',
+  test('la herramienta calla sobre lo que no existe, y el arnés no lo invoca',
       () async {
     // **La premisa, medida contra la herramienta real y no supuesta.** Es la
     // razón de ser de toda la defensa: sobre una ruta inexistente esta
@@ -82,8 +81,7 @@ void main() {
   test('código limpio y formateado da verde en los dos pasos', () async {
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
     expect((await formato().run(['lib/']) as Executed).verdict, Verdict.verde);
-    expect(
-        (await analisis().run(['lib/']) as Executed).verdict, Verdict.verde);
+    expect((await analisis().run(['lib/']) as Executed).verdict, Verdict.verde);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un archivo sin formatear lo encuentra el paso real', () async {

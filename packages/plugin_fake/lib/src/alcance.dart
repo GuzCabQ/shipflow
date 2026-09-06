@@ -38,9 +38,11 @@ class ObservadorDeAlcanceFalso implements ScopeObserver {
       // **Un sujeto que la tabla no declara no se inventa como ajeno.** Sería
       // el fake decidiendo, que es justo lo que el puerto vino a impedir.
       if (o == null) {
-        throw ArgumentError.value(s, 'requested',
+        throw ArgumentError.value(
+            s,
+            'requested',
             'El fake no tiene declarado este sujeto. Declaralo en `observados` '
-            'o en `noObservados`: adivinar sería clasificar por su cuenta');
+                'o en `noObservados`: adivinar sería clasificar por su cuenta');
       }
       vistos.add(o);
     }

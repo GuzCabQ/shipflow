@@ -452,7 +452,8 @@ void main(List<String> args) {
     final declarada = opacos[c.nombre] as Map<String, Object?>?;
     final necesitaElegir = c.esSellada || c.camposPublicos.isNotEmpty;
     if (declarada == null) {
-      if (necesitaElegir && (c.clavesToJson == null || c.clavesFromJson == null)) {
+      if (necesitaElegir &&
+          (c.clavesToJson == null || c.clavesFromJson == null)) {
         final que = c.esSellada
             ? 'es la base de una jerarquía sellada'
             : 'tiene campos';

@@ -33,7 +33,8 @@ void main() {
         pedidos: const ['lib', 'no/existe'],
         observados: [delStack('lib', archivos: 3)],
         noObservados: [
-          UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+          UnobservedSubject(
+              subject: 'no/existe', cause: 'no existe en el árbol')
         ],
       );
       expect(o.usable(), ['lib']);
@@ -42,7 +43,8 @@ void main() {
     test('un sujeto pedido que no aparece en ninguna lista se rechaza', () {
       // El agujero: desaparece antes de calcular lo utilizable y nadie lo ve.
       expect(
-          () => obs(pedidos: const ['lib', 'test'], observados: [delStack('lib')]),
+          () => obs(
+              pedidos: const ['lib', 'test'], observados: [delStack('lib')]),
           throwsArgumentError);
     });
 

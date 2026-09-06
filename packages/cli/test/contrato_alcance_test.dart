@@ -64,8 +64,8 @@ void main() {
     group(nombre, () {
       test('cláusula 1 · la observación particiona lo pedido', () async {
         final e = armar();
-        final o = await e.observador
-            .observe([e.delStack, e.ajeno, e.inobservable]);
+        final o =
+            await e.observador.observe([e.delStack, e.ajeno, e.inobservable]);
         final clasificados = {
           ...o.observed.map((x) => x.subject),
           ...o.unobserved.map((x) => x.subject),

@@ -73,7 +73,8 @@ void main() {
     // Está medido: la herramienta del stack salta los componentes ocultos al
     // recorrer. Contarlos haría que la reconciliación no cerrara nunca.
     Directory('${raiz.path}/lib/.oculto').createSync();
-    File('${raiz.path}/lib/.oculto/c.dart').writeAsStringSync('void main() {}\n');
+    File('${raiz.path}/lib/.oculto/c.dart')
+        .writeAsStringSync('void main() {}\n');
     final o = await obs.observe(['lib']);
     expect(unico(o).files, 1);
   });

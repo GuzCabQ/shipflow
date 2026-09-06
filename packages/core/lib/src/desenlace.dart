@@ -31,13 +31,15 @@ class Omission {
   /// corre en producción, y este invariante tiene que valer siempre.
   Omission({this.subject, required this.reason}) {
     if (reason.trim().isEmpty) {
-      throw ArgumentError.value(reason, 'reason',
-          'Una omisión sin motivo no dice qué quedó afuera');
+      throw ArgumentError.value(
+          reason, 'reason', 'Una omisión sin motivo no dice qué quedó afuera');
     }
     if (subject != null && subject!.trim().isEmpty) {
-      throw ArgumentError.value(subject, 'subject',
+      throw ArgumentError.value(
+          subject,
+          'subject',
           'Un sujeto en blanco no nombra nada. Si la omisión no es de ningún '
-          'sujeto, dejalo nulo: eso significa residuo general');
+              'sujeto, dejalo nulo: eso significa residuo general');
     }
   }
 
@@ -82,9 +84,11 @@ class Attempt {
               'hay un intento que registrar sobre ella');
     }
     if (termination == Termination.completa) {
-      throw ArgumentError.value(termination, 'termination',
+      throw ArgumentError.value(
+          termination,
+          'termination',
           'Un intento que terminó completo no es un intento: es un testigo. '
-          'Construí un Witness, no un Attempt');
+              'Construí un Witness, no un Attempt');
     }
     if (note.trim().isEmpty) {
       throw ArgumentError.value(
@@ -104,8 +108,7 @@ class Attempt {
   factory Attempt.fromJson(Map<String, Object?> json) => Attempt(
         invocation: json['invocation']! as String,
         subjects: List<String>.from(json['subjects']! as List<Object?>),
-        termination:
-            Termination.values.byName(json['termination']! as String),
+        termination: Termination.values.byName(json['termination']! as String),
         exitCode: json['exitCode']! as int,
         note: json['note']! as String,
         finishedAt: DateTime.parse(json['finishedAt']! as String),
@@ -206,8 +209,8 @@ class Executed extends VerificationOutcome {
           'Executed.fromJson recibió un discriminador que no es el suyo');
     }
     return Executed(
-      witness: Witness.fromJson(
-          Map<String, Object?>.from(json['witness']! as Map)),
+      witness:
+          Witness.fromJson(Map<String, Object?>.from(json['witness']! as Map)),
       diagnostics: [
         for (final d in json['diagnostics']! as List<Object?>)
           Diagnostic.fromJson(Map<String, Object?>.from(d! as Map)),
@@ -256,9 +259,11 @@ class Skipped extends StepOutcome {
   Skipped({required List<ObservedSubject> notOfStack})
       : notOfStack = List.unmodifiable(notOfStack) {
     if (this.notOfStack.isEmpty) {
-      throw ArgumentError.value(notOfStack, 'notOfStack',
+      throw ArgumentError.value(
+          notOfStack,
+          'notOfStack',
           'Un salto sin sujetos ajenos no es un salto: no hay nada que '
-          'explique por qué el paso no tenía nada que hacer');
+              'explique por qué el paso no tenía nada que hacer');
     }
     final propios = this.notOfStack.where((o) => o.ofStack).toList();
     if (propios.isNotEmpty) {
@@ -302,9 +307,11 @@ class Unobservable extends StepOutcome {
   Unobservable({required List<UnobservedSubject> causes})
       : causes = List.unmodifiable(causes) {
     if (this.causes.isEmpty) {
-      throw ArgumentError.value(causes, 'causes',
+      throw ArgumentError.value(
+          causes,
+          'causes',
           'Lo no observable sin causa no dice qué no se pudo mirar ni por '
-          'qué');
+              'qué');
     }
   }
 

@@ -29,7 +29,8 @@ Witness testigo({
 void main() {
   group('el veredicto de un paso ejecutado se deriva', () {
     test('con cobertura y sin bloqueantes: verde', () {
-      expect(Executed(witness: testigo(), diagnostics: []).verdict, Verdict.verde);
+      expect(
+          Executed(witness: testigo(), diagnostics: []).verdict, Verdict.verde);
     });
 
     test('con cobertura y un bloqueante: rojo', () {
@@ -49,11 +50,10 @@ void main() {
     test('sin cobertura: no concluyente, aunque no haya diagnósticos', () {
       expect(
           Executed(
-                  witness: testigo(
-                      sujetos: const [],
-                      omitido: [Omission(reason: 'no miró nada')]),
-                  diagnostics: [])
-              .verdict,
+              witness: testigo(
+                  sujetos: const [],
+                  omitido: [Omission(reason: 'no miró nada')]),
+              diagnostics: []).verdict,
           Verdict.noConcluyente);
     });
 
@@ -116,7 +116,8 @@ void main() {
     });
   });
 
-  group('invariantes de constructor de las variantes que un verificador '
+  group(
+      'invariantes de constructor de las variantes que un verificador '
       'NO puede devolver', () {
     test('un intento nunca es una terminación completa', () {
       expect(
@@ -150,7 +151,8 @@ void main() {
       expect(() => Skipped(notOfStack: const []), throwsArgumentError);
     });
 
-    test('un salto no acepta un sujeto que el observador declaró del stack', () {
+    test('un salto no acepta un sujeto que el observador declaró del stack',
+        () {
       // El falso verde de la premisa, mudado un nivel arriba: el desenlace
       // que afirma «ninguno de estos era mío» no puede listar uno que sí lo
       // era.
@@ -183,7 +185,8 @@ void main() {
     });
   });
 
-  group('las variantes que un verificador NO puede devolver, en la '
+  group(
+      'las variantes que un verificador NO puede devolver, en la '
       'jerarquía', () {
     // Ninguno de los casos de arriba afirma esto: todos prueban invariantes
     // de constructor, no la forma del árbol de tipos. Si mañana `Skipped`
@@ -196,7 +199,8 @@ void main() {
       expect(s, isNot(isA<VerificationOutcome>()));
     });
 
-    test('lo no observable no es un desenlace que un verificador pueda '
+    test(
+        'lo no observable no es un desenlace que un verificador pueda '
         'devolver', () {
       final StepOutcome u = Unobservable(
           causes: [UnobservedSubject(subject: 'a', cause: 'no existe')]);
@@ -204,8 +208,7 @@ void main() {
     });
 
     test('lo roto no es un desenlace que un verificador pueda devolver', () {
-      final StepOutcome b =
-          Broken(component: 'A', error: 'x', context: 'y');
+      final StepOutcome b = Broken(component: 'A', error: 'x', context: 'y');
       expect(b, isNot(isA<VerificationOutcome>()));
     });
 
@@ -259,7 +262,7 @@ void main() {
           isA<Skipped>());
       expect(
           StepOutcome.fromJson(Unobservable(
-              causes: [UnobservedSubject(subject: 'a', cause: 'no existe')])
+                  causes: [UnobservedSubject(subject: 'a', cause: 'no existe')])
               .toJson()),
           isA<Unobservable>());
       expect(
@@ -268,7 +271,8 @@ void main() {
           isA<Broken>());
     });
 
-    test('un discriminador desconocido lanza, no cae en la variante más '
+    test(
+        'un discriminador desconocido lanza, no cae en la variante más '
         'benigna', () {
       expect(() => StepOutcome.fromJson(const {'kind': 'inventado'}),
           throwsArgumentError);
@@ -291,11 +295,11 @@ void main() {
           isA<Aborted>());
     });
 
-    test('VerificationOutcome.fromJson lanza ante lo que un verificador NO '
+    test(
+        'VerificationOutcome.fromJson lanza ante lo que un verificador NO '
         'puede devolver, al deserializar y no en el sitio del cast', () {
       final salto = Skipped(notOfStack: [
-        ObservedSubject(
-            subject: 'a', ofStack: false, files: 0, reason: 'ajeno')
+        ObservedSubject(subject: 'a', ofStack: false, files: 0, reason: 'ajeno')
       ]).toJson();
       expect(() => VerificationOutcome.fromJson(salto), throwsArgumentError);
 
@@ -305,8 +309,7 @@ void main() {
       expect(() => VerificationOutcome.fromJson(inobservable),
           throwsArgumentError);
 
-      final roto =
-          Broken(component: 'A', error: 'x', context: 'y').toJson();
+      final roto = Broken(component: 'A', error: 'x', context: 'y').toJson();
       expect(() => VerificationOutcome.fromJson(roto), throwsArgumentError);
     });
   });
