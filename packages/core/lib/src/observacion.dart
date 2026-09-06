@@ -1,5 +1,4 @@
-/// Lo que el arnés observa: trazas, hallazgos inferenciales y resultados de
-/// verificación.
+/// Lo que el arnés observa: trazas y hallazgos inferenciales.
 library;
 
 import 'entidades.dart';
@@ -171,58 +170,5 @@ class Finding {
         line: json['line'] as int?,
         note: QuotedText.fromJson(
             Map<String, Object?>.from(json['note']! as Map)),
-      );
-}
-
-/// El resultado de un paso de la cascada: **par (diagnósticos, testigo)**.
-///
-/// [verdict] se **deriva**; no es un campo que alguien pueda escribir en verde.
-/// Sin [witness], o con un testigo que no atestigua sobre nada, el veredicto es
-/// [Verdict.noConcluyente] y se trata como rojo (INV-2, `D-001`, `D-003`).
-///
-/// Esta es la diferencia entera entre este arnés y el intento anterior: allá el
-/// verde era un valor que se asignaba; acá es una conclusión que se calcula, y
-/// solo se puede calcular si hubo alguien mirando.
-class VerificationOutcome {
-  final String verifierId;
-  final List<Diagnostic> diagnostics;
-
-  /// Qué corrió y sobre qué. `null` significa **que no corrió, o que nadie
-  /// registró que corriera**, y las dos cosas son lo mismo para el veredicto.
-  final Witness? witness;
-
-  /// Los diagnósticos se copian: el veredicto se deriva de ellos, y una lista
-  /// mutable desde afuera es un veredicto mutable desde afuera.
-  VerificationOutcome({
-    required this.verifierId,
-    required List<Diagnostic> diagnostics,
-    this.witness,
-  }) : diagnostics = List.unmodifiable(diagnostics);
-
-  /// El veredicto, calculado. No hay forma de fijarlo desde afuera.
-  Verdict get verdict {
-    final w = witness;
-    if (w == null || !w.attests) return Verdict.noConcluyente;
-    final bloquea = diagnostics.any((d) => d.severity == Severity.bloquea);
-    return bloquea ? Verdict.rojo : Verdict.verde;
-  }
-
-  Map<String, Object?> toJson() => {
-        'verifierId': verifierId,
-        'diagnostics': [for (final d in diagnostics) d.toJson()],
-        'witness': witness?.toJson(),
-      };
-
-  factory VerificationOutcome.fromJson(Map<String, Object?> json) =>
-      VerificationOutcome(
-        verifierId: json['verifierId']! as String,
-        diagnostics: [
-          for (final d in json['diagnostics']! as List<Object?>)
-            Diagnostic.fromJson(Map<String, Object?>.from(d! as Map)),
-        ],
-        witness: json['witness'] == null
-            ? null
-            : Witness.fromJson(
-                Map<String, Object?>.from(json['witness']! as Map)),
       );
 }

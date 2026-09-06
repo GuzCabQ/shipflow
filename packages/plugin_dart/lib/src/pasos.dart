@@ -7,22 +7,29 @@
 /// pedirle a cada uno que se acuerde del invariante, y eso ya falló.
 library;
 
-import 'dart:io';
-
 import 'package:core/core.dart';
-import 'package:path/path.dart' as rutas;
 
 import 'ejecutor.dart';
 import 'normalizadores.dart';
 
 /// Sobre qué pudo atestiguar un paso, y qué quedó afuera.
-typedef Cobertura = ({List<String> cubierto, List<String> omitido});
+typedef Cobertura = ({List<String> cubierto, List<Omission> omitido});
 
 /// Lo que el arnés sabe del alcance ANTES de creerle a la herramienta: qué
-/// sujetos son utilizables, por qué no lo son los demás, y **cuántos archivos
-/// hay que mirar**. Ese número es la mitad de una reconciliación; la otra la
-/// pone la herramienta.
-typedef Alcance = ({List<String> sanos, List<String> motivos, int archivos});
+/// sujetos son utilizables y **cuántos archivos hay que mirar**. Ese número
+/// es la mitad de una reconciliación; la otra la pone la herramienta.
+///
+/// **No lleva los motivos de lo que no es utilizable.** Los llevaba, como
+/// [Omission] con su sujeto, para que `run` los adjuntara al testigo — pero
+/// eso era saldar la obligación de ese sujeto sin haberlo verificado, que es
+/// justo el falso verde que la tarea 8b cierra. Un sujeto no utilizable
+/// aborta la corrida antes de llegar acá: por el momento en que se
+/// construye este record, todo sujeto pedido YA es sano, así que un campo de
+/// motivos solo podría llegar vacío.
+typedef Alcance = ({
+  List<String> sanos,
+  int archivos,
+});
 
 /// Un paso de la cascada que invoca una herramienta y normaliza su salida.
 abstract base class PasoDeCascada implements Verifier {
@@ -30,15 +37,16 @@ abstract base class PasoDeCascada implements Verifier {
   final String directorio;
   final Duration presupuesto;
 
-  const PasoDeCascada({
+  /// **El paso no mira el alcance y ya no tiene con qué.** ADR-011 corolario
+  /// 4 dice que ningún verificador juzga su propia incumbencia, y mientras el
+  /// paso guardó un `ScopeObserver` eso dependía de que nadie lo usara. Lo
+  /// usaba: una corrida de dos pasos leía el árbol tres veces. La observación
+  /// llega por parámetro, que es la única forma de que no haya una segunda.
+  PasoDeCascada({
     required this.ejecutor,
     required this.directorio,
     this.presupuesto = const Duration(minutes: 5),
   });
-
-  /// El sufijo de los archivos que estas herramientas leen. Vive en la base
-  /// porque los dos pasos necesitan contar el alcance por su cuenta.
-  static const sufijoDeFuente = '.dart';
 
   /// El programa y sus argumentos para un alcance dado.
   String get programa;
@@ -62,166 +70,103 @@ abstract base class PasoDeCascada implements Verifier {
   /// Devolver `cubierto` vacío es la forma de decir «no concluyente»: el
   /// testigo deja de atestiguar y el veredicto se deriva solo. No hay que
   /// acordarse de ponerlo en rojo.
-  Cobertura cobertura(List<String> pedidos, QuotedText salida);
-
-  /// Cuántos archivos de fuente hay bajo un sujeto, o el motivo por el que no
-  /// se pudo saber.
+  /// Recibe **el alcance ya separado**, no los pedidos.
   ///
-  /// **Los componentes ocultos no se cuentan al recorrer un directorio**, y
-  /// eso está medido: la herramienta salta todo lo que cuelga de una carpeta
-  /// que empieza con punto. Un sujeto nombrado explícitamente SÍ se procesa
-  /// aunque sea oculto, también medido, y por eso la regla se aplica a lo que
-  /// hay debajo del sujeto y no al sujeto.
-  ///
-  /// Sin esta fidelidad la reconciliación sería siempre distinta de cero y
-  /// todo terminaría no concluyente. Es un fallo ruidoso, no silencioso, pero
-  /// igual inservible.
-  ({int archivos, String? problema}) _mirar(String pedido) {
-    final absoluto =
-        rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
-    try {
-      if (File(absoluto).existsSync()) {
-        return absoluto.endsWith(sufijoDeFuente)
-            ? (archivos: 1, problema: null)
-            : (
-                archivos: 0,
-                problema: 'no es un archivo de fuente de este stack'
-              );
-      }
-      final carpeta = Directory(absoluto);
-      if (!carpeta.existsSync()) {
-        return (archivos: 0, problema: 'no existe en el árbol');
-      }
-      final cuantos = carpeta
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .where((f) => f.path.endsWith(sufijoDeFuente))
-          .where((f) => !rutas
-              .split(rutas.relative(f.path, from: absoluto))
-              .any((parte) => parte.startsWith('.')))
-          .length;
-      return cuantos == 0
-          ? (archivos: 0, problema: 'no contiene ningún archivo de fuente')
-          : (archivos: cuantos, problema: null);
-    } on FileSystemException catch (e) {
-      // **No poder mirar es un dato, no una excepción que se escapa.** Un
-      // directorio sin permisos hacía que `run` lanzara y el paso no
-      // devolviera testigo NINGUNO, que rompe la primera cláusula del puerto.
-      // Se atrapa esta familia y no `Object`: un error de programación tiene
-      // que seguir subiendo.
-      return (
-        archivos: 0,
-        problema: 'no se pudo mirar: ${e.osError?.message ?? e.message}',
-      );
-    }
-  }
-
-  /// El alcance separado en lo utilizable y lo que no, con la cuenta de
-  /// archivos de lo utilizable.
-  Alcance separar(List<String> pedidos) {
-    final sanos = <String>[];
-    final motivos = <String>[];
-    var archivos = 0;
-    for (final pedido in pedidos) {
-      final r = _mirar(pedido);
-      if (r.problema == null) {
-        sanos.add(pedido);
-        archivos += r.archivos;
-      } else {
-        motivos.add('$pedido: ${r.problema}');
-      }
-    }
-    return (sanos: sanos, motivos: motivos, archivos: archivos);
-  }
+  /// Antes lo volvía a separar por su cuenta, después del `await`: el mismo
+  /// testigo podía afirmar «cero elementos propios» y «cubrí lib» a la vez,
+  /// porque las dos afirmaciones salían de dos fotografías distintas del
+  /// árbol. Lo encontró un review con un ejecutor que creaba un archivo
+  /// durante la espera. Ahora hay una foto y viaja.
+  Cobertura cobertura(Alcance alcance, QuotedText salida);
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
-    // **Se copia y se congela antes de nada.** La lista es del llamador, que
-    // puede mutarla mientras el proceso está suspendido en el `await`: pasó, y
-    // el testigo quedó nombrando una invocación sobre un alcance y declarando
-    // cobertura sobre otro. Es el mismo invariante que `colecciones-inmutables`
-    // exige en `core`, acá en el punto donde se construye la evidencia.
-    final pedidos = List<String>.unmodifiable(subjects);
+  Future<VerificationOutcome> run(VerificationScope pedido) async {
+    // **El alcance lo trae quien compone, ya resuelto, y es el mismo para
+    // toda la corrida.** De acá salen los sujetos a invocar y el conteo con
+    // el que se reconcilia lo que la herramienta dice haber mirado. Cuando el
+    // paso miraba el árbol por su cuenta, cada una de esas cosas podía salir
+    // de una lectura distinta y el testigo afirmaba dos cosas incompatibles.
+    //
+    // **Y llega estrecho: acá adentro no existe un sujeto ajeno.** Una
+    // versión anterior recibía la observación entera, y con ella la
+    // posibilidad de certificar lo que no era nuestro escribiendo `requested`
+    // donde iba `usable()`. `VerificationScope` es inmodificable y no vacío
+    // por construcción, así que tampoco hace falta congelar ni comprobar nada
+    // de eso acá.
+    final alcance = (sanos: pedido.subjects, archivos: pedido.files);
 
-    VerificationOutcome conTestigo({
-      required String invocacion,
-      required List<String> cubierto,
-      required List<String> omitido,
-      required Termination terminacion,
-      required int codigo,
-      List<Diagnostic> diagnosticos = const [],
-    }) =>
-        VerificationOutcome(
-          verifierId: id,
-          diagnostics: diagnosticos,
-          witness: Witness(
-            invocation: invocacion,
-            subjects: cubierto,
-            omitted: omitido,
-            termination: terminacion,
-            exitCode: codigo,
-            finishedAt: DateTime.now().toUtc(),
-          ),
-        );
+    // **Acá vivía la precondición del alcance vacío, y se mudó al tipo.**
+    // Era un `throw` adentro de `run` que decía de sí mismo «se comprueba
+    // antes de invocar nada». Se comprobaba después de entrar, que no es lo
+    // mismo: `VerificationScope` no se puede construir vacío, así que ahora
+    // la frase es literal.
 
-    if (pedidos.isEmpty) {
-      // **La invocación queda VACÍA porque no hubo ninguna.** Nombraba el
-      // comando que se habría corrido, y eso es peor que no nombrar nada: la
-      // cuarta cláusula del puerto pide que el testigo nombre la invocación
-      // que de verdad se hizo, y acá no se hizo ninguna.
-      return conTestigo(
-        invocacion: '',
-        cubierto: const [],
-        omitido: const [
-          'No se le dio ningún sujeto, así que no se invocó ninguna herramienta.'
-        ],
-        terminacion: Termination.interrumpida,
-        codigo: -1,
-      );
-    }
+    // **Acá vivía una guardia de divergencia, y se fue con su causa.**
+    // Comparaba la lectura del paso contra la que la cascada había vetado, y
+    // era lo que hacía tolerable la doble lectura. No la hacía tolerable:
+    // comparaba NOMBRES, así que un árbol que cambiaba de tamaño con el
+    // sujeto todavía utilizable no divergía, y la corrida salía verde
+    // reportando un alcance que los verificadores no habían visto. Con una
+    // sola lectura no hay dos fotos que reconciliar, que es más barato y más
+    // cierto que reconciliarlas bien.
 
     // El programa y los argumentos se calculan UNA vez y se reusan. Se
     // calculaban dos veces —una para el texto del testigo y otra para la
     // invocación real— y nada garantizaba que dieran lo mismo.
+    //
+    // **Se invoca sobre lo utilizable, y solo sobre eso.** Lo que la
+    // observación no dio como del stack no se le pasa a la herramienta: no es
+    // un descarte silencioso, es la partición que el observador ya decidió y
+    // que este paso no vuelve a juzgar.
     final prog = programa;
-    final args = List<String>.unmodifiable(argumentos(pedidos));
+    final args = List<String>.unmodifiable(argumentos(alcance.sanos));
     final invocacion = [prog, ...args].join(' ');
 
     final r = await ejecutor.correr(prog, args,
         directorio: directorio, presupuesto: presupuesto);
 
     if (r.terminacion != Termination.completa) {
-      return conTestigo(
-        invocacion: invocacion,
-        cubierto: const [],
-        omitido: [
+      // **No es un testigo: es un intento.** La herramienta no llegó a
+      // producir un resultado, y representar eso con el mismo tipo que un
+      // `Witness` es exactamente el hecho falso que ADR-011 vino a impedir.
+      return Aborted(
+          attempt: Attempt(
+        invocation: invocacion,
+        subjects: alcance.sanos,
+        termination: r.terminacion,
+        exitCode: r.codigo,
+        note: [
           'La herramienta no llegó a producir un resultado: ${r.salidaDeError}',
           if (r.terminacion == Termination.tiempoAgotado)
             'Los procesos descendientes no se rastrean: si la herramienta dejó '
                 'hijos, pueden seguir vivos.',
-        ],
-        terminacion: r.terminacion,
-        codigo: r.codigo,
-      );
+        ].join(' '),
+        finishedAt: DateTime.now().toUtc(),
+      ));
     }
 
-    // **Desde acá la terminación es `completa` y no se toca más.** Se
+    // **Desde acá la terminación es `completa` y no se reinterpreta.** Se
     // reescribía a `interrumpida` cuando el código era desconocido o cuando la
     // salida no se podía leer, y eso es falso: la herramienta corrió y produjo
     // un resultado, que es la definición literal de `completa`. Que nosotros
-    // no sepamos interpretarlo es nuestro problema, y va en `omitted`. El
-    // veredicto no concluyente sale igual, porque no hay sujetos cubiertos.
+    // no sepamos interpretarlo es nuestro problema, y va en `omitted` de un
+    // `Executed` no concluyente — nunca falsea el desenlace.
     if (!codigosDeCorrida.contains(r.codigo)) {
-      return conTestigo(
-        invocacion: invocacion,
-        cubierto: const [],
-        omitido: [
-          'Código de salida ${r.codigo}, que no está entre los que significan '
-              'que la herramienta corrió (${codigosDeCorrida.join(", ")}). '
-              'Suponer que es benigno sería adivinar.',
-        ],
-        terminacion: Termination.completa,
-        codigo: r.codigo,
+      return Executed(
+        witness: Witness(
+          invocation: invocacion,
+          subjects: const [],
+          exitCode: r.codigo,
+          finishedAt: DateTime.now().toUtc(),
+          omitted: [
+            Omission(
+                reason: 'Código de salida ${r.codigo}, que no está entre los '
+                    'que significan que la herramienta corrió '
+                    '(${codigosDeCorrida.join(", ")}). Suponer que es '
+                    'benigno sería adivinar.'),
+          ],
+        ),
+        diagnostics: const [],
       );
     }
 
@@ -233,23 +178,30 @@ abstract base class PasoDeCascada implements Verifier {
     } on UnreadableToolOutput catch (e) {
       // El resultado NO es un diagnóstico contra el código del usuario: es que
       // el arnés no sabe leer lo que tiene delante.
-      return conTestigo(
-        invocacion: invocacion,
-        cubierto: const [],
-        omitido: ['No se pudo interpretar la salida: ${e.reason}'],
-        terminacion: Termination.completa,
-        codigo: r.codigo,
+      return Executed(
+        witness: Witness(
+          invocation: invocacion,
+          subjects: const [],
+          exitCode: r.codigo,
+          finishedAt: DateTime.now().toUtc(),
+          omitted: [
+            Omission(reason: 'No se pudo interpretar la salida: ${e.reason}'),
+          ],
+        ),
+        diagnostics: const [],
       );
     }
 
-    final c = cobertura(pedidos, salida);
-    return conTestigo(
-      invocacion: invocacion,
-      cubierto: c.cubierto,
-      omitido: c.omitido,
-      terminacion: Termination.completa,
-      codigo: r.codigo,
-      diagnosticos: diagnosticos,
+    final c = cobertura(alcance, salida);
+    return Executed(
+      witness: Witness(
+        invocation: invocacion,
+        subjects: c.cubierto,
+        exitCode: r.codigo,
+        finishedAt: DateTime.now().toUtc(),
+        omitted: c.omitido,
+      ),
+      diagnostics: diagnosticos,
     );
   }
 }
@@ -262,7 +214,7 @@ abstract base class PasoDeCascada implements Verifier {
 /// lee. Cero archivos mirados deja el testigo sin sujetos, y sin sujetos no
 /// hay verde.
 final class PasoDeFormato extends PasoDeCascada {
-  const PasoDeFormato({
+  PasoDeFormato({
     required super.ejecutor,
     required super.directorio,
     super.presupuesto,
@@ -294,9 +246,9 @@ final class PasoDeFormato extends PasoDeCascada {
       '${r.salidaEstandar}\n${r.salidaDeError}';
 
   @override
-  Cobertura cobertura(List<String> pedidos, QuotedText salida) {
+  Cobertura cobertura(Alcance alcance, QuotedText salida) {
     const norma = NormalizadorDeFormato();
-    final (:sanos, :motivos, :archivos) = separar(pedidos);
+    final (:sanos, :archivos) = alcance;
     final mirados = norma.archivosMirados(salida);
     final sinParsear = norma.archivosQueNoParsean(salida).length;
 
@@ -304,10 +256,10 @@ final class PasoDeFormato extends PasoDeCascada {
       return (
         cubierto: const <String>[],
         omitido: [
-          ...motivos,
-          'La herramienta informó que no miró NINGÚN archivo. Su código de '
-              'salida es 0 igual, así que esto no se puede leer del código: '
-              'sale del resumen.',
+          Omission(
+              reason: 'La herramienta informó que no miró NINGÚN archivo. Su '
+                  'código de salida es 0 igual, así que esto no se puede '
+                  'leer del código: sale del resumen.'),
         ],
       );
     }
@@ -320,7 +272,8 @@ final class PasoDeFormato extends PasoDeCascada {
     // vuelta antes de comparar.
     //
     // Y no se puede atribuir el faltante a ningún sujeto: el resumen es un
-    // total, no una lista. Si no cierra, no se certifica ninguno.
+    // total, no una lista. Si no cierra, no se certifica ninguno, y la
+    // omisión que lo dice tampoco lleva sujeto.
     //
     // Es la misma reconciliación que el normalizador hace un nivel más abajo
     // entre las líneas «Changed» y el «(N changed)» del resumen. Estaba
@@ -330,24 +283,27 @@ final class PasoDeFormato extends PasoDeCascada {
       return (
         cubierto: const <String>[],
         omitido: [
-          ...motivos,
-          'El alcance tiene $archivos archivo(s) de fuente y la herramienta '
-              'informó $mirados formateado(s) más $sinParsear que no '
-              'parsean. No cierra, y el resumen es un total: no hay forma de '
-              'saber a qué sujeto le faltó, así que no se certifica ninguno.',
+          Omission(
+              reason: 'El alcance tiene $archivos archivo(s) de fuente y la '
+                  'herramienta informó $mirados formateado(s) más '
+                  '$sinParsear que no parsean. No cierra, y el resumen es '
+                  'un total: no hay forma de saber a qué sujeto le faltó, '
+                  'así que no se certifica ninguno.'),
         ],
       );
     }
 
     // Los archivos que no parsean quedaron sin formatear. Que la herramienta
-    // los salte está bien; que no se diga, no.
+    // los salte está bien; que no se diga, no. Tampoco se puede atribuir a un
+    // sujeto: el resumen no dice cuáles fueron.
     return (
       cubierto: sanos,
       omitido: [
-        ...motivos,
         if (sinParsear > 0)
-          '$sinParsear archivo(s) no parsean y quedaron sin formatear. Están '
-              'reportados como diagnóstico, no omitidos en silencio.',
+          Omission(
+              reason: '$sinParsear archivo(s) no parsean y quedaron sin '
+                  'formatear. Están reportados como diagnóstico, no '
+                  'omitidos en silencio.'),
       ],
     );
   }
@@ -366,7 +322,7 @@ final class PasoDeFormato extends PasoDeCascada {
 /// Lo que sigue sin cubrirse —que haya leído todos los que contamos— es
 /// residuo declarado, no un hueco silencioso.
 final class PasoDeAnalisis extends PasoDeCascada {
-  const PasoDeAnalisis({
+  PasoDeAnalisis({
     required super.ejecutor,
     required super.directorio,
     super.presupuesto,
@@ -399,17 +355,19 @@ final class PasoDeAnalisis extends PasoDeCascada {
   String ensamblar(ResultadoDeProceso r) => r.salidaEstandar;
 
   @override
-  Cobertura cobertura(List<String> pedidos, QuotedText salida) {
-    final (:sanos, :motivos, :archivos) = separar(pedidos);
+  Cobertura cobertura(Alcance alcance, QuotedText salida) {
+    final (:sanos, :archivos) = alcance;
     // **No hay nada que reconciliar acá, y ese es el punto.** El formateador
     // informa cuántos archivos miró y por eso su cobertura se puede comprobar;
     // este no informa nada, así que la única cuenta es la del arnés y queda
-    // dicha en el testigo con su número.
-    final residuo =
-        'La herramienta no informa qué archivos leyó: sobre un alcance vacío '
-        'devuelve lo mismo que sobre uno limpio. La cobertura se comprobó '
-        'contando los $archivos archivo(s) del alcance, no leyendo su reporte. '
-        'Que los haya leído TODOS no lo verifica este paso.';
-    return (cubierto: sanos, omitido: [...motivos, residuo]);
+    // dicha en el testigo con su número. Tampoco se puede atribuir a un
+    // sujeto: es un residuo general del paso, no de ningún par paso-sujeto.
+    final residuo = Omission(
+        reason: 'La herramienta no informa qué archivos leyó: sobre un '
+            'alcance vacío devuelve lo mismo que sobre uno limpio. La '
+            'cobertura se comprobó contando los $archivos archivo(s) del '
+            'alcance, no leyendo su reporte. Que los haya leído TODOS no lo '
+            'verifica este paso.');
+    return (cubierto: sanos, omitido: [residuo]);
   }
 }

@@ -30,6 +30,14 @@
       "origen": "docs/03 §1 y §2",
       "tipo": "flechas_internas",
       "alcance": "Las `directDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las dependencias externas de los paquetes que no son core NO las gobierna esta regla: docs/03 §2 enuncia esa prohibición solo para core.",
+      "excepciones_dev_dependencies": [
+        {
+          "paquete": "plugin_dart",
+          "dependencia": "plugin_fake",
+          "como": "dev_dependencies",
+          "motivo": "Los tests unitarios de plugin_dart usan ObservadorDeAlcanceFalso, el doble de ScopeObserver que declara plugin_fake, para probar la delegación del paso sin tocar disco. Esta regla mira solo `directDependencies` por diseño —lo dice su propio `alcance`—, así que una dependencia de test no pasa por acá; queda registrada explícita para que no sea una arista escondida sin más que el silencio del check. La flecha que esta regla existe para impedir es que un paquete de producción rodee a core; que los tests de un plugin usen el doble de un puerto de core no es esa flecha, y `orchestration` —que es a quien de verdad le está prohibido ver plugins— no la ve."
+        }
+      ],
       "permitidas": {
         "core": [],
         "orchestration": [
@@ -414,6 +422,12 @@
         },
         "UnreadableToolOutput": {
           "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
+        },
+        "StepOutcome": {
+          "por_que": "Es la base de una jerarquia sellada, sin campo propio: cada variante concreta (Executed, Aborted, Skipped, Unobservable, Broken) trae su propio toJson/fromJson, discriminados por kind. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear-, y dejarlo sin declarar seria la tercera opcion silenciosa que esta misma regla prohibe. DIFERIDO CON MOTIVO: la etiqueta esta mal y se sabe. El encabezado de esta lista dice «clases que NO serializan a proposito» y estas SI serializan, por sus variantes; un review lo llamo imprecision taxonomica y la categoria correcta seria «jerarquia sellada serializable», con despachador valido, discriminador cerrado y round-trip de todas las variantes. No se construye ahora porque el hueco real es chico: las cinco variantes concretas ya estan entre las clases verificadas campo por campo -tienen toJson, viven en core y no estan en esta lista, asi que la regla las clasifico como serializables y pasaron-, y lo unico sin comprobar es que el despachador de la base enrute cada kind. Es trabajo de arnes, no de dominio, y no lo toca ninguna etapa por construir. Se reabre cuando una variante nueva entre a la jerarquia, que es cuando el despachador puede quedarse corto en silencio."
+        },
+        "VerificationOutcome": {
+          "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
         }
       },
       "violacion_canonica": {

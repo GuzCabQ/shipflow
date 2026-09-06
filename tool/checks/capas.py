@@ -429,6 +429,110 @@ def _check_readme() -> None:
     # silencio: la regla `puertos-sin-implementacion` compara la lista contra
     # el ÁRBOL SINTÁCTICO en los dos sentidos, así que un puerto declarado de
     # otra forma la pone roja antes de llegar a esta cuenta.
+    # **El presupuesto por paso, y lo que se multiplica.** Es la cuarta cifra
+    # que este README afirma sobre sí mismo, y las tres anteriores envejecieron
+    # solas. Sale de `verify.dart`, que es donde de verdad está, y de cuántos
+    # pasos compone la cascada: el producto es lo que una corrida puede tardar
+    # en el peor caso, y afirmarlo a mano sería volver a apostar a la memoria.
+    fuente_verify = RAIZ / "packages" / "cli" / "lib" / "src" / "verify.dart"
+    if not fuente_verify.exists():
+        fallos.append("no encontré packages/cli/lib/src/verify.dart, así que no "
+                      "puedo derivar el presupuesto por paso. No mirar no es lo "
+                      "mismo que no encontrar nada.")
+        return
+    texto_verify = fuente_verify.read_text(encoding="utf-8")
+    m_pres = re.search(r"Duration presupuesto = const Duration\(minutes: (\d+)\)",
+                       texto_verify)
+    if not m_pres:
+        fallos.append("no encontré el presupuesto por defecto en verify.dart. "
+                      "Si cambió de forma, esta derivación dejó de mirar algo y "
+                      "hay que arreglarla, no borrarla.")
+        return
+    minutos = int(m_pres.group(1))
+    # Los pasos de la cascada por defecto: las entradas de la lista literal.
+    # **Acotado al literal, no al resto del archivo.** Sin el corte, el
+    # `switch` que imprime los desenlaces —`PasoEjecutado(`, `PasoRoto(`— caía
+    # en el mismo patrón y la cuenta pasó de 2 a 5 sin que nadie tocara la
+    # cascada. Un patrón que mira de más se equivoca igual que uno que mira de
+    # menos, y este contaba pasos que no existen.
+    #
+    # **El cierre se busca por profundidad de corchetes, no por `]);` literal.**
+    # `Cascada` ganó un segundo argumento obligatorio —el observador de
+    # alcance— así que la lista ya no es lo único entre paréntesis: cierra con
+    # `], observador: obs)`, no con `]);`. Contar la profundidad encuentra el
+    # `]` que hace juego con el `[` de `Cascada([` con la forma de antes y con
+    # la de ahora, sea cual sea lo que venga después del `]`.
+    #
+    # **No entiende Dart, y eso es una cuenta sobre caracteres, no sobre
+    # sintaxis.** Un `[` o un `]` dentro de una cadena o un comentario, ANTES
+    # del cierre real, la confunde igual que confundiría a cualquier regex.
+    # No es silencioso: recorta `cuerpo` antes de la lista real de pasos, y el
+    # `n_pasos == 0` que sigue lo caza y falla con su propio mensaje — no deja
+    # pasar un cambio sin detectarlo, pero tampoco es correcto con cualquier
+    # entrada.
+    _desde = texto_verify.index("Cascada([")
+    _apertura = _desde + len("Cascada(")
+    _profundidad = 0
+    _cierre = None
+    for _i in range(_apertura, len(texto_verify)):
+        if texto_verify[_i] == "[":
+            _profundidad += 1
+        elif texto_verify[_i] == "]":
+            _profundidad -= 1
+            if _profundidad == 0:
+                _cierre = _i
+                break
+    if _cierre is None:
+        fallos.append("la lista de pasos de `cascadaPorDefecto` no cierra: "
+                      "no encontré el `]` que hace juego con `Cascada([`.")
+        return
+    cuerpo = texto_verify[_desde:_cierre + 1]
+    n_pasos = len(re.findall(r"^\s+Paso[A-Za-z]+\(", cuerpo, re.M))
+    if n_pasos == 0:
+        fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
+                      "igual que «no miré».")
+        return
+
+    # **Y que cada paso reciba EXACTAMENTE ese presupuesto.**
+    #
+    # La derivación contaba los constructores y multiplicaba, sin mirar qué se
+    # les pasa: cambiar un solo paso a `presupuesto * 2` dejaba el check en
+    # verde y la cifra del README mintiendo. Lo reprodujo un review. Contar
+    # constructores y no leer sus argumentos es comprobar la forma y no el
+    # hecho — el mismo error que este arnés persigue en otras partes.
+    # Se captura hasta la coma o el paréntesis, ESPACIOS INCLUIDOS: con
+    # `[^,)\s]+` la expresión cortaba en el primer espacio y `presupuesto * 2`
+    # se leía como `presupuesto`. El sabotaje pasaba en verde y el patrón
+    # parecía funcionar.
+    distintos = [v.strip() for v in re.findall(
+        r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?presupuesto:\s*([^,)]+)",
+        cuerpo, re.M)]
+    if len(distintos) != n_pasos:
+        fallos.append(f"conté {n_pasos} pasos en `cascadaPorDefecto` y solo "
+                      f"{len(distintos)} le pasan un presupuesto. Un paso sin "
+                      f"presupuesto explícito no está cubierto por esta cuenta.")
+    for valor in set(distintos):
+        if valor != "presupuesto":
+            fallos.append(f"un paso de `cascadaPorDefecto` recibe "
+                          f"«{valor}» como presupuesto y no el parámetro. La "
+                          f"cifra del README multiplica UN valor por la "
+                          f"cantidad de pasos: con presupuestos distintos deja "
+                          f"de significar lo que dice.")
+
+    for patron, esperado, que in [
+        (r"un default de \*\*(\d+) minutos\*\*", minutos, "el presupuesto por paso"),
+        (r"Con los (\d+) pasos de hoy", n_pasos, "los pasos de la cascada"),
+        (r"una corrida puede tardar\s+(\d+) minutos", minutos * n_pasos,
+         "el peor caso de una corrida"),
+    ]:
+        m = re.search(patron, texto)
+        if not m:
+            fallos.append(f"README.md ya no afirma {que} en la forma que esta "
+                          f"derivación reconoce. Un patrón que no encuentra nada "
+                          f"no comprueba nada, y se lee igual que uno que sí.")
+        elif int(m.group(1)) != esperado:
+            fallos.append(f"README.md dice «{m.group(0)}»; {que} da {esperado}.")
+
     pendientes = REGLAS["puertos-sin-implementacion"]["sin_implementacion"]
     n_pendientes = len([k for k in pendientes if k != "_"])
     fuente_puertos = RAIZ / "packages" / "core" / "lib" / "src" / "puertos.dart"
@@ -722,6 +826,15 @@ def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
     """
     regla = REGLAS["deps-hacia-core"]
     permitidas = regla["permitidas"]
+    # `excepciones_dev_dependencies` es la única puerta para una arista de
+    # DESARROLLO entre paquetes internos que `permitidas` no habilita. Antes
+    # de esto la clave existía en arquitectura.json y no la leía nadie: ni
+    # este check, ni `probar_reglas.py`, ni `tool/analisis` — prosa con forma
+    # de control, en un archivo donde todas las demás claves se consumen.
+    excepciones_dev = {
+        (e["paquete"], e["dependencia"])
+        for e in regla.get("excepciones_dev_dependencies", [])
+    }
     internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
     for huerfano in sorted(set(paquetes()) - internos):
         fallos.append(f"packages/{huerfano}: pub no lo reporta como miembro. "
@@ -737,6 +850,28 @@ def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
                 fallos.append(
                     f"packages/{nombre}: depende de «{dep}», que no está permitido.\n"
                     f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
+        _check_flechas_dev(nombre, g[nombre], internos, ok, excepciones_dev, regla)
+
+
+def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str],
+                       excepciones_dev: set[tuple[str, str]], regla: dict) -> None:
+    """La misma flecha que `check_flechas`, pero de DESARROLLO.
+
+    `directDependencies` no la ve —viaja por su propia clave del grafo de
+    pub— así que antes de esto un paquete que no puede ver un plugin como
+    dependencia real podía verlo igual en `dev_dependencies:`, sin que nada lo
+    notara: la regla tenía la forma de proteger a `orchestration` de los
+    plugins y no lo hacía. Lo que YA está permitido como dependencia real
+    (`ok`) no necesita excepción aparte; lo que no, solo pasa si el par
+    (paquete, dependencia) está declarado en `excepciones_dev_dependencies`.
+    """
+    for dep in nodo.get("devDependencies", []):
+        if dep in internos and dep not in ok and (nombre, dep) not in excepciones_dev:
+            fallos.append(
+                f"packages/{nombre}: depende, como dependencia de desarrollo, de "
+                f"«{dep}», que no está permitido ni declarado en "
+                f"«excepciones_dev_dependencies».\n"
+                f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
 
 
 # --- origen de dependencias · independiente de la anterior --------------

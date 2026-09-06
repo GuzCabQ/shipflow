@@ -273,6 +273,15 @@ def casos() -> list[dict]:
     # Y el otro modo de fallo del grafo: no un archivo nuevo, sino el grafo
     # commiteado retocado a mano. Son distintos: uno es olvidarse de
     # regenerar, el otro es editar lo que se deriva.
+    #
+    # **Frágil en la misma forma que las de arriba, pero de menor riesgo
+    # práctico:** depende de que ALGÚN nodo de `grafo.jsonl` tenga
+    # `"saltos":0` literal. Es un campo de todo nodo derivado —no una frase de
+    # prosa que alguien reescriba con otras palabras—, así que el día que deje
+    # de aparecer es más probable que sea porque cambió el ESQUEMA del grafo
+    # (y entonces `check.dart`/`grafo.dart` ya estarían rojos por su cuenta)
+    # que porque el contenido derivó solo. Sin guardia igual: si pasa, es un
+    # `.replace` mudo, no un crash.
     c.append({
         "nombre": "grafo · grafo commiteado editado a mano",
         "archivos": {"grafo.jsonl": (RAIZ / "grafo.jsonl").read_text(encoding="utf-8")
@@ -300,6 +309,27 @@ def casos() -> list[dict]:
                      "resolution: workspace\n\ndev_dependencies:\n  lints: ^5.0.0\n"},
         "pub_get": True,
         "menciona": "desarrollo",
+    })
+
+    # La otra mitad de `deps-hacia-core`, simétrica a la de arriba: una
+    # dependencia de DESARROLLO hacia un plugin, desde un paquete que
+    # `excepciones_dev_dependencies` no declara. La regla ya leía
+    # `directDependencies`; `devDependencies` viajaba por su propia clave del
+    # grafo y no se miraba — la clave existía en arquitectura.json, con la
+    # excepción real de `plugin_dart` documentada, y no la leía nadie. Contra
+    # `orchestration`, que es a quien la prohibición de ver plugins más le
+    # importa (docs/03 §2): no está en la lista de excepciones, así que esto
+    # tiene que quedar rojo.
+    c.append({
+        "nombre": "deps-hacia-core · una dependencia de desarrollo hacia un plugin "
+                  "sin excepción declarada",
+        "archivos": {"packages/orchestration/pubspec.yaml":
+                     "name: orchestration\ndescription: \"canario\"\npublish_to: none\n"
+                     "version: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\n"
+                     "resolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n\n"
+                     "dev_dependencies:\n  plugin_fake:\n    path: ../plugin_fake\n"},
+        "pub_get": True,
+        "menciona": "excepciones_dev_dependencies",
     })
 
     # NEGATIVOS: las exclusiones declaradas tienen que excluir de verdad.
@@ -351,6 +381,15 @@ def casos() -> list[dict]:
     # Que CI siga ejecutando lo que dice ejecutar. Tres modos de fallo, y son
     # distintos: uno borra el paso, otro lo deja corriendo sin que detenga
     # nada, y el tercero se lleva el workflow entero.
+    #
+    # **FRÁGIL, SIN GUARDIA.** Auditoría posterior al caso `Cascada([...])`
+    # que estuvo roto 24 commits sin que nadie lo notara: estos dos `.index`
+    # son la misma clase de anclaje literal, y si un nombre de step cambia acá
+    # abajo, esto revienta con un `ValueError` tan opaco como aquel — hoy
+    # (verificado al escribir esta nota) los dos nombres siguen existiendo tal
+    # cual. No se le agregó `assert` porque el `ValueError` de `.index` ya
+    # señala la línea; lo que faltaba y falta seguir es que ESTE archivo se
+    # corra, no un guardia extra.
     ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
     i = ci.index("      - name: los checks saben fallar")
     j = ci.index("      - name: pruebas de core")
@@ -423,6 +462,12 @@ def casos() -> list[dict]:
         "archivos": {"README.md": readme.replace(filas[0] + "\n", "")},
         "menciona": "no está en la tabla",
     })
+    # **FRÁGIL, SIN GUARDIA — y más silenciosa que un `.index`.** Si
+    # `` `tool/analisis` `` deja de aparecer en el README, `.replace` no
+    # lanza: devuelve el texto sin cambios, el "sabotaje" no sabotea nada, y
+    # `evaluar()` lo reporta como «la regla quedó sin efecto» — un diagnóstico
+    # que apunta al control equivocado. Hoy (verificado al escribir esta
+    # nota) la cadena sigue estando.
     c.append({
         "nombre": "readme · una ruta del repositorio que ya no existe",
         "archivos": {"README.md": readme.replace("`tool/analisis`",
@@ -436,6 +481,9 @@ def casos() -> list[dict]:
                     "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
                     "        with:\n          flutter-version: 3.44.0")
     assert ci.count(flutter_paso) == 1, "ancla del paso de flutter no encontrada"
+    # **FRÁGIL, SIN GUARDIA propia**, igual que el bloque de arriba: el ancla
+    # `"      - name: analyze\n        run: dart analyze --fatal-infos"` no
+    # tiene `assert` que la respalde. Hoy sigue apareciendo tal cual.
     c.append({
         "nombre": "ci · dos toolchains de Dart en el mismo job",
         "archivos": {CI_REL: ci.replace(
@@ -444,6 +492,12 @@ def casos() -> list[dict]:
             "        run: dart analyze --fatal-infos", 1)},
         "menciona": "instala Dart Y Flutter",
     })
+    # `"          flutter-version: 3.44.0"` está protegida DE REBOTE por el
+    # `assert ci.count(flutter_paso) == 1` de más arriba —`flutter_paso` la
+    # contiene como substring—, pero es indirecto y no obvio releyendo solo
+    # este caso. Si algún día `flutter_paso` deja de incluirla textualmente
+    # (por ejemplo, si cambia de formato sin cambiar la versión), esta
+    # protección se pierde sin que nada lo anuncie acá.
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
         "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
@@ -456,6 +510,13 @@ def casos() -> list[dict]:
     # ningún canario de Flutter, y la exención estaba escrita para un caso
     # hipotético. Un control negativo que defiende una exención que ya no está
     # es peor que no tenerlo: la haría parecer viva.
+    #
+    # **El segundo `.replace` de este caso —«el fixture se verifica a sí
+    # mismo» / `runs-on: ubuntu-latest»— NO tiene ninguna guardia, ni directa
+    # ni indirecta.** Si ese nombre de job o esa línea de `runs-on` cambian,
+    # este `.replace` no aplica y el caso queda testeando el archivo sin
+    # tocar — silencioso, no un crash. Hoy (verificado al escribir esta nota)
+    # el texto sigue igual.
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ci
@@ -528,8 +589,82 @@ def casos() -> list[dict]:
         "menciona": "ya no afirma",
     })
 
+    # La cuarta cifra que el README afirma sobre sí mismo. Las tres anteriores
+    # envejecieron solas; esta se deriva de `verify.dart`, y su sabotaje ataca
+    # los DOS lados: que mienta la prosa, y que cambie la fuente sin que la
+    # prosa se entere. Un solo caso probaría medio control.
+    m_min = re.search(r"un default de \*\*(\d+) minutos\*\*", readme)
+    assert m_min, "no encontré el presupuesto por paso en el README"
+    c.append({
+        "nombre": "readme · el presupuesto por paso, dicho de más",
+        "archivos": {"README.md": readme.replace(
+            m_min.group(0),
+            m_min.group(0).replace(m_min.group(1),
+                                   str(int(m_min.group(1)) + 4)), 1)},
+        "menciona": "el presupuesto por paso da",
+    })
+    # La propagación por paso, que el sabotaje del default no cubría: un review
+    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    #
+    # **El cierre se busca por profundidad de corchetes, no por `]);` literal
+    # — la MISMA técnica que ya usa `capas.py` para este mismo literal, y por
+    # la misma razón.** `Cascada` ganó el parámetro `observador`, así que la
+    # llamada cierra con `], observador: obs);`, no con `]);`. Este caso
+    # buscaba el literal viejo y estuvo reventando con `ValueError: substring
+    # not found` desde el commit que agregó ese parámetro — sin que nadie lo
+    # notara, porque este archivo no corrió ni una vez en esos 24 commits. El
+    # indentado tampoco se cablea (`\s+`, no seis espacios fijos): un
+    # `dart format` que cambia la indentación de `verify.dart` no tiene por
+    # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
+    verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
+        encoding="utf-8")
+    _d = verify_prop.index("Cascada([")
+    _apertura = _d + len("Cascada(")
+    _profundidad = 0
+    _cierre = None
+    for _i in range(_apertura, len(verify_prop)):
+        if verify_prop[_i] == "[":
+            _profundidad += 1
+        elif verify_prop[_i] == "]":
+            _profundidad -= 1
+            if _profundidad == 0:
+                _cierre = _i
+                break
+    assert _cierre is not None, (
+        "la lista de pasos de `Cascada([...])` no cierra en verify.dart: no "
+        "encontré el `]` que hace juego con `Cascada([`.")
+    _lit = verify_prop[_d:_cierre + 1]
+    _uno = re.search(r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
+                     _lit, re.M)
+    assert _uno, "no encontré la propagación del presupuesto en verify.dart"
+    c.append({
+        "nombre": "cascada · un paso con un presupuesto distinto del resto",
+        "archivos": {"packages/cli/lib/src/verify.dart": verify_prop.replace(
+            _lit, _lit.replace(_uno.group(1), "presupuesto: presupuesto * 2", 1),
+            1)},
+        "menciona": "como presupuesto y no el parámetro",
+    })
+
+    verify_rel = "packages/cli/lib/src/verify.dart"
+    verify = (RAIZ / verify_rel).read_text(encoding="utf-8")
+    m_src = re.search(r"const Duration\(minutes: (\d+)\)", verify)
+    assert m_src, "no encontré el presupuesto en verify.dart"
+    c.append({
+        "nombre": "cascada · el presupuesto cambia y la prosa no se entera",
+        "archivos": {verify_rel: verify.replace(
+            m_src.group(0),
+            m_src.group(0).replace(m_src.group(1),
+                                   str(int(m_src.group(1)) + 4)), 1)},
+        "menciona": "el presupuesto por paso da",
+    })
+
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
+    #
+    # **FRÁGIL, SIN GUARDIA, y silenciosa como la de `tool/analisis` más
+    # arriba:** si ese árbol de ejemplo del README deja de tener una línea
+    # `  analisis/` (con exactamente esa indentación), `.replace` no aplica y
+    # el caso no sabotea nada, sin avisar. Hoy sigue estando.
     c.append({
         "nombre": "readme · un nombre retirado, sin forma de ruta",
         "archivos": {"README.md": readme.replace("  analisis/", "  serializacion/", 1)},
@@ -551,6 +686,32 @@ def casos() -> list[dict]:
                      "          List<String>.from(json['items']! as List<Object?>));\n"
                      "}\n"},
         "menciona": "por referencia",
+    })
+
+    # La canónica de `opacidad-declarada` es una clase CONCRETA con un campo,
+    # así que nunca ejerce la rama de las clases SELLADAS: `d.abstractKeyword`
+    # queda `null` para una `sealed class`, y antes del arreglo eso la exímía
+    # igual que a una interfaz de puerto sin datos propios que perder. Dos
+    # clases de core —`StepOutcome` y `VerificationOutcome`— sobrevivían así:
+    # ni serializaban ni estaban declaradas opacas. Sin este caso, la
+    # distinción entre "abstracta" y "sellada" se puede deshacer en
+    # `check.dart` sin que nada falle — se verificó a mano revirtiéndola.
+    c.append({
+        "nombre": "opacidad-declarada · clase sellada sin campos, sin serializar, "
+                  "sin declarar opaca",
+        "archivos": {"packages/core/lib/src/_canario_sellado.dart":
+                     "sealed class CanarioSellado {\n"
+                     "  const CanarioSellado();\n"
+                     "}\n"},
+        # **El `menciona` es lo que salva a este caso, no el código de salida.**
+        # Una clase sellada sin miembros se lee además como un PUERTO, así que
+        # este canario dispara de rebote la regla de puertos sin implementación.
+        # Con el arreglo de selladas revertido, el verificador SIGUE saliendo
+        # con error —por esa otra regla— y un caso que solo mirara el código de
+        # salida daría falsa protección: parecería cuidar algo que dejó de
+        # cuidar. Lo que desaparece al revertir es este texto, y por eso la
+        # atribución se sostiene. Medido las dos veces, con y sin el arreglo.
+        "menciona": "base de una jerarquía sellada",
     })
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.

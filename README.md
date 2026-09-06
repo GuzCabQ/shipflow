@@ -11,7 +11,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ## Estado: fase 2, cuarta rebanada. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** 5 de los 24
+`core` existe: **las entidades y los puertos, como tipos.** 6 de los 25
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
 de verdad, con toolchain de verdad.
 
@@ -25,6 +25,8 @@ $ shipflow verify lib
   ok        StaticAnalysis
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
+
+**El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
 
 **No existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
@@ -965,20 +967,429 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 100 sabotajes.**
+y su caso ciego. **El arnés aplica 105 sabotajes.**
+
+---
+
+## El falso rojo simétrico
+
+El arnés entero está construido contra un error de dirección: **un verde que
+nadie miró**. Este es el mismo error en la otra dirección, y estaba en
+producción.
+
+```
+$ shipflow verify lib          # lib solo tiene markdown
+
+verify: inconclusive — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
+  → Algún paso no pudo observar su alcance.
+```
+
+**Falso.** Los dos pasos observaron. El testigo lo decía:
+
+```
+terminación: completa · código 0     ← la herramienta corrió
+cubrió: (nada)
+omitió: lib: no contiene ningún archivo de fuente
+```
+
+La herramienta corrió, terminó completa con código 0, y no tenía nada suyo que
+mirar. Eso no es «no pude observar»: es **no había nada que observar**, y son
+cosas distintas.
+
+### El techo del contrato
+
+El hecho ya se estaba diciendo — **en prosa**, dentro de `omitted`, donde nadie
+aguas arriba puede leerlo. `docs/03` §2 le pone nombre exacto a eso:
+
+> *«Un adapter que empieza a **codificar información en cadenas de texto** está
+> chocando contra el techo del contrato. Se reporta como hallazgo, no se
+> absorbe en silencio.»*
+
+El techo era un campo que no existía. `Witness` gana `ownSubjects`: cuántos
+elementos del alcance eran de la incumbencia del paso. **`null` y cero son
+distintos** — uno dice «no lo puedo contar» y el otro «no había nada mío» — y
+ya hay un paso que no puede contar, porque su herramienta no informa qué leyó.
+
+### Quién decide que eso es un salto
+
+**No el paso.** ADR-011 corolario 4: *«ningún verificador juzga su propia
+cobertura; un oráculo autorreportado no es un oráculo»*. Un salto es una
+exención de ser mirado, que es la superficie `cubierto` de ADR-012 vista desde
+el otro lado.
+
+El paso **declara un número contable sobre su entrada**, que cualquiera puede
+falsar contando. La cascada lo lee y clasifica: cero de los suyos, con la
+herramienta terminada, es un paso saltado con su motivo.
+
+| | Qué significa | Cómo lo cuenta el meta-check |
+|---|---|---|
+| ejecutado | corrió y produjo veredicto | numerador |
+| **saltado** | no corrió: el observador de alcance ya lo excluyó antes de invocar nada | contado aparte, **sin discrepancia** |
+| sin ejecutar | no corrió y nadie lo explicó | discrepancia |
+| fallo interno | se rompió | error del arnés |
+
+Es el trazado del corpus, ahora ejecutable: *«registrados: 7 · ejecutados: 6 ·
+saltados: 1 con motivo → sin discrepancia»*.
+
+**Nota, para quien lea esto después de «El desenlace se cierra» más abajo:**
+lo de arriba —«el paso declara un número contable», «corrió y no tenía nada
+suyo»— describe el mecanismo tal como estaba en ese momento. Ya no es así: el
+salto lo decide el `ScopeObserver`, en una sola observación por corrida, antes
+de invocar cualquier herramienta, y un paso saltado **no corre**. El «quién
+decide» de este título seguía siendo correcto un nivel más arriba —no el
+paso—, pero el reemplazo removió también la herramienta terminando en falso.
+
+### Y el falso verde que se abría al cerrarlo
+
+Si **todos** los pasos se saltan, la corrida no verificó nada. Cada salto por
+separado es legítimo; todos juntos son una cascada que no miró — el mismo falso
+verde que la cascada vacía ya tenía prohibido, entrando por la otra puerta.
+
+```
+verify: inconclusive — 0 de 2 pasos ejecutados, 2 saltado(s) con motivo,
+                       0 diagnóstico(s).
+  → Ningún paso tuvo nada que hacer sobre este alcance: FormatCheck,
+    StaticAnalysis. No es un fallo, pero tampoco se verificó nada.
+```
+
+### Y el falso verde llegó igual
+
+Una mutación avisó a tiempo —cambiar `ownSubjects == 0` por `!= null`
+sobrevivía, porque ningún test tenía un paso con archivos propios— y aun así
+**un review encontró el falso verde por otra combinación**:
+
+```
+un paso verde  +  un paso con diagnóstico BLOQUEANTE y cero archivos propios
+→ estado: verde · diagnósticos: 0
+```
+
+El paso con el hallazgo se clasificaba como saltado, su resultado nunca entraba
+en `resultados`, y **el diagnóstico desaparecía**. Un salto es la ausencia de
+trabajo, no la desaparición de un hallazgo.
+
+Y por la misma puerta entraban otras dos: una ruta **inexistente** salía como
+«no tuvo nada que hacer» —el arnés no pudo mirar, no es que no había nada— y un
+salto podía no decir **por qué**, cuando el corolario 1 de ADR-011 prohíbe el
+salto silencioso y este README lo prometía en prosa.
+
+### La causa era una sola, y la nombró el review
+
+> *«El dato `ownSubjects` intenta representar aplicabilidad, observabilidad y
+> cantidad con un solo número. Mientras esas tres dimensiones no se distingan,
+> cada corrección local puede abrir un falso verde por otra combinación.»*
+
+Corregir los tres síntomas por separado habría dejado el cuarto. El alcance
+distingue ahora **si se lo pudo mirar entero**, y el conteo es `null` cuando no:
+una ruta que no existe o que no se deja leer no aporta un cero, aporta un
+desconocido. Los caminos anómalos —código de salida que no se entiende, salida
+ilegible— también declaran `null`: no son «no tenía nada que hacer», son «no sé».
+
+Y el clasificador exige tres cosas más: **ningún diagnóstico**, terminación
+completa, y **al menos un motivo**. El tipo `PasoSaltado` rechaza el salto mudo
+en el constructor, como `Witness` rechaza un motivo en blanco.
+
+### El testigo salía de dos fotografías del árbol
+
+`ownSubjects` se calculaba al empezar y `cobertura` volvía a separar el alcance
+**después del `await`**. Con un ejecutor que crea un archivo durante la espera,
+el mismo testigo afirmaba «cero elementos propios» y «cubrí lib» a la vez.
+
+Ahora hay una foto y **viaja**: `cobertura` recibe el `Alcance` ya separado y no
+tiene con qué volver a mirar. La propiedad la sostiene la firma, no un
+comentario — y la mutación que reintroduce el segundo `separar` muere.
+
+### Y todavía había cuatro combinaciones más
+
+Un segundo review sobre la misma rebanada encontró que la corrección abría el
+falso verde por otras puertas. Las cuatro reproducidas:
+
+| | Qué pasaba |
+|---|---|
+| `verify README.md` | el sujeto descartado **llegaba igual a la herramienta**: `separar` lo clasificaba y la invocación se armaba con los pedidos enteros. Cinco diagnósticos sobre un markdown |
+| alcance con una parte inobservable | el plugin calculaba bien el «no sé» y **la cascada nunca lo consumía**: con otro paso en verde, la corrida salía verde sobre un alcance parcialmente no observado |
+| un testigo que cubrió algo **y** dice cero propios | dos afirmaciones incompatibles, clasificado como salto igual |
+| la prosa de `PasoSaltado` | afirmaba que la herramienta corrió, y el clasificador no lo comprobaba |
+
+La primera es la más vieja y la que más pega: afecta a cualquier cambio normal
+que mezcle código y documentación. Ahora la herramienta recibe **solo los
+sujetos utilizables**, y lo descartado sigue en `omitted` con su motivo — sale
+de «cubierto», que es donde importa, no del reporte.
+
+La segunda es la política que `docs/03` §6 dejaba explícitamente acá: *«si una
+omisión debe detener algo es política de `orchestration`»*. Está tomada: un
+alcance que no se pudo observar entero **no da verde**.
+
+Y la cuarta se resolvió al revés de lo esperable — **no** agregando la
+comprobación, sino corrigiendo la prosa: cuando no queda ningún sujeto
+utilizable no hay nada que invocar, y llamar a la herramienta sin rutas la haría
+mirar el directorio entero. Un salto no afirma que algo corrió: afirma que **la
+ausencia de trabajo quedó establecida**.
+
+Un caso ciego cambió de mecanismo: la ruta inexistente la delataba el código 64
+del analizador, y ahora la delata el arnés antes de invocar. **Es más fuerte, no
+menos** — deja de depender de que una herramienta ajena se moleste en avisar — y
+el test comprueba la propiedad en vez del mecanismo.
+
+### Y al final la corrección no era otra guardia: era un tipo
+
+Un tercer review encontró que **la clasificación correcta dependía de un hecho
+falso**. Cuando no quedaba ningún sujeto utilizable, el paso devolvía un testigo
+con `Termination.completa` y código 0 — que significa literalmente *«la
+herramienta corrió y produjo un resultado»*— y la cascada **exigía ese valor**
+para aceptar el salto.
+
+Su diagnóstico nombra la raíz de las tres rondas:
+
+> *«El sistema necesita un desenlace de paso más rico que `VerificationOutcome`;
+> intentar representar ejecución, inaplicabilidad y observabilidad con los
+> mismos campos está trasladando contradicciones hacia el CLI y la
+> documentación.»*
+
+Tenía razón, y explica por qué cada corrección abría una combinación nueva: el
+clasificador reconstruía desde cuatro campos —cero propios, nada cubierto,
+terminación completa, algún motivo— un hecho que el tipo no sabía expresar.
+
+`VerificationOutcome` gana `notApplicable`, **excluyente con `witness`**: o hubo
+invocación y hay testigo, o no la hubo y hay motivo. Las cuatro condiciones
+colapsan en una distinción de tipo más una sola guardia — *un salto es la
+ausencia de trabajo, no la desaparición de un hallazgo*.
+
+**Y el `started` que nunca cerraba.** Solo se avisaba de los pasos con
+resultado: un salto y un fallo interno dejaban su evento de inicio abierto para
+siempre. Ahora hay un desenlace por paso —ejecutado, saltado, roto— y el
+analizador **prueba** que las tres ramas lo asignan: la garantía la sostiene el
+compilador, no un comentario.
+
+```
+$ shipflow verify README.md --verbose
+  SALTADO   FormatCheck
+            motivo: README.md: no es un archivo de fuente de este stack
+```
+
+**Y el meta-check del presupuesto tenía su propio falso verde**: contaba
+constructores y multiplicaba, sin leer qué se les pasa. Cambiar un solo paso a
+`presupuesto * 2` lo dejaba en verde. Al arreglarlo, el patrón nuevo contó
+**cinco** pasos donde hay dos —el `switch` que imprime los desenlaces tiene
+`PasoEjecutado(` en la misma indentación— y después cortaba en el primer
+espacio, así que `presupuesto * 2` se leía como `presupuesto`. Dos formas de
+mirar mal antes de mirar bien, las dos encontradas midiendo.
+
+Veintiuna mutaciones sobre el clasificador, la separación del alcance y los
+desenlaces. Ninguna sobrevive.
+
+### Lo que NO instala, y por qué
+
+**El corte temprano.** `D-099` lo congeló: aparece dos veces en el corpus y
+ninguna dice **cuándo** corta. Esta rebanada instala su precondición —un paso
+que no ejecuta y no es una falla— y nada más.
+
+**La aplicabilidad general.** El corpus tiene un solo puerto que responde «¿le
+toca a este paso?», `CodegenTrigger`, y es específico. Un mecanismo general
+sería inventar el criterio que falta.
+
+---
+
+## El desenlace se cierra, y la aplicabilidad sale del verificador
+
+Todo lo anterior —`ownSubjects`, `PasoSaltado`, `NotApplicable` excluyente con
+`witness`— quedó retirado. No porque estuviera mal escrito: porque seguía
+pidiéndole al **verificador** que corriera su herramienta, contara lo suyo y se
+declarara sin trabajo. ADR-011 corolario 4 ya lo nombraba —*«ningún verificador
+juzga su propia cobertura»*— y esta rebanada lo instala como tipo, no como
+disciplina.
+
+### Dos niveles, y el segundo es un subconjunto propio del primero
+
+[`StepOutcome`](packages/core/lib/src/desenlace.dart) es todo lo que la cascada
+puede producir: `Executed`, `Aborted`, `Skipped`, `Unobservable`, `Broken`.
+[`VerificationOutcome`](packages/core/lib/src/desenlace.dart) —lo único que un
+`Verifier.run` puede devolver— es solo las dos primeras. El salto, lo no
+observable y lo roto **no cuelgan de ahí**: los decide quien compone la
+corrida.
+
+```dart
+static VerificationOutcome fromJson(Map<String, Object?> json) {
+  final outcome = StepOutcome.fromJson(json);
+  if (outcome is VerificationOutcome) return outcome;
+  throw ArgumentError.value(outcome.kind.name, 'kind',
+      'Un Verifier no puede devolver esto: el salto, lo no observable y lo '
+      'roto los decide quien compone la corrida, no un verificador');
+}
+```
+
+No es una convención: es un `sealed` con jerarquía de dos niveles, y un
+`Verifier` que intentara colar un `Skipped` como si fuera su resultado no
+compila contra la firma, y si llegara por JSON, `fromJson` lo rechaza. El
+canario que lo prueba es literal: **`C1 · un verificador no puede declarar que
+un archivo no es suyo`**, en `packages/cli/test/verify_test.dart`.
+
+### El alcance se mira una vez, y devuelve hechos — no decisiones
+
+El puerto nuevo es [`ScopeObserver`](packages/core/lib/src/puertos.dart):
+`Future<ScopeObservation> observe(List<String> requested)`. Su contrato tiene
+cuatro cláusulas, y la que cierra la clase entera de bug que motivó todo esto
+es la cuarta: **se llama UNA vez por corrida**. Antes cada paso separaba su
+propio alcance, con su propio `await` de por medio; dos lecturas del árbol
+podían diferir y dos pasos terminaban verificando alcances distintos que el
+reporte declaraba iguales.
+
+`ScopeObservation` particiona lo pedido en `ObservedSubject` (con `ofStack` y,
+si es ajeno, su motivo) y `UnobservedSubject` (lo que no se pudo mirar, con su
+causa) — **hechos por sujeto**, no un salto ya decidido. La orquestación
+(`Cascada`) es quien los lee y produce `Skipped` o `Unobservable`; un
+`Verifier` ni siquiera recibe los sujetos ajenos —le llega un
+`VerificationScope`, que solo tiene lo utilizable y su conteo—, así que
+estructuralmente no tiene sobre qué declararse incompetente.
+
+> **Esta frase fue falsa durante un arreglo, y así se encontró el quinto falso
+> verde.** Para que el árbol se observara una sola vez por corrida, `run` pasó
+> a recibir la `ScopeObservation` entera: la lectura se arregló y el
+> *estructuralmente* de arriba dejó de ser cierto sin que nadie tocara el
+> texto. Con la observación completa a mano, un paso que escriba `requested`
+> donde quería `usable()` certifica un ajeno, y el libro de obligaciones —que
+> solo mira lo que FALTA— lo daba por bueno: alcance esperado `[lib]`, testigo
+> `[lib, README.md]`, verde. Lo encontró un review, reproducido.
+>
+> Se cerró por las dos vías, porque una sola no alcanza. `VerificationScope`
+> hace que el ajeno no llegue, y `ResultadoDeCascada` rechaza un testigo que
+> certifique u omita fuera del alcance esperado del paso —lo segundo atrapa al
+> que invente un sujeto, que el tipo estrecho no puede impedir—.
+
+### El libro de obligaciones es por par paso-sujeto, no por unión
+
+`ResultadoDeCascada.obligacionesSinSaldar` recorre cada paso que ejecutó y,
+para cada sujeto de **su** `expectedScope`, exige que el testigo lo cubra o
+una omisión lo nombre. La versión anterior —«¿algún paso cubrió este
+sujeto?»— es existencial, y una existencial no repara nada: que otro paso
+haya cubierto un sujeto no dice qué hizo este con él.
+
+### Tres falsos verdes que las pruebas dirigidas no vieron
+
+Ninguno lo encontró una prueba escrita para ese caso. Los tres se cerraron
+**en el constructor de `ResultadoDeCascada`**, no con una guardia suelta en el
+sitio de uso:
+
+| Falso verde | Lo que lo cerró |
+|---|---|
+| Un paso cubre la mitad de su alcance y no explica el resto; otro paso cubrió todo | El libro por par paso-sujeto (arriba). Canario `C3 · cubrir la mitad sin explicar el resto no da verde` |
+| Un `expectedScope` fabricado —más chico que lo utilizable— vacía el libro sin que nadie lo note | El constructor exige `expectedScope == alcance.usable()`, en las dos direcciones: ni le faltan sujetos utilizables ni le sobran inventados |
+| Un `Skipped`/`Unobservable` nombra un sujeto que la observación de esa corrida no respalda; `causas` queda vacía y deriva verde | El constructor cruza cada desenlace contra `alcance.observed`/`unobserved` y **lanza** si no coincide. El test lo dice en el nombre: `un Skipped no puede declarar ajeno a un sujeto que la observación no dio como tal — antes daba VERDE` |
+
+El primero, `C3 · cubrir la mitad sin explicar el resto no da verde`, vive en
+`packages/cli/test/verify_test.dart`, grupo «los ataques que antes
+funcionaban» —la suite de la cascada tiene el mismo caso con otro nombre:
+`un paso que cubre un subconjunto SIN explicar el resto no da verde`, en su
+grupo «el libro de obligaciones»—. Los otros dos sí viven en
+`packages/orchestration/test/cascada_test.dart`: `un alcance esperado más
+CHICO que lo utilizable no se deja construir`, en el grupo «el invariante del
+alcance esperado», y `un Skipped no puede declarar ajeno a un sujeto que la
+observación no dio como tal — antes daba VERDE`, en el grupo «el desenlace no
+puede contradecir a la observación».
+
+### Una causa solo se dispara si existe la evidencia que va a nombrar
+
+`nadaEjecutado` enumera los sujetos ajenos al stack en su texto, y disparaba
+con solo `ejecutados.isEmpty` — sin mirar si había alguno que nombrar. Con un
+alcance sano donde todos los pasos abortan, `ejecutados` también queda vacío,
+y la causa citaba una lista vacía: el mismo error original, con otra
+combinación, y lo encontró un review después de que reordenar la lista de
+causas ya había tapado la anterior sin cerrar la clase de bug.
+
+La regla que queda escrita para la próxima causa que se agregue: **se agrega
+solo si existe el contenido que su texto va a citar**, no una posición en la
+lista. Es la misma disciplina que `docs/03` exige de la acción siguiente sobre
+un documento —no nombrar lo que no está ahí— movida un nivel adentro, a la
+causa que la habilita.
+
+### Y la propia cobertura de las propiedades falló dos veces por el mismo mecanismo
+
+Vale contarlo con la misma honestidad que el resto de este archivo: las
+propiedades exhaustivas de `Cascada` (`propiedades_test.dart`) no llegaron
+bien a la primera. Dos rondas de revisión encontraron **el mismo tipo de
+hueco** en generadores distintos —dos guardias que se disparan siempre
+juntas, así que una mutación que rompe solo una queda tapada por la otra—:
+
+- **Ronda 2.** Un escenario mixto (un sujeto ajeno y uno no observado a la
+  vez) hacía que `nadaEjecutado` y `alcanceNoObservable` dispararan siempre
+  juntas. Se separó en dos escenarios angostos, uno por causa.
+- **Ronda 3.** La rejilla de omisiones nunca nombraba los dos sujetos a la
+  vez, así que con cobertura vacía `pasoNoConcluyente` y `obligacionSinSaldar`
+  disparaban siempre juntas. Se agregó una omisión que nombra a los dos.
+
+Se cerró verificando, para cada causa, que existe **al menos un caso donde
+dispara sola** — no alcanza con que dispare; tiene que poder hacerlo sin
+compañía, o una mutación sobre la otra la tapa sin que nadie lo note.
+
+---
+
+## Lo que este arnés todavía no sabe de sí mismo
+
+Tres propiedades del código construido que **nadie había enunciado**. Las
+encontró un contraste con documentación externa sobre grafos de agentes, y
+ninguna es un falso verde: son cosas ciertas que no estaban escritas.
+
+### El presupuesto es por paso, y se multiplica
+
+`cascadaPorDefecto` recibe un `Duration` con un default de **5 minutos**, y le
+pasa **el mismo** a cada paso. Con los 2 pasos de hoy, una corrida puede tardar
+10 minutos; con los 7 que `docs/03` declara, 35.
+
+**No hay tope de corrida**, y ese timeout por invocación es hoy el único
+mecanismo que detiene algo — es decir, el disyuntor físico haciendo de política.
+Construir el tope de corrida sería el presupuesto de cascada, que `D-101`
+congeló por no tener base en el corpus. Lo que sí corresponde es que la cifra
+esté escrita y **derivada**: `capas.py` la saca de `verify.dart`, porque una
+cantidad en prosa que nadie deriva ya envejeció cuatro veces en este README.
+
+`--budget` está declarada en la superficie del CLI y no existe, así que hoy el
+valor solo se puede cambiar desde Dart.
+
+### `PullRequestSlice.id` no tiene lectores
+
+Viaja en el dominio, se serializa, y ningún consumidor lo usa. **Se queda sin
+uso a propósito.** Es la llave natural para saber si una rebanada ya se aplicó,
+pero usarla exige marcar el commit con su identidad —metadata nuestra en el
+historial del usuario, para siempre— y eso es una decisión de diseño que
+pertenece a la política de reanudación, que el corpus declara faltante
+(`D-032`). Inventarle un consumidor ahora para que no parezca muerto sería peor
+que dejarlo declarado.
+
+### La reanudación le impone a `apply` una condición que nadie enunció
+
+`useBranch` es idempotente **a propósito**, y su comentario dice por qué:
+*«la orquestación la pide al empezar y `--resume` la vuelve a pedir»*. A `apply`
+nunca se le hizo la misma pregunta, y es la operación con el efecto
+irreversible.
+
+Medido: aplicar dos veces la misma rebanada **no** produce un segundo commit.
+Lo impide la cláusula «ni uno menos» — que entró por un review, por una razón
+distinta, y que nadie diseñó para esto. Una mutación lo confirma: sin ella, el
+segundo `apply` commitea.
+
+**Esa protección era accidental y ahora tiene su propio test.** Una guardia que
+protege algo que su autor no sabía que protegía se puede quitar en la próxima
+refactorización sin que nada lo note, porque su prueba habla de otro escenario.
+
+Lo que sí quedaba mal era el diagnóstico: decía que la rebanada estaba mal
+armada, cuando en una reanudación no hay nada que arreglar. Ahora nombra **las
+dos lecturas**, que es lo único que desde ahí se puede afirmar con verdad.
 
 ---
 
 ## Lo que `apply` pregunta antes de commitear
 
 El pseudocódigo del corpus le da a `ChangeSink` seis líneas antes del PR. La
-rebanada anterior entregó una: `commit + push`. Esta entrega dos más.
+rebanada anterior entregó una: el **commit local**. Esta entrega dos más.
+
+El `push` no es de acá: `D-097` lo asignó a la forja, que ya necesita
+credencial. `ChangeSink` funciona sin red, y eso es lo que hace observable el
+estado que ADR-014 exige tras una detención.
 
 ```
 SNK → PLG:  ArtifactPolicy → qué se commitea          ← esta
 SNK → PLG:  ProjectTopology → límites de paquete         declarada, no hecha
 SNK:        escanea secretos                          ← esta
-SNK:        commit + push                                ya estaba
+SNK:        commit LOCAL                                  ya estaba
 SNK:        arma el artefacto de DOS SUPERFICIES         falta
 SNK → HOST: PR en draft                                  falta
 ```
@@ -1074,7 +1485,9 @@ agujeros — lo comprobé midiendo, no leyéndolo.
 **La tercera cambió el diseño.** No era la concurrencia futura: era la propia
 operación invocando al gancho adentro suyo. `apply` arma ahora un **índice
 aparte** con `GIT_INDEX_FILE`, lo inspecciona y commitea **ese** índice con
-`--no-verify`. Deja de haber dos consultas cercanas en el tiempo sobre
+`core.hooksPath` a un directorio que no existe — `--no-verify` no alcanzaba,
+porque no frena `prepare-commit-msg` ni `post-commit`. Deja de haber dos
+consultas cercanas en el tiempo sobre
 representaciones distintas: hay un objeto.
 
 Y tuvo una consecuencia que no busqué: **el índice del usuario ya no se toca**,
@@ -1388,7 +1801,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 24 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **19 de los 25 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
@@ -1402,8 +1815,13 @@ Los checks de este repo cubren la arquitectura del código. Los que verifican el
 corpus de diseño viven en `../sdlc-agentico/` con su propio CI. Tener uno solo
 en verde **no significa que el arnés esté completo**. Lo único que hoy cruza los
 dos es `estados.py`, que compara el inventario del arnés contra las reglas
-instaladas acá — y **se degrada a «no disponible» si los repos dejan de estar
-uno al lado del otro**, lo cual está impreso pero no falla.
+instaladas acá. **Si los repos dejan de estar uno al lado del otro, falla**: no
+poder mirar no es «no disponible». La única evasión es `--sin-repo-de-codigo`,
+que hay que escribir a mano y que imprime que no miró.
+
+Este párrafo decía lo contrario —que se degradaba en silencio— y lo encontró un
+review. Es la peor clase de documentación vencida: describía un agujero que ya
+no existe, y quien la leyera creería el arnés más débil de lo que es.
 
 ---
 

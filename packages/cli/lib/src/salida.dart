@@ -11,7 +11,22 @@ import 'package:orchestration/orchestration.dart';
 /// misma razón por la que el plugin exige la versión del esquema del
 /// analizador: leer un formato nuevo con reglas viejas devuelve menos de lo
 /// que hay, y en silencio.
-const esquemaDeSalida = 1;
+///
+/// **Subió a `2` con `runId`** (ver [EventEnvelope] y [ResultEnvelope]): un
+/// consumidor que ya sabía leer el `1` no sabe que ahora hay una clave más, y
+/// tiene que poder distinguir los dos formatos.
+const esquemaDeSalida = 2;
+
+var _corridas = 0;
+
+/// Identifica una corrida de la cascada, para correlacionar sus eventos con
+/// su resultado. **Nulo cuando no hubo corrida**: un error de uso o la ayuda
+/// no llegan a componer ni a correr una [Cascada], así que no hay nada que
+/// identificar — inventarle un id sería afirmar una corrida que no ocurrió.
+String generarRunId() {
+  _corridas += 1;
+  return '${DateTime.now().toUtc().microsecondsSinceEpoch}-$_corridas';
+}
 
 /// Los códigos de proceso. **La precedencia no es una tabla: se deriva.**
 ///
@@ -56,10 +71,14 @@ class EventEnvelope {
   final Map<String, Object?> data;
   final DateTime timestamp;
 
+  /// La corrida que lo produjo, o `null` si no vino de ninguna.
+  final String? runId;
+
   EventEnvelope({
     required this.command,
     required this.type,
     required this.data,
+    this.runId,
     DateTime? timestamp,
   }) : timestamp = (timestamp ?? DateTime.now()).toUtc();
 
@@ -68,6 +87,7 @@ class EventEnvelope {
         'command': command,
         'type': type,
         'timestamp': timestamp.toIso8601String(),
+        'runId': runId,
         'data': data,
       };
 }
@@ -93,12 +113,17 @@ class ResultEnvelope {
 
   final Map<String, Object?> data;
 
+  /// La corrida que lo produjo, o `null` si el comando no llegó a componer
+  /// ni a correr una cascada.
+  final String? runId;
+
   const ResultEnvelope({
     required this.command,
     required this.exitCode,
     required this.verdict,
     required this.data,
     this.nextAction,
+    this.runId,
   });
 
   Map<String, Object?> toJson() => {
@@ -108,6 +133,7 @@ class ResultEnvelope {
         'exitCode': exitCode,
         'verdict': verdict,
         'nextAction': nextAction,
+        'runId': runId,
         'data': data,
       };
 }

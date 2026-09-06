@@ -11,9 +11,17 @@ import 'dart:io';
 import 'package:cli/cli.dart';
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
+import 'package:plugin_dart/plugin_dart.dart';
+import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
 import 'apoyo.dart';
+
+/// Una cascada con ids duplicados no llega a observar nada: el registro se
+/// rechaza en el constructor, antes de que `correr` exista. Un observador sin
+/// ningún sujeto declarado alcanza.
+ObservadorDeAlcanceFalso _observadorQueNoSeUsa() =>
+    ObservadorDeAlcanceFalso(observados: const {});
 
 void main() {
   group('el código de proceso se deriva del estado', () {
@@ -52,6 +60,20 @@ void main() {
       expect(c, 70);
     });
 
+    test(
+        'un paso roto Y causas no concluyentes concurrentes: 70, y la '
+        'acción habla del arnés, no de la causa', () async {
+      // La lista de causas puede venir no vacía con error interno: un paso
+      // roto no impide que otro haya quedado ciego. La acción siguiente
+      // tiene que atender el roto primero, o hablaría de otra cosa que lo
+      // que de verdad interrumpió la corrida.
+      final (c, salida) = await correr(
+          const [], [Paso.ciego('A'), Paso('B', lanza: StateError('x'))]);
+      expect(c, 70);
+      expect(salida, contains('rompió un paso del arnés'));
+      expect(salida, contains('B'));
+    });
+
     test('una cascada que NO SE PUEDE CONSTRUIR da 70, no una excepción',
         () async {
       // La cascada rechaza ids duplicados, y ese rechazo ocurre FUERA del
@@ -59,11 +81,171 @@ void main() {
       // comando: proceso con código del runtime y consumidor sin nada que
       // leer. Es el sabotaje SC-16.
       final (c, salida) = await correr(const ['--json'], const [],
-          construir: (_) => Cascada([Paso.verde('A'), Paso.verde('A')]));
+          construir: (_) => Cascada([Paso.verde('A'), Paso.verde('A')],
+              observador: _observadorQueNoSeUsa()));
       expect(c, 70);
       final r = lineas(salida).single;
       expect(r['type'], 'result');
       expect(r['verdict'], 'internalError');
+    });
+  });
+
+  group('cada desenlace tiene su etapa, y son cinco', () {
+    test('un verde llega como `executed`', () async {
+      final etapas = <String>{};
+      final (_, salida) = await correr(const ['--json'], [Paso.verde('A')]);
+      for (final l in lineas(salida)) {
+        final d = l['data'] as Map<String, Object?>?;
+        if (d != null && d['stage'] != null) etapas.add(d['stage'] as String);
+      }
+      expect(etapas, containsAll(['started', 'executed']));
+    });
+
+    test('un roto llega como `internalError`', () async {
+      final etapas = <String>{};
+      final (_, salida) =
+          await correr(const ['--json'], [Paso('A', lanza: StateError('x'))]);
+      for (final l in lineas(salida)) {
+        final d = l['data'] as Map<String, Object?>?;
+        if (d != null && d['stage'] != null) etapas.add(d['stage'] as String);
+      }
+      expect(etapas, contains('internalError'));
+    });
+  });
+
+  group('el esquema de salida', () {
+    test('subió a 2, y todo evento lleva runId', () async {
+      final (_, salida) = await correr(const ['--json'], [Paso.verde('A')]);
+      expect(lineas(salida).every((l) => l['schema'] == 2), isTrue);
+      expect(lineas(salida).last.containsKey('runId'), isTrue);
+    });
+
+    test('un error de uso, que no corre ninguna cascada, no tiene runId',
+        () async {
+      final (_, salida) = await correr(const ['--json', '--dry-run'], const []);
+      expect(lineas(salida).single['runId'], isNull);
+    });
+  });
+
+  group('el resultado lleva la causa estructurada y el libro', () {
+    test('lo no concluyente trae `inconclusiveBecause` y `obligations`',
+        () async {
+      final (c, salida) = await correr(const ['--json'], [Paso.ciego('A')]);
+      expect(c, 2);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      expect(data['inconclusiveBecause'], isNotEmpty);
+      expect(data.containsKey('obligations'), isTrue);
+    });
+
+    test('el libro trae el desenlace completo de cada paso', () async {
+      final (_, salida) = await correr(const ['--json'], [Paso.verde('A')]);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      final outcomes = data['outcomes']! as Map<String, Object?>;
+      expect(outcomes.keys, ['A']);
+      final a = outcomes['A']! as Map<String, Object?>;
+      expect(a['kind'], 'executed');
+    });
+  });
+
+  group('la acción siguiente solo nombra evidencia presente en `data`', () {
+    test('con lo no concluyente, ni banderas ni comandos que no existen',
+        () async {
+      // El canario de la acción imposible: decía «mirá lo que omitió cada
+      // testigo con --verbose» sobre una lista vacía.
+      final (_, salida) = await correr(const ['--json'], [Paso.ciego('A')]);
+      final doc = lineas(salida).last;
+      final accion = doc['nextAction']! as String;
+      expect(accion, isNot(contains('--verbose')));
+      expect(accion, isNot(contains('doctor')));
+      expect(accion, isNot(contains('--budget')));
+    });
+
+    test('nombra el motivo real del testigo, y ese motivo está en `data`',
+        () async {
+      final (_, salida) = await correr(const ['--json'], [Paso.ciego('A')]);
+      final doc = lineas(salida).last;
+      final data = doc['data']! as Map<String, Object?>;
+      final outcomes = data['outcomes']! as Map<String, Object?>;
+      final witness = (outcomes['A']! as Map<String, Object?>)['witness']!
+          as Map<String, Object?>;
+      final omitido =
+          (witness['omitted']! as List).cast<Map<String, Object?>>();
+      final motivo = omitido.first['reason']! as String;
+      expect(doc['nextAction'], contains(motivo));
+    });
+  });
+
+  group('`--json --quiet` calla el progreso, no los diagnósticos', () {
+    test(
+        'con un paso verde, sin diagnósticos que callar, deja solo el '
+        'resultado', () async {
+      // `--quiet` calla el progreso. Sin diagnósticos que emitir, no queda
+      // otra cosa que el resultado — pero eso no hace de esto el modo no
+      // streaming de la superficie: no hay flag que lo pida, y la prueba de
+      // al lado muestra que con un paso rojo la salida NO se reduce a una
+      // sola línea.
+      final (_, salida) =
+          await correr(const ['--json', '--quiet'], [Paso.verde('A')]);
+      expect(lineas(salida), hasLength(1));
+      expect(lineas(salida).single['type'], 'result');
+    });
+
+    test(
+        'con un paso rojo, el diagnóstico bloqueante viaja igual: el '
+        'evento y el resultado, dos líneas', () async {
+      // Este grupo afirmaba que `--json --quiet` era el modo no streaming
+      // y que dejaba «solo el resultado» — falso, y la prueba de al lado
+      // nunca lo ejercitó porque corría sobre un paso verde, sin
+      // diagnósticos. `Impresora.evento()` calla `type: progress` con
+      // `--quiet`, no `type: diagnostic`: silenciar un bloqueante dejaría
+      // un resultado que afirma que hubo errores sin decir cuáles.
+      final (c, salida) =
+          await correr(const ['--json', '--quiet'], [Paso.rojo('A')]);
+      expect(c, 1);
+      final ls = lineas(salida);
+      expect(ls, hasLength(2));
+      expect(ls.first['type'], 'diagnostic');
+      expect(ls.last['type'], 'result');
+    });
+  });
+
+  group('un start sin terminal queda declarado en el resultado', () {
+    test(
+        'la garantía de entrega: si el canal se rompe, el consumidor no '
+        'espera', () async {
+      // La salida se rompe AL ESCRIBIR el terminal de `A`, que es la única
+      // forma real de dejar un `started` abierto. La versión anterior lanzaba
+      // desde el callback posterior —con el terminal ya entregado— y solo
+      // comprobaba que la lista no estuviera vacía, así que no distinguía
+      // «no se entregó» de «se entregó y algo falló después».
+      final (c, salida) = await invocarConTerminalRoto();
+      expect(c, 70);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      expect(data['unterminated'], ['A']);
+      expect(data['emissionFailedAfterTerminal'], isNull);
+    });
+
+    test('un fallo DESPUÉS del terminal no reescribe la historia', () async {
+      // El bug que encontró un review: el `try` envolvía el terminal, los
+      // diagnósticos y el callback, así que romper cualquiera de los dos
+      // últimos declaraba «no entregado» un terminal que el consumidor ya
+      // tenía, y le recomendaba recuperarse de algo que no pasó.
+      final (c, salida) = await invocarConFalloDespuesDelTerminal();
+      expect(c, 70, reason: 'sigue siendo error del arnés');
+      final doc = lineas(salida).last;
+      final data = doc['data']! as Map<String, Object?>;
+      expect(data['unterminated'], isNull,
+          reason: 'el terminal SÍ se entregó: decir lo contrario es falsear '
+              'el protocolo, no reportarlo');
+      expect(data['emissionFailedAfterTerminal'], ['A']);
+
+      // Y el consumidor de verdad lo recibió: está en el flujo de eventos.
+      final terminales = lineas(salida)
+          .where((e) => e['type'] == 'progress')
+          .map((e) => (e['data']! as Map<String, Object?>)['stage'])
+          .toList();
+      expect(terminales, contains('executed'),
+          reason: 'lo que el resultado niega tiene que no estar en el flujo');
     });
   });
 
@@ -89,6 +271,87 @@ void main() {
       final (_, salida) = await correr(const [], const []);
       expect(salida, contains('ningún verificador registrado'));
       expect(salida, isNot(contains('--verbose')));
+    });
+
+    test(
+        'alcance MIXTO —un ajeno y una ruta inexistente—: dice qué NO se '
+        'pudo observar, no que nada era del stack', () async {
+      // **Este es el caso mixto, no el puro.** El puro —todo inobservable,
+      // ningún ajeno— ya distinguía las causas porque `nadaEjecutado` no
+      // tenía ningún ajeno que nombrar, y una prueba solo con ese caso no
+      // habría notado la diferencia entre el arreglo y lo que ya había. Acá
+      // hay un ajeno DE VERDAD (LEEME.md) además de la ruta que ni se pudo
+      // mirar: antes del fix en `cascada.dart`, `nadaEjecutado` ganaba,
+      // nombraba a LEEME.md con toda normalidad —no el bug literal de
+      // nombrar evidencia ausente— y callaba que además hubo una ruta
+      // inobservable. Es la afirmación parcial que un review encontró.
+      final obs = ObservadorDeAlcanceFalso(
+        observados: {
+          'LEEME.md': ObservedSubject(
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
+        },
+        noObservados: const {'no/existe': 'no existe'},
+      );
+      final (c, salida) = await correr(
+        const ['--json', 'LEEME.md', 'no/existe'],
+        [Paso.verde('A')],
+        construir: (_) => Cascada([Paso.verde('A')], observador: obs),
+      );
+      expect(c, 2);
+      final doc = lineas(salida).last;
+      expect(doc['nextAction'], contains('No se pudo observar'));
+      expect(doc['nextAction'],
+          isNot(contains('Ningún sujeto del alcance es de este stack')),
+          reason: 'nombrar solo el ajeno callaría la ruta inobservable');
+    });
+
+    test(
+        'alcance SANO y todos los pasos ABORTAN: la acción habla del '
+        'aborto, no de sujetos ajenos que no existen', () async {
+      // El caso que un review reprodujo DESPUÉS de que el reordenamiento de
+      // `cascada.dart` cerrara el caso mixto: acá no hay ningún sujeto
+      // ajeno ni ninguna ruta inobservable —el alcance es enteramente del
+      // stack— y sin embargo nada ejecutó, porque los dos pasos abortan.
+      // Antes del fix (condicionar el disparo de `nadaEjecutado` a que
+      // exista al menos un ajeno, no reordenarlo una vez más), la acción
+      // decía «Ningún sujeto del alcance es de este stack: .» — el hueco
+      // después de los dos puntos es el error original exacto: una acción
+      // que nombra evidencia que no existe.
+      final (c, salida) = await correr(
+        const ['--json'],
+        [
+          Paso.abortado('A', nota: 'la nota real del intento'),
+          Paso.abortado('B'),
+        ],
+      );
+      expect(c, 2);
+      final doc = lineas(salida).last;
+      expect(doc['nextAction'], contains('la nota real del intento'));
+      expect(doc['nextAction'],
+          isNot(contains('Ningún sujeto del alcance es de este stack')),
+          reason: 'no hay ningún sujeto ajeno que nombrar: el alcance es '
+              'sano, lo que faltó fue que los pasos terminaran');
+    });
+  });
+
+  group('el libro de obligaciones', () {
+    test('un paso que cubre un subconjunto sin explicar el resto no da verde',
+        () async {
+      final (c, salida) = await correrConAlcance(
+        const ['--json', 'a.fuente', 'b.fuente'],
+        [
+          PasoQueCubre('A', const ['a.fuente', 'b.fuente']),
+          PasoQueCubre('B', const ['a.fuente']),
+        ],
+      );
+      expect(c, 2);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      expect(data['obligations'], [
+        {'step': 'B', 'subject': 'b.fuente'},
+      ]);
     });
   });
 
@@ -159,7 +422,8 @@ void main() {
       // no. «Todo error indica la acción siguiente» no admite excepciones por
       // formato ni por camino.
       final (c, salida, _) = await invocar(const ['verify'], const [],
-          construir: (_) => Cascada([Paso.verde('A'), Paso.verde('A')]));
+          construir: (_) => Cascada([Paso.verde('A'), Paso.verde('A')],
+              observador: _observadorQueNoSeUsa()));
       expect(c, 70);
       expect(salida, contains('→'),
           reason: 'el rescate imprimía solo la línea del error');
@@ -179,8 +443,7 @@ void main() {
       expect(sin, isNot(contains('herramienta --sobre')));
 
       final (_, con) = await correr(const ['--verbose'], [Paso.verde('A')]);
-      expect(con, contains('herramienta --sobre lib/'));
-      expect(con, contains('algo que no se miró'));
+      expect(con, contains('herramienta --sobre .'));
     });
   });
 
@@ -215,12 +478,62 @@ void main() {
       expect(r.exitCode, 1);
       final doc = lineas(r.stdout as String).last;
       final data = doc['data']! as Map<String, Object?>;
-      expect(data['registered'], ['FormatCheck', 'StaticAnalysis'],
+      final registrados = (data['registered']! as List)
+          .cast<Map<String, Object?>>()
+          .map((e) => e['id'])
+          .toList();
+      expect(registrados, ['FormatCheck', 'StaticAnalysis'],
           reason: 'el orden es de costo creciente y es parte del contrato');
       expect(data['executed'], ['FormatCheck', 'StaticAnalysis']);
       expect(doc['verdict'], 'failed',
           reason: 'los pasos reales tienen que ENCONTRAR el archivo sin '
               'formatear, no solo estar registrados');
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('un alcance sin archivos del stack se SALTA, y lo dice', () async {
+      // Antes de esta rebanada, esto salía «no concluyente: algún paso no pudo
+      // observar su alcance» — falso: las dos herramientas corrieron,
+      // terminaron completas con código 0, y no tenían nada suyo que mirar.
+      // Es el falso rojo simétrico del falso verde que el arnés caza.
+      File('${raiz.path}/lib/LEEME.md').writeAsStringSync('# solo prosa\n');
+      final r = await shipflow(['verify', 'lib', '--json']);
+
+      final doc = lineas(r.stdout as String).last;
+      final data = doc['data']! as Map<String, Object?>;
+      final outcomes = data['outcomes']! as Map<String, Object?>;
+      expect(outcomes.keys, ['FormatCheck', 'StaticAnalysis']);
+      for (final o in outcomes.values) {
+        expect((o as Map<String, Object?>)['kind'], 'skipped',
+            reason: 'un salto sin motivo es un salto silencioso');
+      }
+
+      // Y la corrida NO es verde: cada salto por separado es legítimo, todos
+      // juntos son una corrida que no verificó nada.
+      expect(doc['verdict'], 'inconclusive');
+      expect(doc['exitCode'], 2);
+      expect(
+          doc['nextAction'],
+          contains('Ningún sujeto del alcance es de '
+              'este stack'),
+          reason: 'no puede decir «no pudo observar»: sí observó');
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('una ruta INEXISTENTE no es «no tuvo nada que hacer»', () async {
+      // El falso salto: el arnés no pudo mirar, no es que no había nada. Un
+      // review lo cobró — y con otro paso en verde en la cascada, esto habría
+      // sido un verde sobre una ruta que nadie miró.
+      final r = await shipflow(['verify', 'no/existe', '--json']);
+
+      final doc = lineas(r.stdout as String).last;
+      final data = doc['data']! as Map<String, Object?>;
+      final outcomes = data['outcomes']! as Map<String, Object?>;
+      expect(
+          outcomes.values.every(
+              (o) => (o as Map<String, Object?>)['kind'] == 'unobservable'),
+          isTrue,
+          reason: 'no pudo mirar ≠ no había nada');
+      expect(doc['verdict'], 'inconclusive');
+      expect(doc['nextAction'], contains('No se pudo observar'));
     }, timeout: const Timeout(Duration(minutes: 3)));
 
     test('una bandera global ANTES del comando no es un comando', () async {
@@ -243,5 +556,129 @@ void main() {
       final r = await shipflow(const ['--help']);
       expect(r.exitCode, 0);
     }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('la composición real observa el alcance UNA sola vez', () async {
+      // **La cláusula 4 de `ScopeObserver`, probada donde se incumplía.** La
+      // cascada observaba una vez y cada paso volvía a observar por su
+      // cuenta, así que la corrida entera leía el árbol tres veces y podía
+      // reportar un alcance que los verificadores nunca vieron. La guardia
+      // que lo justificaba comparaba NOMBRES: si el directorio seguía siendo
+      // utilizable, un árbol de otro tamaño no divergía y la corrida salía
+      // verde con un conteo ajeno a lo verificado.
+      //
+      // Se prueba sobre `cascadaPorDefecto` a propósito: una cascada con
+      // pasos ficticios que nunca observan no puede ver esto, y por eso no
+      // lo vio nadie durante doce tareas.
+      File('${raiz.path}/lib/a.dart').writeAsStringSync('void a() {}\n');
+      final espia =
+          _ObservadorQueCuenta(ObservadorDeAlcanceDart(directorio: raiz.path));
+      final cascada =
+          cascadaPorDefecto(directorio: raiz.path, observador: espia);
+      await cascada.correr(const ['lib']);
+      expect(espia.llamadas, 1,
+          reason: 'dos lecturas del árbol pueden diferir, y entonces el '
+              'reporte declara un alcance que nadie verificó');
+    }, timeout: const Timeout(Duration(minutes: 3)));
   });
+
+  // Los seis ataques que se reprodujeron sobre el código anterior y salían
+  // verdes, o daban acciones imposibles. Convertidos en pruebas para que no
+  // vuelvan a funcionar sin que algo lo note.
+  //
+  // **Nota de adaptación.** El brief de esta tarea traía este grupo escrito
+  // contra una forma del código que cinco cambios, ocurridos durante la
+  // ejecución del plan, dejaron desactualizada:
+  //
+  // - `Skipped` no lleva más un solo `ObservedSubject` opcional: lleva
+  //   `notOfStack`, la lista completa de ajenos que motiva el salto.
+  // - `Witness` ya no tiene campo de terminación ni de conteo: `Termination`
+  //   distinta de completa vive en `Attempt`, dentro de `Aborted`.
+  // - Los ayudantes que el brief daba por existentes —`correrConAlcance`,
+  //   `PasoQueCubre`, `invocarConObservadorRoto`, `lineas`— ya estaban en
+  //   `apoyo.dart` de una tarea previa, así que se reusan tal cual en vez de
+  //   volver a declararlos acá.
+  group('los ataques que antes funcionaban', () {
+    test('C1 · un verificador no puede declarar que un archivo no es suyo', () {
+      // No hay forma de escribir el ataque: `run` devuelve
+      // `VerificationOutcome` y `Skipped` no es uno. Si esta prueba deja de
+      // compilar porque alguien metió `Skipped` bajo `VerificationOutcome`,
+      // el invariante se perdió.
+      expect(
+          Skipped(notOfStack: [
+            ObservedSubject(
+                subject: 'a', ofStack: false, files: 0, reason: 'no es mío')
+          ]),
+          isNot(isA<VerificationOutcome>()));
+    });
+
+    test('C3 · cubrir la mitad sin explicar el resto no da verde', () async {
+      final (c, _) = await correrConAlcance(const [
+        'a.fuente',
+        'b.fuente'
+      ], [
+        PasoQueCubre('A', const ['a.fuente'])
+      ]);
+      expect(c, 2);
+    });
+
+    test('C6 · un start sin terminal queda declarado', () async {
+      final (c, salida) = await invocarConTerminalRoto();
+      expect(c, 70);
+      final data = lineas(salida).last['data']! as Map<String, Object?>;
+      expect(data['unterminated'], ['A']);
+    });
+
+    test('C9 · un paso sin evidencia no se puede construir', () {
+      expect(
+          () => Witness(
+                invocation: 'h',
+                subjects: const [],
+                omitted: const [],
+                exitCode: 0,
+                finishedAt: DateTime.utc(2026),
+              ),
+          throwsArgumentError);
+    });
+
+    test('C12 · un testigo honesto da verde, sin campos de más', () async {
+      // El plugin de terceros que cumplía las cláusulas y nunca obtenía
+      // verde, porque le faltaba un conteo que ya no existe.
+      final (c, _) = await correrConAlcance(const [
+        'a.fuente'
+      ], [
+        PasoQueCubre('A', const ['a.fuente'])
+      ]);
+      expect(c, 0);
+    });
+
+    test('C5 · la regla del motivo en blanco vale en LOS TRES tipos', () {
+      // Antes había dos reglas para el mismo hecho: un tipo rechazaba
+      // cualquier blanco y otro solo si TODOS lo eran. `Omission` lanza antes
+      // que `Witness`, así que comprobar los dos ahí no probaría nada nuevo:
+      // lo que se recorre son los tres lugares donde se escribe un motivo.
+      expect(() => Omission(subject: 'a', reason: ' '), throwsArgumentError);
+      expect(
+          () => ObservedSubject(
+              subject: 'a', ofStack: false, files: 0, reason: '  '),
+          throwsArgumentError);
+      expect(() => UnobservedSubject(subject: 'a', cause: ' '),
+          throwsArgumentError);
+    });
+  });
+}
+
+/// Cuenta cuántas veces se mira el árbol en una corrida. Delega en el
+/// observador de verdad: lo que se prueba es la CANTIDAD de lecturas, no lo
+/// que cada una devuelve.
+class _ObservadorQueCuenta implements ScopeObserver {
+  final ScopeObserver interno;
+  int llamadas = 0;
+
+  _ObservadorQueCuenta(this.interno);
+
+  @override
+  Future<ScopeObservation> observe(List<String> subjects) {
+    llamadas++;
+    return interno.observe(subjects);
+  }
 }

@@ -5,6 +5,8 @@
 /// significado de una traza vieja.
 library;
 
+import 'desenlace.dart';
+
 /// Severidad de un control determinista (ADR-013).
 ///
 /// **Se mueve con evidencia**, a diferencia de [SignalType], que es un hecho.
@@ -149,17 +151,9 @@ class Witness {
   final String invocation;
 
   /// Sobre qué. **Vacío es un dato**, no un descuido: significa que el paso
-  /// corrió sin sujeto, y eso vuelve el resultado no concluyente.
+  /// corrió sin sujeto propio, y por eso tiene que venir acompañado de al
+  /// menos una omisión que lo explique (ver el invariante del constructor).
   final List<String> subjects;
-
-  /// Cómo terminó la invocación. Es lo que distingue «corrió y no encontró
-  /// nada» de «no llegó a correr».
-  ///
-  /// **Obligatoria, sin valor por defecto.** Tenía `Termination.completa` por
-  /// defecto y eso reintroducía el falso verde por otra puerta: un adapter que
-  /// se olvidara de mapear el timeout producía «terminó bien» sin que nadie lo
-  /// hubiera afirmado. Un hecho que se asume no es un hecho declarado.
-  final Termination termination;
 
   /// Código de salida de la invocación. **Es dato, no veredicto**: muchas
   /// herramientas salen con código distinto de cero cuando encuentran algo,
@@ -167,34 +161,13 @@ class Witness {
   /// conoce esa herramienta, no este tipo.
   final int exitCode;
 
-  /// **Qué NO cubrió, y por qué.** Vacía significa «nada quedó afuera», y es
-  /// una afirmación, no un silencio.
-  ///
-  /// **Obligatoria, sin valor por defecto**, por la misma razón que
-  /// [termination]: con `= const []` una implementación que se olvidara del
-  /// campo declaraba cobertura total sin haberlo afirmado nunca. Es el agujero
-  /// que este mismo archivo describe dos párrafos más abajo, reabierto por la
-  /// puerta de al lado — y lo encontró un review, no yo.
-  ///
-  /// Los motivos en blanco se rechazan. Una cadena vacía ocupa un lugar en la
-  /// lista y no dice qué quedó afuera: es la misma comprobación de PRESENCIA
-  /// donde hacía falta CONTENIDO que ya corrigió `Rule` con sus evasiones.
-  ///
-  /// **No hay compatibilidad con testigos anteriores, y es deliberado.** Un
-  /// JSON sin `omitted` falla al leerse. Completarlo con `[]` afirmaría que no
-  /// hubo omisiones, que es justo lo que nadie sabe. No hay trazas persistidas
-  /// todavía —no hay CLI— así que el costo es cero y la alternativa era
-  /// mentir sobre corridas viejas.
+  /// **Qué NO cubrió, y por qué**, una [Omission] por residuo. Vacía
+  /// significa «nada quedó afuera», y es una afirmación, no un silencio.
   ///
   /// ADR-011 pide un testigo de «qué corrió, sobre qué alcance, **qué omitió y
-  /// por qué**». Las tres primeras estaban; esta faltaba, y se notó en el
-  /// primer paso de cascada que la necesitó: una herramienta que no informa
-  /// qué archivos leyó obliga a comprobar la cobertura por otro lado, y eso
-  /// tiene que quedar ESCRITO en el testigo y no en un comentario del código.
-  ///
-  /// Es el corolario 5 vuelto dato: cada control declara si puede detectar una
-  /// omisión. Un paso que no puede, lo dice acá.
-  final List<String> omitted;
+  /// por qué**». Es el corolario 5 vuelto dato: cada control declara si puede
+  /// detectar una omisión. Un paso que no puede, lo dice acá.
+  final List<Omission> omitted;
 
   /// Cuándo terminó, en UTC.
   final DateTime finishedAt;
@@ -202,52 +175,63 @@ class Witness {
   /// Las listas se copian a una vista inmodificable. Sin esto el invariante
   /// no es del tipo: quien conservara la lista original podía vaciarla
   /// después de construir el testigo y cambiarle el veredicto al resultado.
+  ///
+  /// **Sin sujetos y sin omisiones no se construye.** Es la acción imposible
+  /// que este tipo cierra: un testigo que no cubrió nada y no dice por qué
+  /// deja al reporte mandando a leer una lista vacía.
+  ///
+  /// **Una invocación en blanco tampoco.** Un testigo existe para decir qué
+  /// se ejecutó; uno que no nombra nada no atestigua ninguna invocación.
   Witness({
     required this.invocation,
     required List<String> subjects,
     required this.exitCode,
     required this.finishedAt,
-    required this.termination,
-    required List<String> omitted,
+    required List<Omission> omitted,
   })  : subjects = List.unmodifiable(subjects),
         omitted = List.unmodifiable(omitted) {
-    if (this.omitted.any((m) => m.trim().isEmpty)) {
+    if (invocation.trim().isEmpty) {
+      throw ArgumentError.value(invocation, 'invocation',
+          'Una invocación en blanco no atestigua nada');
+    }
+    if (this.subjects.isEmpty && this.omitted.isEmpty) {
       throw ArgumentError.value(
           omitted,
           'omitted',
-          'Hay motivos en blanco. Un motivo vacío ocupa lugar en la lista y no '
-              'dice qué quedó afuera: sacalo, o escribí por qué');
+          'Un testigo que no cubre nada y no dice por qué deja al reporte '
+              'mandando a leer una lista vacía. Si no cubriste, escribí qué '
+              'quedó afuera');
+    }
+    final cubiertos = this.subjects.toSet();
+    final contradictorios = [
+      for (final o in this.omitted)
+        if (o.subject != null && cubiertos.contains(o.subject)) o.subject!,
+    ];
+    if (contradictorios.isNotEmpty) {
+      throw ArgumentError.value(
+          contradictorios,
+          'omitted',
+          'Estos sujetos están en subjects Y en omitted: el testigo afirma '
+              '«lo cubrí» y «no lo cubrí» del mismo sujeto a la vez');
     }
   }
-
-  /// Un testigo atestigua si **corrió**, si dice **qué** corrió, y si dice
-  /// **sobre qué**. Las tres cosas: es el corolario 5 de ADR-011 —no
-  /// distinguir «no encontré nada» de «no miré ahí»— convertido en predicado.
-  ///
-  /// [omitted] NO entra: declarar una omisión es parte de un reporte honesto,
-  /// no un motivo para invalidarlo. Un paso que corrió sobre nueve de diez
-  /// archivos y lo dice atestigua; uno que corrió sobre diez y no lo dice, no
-  /// es mejor.
-  bool get attests =>
-      termination == Termination.completa &&
-      invocation.trim().isNotEmpty &&
-      subjects.isNotEmpty;
 
   Map<String, Object?> toJson() => {
         'invocation': invocation,
         'subjects': subjects,
-        'termination': termination.name,
         'exitCode': exitCode,
-        'omitted': omitted,
+        'omitted': [for (final o in omitted) o.toJson()],
         'finishedAt': finishedAt.toUtc().toIso8601String(),
       };
 
   factory Witness.fromJson(Map<String, Object?> json) => Witness(
         invocation: json['invocation']! as String,
         subjects: List<String>.from(json['subjects']! as List<Object?>),
-        termination: Termination.values.byName(json['termination']! as String),
         exitCode: json['exitCode']! as int,
-        omitted: List<String>.from(json['omitted']! as List<Object?>),
+        omitted: [
+          for (final o in json['omitted']! as List<Object?>)
+            Omission.fromJson(Map<String, Object?>.from(o! as Map)),
+        ],
         finishedAt: DateTime.parse(json['finishedAt']! as String),
       );
 }

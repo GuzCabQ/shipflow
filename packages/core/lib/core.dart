@@ -9,14 +9,18 @@
 /// - **valores** — enums y objetos de valor, incluidos [QuotedText] y [Witness].
 /// - **entidades** — el dato del dominio.
 /// - **regla** — [Rule] y sus requisitos de instalación.
-/// - **observación** — trazas, hallazgos inferenciales y resultados.
+/// - **observación** — trazas y hallazgos inferenciales.
+/// - **desenlace** — el desenlace de un paso: [StepOutcome] sellado, y el
+///   subconjunto propio [VerificationOutcome] que un verificador devuelve.
 /// - **credencial** — [Credential], el único tipo que no serializa.
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
 library;
 
+export 'src/alcance.dart';
 export 'src/credencial.dart';
+export 'src/desenlace.dart';
 export 'src/entidades.dart';
 export 'src/observacion.dart';
 export 'src/puertos.dart';

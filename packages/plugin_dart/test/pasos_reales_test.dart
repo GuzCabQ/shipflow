@@ -18,6 +18,12 @@ import 'package:core/core.dart';
 import 'package:plugin_dart/plugin_dart.dart';
 import 'package:test/test.dart';
 
+/// El alcance como lo observaría la cascada. Los pasos ya no observan: la
+/// cláusula 5 de `Verifier` dice que reciben la observación de la corrida.
+Future<VerificationScope> _alcance(String raiz, List<String> sujetos) async =>
+    VerificationScope.de(
+        await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos));
+
 void main() {
   late Directory raiz;
 
@@ -43,34 +49,61 @@ void main() {
       directorio: raiz.path,
       presupuesto: const Duration(minutes: 2));
 
-  test('un alcance que NO existe sale con código 0 y aun así no es verde',
+  test('la herramienta calla sobre lo que no existe, y el arnés no lo invoca',
       () async {
-    // El hallazgo entero de esta rebanada, contra la herramienta real.
-    final o = await formato().run(['no/existe/']);
-    expect(o.witness!.exitCode, 0,
-        reason: 'si esto dejara de ser 0, la herramienta cambió y este paso '
-            'necesita menos defensa de la que tiene');
-    expect(o.verdict, Verdict.noConcluyente);
-    expect(o.witness!.subjects, isEmpty);
+    // **La premisa, medida contra la herramienta real y no supuesta.** Es la
+    // razón de ser de toda la defensa: sobre una ruta inexistente esta
+    // herramienta sale con CERO, así que creerle al código de salida sería un
+    // verde sobre algo que nadie miró. Si esto dejara de ser 0, la herramienta
+    // cambió y este paso necesita menos defensa de la que tiene.
+    final r = await const EjecutorDelSistema().correr(
+        'dart', const ['format', '--output=none', 'no/existe/'],
+        directorio: raiz.path, presupuesto: const Duration(minutes: 2));
+    expect(r.codigo, 0);
+
+    // Y la propiedad: el paso no le cree, y ya ni siquiera la invoca —
+    // descarta el sujeto antes. Sin ningún sujeto utilizable en el alcance,
+    // la corrida es precondición violada: lo que se comprueba es el
+    // desenlace, no el mecanismo, y un test que fijara el mecanismo
+    // convertiría toda mejora en una falsa alarma.
+    // El alcance del paso no llega a construirse: sin ningún sujeto
+    // utilizable, `VerificationScope` no existe y `run` no se invoca.
+    await expectLater(
+        _alcance(raiz.path, const ['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  test('el analizador sí delata el alcance inexistente, con su código',
+  test('un alcance inexistente lo delata el ARNÉS, no la herramienta',
       () async {
-    final o = await analisis().run(['no/existe/']);
-    expect(o.verdict, Verdict.noConcluyente);
-    expect(o.witness!.exitCode, 64,
-        reason: 'es el único caso ciego que esta herramienta delata sola');
+    // Antes esto se apoyaba en que el analizador saliera con código 64: la
+    // ruta inexistente le llegaba a la herramienta y ella se quejaba. Ahora el
+    // arnés la descarta antes de invocar —un sujeto descartado no puede llegar
+    // a la toolchain— y lo delata por su propia cuenta, sin necesitar que la
+    // herramienta corra: con un único sujeto y sin nada utilizable, la corrida
+    // ni empieza.
+    //
+    // Es más fuerte, no menos: el caso ciego deja de depender de que una
+    // herramienta ajena se moleste en avisar. Lo que se comprueba es la
+    // propiedad, no el mecanismo.
+    await expectLater(
+        _alcance(raiz.path, const ['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('código limpio y formateado da verde en los dos pasos', () async {
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
-    expect((await formato().run(['lib/'])).verdict, Verdict.verde);
-    expect((await analisis().run(['lib/'])).verdict, Verdict.verde);
+    expect(
+        (await formato().run(await _alcance(raiz.path, ['lib/'])) as Executed)
+            .verdict,
+        Verdict.verde);
+    expect(
+        (await analisis().run(await _alcance(raiz.path, ['lib/'])) as Executed)
+            .verdict,
+        Verdict.verde);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un archivo sin formatear lo encuentra el paso real', () async {
     fuente('feo.dart', 'void a(){int   x=1;print(x);}\n');
-    final o = await formato().run(['lib/']);
+    final o =
+        await formato().run(await _alcance(raiz.path, ['lib/'])) as Executed;
     expect(o.verdict, Verdict.rojo);
     expect(o.diagnostics.single.file, contains('feo'));
   }, timeout: const Timeout(Duration(minutes: 3)));
@@ -78,7 +111,8 @@ void main() {
   test('S4 · un archivo que no parsea produce diagnóstico, no salto silencioso',
       () async {
     fuente('roto.dart', 'void main( {\n');
-    final o = await formato().run(['lib/']);
+    final o =
+        await formato().run(await _alcance(raiz.path, ['lib/'])) as Executed;
     expect(o.diagnostics.map((d) => d.ruleId), contains('formato/no-parsea'),
         reason: 'es el criterio de salida S4 de la fase, contra la '
             'herramienta de verdad');
@@ -88,21 +122,36 @@ void main() {
   test('el analizador real encuentra un error de tipos y lo pone en rojo',
       () async {
     fuente('malo.dart', 'void main() {\n  String x = 3;\n  print(x);\n}\n');
-    final o = await analisis().run(['lib/']);
+    final o =
+        await analisis().run(await _alcance(raiz.path, ['lib/'])) as Executed;
     expect(o.verdict, Verdict.rojo);
     expect(o.diagnostics.single.severity, Severity.bloquea);
     expect(o.diagnostics.single.line, 2);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  test('alcance mixto real: no certifica lo que la herramienta no encontró',
-      () async {
-    // La reproducción exacta del review, contra la toolchain instalada.
+  test(
+      'un sujeto que ya no existe no se invoca ni se certifica, con el '
+      'observador REAL', () async {
+    // **Esto YA NO reconcilia contra la salida del binario.** Antes era la
+    // reproducción del review: 'no/existe' llegaba al formateador, que salía
+    // con código 0, y el paso tenía que descreerle. La reconciliación de un
+    // alcance mixto contra la salida GENUINA del binario la cubre 'la
+    // reconciliación cierra contra la toolchain de verdad', más abajo.
+    //
+    // Lo que esta prueba aporta, y por eso no se borra: que el observador
+    // REAL de este stack —contra el sistema de archivos de verdad, no un mapa
+    // declarado a mano como en `pasos_test.dart`— clasifica 'no/existe' como
+    // no utilizable, y que el paso **no lo invoca ni lo certifica**. Hubo una
+    // versión que abortaba acá; el aborto se fue con la doble lectura que lo
+    // motivaba. Que una corrida con un sujeto inobservable no pueda ser
+    // verde lo sostiene la cascada, no el paso.
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
-    final o = await formato().run(['lib/', 'no/existe']);
-    expect(o.witness!.exitCode, 0,
-        reason: 'la herramienta no delata el sujeto que falta; el paso sí');
-    expect(o.witness!.subjects, ['lib/']);
-    expect(o.witness!.omitted.join(), contains('no/existe'));
+    final o = await formato()
+        .run(await _alcance(raiz.path, ['lib/', 'no/existe'])) as Executed;
+    expect(o.witness.subjects, ['lib/'],
+        reason: 'certifica lo que se pudo mirar, y solo eso');
+    expect(o.witness.invocation, isNot(contains('no/existe')),
+        reason: 'la herramienta no recibe lo que el observador no pudo mirar');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('la reconciliación cierra contra la toolchain de verdad', () async {
@@ -110,6 +159,12 @@ void main() {
     // resumen que yo escribo; acá el número lo pone la herramienta, así que si
     // mi forma de contar el alcance no coincide con la suya, esto se pone rojo
     // en vez de dejar todo no concluyente en silencio.
+    //
+    // **Es también la prueba que reconcilia un alcance MIXTO —dos sujetos,
+    // con conteos conocidos— contra la salida genuina del binario.** Si se
+    // busca esa cobertura y no se encuentra en la prueba de más arriba
+    // ("un sujeto que ya no existe..."), es porque vive acá: esa otra ya no
+    // llega a invocar la herramienta.
     fuente('uno.dart', 'void main() {\n  print(1);\n}\n');
     Directory('${raiz.path}/otro').createSync();
     File('${raiz.path}/otro/dos.dart')
@@ -120,9 +175,10 @@ void main() {
     File('${raiz.path}/otro/.escondido/tres.dart')
         .writeAsStringSync('void  main( ){}\n');
 
-    final o = await formato().run(['lib/', 'otro']);
+    final o = await formato().run(await _alcance(raiz.path, ['lib/', 'otro']))
+        as Executed;
     expect(o.verdict, Verdict.verde);
-    expect(o.witness!.subjects, ['lib/', 'otro']);
+    expect(o.witness.subjects, ['lib/', 'otro']);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   group('EjecutorDelSistema', () {

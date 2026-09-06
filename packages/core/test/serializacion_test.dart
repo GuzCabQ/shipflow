@@ -77,12 +77,25 @@ void main() {
 
   // exitCode 3 y no 0: un cero sería el valor por defecto, y entonces este
   // campo no probaría nada.
+  final omision = Omission(
+    subject: 'lib/ilegible.fuente',
+    reason: 'no se pudo leer',
+  );
+
   final testigo = Witness(
     invocation: 'verificador --sobre lib/',
     subjects: const ['lib/algo.fuente'],
-    omitted: const ['lib/ilegible.fuente: no se pudo leer'],
+    omitted: [omision],
     exitCode: 3,
-    termination: Termination.completa,
+    finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
+  );
+
+  final intento = Attempt(
+    invocation: 'verificador --sobre lib/',
+    subjects: const ['lib/algo.fuente'],
+    termination: Termination.tiempoAgotado,
+    exitCode: 124,
+    note: 'se cortó por presupuesto de tiempo',
     finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
   );
 
@@ -170,24 +183,142 @@ void main() {
       Finding.fromJson
     ),
     'Rule': (regla.toJson(), Rule.fromJson),
-    'VerificationOutcome': (
-      VerificationOutcome(
-        verifierId: 'V-1',
-        diagnostics: [diagnostico],
-        witness: testigo,
+    'Omission': (omision.toJson(), Omission.fromJson),
+    'Attempt': (intento.toJson(), Attempt.fromJson),
+    'Executed': (
+      Executed(witness: testigo, diagnostics: [diagnostico]).toJson(),
+      Executed.fromJson
+    ),
+    'Aborted': (Aborted(attempt: intento).toJson(), Aborted.fromJson),
+    // **`Skipped` NO entra acá.** `Skipped` ahora rechaza cualquier sujeto
+    // que el observador haya declarado del stack (invariante nueva, ver la
+    // suite de verificación), así que la única instancia válida de
+    // `notOfStack` trae exclusivamente sujetos ajenos — y esos SIEMPRE traen
+    // `files: 0` y `ofStack: false` por el invariante de `ObservedSubject`.
+    // Ninguna instancia canónica válida puede entonces hacer viajar esos dos
+    // campos con un valor no default, así que este check —que exige
+    // exactamente eso— no se le puede aplicar. Antes esta entrada usaba una
+    // segunda instancia con un sujeto contradictorio (del stack) para
+    // esquivarlo; era el síntoma del hallazgo crítico de la ronda 1,
+    // convertido en dato de prueba. Ver el caso dedicado más abajo, que hace
+    // lo mismo que ya hace `ScopeObservation` con su propio campo forzoso.
+    'Unobservable': (
+      Unobservable(causes: [
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+      ]).toJson(),
+      Unobservable.fromJson
+    ),
+    'Broken': (
+      Broken(
+        component: 'analizador-x',
+        error: 'no se pudo invocar el binario',
+        context: 'paso lib/algo.fuente',
       ).toJson(),
-      VerificationOutcome.fromJson
+      Broken.fromJson
+    ),
+    'ObservedSubject · del stack': (
+      ObservedSubject(subject: 'lib/codigo', ofStack: true, files: 2).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'ObservedSubject · ajeno al stack': (
+      ObservedSubject(
+        subject: 'lib/ajeno',
+        ofStack: false,
+        files: 0,
+        reason: 'está fuera del stack',
+      ).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'UnobservedSubject': (
+      UnobservedSubject(
+        subject: 'no/existe',
+        cause: 'no existe en el árbol',
+      ).toJson(),
+      UnobservedSubject.fromJson
+    ),
+    // **Lo único que ve un `Verifier`.** Cada campo con un valor
+    // distinguible: dos sujetos con nombres distintos entre sí y un conteo
+    // que no coincide con la cantidad de sujetos, para que una serialización
+    // que confunda «cuántos sujetos» con «cuántos archivos» no cuadre.
+    'VerificationScope': (
+      VerificationScope(
+        subjects: const ['lib', 'test'],
+        files: 7,
+      ).toJson(),
+      VerificationScope.fromJson
+    ),
+    'ScopeObservation · con sujetos del stack': (
+      ScopeObservation(
+        requested: const ['lib', 'no/existe'],
+        observed: [
+          ObservedSubject(subject: 'lib', ofStack: true, files: 2),
+        ],
+        unobserved: [
+          UnobservedSubject(
+              subject: 'no/existe', cause: 'no existe en el árbol'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
+    ),
+    'ScopeObservation · con sujetos ajenos': (
+      ScopeObservation(
+        requested: const ['lib', 'LEEME.md'],
+        observed: [
+          ObservedSubject(
+            subject: 'lib',
+            ofStack: false,
+            files: 0,
+            reason: 'está fuera del stack',
+          ),
+        ],
+        unobserved: [
+          UnobservedSubject(subject: 'LEEME.md', cause: 'no es código fuente'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
     ),
   };
+
+  /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
+  /// todos con valor, así que la precondición se cumple **sobre el conjunto**
+  /// de sus instancias canónicas y no dentro de una.
+  ///
+  /// Es una excepción declarada, no un silencio: si mañana alguien agrega un
+  /// tercer campo excluyente y no suma su instancia, este check lo caza igual
+  /// —el campo nuevo quedaría en su default en TODAS—.
+  const excluyentes = {'ObservedSubject', 'ScopeObservation'};
 
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
     // o a `0` coincide consigo mismo en la ida y vuelta y no lo nota nadie.
     for (final e in canonicas.entries) {
+      final clase = e.key.split(' · ').first;
+      if (excluyentes.contains(clase)) continue;
       test(e.key, () {
         expect(valoresPorDefecto(e.value.$1), isEmpty,
             reason: 'estos campos salen con su valor por defecto, así que no '
                 'distinguen «viajó» de «se perdió»');
+      });
+    }
+
+    for (final clase in excluyentes) {
+      test('$clase · entre todas sus instancias', () {
+        final instancias = [
+          for (final e in canonicas.entries)
+            if (e.key.split(' · ').first == clase) e.value.$1,
+        ];
+        expect(instancias, hasLength(greaterThan(1)),
+            reason: 'una clase con campos excluyentes necesita más de una '
+                'instancia canónica, o la precondición no se puede cumplir');
+        final enDefectoEnTodas = valoresPorDefecto(instancias.first)
+            .where((ruta) =>
+                instancias.every((i) => valoresPorDefecto(i).contains(ruta)))
+            .toList();
+        expect(enDefectoEnTodas, isEmpty,
+            reason: 'estos campos salen con su valor por defecto en TODAS las '
+                'instancias, así que no distinguen «viajó» de «se perdió»');
       });
     }
   });
@@ -213,5 +344,49 @@ void main() {
   test('un enum viaja por nombre, no por índice', () {
     // Reordenar un enum no debe cambiar el significado de una traza vieja.
     expect(diagnostico.toJson()['severity'], equals('bloquea'));
+  });
+
+  test('la observación de alcance no pierde nada, y no trae vacíos', () {
+    final o = ScopeObservation(
+      requested: const ['lib', 'no/existe'],
+      observed: [ObservedSubject(subject: 'lib', ofStack: true, files: 3)],
+      unobserved: [
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+      ],
+      observedAt: DateTime.utc(2026, 9, 5),
+    );
+    // `reason` es nulo cuando el sujeto SÍ es del stack, y eso es correcto:
+    // se excluye de la comprobación de vacíos porque su ausencia es el dato.
+    final json = o.toJson();
+    for (final e in json['observed']! as List) {
+      (e as Map).remove('reason');
+    }
+    expect(valoresPorDefecto(json), isEmpty);
+    expect(ScopeObservation.fromJson(o.toJson()).toJson(), o.toJson());
+  });
+
+  test("'Skipped' no pierde nada, y no trae vacíos que no sean forzosos", () {
+    // Mismo caso que el de arriba, para el mismo motivo: `notOfStack` solo
+    // admite sujetos ajenos al stack (la invariante que cerró el hallazgo
+    // crítico de la ronda 1), y esos siempre traen `files: 0` y
+    // `ofStack: false` — no hay ninguna instancia VÁLIDA de `Skipped` que
+    // pueda demostrar que esos dos campos no son un valor por defecto
+    // aplastado. Se excluyen de la comprobación de vacíos por la misma razón
+    // que arriba excluye `reason`, y el round-trip se verifica a mano en vez
+    // de por la lista `canonicas`.
+    final s = Skipped(notOfStack: [
+      ObservedSubject(
+          subject: 'lib/ajeno-a', ofStack: false, files: 0, reason: 'motivo a'),
+      ObservedSubject(
+          subject: 'lib/ajeno-b', ofStack: false, files: 0, reason: 'motivo b'),
+    ]);
+    final json = s.toJson();
+    for (final e in json['notOfStack']! as List) {
+      (e as Map)
+        ..remove('files')
+        ..remove('ofStack');
+    }
+    expect(valoresPorDefecto(json), isEmpty);
+    expect(Skipped.fromJson(s.toJson()).toJson(), s.toJson());
   });
 }

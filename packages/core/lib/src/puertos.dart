@@ -14,8 +14,10 @@
 /// solo, y este archivo ya lo hizo una vez.
 library;
 
+import 'alcance.dart';
 import 'entidades.dart';
 import 'credencial.dart';
+import 'desenlace.dart';
 import 'observacion.dart';
 import 'regla.dart';
 import 'valores.dart';
@@ -87,6 +89,44 @@ abstract interface class ArtifactPolicy {
   bool isEditable(String path);
 }
 
+/// Mira el alcance y devuelve **hechos por sujeto**, no conclusiones.
+///
+/// Existe porque el corolario 4 de ADR-011 dice que ningún verificador juzga
+/// su propia cobertura, y declarar «este archivo no es mío» es exactamente
+/// eso. El paso dejaba de ser juez de su ejecución y seguía siendo juez de su
+/// incumbencia.
+///
+/// **Cláusulas del contrato:**
+///
+/// 1. **La observación es una partición de lo pedido**, y lo hace cumplir el
+///    tipo. Un sujeto que se pierde acá no lo ve ninguna guardia posterior.
+/// 2. **El sujeto vuelve tal como se pidió.** Canonizar para decidir el hecho
+///    es necesario; renombrar lo devuelto rompe la partición.
+/// 3. **No se pudo mirar y no era mío son distintos.** Lo primero es un sujeto
+///    no observado con su causa; lo segundo, uno observado y ajeno con su
+///    motivo. Confundirlos es el falso rojo simétrico del falso verde.
+/// 4. **Se llama UNA vez por corrida, y la observación viaja.** Dos lecturas
+///    del árbol pueden diferir, y entonces dos pasos verificarían alcances
+///    distintos que el reporte declara iguales.
+///
+///    **Lo hace cumplir la forma de [Verifier.run], no la disciplina de
+///    quien compone**: un paso recibe la [ScopeObservation] ya hecha y no
+///    tiene con qué pedir otra. Antes cada paso guardaba su propio
+///    `ScopeObserver` y volvía a llamar a `observe`, así que una corrida de
+///    dos pasos leía el árbol tres veces. Estuvo instalado doce tareas y no
+///    lo vio nadie, tapado por un comentario que afirmaba lo contrario.
+///
+///    **Y la salvaguarda que lo hacía tolerable no existía.** El paso
+///    comparaba su lectura contra la que la cascada ya había vetado y
+///    abortaba si discrepaban, pero comparaba NOMBRES: mientras el sujeto
+///    siguiera siendo utilizable, un árbol de otro tamaño no divergía. Una
+///    corrida podía reportar diez archivos de alcance con los verificadores
+///    habiendo visto nueve, y salir verde. El comentario decía «falla
+///    cerrada»; el código comparaba otra cosa.
+abstract interface class ScopeObserver {
+  Future<ScopeObservation> observe(List<String> requested);
+}
+
 /// Un paso de la cascada. **Devuelve su testigo junto con sus diagnósticos**:
 /// un [Verifier] que devolviera solo diagnósticos no podría distinguir «limpio»
 /// de «no corrí» (INV-2).
@@ -95,24 +135,38 @@ abstract interface class ArtifactPolicy {
 /// al diferir: uno puede comprobar su propia cobertura y el otro no, porque su
 /// herramienta no la informa. Esa diferencia no se tapa — se declara.
 ///
-/// 1. **Siempre devuelve un testigo.** Sin él el veredicto es
-///    [Verdict.noConcluyente], que ya es lo correcto, pero un paso que lo
-///    omite no dice POR QUÉ, y un rojo que no se puede accionar es casi tan
-///    inútil como un verde que no se puede creer.
-/// 2. **Una terminación distinta de [Termination.completa] no es verde**, sin
-///    importar el código de salida. Es lo mismo que decir que no medir no se
-///    lee como medir y no encontrar nada.
-/// 3. **Un alcance vacío no se invoca**, y el resultado no es verde: correr
-///    sobre nada y correr sobre algo limpio no pueden dar la misma lectura.
-/// 4. **El testigo nombra la invocación que de verdad se hizo.** Un testigo
+/// 1. **Siempre devuelve un desenlace tipado; solo el ejecutado lleva
+///    testigo.** Un intento que no llegó a completarse se declara [Aborted],
+///    no un [Executed] con un testigo fingido: la terminación que antes vivía
+///    suelta en [Witness] ahora es la diferencia entre las dos variantes.
+/// 2. **Un alcance vacío es precondición violada, no un desenlace.** Invocar
+///    con una lista de sujetos vacía no es un caso que el verificador declare
+///    con ningún miembro de [VerificationOutcome]: es un error de quien lo
+///    llama, y se comprueba antes de invocar nada — correr sobre nada y
+///    correr sobre algo limpio no pueden dar la misma lectura.
+/// 3. **El testigo nombra la invocación que de verdad se hizo.** Un testigo
 ///    que nombra otra cosa es peor que no tener testigo: da confianza sobre un
 ///    hecho que no ocurrió.
-/// 5. **Lo que el paso NO pudo cubrir va en `omitted`, con su motivo.** Es el
-///    corolario 5 de ADR-011 vuelto dato: cada control declara si puede
-///    detectar una omisión. El que no puede, lo escribe.
+/// 4. **Lo que el paso NO pudo cubrir va en `witness.omitted`, con su
+///    motivo.** Es el corolario 5 de ADR-011 vuelto dato: cada control
+///    declara si puede detectar una omisión. El que no puede, lo escribe.
+/// 5. **Recibe su alcance ya resuelto; no lo pide ni lo clasifica.** Es la
+///    cláusula 4 de [ScopeObserver] vuelta firma: un verificador que tomara
+///    los sujetos y mirara el árbol por su cuenta agregaría una lectura por
+///    paso, y ningún invariante posterior puede reparar dos fotografías
+///    distintas del mismo alcance.
+///
+///    **Y recibe un [VerificationScope], no la [ScopeObservation] entera.**
+///    La primera versión de esta cláusula entregaba la observación completa,
+///    con sus ajenos y sus no observados adentro. Eso deshizo en silencio una
+///    garantía estructural que el `README` afirmaba —«un verificador ni
+///    siquiera recibe los sujetos ajenos»— y dejó un falso verde a una
+///    palabra de distancia: un paso que escriba `requested` donde quería
+///    `usable()` certifica un ajeno, y el libro de obligaciones, que solo
+///    mira lo que falta, lo daba por bueno. Lo encontró un review.
 abstract interface class Verifier {
   String get id;
-  Future<VerificationOutcome> run(List<String> subjects);
+  Future<VerificationOutcome> run(VerificationScope alcance);
 }
 
 /// Se lanza cuando un [DiagnosticNormalizer] **no puede interpretar** lo que

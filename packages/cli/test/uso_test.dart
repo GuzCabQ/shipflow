@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:cli/cli.dart';
 import 'package:orchestration/orchestration.dart';
+import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
 Future<(int, String)> invocar(List<String> args) async {
@@ -18,7 +19,11 @@ Future<(int, String)> invocar(List<String> args) async {
       directorio: '.',
       salida: out,
       error: err,
-      construirCascada: (_) => Cascada(const []));
+      // Ninguno de los casos de esta suite llega a correr la cascada de
+      // verdad —todos se resuelven antes, en la interpretación o en la
+      // ayuda— así que un observador sin ningún sujeto declarado alcanza.
+      construirCascada: (_) => Cascada(const [],
+          observador: ObservadorDeAlcanceFalso(observados: const {})));
   return (c, out.toString());
 }
 

@@ -100,8 +100,13 @@ jobs:
         run: python3 tool/checks/probar_reglas.py
 
       # La recuperación ante interrupción es un control como cualquier otro, y
-      # los 85 sabotajes corren TODOS por el camino feliz donde el proceso
-      # termina: pueden seguir verdes mientras esto se rompe.
+      # los sabotajes de arriba corren TODOS por el camino feliz donde el
+      # proceso termina: pueden seguir verdes mientras esto se rompe.
+      #
+      # Acá había una cuenta —«los 85 sabotajes»— que envejeció sola: el arnés
+      # ya aplica 105. No se actualiza el número, se saca. Un número en prosa
+      # que nada deriva vuelve a envejecer; el que manda lo imprime
+      # `probar_reglas.py` en cada corrida.
       - name: la recuperación sabe hacer su trabajo
         run: python3 tool/checks/probar_recuperacion.py
 
