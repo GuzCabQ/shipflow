@@ -176,4 +176,114 @@ void main() {
     expect(ida.unobserved.single.cause, 'no existe en el árbol');
     expect(ida.observed.single.files, 3);
   });
+
+  group('VerificationScope · lo único que ve un verificador', () {
+    // **Este grupo no existía.** El tipo entró con cuatro invariantes en su
+    // constructor y ninguna prueba: la única cobertura era el caso de ida y
+    // vuelta que el check de serialización exige por su cuenta. Lo encontró un
+    // review, junto con el invariante que además faltaba.
+
+    test('un sujeto utilizable con cero archivos no se construye', () {
+      // **El estado imposible.** Un sujeto solo llega a `usable()` desde un
+      // `ObservedSubject(ofStack: true)`, y ése exige al menos un archivo: si
+      // no hay archivos, no es del stack. Así que este alcance afirma dos
+      // cosas incompatibles a la vez, y ninguna observación real lo produce.
+      expect(() => VerificationScope(subjects: const ['lib'], files: 0),
+          throwsArgumentError);
+    });
+
+    test('dos sujetos con un solo archivo tampoco', () {
+      // Cada sujeto utilizable aporta uno como mínimo, así que el total no
+      // puede ser menor que la cantidad de sujetos. Es el caso que un
+      // `files >= 1` a secas dejaría pasar.
+      expect(() => VerificationScope(subjects: const ['lib', 'test'], files: 1),
+          throwsArgumentError);
+    });
+
+    test('y tampoco entrando por fromJson', () {
+      // `fromJson` delega en el constructor, y esta prueba es lo que impide
+      // que alguien lo «optimice» construyendo los campos directamente: un
+      // documento de afuera es justo por donde entra un estado que el resto
+      // del programa no puede fabricar.
+      expect(
+          () => VerificationScope.fromJson(const {
+                'subjects': ['lib', 'test'],
+                'files': 1,
+              }),
+          throwsArgumentError);
+    });
+
+    test('control negativo: dos sujetos y dos archivos sí se construye', () {
+      // Sin esto, un constructor que lanzara SIEMPRE pasaría las tres pruebas
+      // de arriba por la vía de no funcionar.
+      final a = VerificationScope(subjects: const ['lib', 'test'], files: 2);
+      expect(a.subjects, ['lib', 'test']);
+      expect(a.files, 2);
+    });
+
+    test('un alcance vacío no se construye', () {
+      // La precondición que vivía adentro de `run` y se mudó acá.
+      expect(() => VerificationScope(subjects: const [], files: 0),
+          throwsArgumentError);
+    });
+
+    test('un sujeto en blanco no se construye', () {
+      expect(() => VerificationScope(subjects: const ['  '], files: 1),
+          throwsArgumentError);
+    });
+
+    test('un sujeto repetido no se construye', () {
+      // El libro de obligaciones cuenta por par paso-sujeto: un repetido
+      // pediría cuenta dos veces de lo mismo.
+      expect(() => VerificationScope(subjects: const ['lib', 'lib'], files: 2),
+          throwsArgumentError);
+    });
+
+    test('un conteo negativo no se construye', () {
+      expect(() => VerificationScope(subjects: const ['lib'], files: -1),
+          throwsArgumentError);
+    });
+
+    test('sale de la observación con lo utilizable y su conteo', () {
+      final o = ScopeObservation(
+        requested: const ['lib', 'test', 'LEEME.md', 'no/existe'],
+        observed: [
+          ObservedSubject(subject: 'lib', ofStack: true, files: 3),
+          ObservedSubject(subject: 'test', ofStack: true, files: 2),
+          ObservedSubject(
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
+        ],
+        unobserved: [
+          UnobservedSubject(
+              subject: 'no/existe', cause: 'no existe en el árbol')
+        ],
+        observedAt: DateTime.utc(2026),
+      );
+      final a = VerificationScope.de(o);
+      expect(a.subjects, ['lib', 'test'],
+          reason: 'ni el ajeno ni el que no se pudo mirar llegan al paso');
+      expect(a.files, 5, reason: 'solo cuentan los archivos del stack');
+    });
+
+    test('y una observación sin nada utilizable no produce alcance', () {
+      // Quien compone no llega a armarlo, que es exactamente lo que debe
+      // pasar: decidir qué significa eso es de la orquestación.
+      final o = ScopeObservation(
+        requested: const ['LEEME.md'],
+        observed: [
+          ObservedSubject(
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
+        ],
+        unobserved: const [],
+        observedAt: DateTime.utc(2026),
+      );
+      expect(() => VerificationScope.de(o), throwsArgumentError);
+    });
+  });
 }

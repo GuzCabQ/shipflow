@@ -253,6 +253,25 @@ class VerificationScope {
       throw ArgumentError.value(
           files, 'files', 'No se pueden haber contado archivos negativos');
     }
+    // **Cada sujeto utilizable aporta uno como mínimo.** No es una regla
+    // nueva: es la de [ObservedSubject] llegando hasta acá. Un sujeto solo
+    // entra a `usable()` desde un `ObservedSubject(ofStack: true)`, y ése
+    // rechaza el conteo cero con estas palabras — «si no hay archivos, no es
+    // del stack». Sin esto, el tipo aceptaba estados que su propia fuente no
+    // puede producir: `subjects: ['lib'], files: 0` afirma a la vez que `lib`
+    // es utilizable y que no tiene nada adentro, y un paso lo reconciliaba
+    // contra cero archivos y salía verde. Lo encontró un review.
+    //
+    // `files >= 1` a secas no alcanza: dos sujetos con un archivo entre los
+    // dos incumple lo mismo y pasaría. El piso es la cantidad de sujetos.
+    if (files < this.subjects.length) {
+      throw ArgumentError.value(
+          files,
+          'files',
+          'Hay ${this.subjects.length} sujeto(s) utilizable(s) y solo $files '
+              'archivo(s) contado(s). Un sujeto del stack tiene al menos uno: '
+              'si no tiene ninguno, no es del stack y no debería estar acá');
+    }
   }
 
   /// El alcance de un paso, sacado de la observación de la corrida. **Es el
