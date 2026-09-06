@@ -131,6 +131,29 @@ abstract base class PasoDeCascada implements Verifier {
               'corrida decide qué significa un alcance así');
     }
 
+    // **La cascada ya vetó estos sujetos.** Que la observación del paso vea
+    // otra cosa significa que el árbol cambió entre las dos lecturas, y
+    // entonces la evidencia de la corrida no es coherente.
+    //
+    // Descartarlo como omisión con sujeto sería peor que inútil: una omisión
+    // con sujeto SALDA la obligación de ese par paso-sujeto, así que el sujeto
+    // quedaría sin verificar y la corrida podría salir verde. Falla abierto, y
+    // es justo el modo de fallo que esta rebanada existe para cerrar.
+    final discrepan = pedidos.where((s) => !alcance.sanos.contains(s)).toList();
+    if (discrepan.isNotEmpty) {
+      return Aborted(
+          attempt: Attempt(
+        invocation: '',
+        subjects: pedidos,
+        termination: Termination.interrumpida,
+        exitCode: -1,
+        note: 'El alcance cambió entre la observación de la corrida y la de '
+            'este paso: ${discrepan.join(", ")} ya no es utilizable. No se '
+            'invocó nada: no se puede concluir sobre un alcance incoherente.',
+        finishedAt: DateTime.now().toUtc(),
+      ));
+    }
+
     // El programa y los argumentos se calculan UNA vez y se reusan. Se
     // calculaban dos veces —una para el texto del testigo y otra para la
     // invocación real— y nada garantizaba que dieran lo mismo.

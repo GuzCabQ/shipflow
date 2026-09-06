@@ -110,15 +110,19 @@ void main() {
     expect(o.diagnostics.single.line, 2);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  test('alcance mixto real: no certifica lo que la herramienta no encontró',
-      () async {
-    // La reproducción exacta del review, contra la toolchain instalada.
+  test(
+      'alcance mixto real: un sujeto que ya no existe ABORTA en vez de '
+      'certificar lo que sí existe', () async {
+    // La reproducción exacta del review, contra la toolchain instalada, con
+    // el criterio que agrega la tarea 8b: 'no/existe' ya no se descarta con
+    // una omisión que salda su obligación sin haberlo verificado — la propia
+    // observación del paso lo encuentra incoherente con lo que se le pidió
+    // y aborta antes de invocar nada, ni siquiera sobre 'lib/' que sí existe.
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
-    final o = await formato().run(['lib/', 'no/existe']) as Executed;
-    expect(o.witness.exitCode, 0,
-        reason: 'la herramienta no delata el sujeto que falta; el paso sí');
-    expect(o.witness.subjects, ['lib/']);
-    expect(o.witness.omitted.any((x) => x.subject == 'no/existe'), isTrue);
+    final o = await formato().run(['lib/', 'no/existe']);
+    expect(o, isA<Aborted>());
+    expect((o as Aborted).attempt.note, contains('no/existe'),
+        reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('la reconciliación cierra contra la toolchain de verdad', () async {

@@ -118,15 +118,20 @@ void main() {
     });
 
     test(
-        'los motivos respetan el orden en que se PIDIERON, no el orden en '
-        'que el observador los clasificó', () async {
-      // `separar` recorría los pedidos uno por uno y agregaba cada motivo en
-      // ese momento. Concatenar `observed` y `unobserved` como dos bloques
-      // separados da el mismo contenido, pero en otro orden apenas una misma
-      // corrida mezcla un sujeto ajeno con uno inobservable. Acá se pide
-      // primero el inobservable y después el ajeno: si el paso agrupara por
-      // clasificación en vez de recorrer el pedido, este orden saldría
-      // invertido y ninguna otra prueba lo notaría.
+        'el ABORTO por discrepancia nombra los sujetos en el orden en que se '
+        'PIDIERON, no el orden en que el observador los clasificó', () async {
+      // Antes esta prueba comprobaba el orden de las OMISIONES de un
+      // `Executed`: `separar` recorría los pedidos uno por uno, y agrupar
+      // `observed`/`unobserved` como dos bloques separados invertía ese
+      // orden apenas una corrida mezclaba un sujeto ajeno con uno
+      // inobservable.
+      //
+      // Con la tarea 8b ninguno de los dos llega a una omisión: 'fantasma'
+      // (inobservable) y 'ajeno' (no es del stack) son, los dos, sujetos que
+      // la propia observación del paso no reconoce como utilizables, y eso
+      // ahora aborta la corrida entera en vez de saldar su obligación en
+      // silencio. Lo que sigue valiendo es que el orden en la evidencia sale
+      // del pedido, no de cómo el observador los clasificó.
       final falso = ObservadorDeAlcanceFalso(
         observados: {
           'ajeno': ObservedSubject(
@@ -142,36 +147,42 @@ void main() {
           ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
           directorio: raiz.path,
           observador: falso);
-      final o = await paso.run(['fantasma', 'ajeno', 'lib']) as Executed;
-      // La forma cambió de cadenas «sujeto: motivo» a `Omission` tipada, pero
-      // la propiedad que fija el orden es la misma: sigue el orden del
-      // pedido, no el de la clasificación.
-      expect(o.witness.omitted.map((x) => '${x.subject}: ${x.reason}'), [
-        'fantasma: el observador dice que no se pudo mirar',
-        'ajeno: el observador dice que no es del stack',
-      ]);
+      final o = await paso.run(['fantasma', 'ajeno', 'lib']);
+      expect(o, isA<Aborted>());
+      final nota = (o as Aborted).attempt.note;
+      expect(nota, contains('fantasma'));
+      expect(nota, contains('ajeno'));
+      expect(nota.indexOf('fantasma'), lessThan(nota.indexOf('ajeno')),
+          reason: 'el pedido nombró primero a fantasma; si el paso agrupara '
+              'por clasificación en vez de recorrer el pedido, este orden '
+              'saldría invertido y ninguna otra prueba lo notaría');
     });
 
-    test('lo descartado NO llega a la herramienta', () async {
+    test('un sujeto ajeno al stack ABORTA la corrida: no llega ni él ni nada',
+        () async {
       // `separar` clasificaba bien y la invocación se armaba igual con TODOS
       // los pedidos: `verify README.md` le daba el markdown a la herramienta
       // del stack, que intentaba parsearlo y devolvía diagnósticos sobre un
       // archivo que no es de su incumbencia. Afecta a cualquier cambio normal
       // que mezcle código y documentación. Lo cobró un review.
+      //
+      // La corrección original dejaba seguir al paso, certificando
+      // 'lib/a.dart' e invocando la herramienta solo sobre lo utilizable. La
+      // tarea 8b endurece esto: un sujeto que la propia observación del paso
+      // encuentra ajeno es la misma señal de alcance incoherente que un
+      // sujeto que cambió, así que ahora aborta ANTES de invocar nada — ni
+      // siquiera sobre 'lib/a.dart', que sí era del stack.
       File('${raiz.path}/lib/LEEME.md').writeAsStringSync('# prosa\n');
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-          directorio: raiz.path);
-      final o = await paso.run(['lib/a.dart', 'lib/LEEME.md']) as Executed;
+      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+      final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
+      final o = await paso.run(['lib/a.dart', 'lib/LEEME.md']);
 
-      expect(o.witness.invocation, contains('lib/a.dart'));
-      expect(o.witness.invocation, isNot(contains('LEEME.md')),
-          reason: 'lo descartado no puede llegar a la toolchain');
-      expect(o.witness.omitted.single.subject, 'lib/LEEME.md',
-          reason: 'pero sigue declarado: sale de cubierto, no del reporte. '
-              'El observador ya sabe cuál sujeto descartó, y esa obligación '
-              'queda saldada con su nombre en la omisión, no repitiéndolo '
-              'en el motivo');
+      expect(o, isA<Aborted>());
+      expect((o as Aborted).attempt.note, contains('lib/LEEME.md'),
+          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
+      expect(ejecutor.invocaciones, isEmpty,
+          reason: 'no se invoca la herramienta sobre un alcance incoherente, '
+              'ni siquiera sobre el sujeto que sí era del stack');
     });
 
     test('un código de salida desconocido deja el resultado no concluyente',
@@ -282,30 +293,92 @@ void main() {
     });
   });
 
-  group('cobertura POR SUJETO, no agregada', () {
-    test('un alcance mixto no certifica el sujeto que no existe', () async {
-      // El falso verde que encontró el review: la herramienta miraba un
-      // archivo y el paso devolvía TODOS los sujetos como cubiertos.
-      final o = await formato(salida(estandar: formatoLimpio))
-          .run(['lib', 'no/existe']) as Executed;
-      expect(o.witness.subjects, ['lib'],
-          reason:
-              'certificar una ruta que la herramienta dijo que no encuentra '
-              'es exactamente lo que ADR-011 prohíbe');
-      expect(
-          o.witness.omitted.map((x) => x.reason).join(), contains('no existe'));
-      expect(o.witness.omitted.single.subject, 'no/existe');
+  group('el paso no puede contradecir en silencio a la cascada', () {
+    test('si la observación del paso discrepa de lo que le entregaron, ABORTA',
+        () async {
+      // La cascada observa una vez y entrega solo los sujetos utilizables. Si
+      // el paso vuelve a mirar y ve otra cosa, el árbol cambió entre las dos
+      // lecturas y la evidencia de la corrida dejó de ser coherente.
+      //
+      // Lo que NO puede hacer es descartar el sujeto y declararlo como
+      // omisión con su sujeto: eso SALDA la obligación de ese par
+      // paso-sujeto, y el sujeto queda sin verificar con la corrida en verde.
+      // Falla abierto.
+      final discrepante = ObservadorDeAlcanceFalso(observados: {
+        'lib/a.dart':
+            ObservedSubject(subject: 'lib/a.dart', ofStack: true, files: 1),
+        'lib/b.dart': ObservedSubject(
+            subject: 'lib/b.dart',
+            ofStack: false,
+            files: 0,
+            reason: 'el árbol cambió entre las dos lecturas'),
+      });
+      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+      final paso = PasoDeFormato(
+          ejecutor: ejecutor, directorio: raiz.path, observador: discrepante);
+
+      final o = await paso.run(['lib/a.dart', 'lib/b.dart']);
+
+      expect(o, isA<Aborted>(),
+          reason: 'no se puede concluir sobre un alcance que cambió debajo');
+      expect((o as Aborted).attempt.termination, Termination.interrumpida);
+      expect(o.attempt.note, contains('lib/b.dart'),
+          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
+      expect(ejecutor.invocaciones, isEmpty,
+          reason: 'no se invoca la herramienta sobre un alcance incoherente');
     });
 
-    test('un directorio que existe pero no tiene fuentes se declara omitido',
+    test('y sin discrepancia sigue ejecutando normalmente', () async {
+      // El control negativo: sin esto, un paso que abortara SIEMPRE pasaría
+      // la prueba de arriba por la vía de no funcionar.
+      final coherente = ObservadorDeAlcanceFalso(observados: {
+        'lib/a.dart':
+            ObservedSubject(subject: 'lib/a.dart', ofStack: true, files: 1),
+      });
+      final o = await PasoDeFormato(
+              ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
+              directorio: raiz.path,
+              observador: coherente)
+          .run(['lib/a.dart']);
+      expect(o, isA<Executed>());
+      expect((o as Executed).verdict, Verdict.verde);
+    });
+  });
+
+  group('cobertura POR SUJETO, no agregada', () {
+    test('un sujeto que ya no existe ABORTA en vez de certificar lo demás',
         () async {
+      // El falso verde que encontró el review: la herramienta miraba un
+      // archivo y el paso devolvía TODOS los sujetos como cubiertos. La
+      // corrección de entonces certificaba solo 'lib' y omitía 'no/existe'
+      // con su nombre.
+      //
+      // La tarea 8b va más allá: una omisión con sujeto SALDA la obligación
+      // de ese par paso-sujeto, así que 'no/existe' quedaría declarado sin
+      // haber sido verificado de verdad. Que la propia observación del paso
+      // ya no lo vea es la misma señal de alcance incoherente que un sujeto
+      // que cambió entre las dos lecturas: aborta, y no certifica ni
+      // siquiera 'lib'.
+      final o = await formato(salida(estandar: formatoLimpio))
+          .run(['lib', 'no/existe']);
+      expect(o, isA<Aborted>());
+      expect((o as Aborted).attempt.note, contains('no/existe'),
+          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
+    });
+
+    test('un directorio que existe pero no tiene fuentes ABORTA la corrida',
+        () async {
+      // 'vacio' es justo el tipo de sujeto que la cascada no debería haber
+      // entregado como utilizable: que la propia observación del paso lo
+      // encuentre sin fuentes es la misma incoherencia de alcance que
+      // cualquier otra discrepancia, y por eso aborta en vez de certificar
+      // 'lib' y saldar la obligación de 'vacio' con una omisión que nadie
+      // verificó.
       Directory('${raiz.path}/vacio').createSync();
       final o = await analisis(salida(estandar: analisisLimpio))
-          .run(['lib', 'vacio']) as Executed;
-      expect(o.witness.subjects, ['lib']);
-      expect(o.witness.omitted.map((x) => x.reason).join(),
-          contains('no contiene ningún archivo de fuente'));
-      expect(o.witness.omitted.any((x) => x.subject == 'vacio'), isTrue);
+          .run(['lib', 'vacio']);
+      expect(o, isA<Aborted>());
+      expect((o as Aborted).attempt.note, contains('vacio'));
     });
   });
 
