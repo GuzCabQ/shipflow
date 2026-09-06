@@ -43,7 +43,9 @@ void main() {
       directorio: raiz.path,
       presupuesto: const Duration(minutes: 2));
 
-  test('la herramienta calla sobre lo que no existe, y el paso no', () async {
+  test(
+      'la herramienta calla sobre lo que no existe, y el arnés no lo invoca',
+      () async {
     // **La premisa, medida contra la herramienta real y no supuesta.** Es la
     // razón de ser de toda la defensa: sobre una ruta inexistente esta
     // herramienta sale con CERO, así que creerle al código de salida sería un
@@ -54,15 +56,12 @@ void main() {
         directorio: raiz.path, presupuesto: const Duration(minutes: 2));
     expect(r.codigo, 0);
 
-    // Y la propiedad: el paso no le cree. Ya ni siquiera la invoca — descarta
-    // el sujeto antes— pero lo que se comprueba es el desenlace, no el
-    // mecanismo: un test que fija el mecanismo convierte toda mejora en una
-    // falsa alarma.
-    final o = await formato().run(['no/existe/']);
-    expect(o.verdict, Verdict.noConcluyente);
-    expect(o.witness!.subjects, isEmpty);
-    expect(o.witness!.ownSubjects, isNull,
-        reason: 'no se pudo establecer cuántos había: no es cero');
+    // Y la propiedad: el paso no le cree, y ya ni siquiera la invoca —
+    // descarta el sujeto antes. Sin ningún sujeto utilizable en el alcance,
+    // la corrida es precondición violada: lo que se comprueba es el
+    // desenlace, no el mecanismo, y un test que fijara el mecanismo
+    // convertiría toda mejora en una falsa alarma.
+    expect(() => formato().run(['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un alcance inexistente lo delata el ARNÉS, no la herramienta',
@@ -70,29 +69,26 @@ void main() {
     // Antes esto se apoyaba en que el analizador saliera con código 64: la
     // ruta inexistente le llegaba a la herramienta y ella se quejaba. Ahora el
     // arnés la descarta antes de invocar —un sujeto descartado no puede llegar
-    // a la toolchain— y lo delata por su propia cuenta.
+    // a la toolchain— y lo delata por su propia cuenta, sin necesitar que la
+    // herramienta corra: con un único sujeto y sin nada utilizable, la corrida
+    // ni empieza.
     //
     // Es más fuerte, no menos: el caso ciego deja de depender de que una
     // herramienta ajena se moleste en avisar. Lo que se comprueba es la
     // propiedad, no el mecanismo.
-    final o = await analisis().run(['no/existe/']);
-    expect(o.verdict, Verdict.noConcluyente);
-    expect(o.witness!.ownSubjects, isNull,
-        reason: 'no se pudo establecer cuántos había: no es cero');
-    expect(o.witness!.omitted.join(' '), contains('no existe'));
-    expect(o.witness!.invocation, isEmpty,
-        reason: 'no había nada utilizable que pasarle a la herramienta');
+    expect(() => analisis().run(['no/existe/']), throwsArgumentError);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('código limpio y formateado da verde en los dos pasos', () async {
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
-    expect((await formato().run(['lib/'])).verdict, Verdict.verde);
-    expect((await analisis().run(['lib/'])).verdict, Verdict.verde);
+    expect((await formato().run(['lib/']) as Executed).verdict, Verdict.verde);
+    expect(
+        (await analisis().run(['lib/']) as Executed).verdict, Verdict.verde);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('un archivo sin formatear lo encuentra el paso real', () async {
     fuente('feo.dart', 'void a(){int   x=1;print(x);}\n');
-    final o = await formato().run(['lib/']);
+    final o = await formato().run(['lib/']) as Executed;
     expect(o.verdict, Verdict.rojo);
     expect(o.diagnostics.single.file, contains('feo'));
   }, timeout: const Timeout(Duration(minutes: 3)));
@@ -100,7 +96,7 @@ void main() {
   test('S4 · un archivo que no parsea produce diagnóstico, no salto silencioso',
       () async {
     fuente('roto.dart', 'void main( {\n');
-    final o = await formato().run(['lib/']);
+    final o = await formato().run(['lib/']) as Executed;
     expect(o.diagnostics.map((d) => d.ruleId), contains('formato/no-parsea'),
         reason: 'es el criterio de salida S4 de la fase, contra la '
             'herramienta de verdad');
@@ -110,7 +106,7 @@ void main() {
   test('el analizador real encuentra un error de tipos y lo pone en rojo',
       () async {
     fuente('malo.dart', 'void main() {\n  String x = 3;\n  print(x);\n}\n');
-    final o = await analisis().run(['lib/']);
+    final o = await analisis().run(['lib/']) as Executed;
     expect(o.verdict, Verdict.rojo);
     expect(o.diagnostics.single.severity, Severity.bloquea);
     expect(o.diagnostics.single.line, 2);
@@ -120,11 +116,11 @@ void main() {
       () async {
     // La reproducción exacta del review, contra la toolchain instalada.
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
-    final o = await formato().run(['lib/', 'no/existe']);
-    expect(o.witness!.exitCode, 0,
+    final o = await formato().run(['lib/', 'no/existe']) as Executed;
+    expect(o.witness.exitCode, 0,
         reason: 'la herramienta no delata el sujeto que falta; el paso sí');
-    expect(o.witness!.subjects, ['lib/']);
-    expect(o.witness!.omitted.join(), contains('no/existe'));
+    expect(o.witness.subjects, ['lib/']);
+    expect(o.witness.omitted.any((x) => x.subject == 'no/existe'), isTrue);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('la reconciliación cierra contra la toolchain de verdad', () async {
@@ -142,9 +138,9 @@ void main() {
     File('${raiz.path}/otro/.escondido/tres.dart')
         .writeAsStringSync('void  main( ){}\n');
 
-    final o = await formato().run(['lib/', 'otro']);
+    final o = await formato().run(['lib/', 'otro']) as Executed;
     expect(o.verdict, Verdict.verde);
-    expect(o.witness!.subjects, ['lib/', 'otro']);
+    expect(o.witness.subjects, ['lib/', 'otro']);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   group('EjecutorDelSistema', () {

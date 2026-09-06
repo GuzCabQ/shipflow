@@ -70,15 +70,20 @@ void main() {
     group(entrada.key, () {
       Verifier paso(EjecutorDeProceso e) => construir(e, raiz.path);
 
-      test(
-          'clausula 1 · siempre devuelve un testigo, con su motivo si no '
-          'concluye', () async {
-        final o = await paso(EjecutorDeclarado(_salida())).run([]);
-        expect(o.witness, isNotNull);
-        expect(o.witness!.omitted, isNotEmpty);
+      test('cláusula 1 · devuelve Ejecutado o Abortado, nunca otra cosa',
+          () async {
+        final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
+            .run(['lib']);
+        expect(o, anyOf(isA<Executed>(), isA<Aborted>()));
       });
 
-      test('clausula 2 · una terminacion incompleta no es verde', () async {
+      test('cláusula 2 · un alcance sin sujetos utilizables lanza', () async {
+        final ejecutor = EjecutorDeclarado(_salida());
+        expect(() => paso(ejecutor).run(const []), throwsArgumentError);
+        expect(ejecutor.invocaciones, isEmpty);
+      });
+
+      test('cláusula 3 · una terminación incompleta es Abortado', () async {
         for (final t in [
           Termination.herramientaAusente,
           Termination.tiempoAgotado,
@@ -86,49 +91,43 @@ void main() {
         ]) {
           final o =
               await paso(EjecutorDeclarado(_salida(terminacion: t, codigo: -1)))
-                  .run(['lib/']);
-          expect(o.verdict, Verdict.noConcluyente, reason: 'terminacion $t');
-          expect(o.witness!.termination, t);
+                  .run(['lib']);
+          expect(o, isA<Aborted>(), reason: 'terminación $t');
+          expect((o as Aborted).attempt.termination, t);
         }
       });
 
-      test('clausula 3 · un alcance vacio no se invoca y no es verde',
+      test('cláusula 4 · el testigo nombra la invocación que se hizo',
           () async {
         final ejecutor = EjecutorDeclarado(_salida(estandar: limpio));
-        final o = await paso(ejecutor).run([]);
-        expect(o.verdict, Verdict.noConcluyente);
-        expect(ejecutor.invocaciones, isEmpty);
-      });
-
-      test('clausula 4 · el testigo nombra la invocacion que de verdad se hizo',
-          () async {
-        final ejecutor = EjecutorDeclarado(_salida(estandar: limpio));
-        final o = await paso(ejecutor).run(['lib/']);
+        final o = await paso(ejecutor).run(['lib']) as Executed;
         expect(ejecutor.invocaciones, hasLength(1));
-        expect(o.witness!.invocation, ejecutor.invocaciones.single);
+        expect(o.witness.invocation, ejecutor.invocaciones.single);
       });
 
-      test('clausula 5 · un codigo de salida desconocido no se supone benigno',
-          () async {
-        // 111 no esta en ninguna lista blanca. Caer en el caso benigno seria
-        // leer como verde algo que nadie sabe interpretar.
+      test('cláusula 5 · un código desconocido no se supone benigno', () async {
         final o = await paso(
                 EjecutorDeclarado(_salida(codigo: 111, estandar: limpio)))
-            .run(['lib/']);
+            .run(['lib']) as Executed;
         expect(o.verdict, Verdict.noConcluyente);
-        expect(o.witness!.omitted.join(), contains('111'));
+        expect(o.witness.omitted.map((x) => x.reason).join(), contains('111'));
       });
 
-      test(
-          'y sin embargo SI da verde cuando de verdad corrio y no encontro '
-          'nada', () async {
-        // Sin esto, un paso que devolviera no concluyente SIEMPRE pasaria
-        // todas las pruebas de arriba. La clausula se cumpliria por la via de
-        // no funcionar.
+      test('cláusula 6 · el testigo no nombra sujetos que no recibió',
+          () async {
         final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(['lib/']);
+            .run(['lib']) as Executed;
+        expect(o.witness.subjects.every((s) => s == 'lib'), isTrue);
+      });
+
+      test('cláusula 7 · y SÍ da verde cuando de verdad corrió y no encontró '
+          'nada', () async {
+        // Sin esto, un paso que devolviera no concluyente siempre pasaría
+        // todas las cláusulas de arriba, por la vía de no funcionar.
+        final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
+            .run(['lib']) as Executed;
         expect(o.verdict, Verdict.verde);
-        expect(o.witness!.subjects, isNotEmpty);
+        expect(o.witness.subjects, isNotEmpty);
       });
     });
   }

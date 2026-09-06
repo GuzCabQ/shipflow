@@ -61,12 +61,47 @@ void main() {
   PasoDeAnalisis analisis(ResultadoDeProceso r) =>
       PasoDeAnalisis(ejecutor: EjecutorDeclarado(r), directorio: raiz.path);
 
+  group('el desenlace de un alcance sin sujetos utilizables', () {
+    test('un alcance sin sujetos utilizables es precondición violada',
+        () async {
+      // Antes devolvía un testigo con terminación interrumpida y código -1
+      // sobre una herramienta que nunca corrió. La cascada no puede pasarle
+      // esto: si llega, es error del arnés, no un desenlace del cambio.
+      final paso = PasoDeFormato(
+          ejecutor: EjecutorDeclarado(salida()), directorio: raiz.path);
+      expect(() => paso.run(const []), throwsArgumentError);
+    });
+
+    test('si NINGÚN sujeto es utilizable, también es precondición violada',
+        () async {
+      // Dos sujetos que no existen: ninguno del stack, ninguno mirable.
+      expect(
+          () => formato(salida(estandar: formatoLimpio))
+              .run(['no/existe', 'tampoco/esta']),
+          throwsArgumentError);
+    });
+
+    test(
+        'un alcance que no se puede mirar por completo es precondición '
+        'violada, no un dato', () async {
+      // Un directorio sin permisos hacía que `run` devolviera un testigo
+      // «no concluyente»; ahora, si ES EL ÚNICO sujeto pedido, no hay ningún
+      // sujeto utilizable y la corrida ni empieza.
+      final vedado = Directory('${raiz.path}/vedado')..createSync();
+      Process.runSync('chmod', ['000', vedado.path]);
+      addTearDown(() => Process.runSync('chmod', ['755', vedado.path]));
+      expect(
+          () => analisis(salida(estandar: analisisLimpio)).run(['vedado']),
+          throwsArgumentError);
+    }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
+  });
+
   group('lo que vale para cualquier paso', () {
     test('el paso NO mira el árbol por su cuenta: le pregunta al observador',
         () async {
       // Si el paso siguiera decidiendo qué es suyo, seguiría siendo juez de su
-      // propia incumbencia. Con un observador que declara `lib` ajeno, el
-      // paso no puede invocar nada, por más que `lib` exista y tenga fuentes.
+      // propia incumbencia. Con un observador que declara `lib` ajeno, no
+      // queda ningún sujeto utilizable: la corrida ni invoca nada.
       final falso = ObservadorDeAlcanceFalso(observados: {
         'lib': ObservedSubject(
             subject: 'lib',
@@ -77,7 +112,7 @@ void main() {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final paso = PasoDeFormato(
           ejecutor: ejecutor, directorio: raiz.path, observador: falso);
-      await paso.run(['lib']);
+      await expectLater(() => paso.run(['lib']), throwsArgumentError);
       expect(ejecutor.invocaciones, isEmpty);
       expect(falso.llamadas, hasLength(1),
           reason: 'una sola foto del árbol por corrida de paso');
@@ -100,6 +135,7 @@ void main() {
               ofStack: false,
               files: 0,
               reason: 'el observador dice que no es del stack'),
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
         },
         noObservados: {'fantasma': 'el observador dice que no se pudo mirar'},
       );
@@ -107,8 +143,12 @@ void main() {
           ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
           directorio: raiz.path,
           observador: falso);
-      final r = await paso.run(['fantasma', 'ajeno']);
-      expect(r.witness!.omitted, [
+      final o = await paso.run(['fantasma', 'ajeno', 'lib'])
+          as Executed;
+      // La forma cambió de cadenas «sujeto: motivo» a `Omission` tipada, pero
+      // la propiedad que fija el orden es la misma: sigue el orden del
+      // pedido, no el de la clasificación.
+      expect(o.witness.omitted.map((x) => '${x.subject}: ${x.reason}'), [
         'fantasma: el observador dice que no se pudo mirar',
         'ajeno: el observador dice que no es del stack',
       ]);
@@ -124,102 +164,82 @@ void main() {
       final paso = PasoDeFormato(
           ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
           directorio: raiz.path);
-      final r = await paso.run(['lib/a.dart', 'lib/LEEME.md']);
+      final o = await paso.run(['lib/a.dart', 'lib/LEEME.md']) as Executed;
 
-      expect(r.witness!.invocation, contains('lib/a.dart'));
-      expect(r.witness!.invocation, isNot(contains('LEEME.md')),
+      expect(o.witness.invocation, contains('lib/a.dart'));
+      expect(o.witness.invocation, isNot(contains('LEEME.md')),
           reason: 'lo descartado no puede llegar a la toolchain');
-      expect(r.witness!.omitted.join(' '), contains('LEEME.md'),
-          reason: 'pero sigue declarado: sale de cubierto, no del reporte');
+      expect(o.witness.omitted.single.subject, 'lib/LEEME.md',
+          reason: 'pero sigue declarado: sale de cubierto, no del reporte. '
+              'El observador ya sabe cuál sujeto descartó, y esa obligación '
+              'queda saldada con su nombre en la omisión, no repitiéndolo '
+              'en el motivo');
     });
 
-    test('un código de salida desconocido deja el conteo en «no sé»', () async {
+    test('un código de salida desconocido deja el resultado no concluyente',
+        () async {
       // Una herramienta que devuelve algo que no entendemos no dice «no tuve
-      // nada que hacer»: dice «no sé». Dejar ahí el conteo del alcance
-      // permitía que un paso con la herramienta devolviendo basura se
-      // clasificara como saltado, y el ruido desapareciera. Lo pidió una
-      // mutación.
-      //
-      // Con sujetos utilizables: si no los hay no se invoca nada, y entonces
-      // no hay ningún código de salida que no entender.
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(codigo: 64)),
-          directorio: raiz.path);
-      final r = await paso.run(['lib']);
-      expect(r.witness!.ownSubjects, isNull,
-          reason: 'había sujetos, pero la herramienta no se entendió');
-      expect(r.verdict, Verdict.noConcluyente);
+      // nada que hacer»: dice «no sé». Lo pidió una mutación.
+      final o = await formato(salida(codigo: 64)).run(['lib']) as Executed;
+      expect(o.verdict, Verdict.noConcluyente);
+      expect(o.witness.omitted.map((x) => x.reason).join(), contains('64'));
     });
 
     test('el testigo sale de UNA sola foto del árbol', () async {
       // Si el alcance se mira dos veces —una para el conteo y otra para la
-      // cobertura, con un `await` en el medio— el testigo puede afirmar «cero
-      // elementos propios» y «cubrí lib» a la vez. Lo reprodujo un review con un
-      // ejecutor que creaba un archivo durante la espera.
-      // Sobre un alcance CON archivos, para que la herramienta se invoque de
-      // verdad y el `await` exista.
+      // cobertura, con un `await` en el medio— el testigo puede reconciliar
+      // contra un archivo que apareció DESPUÉS de la foto. Lo reprodujo un
+      // review con un ejecutor que creaba un archivo durante la espera:
+      // si la cuenta se repitiera, el resumen «Formatted 1 file» dejaría de
+      // cerrar contra los DOS archivos que habría entonces, y el paso se
+      // volvería no concluyente en vez de verde.
       final paso = PasoDeFormato(
           ejecutor: _EjecutorQueCreaUnArchivo(
               '${raiz.path}/lib', salida(estandar: formatoLimpio)),
           directorio: raiz.path);
-      final r = await paso.run(['lib']);
-
-      final w = r.witness!;
-      expect(w.ownSubjects == 0 && w.subjects.isNotEmpty, isFalse,
-          reason: 'no puede decir «no había nada mío» y «cubrí esto» a la vez');
+      final o = await paso.run(['lib']) as Executed;
+      expect(o.verdict, Verdict.verde);
+      expect(o.witness.subjects, ['lib']);
     });
 
-    test('sin sujetos no se invoca nada, y el testigo NO nombra un comando',
-        () async {
-      final ejecutor = EjecutorDeclarado(salida());
-      final o = await PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path)
-          .run([]);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(ejecutor.invocaciones, isEmpty);
-      // Nombraba el comando que se habría corrido. La cláusula 4 pide que el
-      // testigo nombre la invocación que de verdad se hizo, y acá no hubo.
-      expect(o.witness!.invocation, isEmpty);
-      expect(o.witness!.omitted, isNotEmpty);
-    });
-
-    test('la herramienta ausente no es «no encontró nada»', () async {
+    test('la herramienta ausente devuelve Abortado, no un testigo', () async {
       final o = await formato(salida(
               terminacion: Termination.herramientaAusente,
               codigo: -1,
               error: 'No such file or directory'))
-          .run(['lib/']);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.termination, Termination.herramientaAusente);
+          .run(['lib']);
+      expect(o, isA<Aborted>());
+      expect((o as Aborted).attempt.termination, Termination.herramientaAusente);
+      expect(o.attempt.note, isNotEmpty);
     });
 
-    test('el presupuesto agotado declara que puede haber dejado descendientes',
+    test('el presupuesto agotado declara los descendientes en la nota',
         () async {
       final o = await analisis(
               salida(terminacion: Termination.tiempoAgotado, codigo: -1))
-          .run(['lib/']);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.termination, Termination.tiempoAgotado);
-      expect(o.witness!.omitted.join(), contains('descendientes'),
-          reason: 'el ejecutor no los rastrea, y eso va en la evidencia');
+          .run(['lib']);
+      expect(o, isA<Aborted>());
+      expect((o as Aborted).attempt.note, contains('descendientes'));
     });
 
-    test('un código desconocido NO reescribe la terminación', () async {
-      // La herramienta corrió y produjo un resultado: eso es `completa`, por
-      // definición. Que no sepamos interpretarlo es nuestro problema y va en
-      // `omitted`. El veredicto sale no concluyente igual, porque no hay
-      // sujetos cubiertos — no porque falseemos el hecho.
+    test('un código desconocido es Ejecutado no concluyente, con su omisión',
+        () async {
+      // La herramienta corrió y produjo un resultado: eso es completa por
+      // definición. Que no sepamos leerlo es nuestro problema, y va en la
+      // omisión — no se falsea la terminación.
       final o = await formato(salida(codigo: 111, estandar: formatoLimpio))
-          .run(['lib/']);
-      expect(o.witness!.termination, Termination.completa);
-      expect(o.witness!.exitCode, 111);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.omitted.join(), contains('111'));
+          .run(['lib']);
+      expect(o, isA<Executed>());
+      final e = o as Executed;
+      expect(e.verdict, Verdict.noConcluyente);
+      expect(e.witness.omitted.map((x) => x.reason).join(), contains('111'));
     });
 
-    test('una salida ilegible tampoco reescribe la terminación', () async {
-      final o =
-          await formato(salida(estandar: 'basura sin resumen')).run(['lib/']);
-      expect(o.witness!.termination, Termination.completa);
+    test(
+        'una salida ilegible tampoco es una terminación distinta: sigue '
+        'siendo Executed', () async {
+      final o = await formato(salida(estandar: 'basura sin resumen'))
+          .run(['lib']) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.diagnostics, isEmpty,
           reason: 'culpar al código del usuario de que el arnés no sepa leer '
@@ -230,14 +250,14 @@ void main() {
       // El review lo reprodujo: la lista mutaba durante el `await` y el
       // testigo terminaba nombrando una invocación sobre un alcance y
       // declarando cobertura sobre otro.
-      final lista = ['lib/'];
+      final lista = ['lib'];
       final o = await PasoDeFormato(
         ejecutor: _MutaDurante(lista, salida(estandar: formatoLimpio)),
         directorio: raiz.path,
-      ).run(lista);
-      expect(o.witness!.subjects, ['lib/']);
-      expect(o.witness!.invocation, contains('lib/'));
-      expect(o.witness!.invocation, isNot(contains('no/existe')));
+      ).run(lista) as Executed;
+      expect(o.witness.subjects, ['lib']);
+      expect(o.witness.invocation, contains('lib'));
+      expect(o.witness.invocation, isNot(contains('no/existe')));
     });
 
     test('el PROGRAMA también se captura una vez, no dos', () async {
@@ -249,8 +269,8 @@ void main() {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final paso =
           _ProgramaInestable(ejecutor: ejecutor, directorio: raiz.path);
-      final o = await paso.run(['lib/']);
-      expect(o.witness!.invocation, ejecutor.invocaciones.single,
+      final o = await paso.run(['lib']) as Executed;
+      expect(o.witness.invocation, ejecutor.invocaciones.single,
           reason: 'el testigo tiene que nombrar el programa que se invocó, no '
               'otra lectura del mismo getter');
     });
@@ -258,23 +278,9 @@ void main() {
     test('el testigo nombra la invocación que de verdad se hizo', () async {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final o = await PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path)
-          .run(['lib/']);
-      expect(ejecutor.invocaciones.single, o.witness!.invocation);
+          .run(['lib']) as Executed;
+      expect(ejecutor.invocaciones.single, o.witness.invocation);
     });
-
-    test('un alcance que no se puede mirar es un dato, no una excepción',
-        () async {
-      // Un directorio sin permisos hacía que `run` lanzara y el paso no
-      // devolviera testigo ninguno, rompiendo la primera cláusula del puerto.
-      final vedado = Directory('${raiz.path}/vedado')..createSync();
-      Process.runSync('chmod', ['000', vedado.path]);
-      addTearDown(() => Process.runSync('chmod', ['755', vedado.path]));
-      final o =
-          await analisis(salida(estandar: analisisLimpio)).run(['vedado']);
-      expect(o.witness, isNotNull);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.omitted.join(), contains('no se pudo mirar'));
-    }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
   });
 
   group('cobertura POR SUJETO, no agregada', () {
@@ -282,30 +288,25 @@ void main() {
       // El falso verde que encontró el review: la herramienta miraba un
       // archivo y el paso devolvía TODOS los sujetos como cubiertos.
       final o = await formato(salida(estandar: formatoLimpio))
-          .run(['lib/', 'no/existe']);
-      expect(o.witness!.subjects, ['lib/'],
+          .run(['lib', 'no/existe']) as Executed;
+      expect(o.witness.subjects, ['lib'],
           reason:
               'certificar una ruta que la herramienta dijo que no encuentra '
               'es exactamente lo que ADR-011 prohíbe');
-      expect(o.witness!.omitted.join(), contains('no/existe'));
-    });
-
-    test('si NINGÚN sujeto es utilizable, no hay cobertura y no hay verde',
-        () async {
-      final o = await formato(salida(estandar: formatoLimpio))
-          .run(['no/existe', 'tampoco/esta']);
-      expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.subjects, isEmpty);
-      expect(o.witness!.omitted.length, greaterThanOrEqualTo(2));
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('no existe'));
+      expect(o.witness.omitted.single.subject, 'no/existe');
     });
 
     test('un directorio que existe pero no tiene fuentes se declara omitido',
         () async {
       Directory('${raiz.path}/vacio').createSync();
       final o = await analisis(salida(estandar: analisisLimpio))
-          .run(['lib/', 'vacio']);
-      expect(o.witness!.subjects, ['lib/']);
-      expect(o.witness!.omitted.join(), contains('vacio'));
+          .run(['lib', 'vacio']) as Executed;
+      expect(o.witness.subjects, ['lib']);
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('no contiene ningún archivo de fuente'));
+      expect(o.witness.omitted.any((x) => x.subject == 'vacio'), isTrue);
     });
   });
 
@@ -323,18 +324,19 @@ void main() {
         () async {
       final o = await formato(salida(
               estandar: 'Formatted 1 file (0 changed) in 0.00 seconds.\n'))
-          .run(['lib/', 'dos']);
+          .run(['lib', 'dos']) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.subjects, isEmpty);
-      expect(o.witness!.omitted.join(), contains('No cierra'));
+      expect(o.witness.subjects, isEmpty);
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('No cierra'));
     });
 
     test('miró todos: certifica los dos sujetos', () async {
       final o = await formato(salida(
               estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n'))
-          .run(['lib/', 'dos']);
+          .run(['lib', 'dos']) as Executed;
       expect(o.verdict, Verdict.verde);
-      expect(o.witness!.subjects, ['lib/', 'dos']);
+      expect(o.witness.subjects, ['lib', 'dos']);
     });
 
     test('los que no parsean cuentan del lado de la herramienta', () async {
@@ -348,11 +350,12 @@ void main() {
         error: 'Could not format because the source could not be parsed:\n'
             "line 2, column 1 of dos/roto.dart: Expected to find '}'.\n"
             "line 2, column 1 of dos/roto.dart: Expected an identifier.\n",
-      )).run(['lib/', 'dos']);
+      )).run(['lib', 'dos']) as Executed;
       expect(o.verdict, Verdict.rojo,
           reason: 'tres archivos: dos formateados y uno que no parsea');
-      expect(o.witness!.subjects, ['lib/', 'dos']);
-      expect(o.witness!.omitted.join(), contains('no parsean'));
+      expect(o.witness.subjects, ['lib', 'dos']);
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('no parsean'));
     });
   });
 
@@ -360,25 +363,27 @@ void main() {
     test('cero archivos mirados NO es verde, aunque el código sea 0', () async {
       final o = await formato(salida(
         estandar: 'Formatted no files in 0.00 seconds.\n',
-        error: 'No file or directory found at "lib/".\n',
-      )).run(['lib/']);
+        error: 'No file or directory found at "lib".\n',
+      )).run(['lib']) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
-      expect(o.witness!.subjects, isEmpty);
-      expect(o.witness!.omitted.join(), contains('NINGÚN archivo'));
+      expect(o.witness.subjects, isEmpty);
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('NINGÚN archivo'));
     });
 
     test('un archivo mirado y limpio sí es verde', () async {
-      final o = await formato(salida(estandar: formatoLimpio)).run(['lib/']);
+      final o =
+          await formato(salida(estandar: formatoLimpio)).run(['lib']) as Executed;
       expect(o.verdict, Verdict.verde);
-      expect(o.witness!.subjects, ['lib/']);
-      expect(o.witness!.omitted, isEmpty);
+      expect(o.witness.subjects, ['lib']);
+      expect(o.witness.omitted, isEmpty);
     });
 
     test('un archivo sin formatear pone el paso en rojo', () async {
       final o = await formato(salida(
               estandar: 'Changed lib/a.dart\n'
                   'Formatted 1 file (1 changed) in 0.0 seconds.\n'))
-          .run(['lib/']);
+          .run(['lib']) as Executed;
       expect(o.verdict, Verdict.rojo);
       expect(o.diagnostics.single.file, 'lib/a.dart');
     });
@@ -390,7 +395,7 @@ void main() {
         estandar: 'Formatted no files in 0.0 seconds.\n',
         error: 'Could not format because the source could not be parsed:\n'
             "line 2, column 1 of lib/roto.dart: Expected to find '}'.\n",
-      )).run(['lib/']);
+      )).run(['lib']) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.diagnostics.single.ruleId, 'formato/no-parsea');
     });
@@ -399,9 +404,10 @@ void main() {
   group('StaticAnalysis · NO puede, y lo declara', () {
     test('declara siempre que no sabe qué archivos leyó la herramienta',
         () async {
-      final o = await analisis(salida(estandar: analisisLimpio)).run(['lib/']);
-      expect(
-          o.witness!.omitted.join(), contains('no informa qué archivos leyó'));
+      final o =
+          await analisis(salida(estandar: analisisLimpio)).run(['lib']) as Executed;
+      expect(o.witness.omitted.map((x) => x.reason).join(),
+          contains('no informa qué archivos leyó'));
       expect(o.verdict, Verdict.verde,
           reason: 'declarar un residuo no invalida lo que sí cubrió');
     });
