@@ -255,9 +255,11 @@ class ResultadoDeCascada {
           if (d is Executed) ...d.diagnostics,
       ]);
 
-  /// **El libro.** Para cada paso que ejecutó, cada sujeto de su alcance
+  /// **El libro.** Para cada paso registrado, cada sujeto de su alcance
   /// esperado tiene que estar cubierto por su testigo o nombrado por una de
-  /// sus omisiones.
+  /// sus omisiones. Un paso que no ejecutó no tiene testigo del que leer
+  /// cobertura, así que no puede saldar NADA de lo suyo: si su alcance
+  /// esperado no está vacío, cada uno de sus sujetos queda abierto.
   ///
   /// **Es por PAR paso-sujeto, no por unión.** Que otro paso haya cubierto el
   /// sujeto no salda la obligación de este. La versión existencial —«algún
@@ -266,19 +268,39 @@ class ResultadoDeCascada {
   /// mientras otro cubre todo, y la corrida sale verde sobre una obligación
   /// que ese primer paso nunca saldó.
   ///
-  /// Un paso que no ejecutó —saltado, no observable, abortado, roto— no
-  /// contrae ninguna obligación: no hay testigo del que leer cobertura, y no
-  /// se le puede reprochar no explicar lo que ni siquiera corrió.
+  /// **Por tipo de desenlace, no por cobertura, era la misma puerta con otra
+  /// forma.** La versión anterior saltaba entero todo desenlace que no fuera
+  /// `Executed` —`if (desenlace is! Executed) continue`—, así que un paso
+  /// saltado o no observable con alcance esperado NO VACÍO no contraía
+  /// ninguna obligación: quedaba invisible para este libro exactamente igual
+  /// que el paso tapado por otro que el párrafo de arriba existe para
+  /// cerrar. Hoy no es alcanzable desde [Cascada.correr] —un `Skipped`/
+  /// `Unobservable` solo sale cuando lo utilizable está vacío, y ahí el
+  /// alcance esperado de todos los pasos también lo está— pero sí
+  /// construyendo el resultado a mano, y el día que exista aplicabilidad por
+  /// paso (ver el comentario de [RegisteredStep]) un paso podrá saltarse
+  /// legítimamente CONVIVIENDO con un alcance esperado propio no vacío. La
+  /// puerta se hubiera abierto sola.
+  ///
+  /// **El borde que sí sigue sin contraer nada: un alcance esperado VACÍO.**
+  /// Un paso saltado o no observable sobre un alcance enteramente ajeno o
+  /// enteramente no observado no tiene ningún sujeto propio del que dar
+  /// cuenta —su `expectedScope` es `[]`— así que el `for` de abajo no agrega
+  /// nada por él. Es el caso legítimo de «todo saltado» / «todo no
+  /// observable» que ya prueban la suite de la cascada y este mismo archivo,
+  /// y sigue exactamente igual: lo que cambió es qué pasa cuando el alcance
+  /// esperado SÍ tiene algo y el paso, aun así, no ejecutó.
   List<Obligacion> get obligacionesSinSaldar {
     final abiertas = <Obligacion>[];
     for (final registro in registrados) {
-      final desenlace = desenlaces[registro.id];
-      if (desenlace is! Executed) continue;
-      final saldados = {
-        ...desenlace.witness.subjects,
-        for (final o in desenlace.witness.omitted)
-          if (o.subject != null) o.subject!,
-      };
+      final desenlace = desenlaces[registro.id]!;
+      final saldados = desenlace is Executed
+          ? {
+              ...desenlace.witness.subjects,
+              for (final o in desenlace.witness.omitted)
+                if (o.subject != null) o.subject!,
+            }
+          : const <String>{};
       for (final sujeto in registro.expectedScope) {
         if (!saldados.contains(sujeto)) {
           abiertas.add((paso: registro.id, sujeto: sujeto));
@@ -446,11 +468,23 @@ class Cascada {
     // mientras la corrida está en curso.
     final alcance = List<String>.unmodifiable(sujetos);
 
-    // **Una sola foto para toda la corrida.** Dos lecturas pueden diferir, y
-    // entonces dos pasos verifican alcances distintos que el reporte declara
-    // iguales. Es la cláusula 4 del contrato de `ScopeObserver`, y esto es lo
-    // único en todo el arnés que la puede cumplir: si cada paso volviera a
-    // llamar a `observe`, la cláusula no tendría quién la hiciera valer.
+    // **Una sola foto para toda la corrida — de ESTE lado.** Dos lecturas
+    // pueden diferir, y entonces dos pasos verifican alcances distintos que
+    // el reporte declara iguales: es la cláusula 4 del contrato de
+    // `ScopeObserver`. Esta es la única llamada a `observe` que hace la
+    // cascada, pero **no es la única que hace el arnés**: `PasoDeCascada.run`
+    // (en el plugin del stack) guarda su propio `ScopeObserver` y vuelve a
+    // llamar a `observe`, una vez por paso, sobre el alcance que esta línea
+    // ya observó. La cláusula no se cumple hoy de punta a punta —falla
+    // cerrada, no silencioso: `PasoDeCascada.run` aborta si su propia lectura
+    // discrepa de la que esta línea vetó, así que el reporte incoherente que
+    // la cláusula existe para prevenir no se cuela— pero afirmar acá que esto
+    // «es lo único en todo el arnés que la puede cumplir» era exactamente lo
+    // que impedía verlo: doce tareas con la doble lectura instalada y sin que
+    // nadie lo notara. Ver la cláusula 4 en el archivo de los puertos para el
+    // detalle y para qué haría falta —pasarle a cada paso la observación ya
+    // hecha, en vez de que cada uno pida la suya— para que la cláusula valga
+    // de verdad.
     final observacion = await observador.observe(alcance);
     final utilizables = observacion.usable();
     final ajenos = [

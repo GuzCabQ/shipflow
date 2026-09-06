@@ -105,9 +105,25 @@ abstract interface class ArtifactPolicy {
 /// 3. **No se pudo mirar y no era mío son distintos.** Lo primero es un sujeto
 ///    no observado con su causa; lo segundo, uno observado y ajeno con su
 ///    motivo. Confundirlos es el falso rojo simétrico del falso verde.
-/// 4. **Se llama UNA vez por corrida.** Dos lecturas del árbol pueden diferir,
-///    y entonces dos pasos verifican alcances distintos que el reporte declara
-///    iguales.
+/// 4. **La intención es que se llame UNA vez por corrida** —dos lecturas del
+///    árbol pueden diferir, y entonces dos pasos verificarían alcances
+///    distintos que el reporte declara iguales— **pero hoy ningún productor
+///    la cumple de punta a punta.** `Cascada.correr` observa una sola vez
+///    para toda la corrida, como dice esta cláusula. Pero `PasoDeCascada.run`
+///    (en el plugin del stack) guarda su PROPIO `ScopeObserver` y vuelve a
+///    llamar a `observe`, una vez POR PASO, además de la lectura que ya hizo
+///    la cascada — doce tareas sin que nadie lo notara, tapado por un
+///    comentario del archivo de la cascada que afirmaba lo contrario (ver
+///    ahí). Falla cerrada, no silencioso: si la segunda lectura de un paso
+///    difiere de la que la cascada ya vetó, el paso aborta en vez de confiar
+///    en una foto distinta —es la discrepancia que `PasoDeCascada.run`
+///    comprueba explícitamente—, así que el reporte incoherente que esta
+///    cláusula existe para prevenir no se cuela. Pero eso es una salvaguarda
+///    alrededor del incumplimiento, no el cumplimiento: para que la cláusula
+///    valga de verdad, `Cascada` tendría que pasarle a cada paso la
+///    observación que ya hizo —en vez de que cada paso reciba su propio
+///    `ScopeObserver` y vuelva a preguntar—, y eso es un cambio de firma que
+///    no se hace en este arreglo.
 abstract interface class ScopeObserver {
   Future<ScopeObservation> observe(List<String> requested);
 }

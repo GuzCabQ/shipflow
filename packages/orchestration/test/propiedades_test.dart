@@ -4,7 +4,7 @@
 /// El generador es exhaustivo y no aleatorio: el espacio es chico y una
 /// corrida reproducible vale más que una muestra.
 ///
-/// **Tres escenarios, para cubrir los cinco `StepKind` SIN enmascarar
+/// **Cuatro escenarios, para cubrir los cinco `StepKind` SIN enmascarar
 /// mutaciones entre sí.** El escenario A tiene dos sujetos y los dos son del
 /// stack: sobre él se puede construir `Executed`, `Aborted` y `Broken`, pero
 /// NO `Skipped` ni `Unobservable` —esos dos exigen, respectivamente, un
@@ -58,6 +58,22 @@
 /// con cobertura vacía y los dos saldados por omisión, no queda ninguna
 /// obligación abierta y `pasoNoConcluyente` deja de tener quién la tape.
 ///
+/// **Un cuarto escenario, [Mixto], para la puerta que los otros tres no
+/// pueden abrir.** Es una observación con un sujeto DEL STACK y uno AJENO a
+/// la vez —lo utilizable no es ni todo ni nada—, y la rejilla la arma con
+/// DOS pasos, no uno: un paso `P1` que ejecuta de verdad y cubre lo único
+/// utilizable, conviviendo con un paso `P2` que se SALTA nombrando el ajeno
+/// real. Ningún escenario anterior podía representar esta combinación —A
+/// tiene los dos sujetos del stack, y Salto/NoObservable tienen lo utilizable
+/// vacío, así que un salto ahí nunca contrae obligación alguna— y es
+/// exactamente la combinación que encontró la revisión: un `Skipped` sobre un
+/// alcance esperado NO vacío quedaba invisible para `obligacionesSinSaldar`,
+/// que saltaba todo desenlace que no fuera `Executed` sin mirar si tenía algo
+/// que saldar. Antes del arreglo, `P1 ejecuta y cubre · P2 se salta` salía
+/// VERDE: la propiedad d) —«ningún desenlace sin cobertura completa termina
+/// verde»— es la que lo cazaba, y por eso este archivo se comprobó en rojo
+/// contra el código sin arreglar antes de tocar el archivo de la cascada.
+///
 /// **Notas de adaptación.** El brief de esta tarea se escribió antes de tres
 /// cosas que este archivo tiene que respetar:
 ///
@@ -94,6 +110,15 @@ const sujetoDelSalto = 'y.ajeno';
 /// ningún ajeno, `nadaEjecutado` no puede dispararse acá —exige al menos un
 /// ajeno real— así que la mutación simétrica tampoco tiene dónde esconderse.
 const sujetoPerdido = 'z.perdido';
+
+/// Escenario mixto: dos sujetos en la MISMA observación, uno del stack y uno
+/// ajeno. Ninguno de los otros tres escenarios puede representar esta forma
+/// —A tiene sus dos sujetos del stack; Salto y NoObservable tienen lo
+/// utilizable vacío— y por eso ninguno podía exponer un paso saltado
+/// CONVIVIENDO con un alcance utilizable no vacío. Ver el comentario del
+/// escenario mixto más arriba en el archivo.
+const sujetoMixtoDelStack = 'd.fuente';
+const sujetoMixtoAjeno = 'w.ajeno';
 
 /// Un observador de alcance que responde de una tabla. **No toca el disco.**
 /// Copiado de la suite de la cascada: `orchestration` no puede depender de
@@ -235,22 +260,6 @@ Diagnostic _diag(Severity s) => Diagnostic(
       message: const QuotedText('m', source: 'test'),
     );
 
-/// Todos los casos de los tres escenarios, cada uno con SU PROPIA
-/// observación: un desenlace de un escenario no tiene sentido evaluado
-/// contra el alcance de otro.
-Iterable<(String, ScopeObservation, StepOutcome)> todosLosCasos(
-    ScopeObservation alcanceA,
-    ScopeObservation alcanceSalto,
-    ScopeObservation alcanceNoObservable) sync* {
-  for (final (nombre, d) in desenlacesPosiblesA()) {
-    yield ('A·$nombre', alcanceA, d);
-  }
-  final (nombreSalto, salto) = desenlaceDeSalto(alcanceSalto);
-  yield ('Salto·$nombreSalto', alcanceSalto, salto);
-  final (nombreNoObs, noObs) = desenlaceDeNoObservable(alcanceNoObservable);
-  yield ('NoObservable·$nombreNoObs', alcanceNoObservable, noObs);
-}
-
 /// Arma un `ResultadoDeCascada` de un único paso `A` con desenlace [d], sobre
 /// [alcance]. **Coherente por construcción**: el alcance esperado del paso es
 /// exactamente `alcance.usable()`, que es la única forma que el constructor
@@ -261,6 +270,90 @@ ResultadoDeCascada _resultadoCon(ScopeObservation alcance, StepOutcome d) =>
       alcance: alcance,
       desenlaces: {'A': d},
     );
+
+/// Arma un `ResultadoDeCascada` de DOS pasos —`P1` y `P2`— sobre [alcance],
+/// con desenlaces [p1] y [p2]. Los dos comparten `expectedScope`, igual que
+/// en una corrida real: sin aplicabilidad por paso, es la única forma que el
+/// constructor acepta (mismo comentario que [_resultadoCon]).
+ResultadoDeCascada _resultadoMixto(
+        ScopeObservation alcance, StepOutcome p1, StepOutcome p2) =>
+    ResultadoDeCascada(
+      registrados: [
+        RegisteredStep(id: 'P1', expectedScope: alcance.usable()),
+        RegisteredStep(id: 'P2', expectedScope: alcance.usable()),
+      ],
+      alcance: alcance,
+      desenlaces: {'P1': p1, 'P2': p2},
+    );
+
+/// Los casos del escenario mixto. [alcance] tiene un único sujeto utilizable
+/// —el otro es ajeno— así que el alcance esperado de P1 y P2 es ese único
+/// sujeto: [_resultadoMixto] rechazaría cualquier otra cosa.
+Iterable<(String, ResultadoDeCascada)> casosMixtos(
+    ScopeObservation alcance) sync* {
+  final ajenoReal = alcance.observed.singleWhere((o) => !o.ofStack);
+
+  Executed cubreLoUtilizable() => Executed(
+        witness: Witness(
+          invocation: 'herramienta',
+          subjects: const [sujetoMixtoDelStack],
+          exitCode: 0,
+          omitted: const [],
+          finishedAt: DateTime.utc(2026),
+        ),
+        diagnostics: const [],
+      );
+  Skipped seSalta() => Skipped(notOfStack: [ajenoReal]);
+
+  // **La mordida de C1.** P1 ejecuta de verdad y cubre lo único utilizable;
+  // P2 se salta nombrando el ajeno real —coherente con la observación, no
+  // inventado—. Antes del arreglo, `obligacionesSinSaldar` saltaba todo
+  // desenlace que no fuera `Executed` sin mirar su `expectedScope`, así que
+  // P2 no contraía ninguna obligación pese a que la suya —`d.fuente`— seguía
+  // sin cubrir ni explicar. La corrida salía VERDE con un paso que ni
+  // ejecutó ni dio cuenta de lo suyo.
+  yield (
+    'P1 ejecuta y cubre · P2 se salta',
+    _resultadoMixto(alcance, cubreLoUtilizable(), seSalta())
+  );
+
+  // Control negativo: los dos ejecutan y cubren. Tiene que seguir dando
+  // VERDE — sin este caso, la propiedad d) no distinguiría un arreglo
+  // correcto de uno que además rompe el verde legítimo.
+  yield (
+    'los dos ejecutan y cubren',
+    _resultadoMixto(alcance, cubreLoUtilizable(), cubreLoUtilizable())
+  );
+
+  // Los dos se saltan: ninguno cubre lo utilizable, así que el libro tiene
+  // que quedar con las DOS obligaciones abiertas, no solo una.
+  yield ('los dos se saltan', _resultadoMixto(alcance, seSalta(), seSalta()));
+}
+
+/// Todos los casos de los cuatro escenarios, cada uno con SU PROPIA
+/// observación: un desenlace de un escenario no tiene sentido evaluado
+/// contra el alcance de otro. Devuelve el `ResultadoDeCascada` ya armado —no
+/// el (alcance, desenlace) suelto— porque el escenario mixto necesita DOS
+/// pasos y un solo desenlace ya no alcanza para nombrar un caso.
+Iterable<(String, ResultadoDeCascada)> todosLosCasos(
+    ScopeObservation alcanceA,
+    ScopeObservation alcanceSalto,
+    ScopeObservation alcanceNoObservable,
+    ScopeObservation alcanceMixto) sync* {
+  for (final (nombre, d) in desenlacesPosiblesA()) {
+    yield ('A·$nombre', _resultadoCon(alcanceA, d));
+  }
+  final (nombreSalto, salto) = desenlaceDeSalto(alcanceSalto);
+  yield ('Salto·$nombreSalto', _resultadoCon(alcanceSalto, salto));
+  final (nombreNoObs, noObs) = desenlaceDeNoObservable(alcanceNoObservable);
+  yield (
+    'NoObservable·$nombreNoObs',
+    _resultadoCon(alcanceNoObservable, noObs)
+  );
+  for (final (nombre, r) in casosMixtos(alcanceMixto)) {
+    yield ('Mixto·$nombre', r);
+  }
+}
 
 void main() {
   final observadorA = ObservadorDeAlcanceFalso(observados: {
@@ -278,17 +371,32 @@ void main() {
     observados: const {},
     noObservados: const {sujetoPerdido: 'no se pudo mirar'},
   );
+  final observadorMixto = ObservadorDeAlcanceFalso(observados: {
+    sujetoMixtoDelStack:
+        ObservedSubject(subject: sujetoMixtoDelStack, ofStack: true, files: 1),
+    sujetoMixtoAjeno: ObservedSubject(
+        subject: sujetoMixtoAjeno,
+        ofStack: false,
+        files: 0,
+        reason: 'no es de este stack'),
+  });
 
   late ScopeObservation alcanceA;
   late ScopeObservation alcanceSalto;
   late ScopeObservation alcanceNoObservable;
+  late ScopeObservation alcanceMixto;
 
   setUpAll(() async {
     alcanceA = await observadorA.observe(sujetosA);
     alcanceSalto = await observadorSalto.observe(const [sujetoDelSalto]);
     alcanceNoObservable =
         await observadorNoObservable.observe(const [sujetoPerdido]);
+    alcanceMixto = await observadorMixto
+        .observe(const [sujetoMixtoDelStack, sujetoMixtoAjeno]);
   });
+
+  Iterable<(String, ResultadoDeCascada)> todos() =>
+      todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable, alcanceMixto);
 
   test('a · todo desenlace construible tiene estado y causa. Función total',
       () {
@@ -308,9 +416,7 @@ void main() {
     // próximo que lo revise la va a encontrar muda —sin nada que remover y
     // ver caer— y la va a borrar por inútil, cuando lo que pasa es lo
     // contrario: el invariante es más fuerte que una prueba.
-    for (final (nombre, alcance, d)
-        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
-      final r = _resultadoCon(alcance, d);
+    for (final (nombre, r) in todos()) {
       expect(() => r.estado, returnsNormally, reason: nombre);
       expect(() => r.causas, returnsNormally, reason: nombre);
       expect(EstadoDeCorrida.values, contains(r.estado), reason: nombre);
@@ -318,22 +424,26 @@ void main() {
   });
 
   test('b · verde implica toda obligación saldada y nada sin concluir', () {
-    for (final (nombre, alcance, d)
-        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
-      final r = _resultadoCon(alcance, d);
+    for (final (nombre, r) in todos()) {
       if (r.estado != EstadoDeCorrida.verde) continue;
       expect(r.obligacionesSinSaldar, isEmpty, reason: nombre);
       expect(r.causas, isEmpty, reason: nombre);
-      expect(d, isA<Executed>(), reason: nombre);
-      expect((d as Executed).verdict, Verdict.verde, reason: nombre);
+      // Generalizado a TODOS los desenlaces del resultado, no a uno solo: el
+      // escenario mixto registra dos pasos, y verde exige que los dos hayan
+      // ejecutado con veredicto verde —cualquiera que no sea `Executed` deja
+      // sin saldar su propio `expectedScope`, que acá nunca es vacío—.
+      for (final d in r.desenlaces.values) {
+        expect(d, isA<Executed>(), reason: nombre);
+        expect((d as Executed).verdict, Verdict.verde, reason: nombre);
+      }
     }
   });
 
   test('c · la cuenta de diagnósticos es la suma de los ejecutados', () {
-    for (final (nombre, alcance, d)
-        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
-      final r = _resultadoCon(alcance, d);
-      final esperados = d is Executed ? d.diagnostics.length : 0;
+    for (final (nombre, r) in todos()) {
+      final esperados = r.desenlaces.values
+          .whereType<Executed>()
+          .fold<int>(0, (n, e) => n + e.diagnostics.length);
       expect(r.diagnosticos, hasLength(esperados), reason: nombre);
     }
   });
@@ -341,35 +451,40 @@ void main() {
   test('d · ningún desenlace sin cobertura completa termina verde', () {
     // La propiedad que cierra el falso verde: cubrir la mitad sin explicar el
     // resto no puede dar verde, sea cual sea el resto de la combinación.
-    // **Contra `alcance.usable()`, no contra una constante**: en los
-    // escenarios del salto y de lo no observable lo utilizable es vacío
-    // —ninguno de los dos tiene un sujeto del stack—, así que medir contra
-    // una lista fija de sujetos sería incorrecto ahí. Solo el escenario A
-    // aporta `Executed`, así que en la práctica es el único que ejercita
-    // esta propiedad, pero la expresión vale para los tres.
+    // **Por REGISTRO, no por resultado**: cada `RegisteredStep` tiene que
+    // saldar SU PROPIO `expectedScope` con SU PROPIO desenlace —el escenario
+    // mixto tiene dos pasos y cada uno debe su propia cuenta—. Un desenlace
+    // que no es `Executed` no puede saldar nada; solo pasa si su
+    // `expectedScope` ya es vacío, que es el caso legítimo de un salto sobre
+    // un alcance enteramente ajeno (escenarios Salto y NoObservable). Esta
+    // cuenta se computa INDEPENDIENTE de `obligacionesSinSaldar` —es lo que
+    // se está probando— y por eso la mordida contra el código sin arreglar sí
+    // la puede cazar.
     var ejercitados = 0;
-    for (final (nombre, alcance, d)
-        in todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable)) {
-      if (d is! Executed) continue;
-      final saldados = {
-        ...d.witness.subjects,
-        for (final o in d.witness.omitted)
-          if (o.subject != null) o.subject!,
-      };
-      if (saldados.containsAll(alcance.usable())) continue;
+    for (final (nombre, r) in todos()) {
+      final incompleto = r.registrados.any((registro) {
+        final d = r.desenlaces[registro.id]!;
+        if (d is! Executed) return registro.expectedScope.isNotEmpty;
+        final saldados = {
+          ...d.witness.subjects,
+          for (final o in d.witness.omitted)
+            if (o.subject != null) o.subject!,
+        };
+        return !saldados.containsAll(registro.expectedScope);
+      });
+      if (!incompleto) continue;
       ejercitados++;
-      final r = _resultadoCon(alcance, d);
       expect(r.estado, isNot(EstadoDeCorrida.verde), reason: nombre);
     }
     // **La guardia que sostiene esta propiedad.** Si el generador no produce
     // ningún caso con cobertura incompleta sobre sujetos reales, el `for` de
     // arriba no ejecuta ningún `expect` y la propiedad pasa sin haber
     // probado nada — exactamente el falso verde que esta rebanada existe
-    // para cazar, pero en el propio archivo de propiedades. El escenario A
-    // tiene sujetos reales y su rejilla incluye cobertura vacía y parcial,
-    // así que esto tiene que ser mayor que cero; si baja a cero, el
-    // generador dejó de ejercitar la propiedad y hay que arreglarlo, no
-    // relajar el `expect`.
+    // para cazar, pero en el propio archivo de propiedades. El escenario A y
+    // el escenario mixto tienen sujetos reales y sus rejillas incluyen
+    // cobertura vacía y parcial, así que esto tiene que ser mayor que cero;
+    // si baja a cero, el generador dejó de ejercitar la propiedad y hay que
+    // arreglarlo, no relajar el `expect`.
     expect(ejercitados, greaterThan(0),
         reason: 'el generador tiene que producir al menos un desenlace con '
             'cobertura incompleta sobre sujetos reales, o esta propiedad no '

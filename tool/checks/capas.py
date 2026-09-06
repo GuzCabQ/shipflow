@@ -826,6 +826,15 @@ def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
     """
     regla = REGLAS["deps-hacia-core"]
     permitidas = regla["permitidas"]
+    # `excepciones_dev_dependencies` es la única puerta para una arista de
+    # DESARROLLO entre paquetes internos que `permitidas` no habilita. Antes
+    # de esto la clave existía en arquitectura.json y no la leía nadie: ni
+    # este check, ni `probar_reglas.py`, ni `tool/analisis` — prosa con forma
+    # de control, en un archivo donde todas las demás claves se consumen.
+    excepciones_dev = {
+        (e["paquete"], e["dependencia"])
+        for e in regla.get("excepciones_dev_dependencies", [])
+    }
     internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
     for huerfano in sorted(set(paquetes()) - internos):
         fallos.append(f"packages/{huerfano}: pub no lo reporta como miembro. "
@@ -841,6 +850,28 @@ def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
                 fallos.append(
                     f"packages/{nombre}: depende de «{dep}», que no está permitido.\n"
                     f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
+        _check_flechas_dev(nombre, g[nombre], internos, ok, excepciones_dev, regla)
+
+
+def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str],
+                       excepciones_dev: set[tuple[str, str]], regla: dict) -> None:
+    """La misma flecha que `check_flechas`, pero de DESARROLLO.
+
+    `directDependencies` no la ve —viaja por su propia clave del grafo de
+    pub— así que antes de esto un paquete que no puede ver un plugin como
+    dependencia real podía verlo igual en `dev_dependencies:`, sin que nada lo
+    notara: la regla tenía la forma de proteger a `orchestration` de los
+    plugins y no lo hacía. Lo que YA está permitido como dependencia real
+    (`ok`) no necesita excepción aparte; lo que no, solo pasa si el par
+    (paquete, dependencia) está declarado en `excepciones_dev_dependencies`.
+    """
+    for dep in nodo.get("devDependencies", []):
+        if dep in internos and dep not in ok and (nombre, dep) not in excepciones_dev:
+            fallos.append(
+                f"packages/{nombre}: depende, como dependencia de desarrollo, de "
+                f"«{dep}», que no está permitido ni declarado en "
+                f"«excepciones_dev_dependencies».\n"
+                f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
 
 
 # --- origen de dependencias · independiente de la anterior --------------

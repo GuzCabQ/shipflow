@@ -311,6 +311,27 @@ def casos() -> list[dict]:
         "menciona": "desarrollo",
     })
 
+    # La otra mitad de `deps-hacia-core`, simétrica a la de arriba: una
+    # dependencia de DESARROLLO hacia un plugin, desde un paquete que
+    # `excepciones_dev_dependencies` no declara. La regla ya leía
+    # `directDependencies`; `devDependencies` viajaba por su propia clave del
+    # grafo y no se miraba — la clave existía en arquitectura.json, con la
+    # excepción real de `plugin_dart` documentada, y no la leía nadie. Contra
+    # `orchestration`, que es a quien la prohibición de ver plugins más le
+    # importa (docs/03 §2): no está en la lista de excepciones, así que esto
+    # tiene que quedar rojo.
+    c.append({
+        "nombre": "deps-hacia-core · una dependencia de desarrollo hacia un plugin "
+                  "sin excepción declarada",
+        "archivos": {"packages/orchestration/pubspec.yaml":
+                     "name: orchestration\ndescription: \"canario\"\npublish_to: none\n"
+                     "version: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\n"
+                     "resolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n\n"
+                     "dev_dependencies:\n  plugin_fake:\n    path: ../plugin_fake\n"},
+        "pub_get": True,
+        "menciona": "excepciones_dev_dependencies",
+    })
+
     # NEGATIVOS: las exclusiones declaradas tienen que excluir de verdad.
     c.append({
         "nombre": "exclusión · AGENTS.md proyectado queda fuera",
