@@ -111,13 +111,22 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test(
-      'alcance mixto real: un sujeto que ya no existe ABORTA en vez de '
-      'certificar lo que sí existe', () async {
-    // La reproducción exacta del review, contra la toolchain instalada, con
-    // el criterio que agrega la tarea 8b: 'no/existe' ya no se descarta con
-    // una omisión que salda su obligación sin haberlo verificado — la propia
-    // observación del paso lo encuentra incoherente con lo que se le pidió
-    // y aborta antes de invocar nada, ni siquiera sobre 'lib/' que sí existe.
+      'un sujeto que ya no existe aborta antes de invocar, con el '
+      'observador REAL', () async {
+    // **Esto YA NO reconcilia contra la salida del binario.** Antes era la
+    // reproducción del review: 'no/existe' llegaba al formateador, que
+    // salía con código 0, y el paso tenía que descreerle. Con el guardia de
+    // la tarea 8b eso cambió de mecanismo: `ObservadorDeAlcanceDart` -puro
+    // sistema de archivos, nunca invoca al binario- ya clasifica 'no/existe'
+    // como inobservable, y el paso aborta ANTES de que `dart format` corra
+    // ni una vez. La reconciliación de un alcance mixto contra la salida
+    // GENUINA del binario la cubre 'la reconciliación cierra contra la
+    // toolchain de verdad', más abajo en este archivo — no esta prueba.
+    //
+    // Lo que esta prueba sigue aportando, y por eso no se borra: que el
+    // observador REAL de este stack -contra el sistema de archivos de
+    // verdad, no un mapa declarado a mano como en `pasos_test.dart`-
+    // clasifica 'no/existe' como no utilizable y dispara el mismo aborto.
     fuente('bien.dart', 'void main() {\n  print(1);\n}\n');
     final o = await formato().run(['lib/', 'no/existe']);
     expect(o, isA<Aborted>());
@@ -130,6 +139,12 @@ void main() {
     // resumen que yo escribo; acá el número lo pone la herramienta, así que si
     // mi forma de contar el alcance no coincide con la suya, esto se pone rojo
     // en vez de dejar todo no concluyente en silencio.
+    //
+    // **Es también la prueba que reconcilia un alcance MIXTO —dos sujetos,
+    // con conteos conocidos— contra la salida genuina del binario.** Si se
+    // busca esa cobertura y no se encuentra en la prueba de más arriba
+    // ("un sujeto que ya no existe..."), es porque vive acá: esa otra ya no
+    // llega a invocar la herramienta.
     fuente('uno.dart', 'void main() {\n  print(1);\n}\n');
     Directory('${raiz.path}/otro').createSync();
     File('${raiz.path}/otro/dos.dart')

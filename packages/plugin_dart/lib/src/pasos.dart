@@ -17,13 +17,18 @@ import 'normalizadores.dart';
 typedef Cobertura = ({List<String> cubierto, List<Omission> omitido});
 
 /// Lo que el arnés sabe del alcance ANTES de creerle a la herramienta: qué
-/// sujetos son utilizables, por qué no lo son los demás —ya como [Omission]
-/// con su sujeto, porque eso salda la obligación de ese par paso-sujeto— y
-/// **cuántos archivos hay que mirar**. Ese número es la mitad de una
-/// reconciliación; la otra la pone la herramienta.
+/// sujetos son utilizables y **cuántos archivos hay que mirar**. Ese número
+/// es la mitad de una reconciliación; la otra la pone la herramienta.
+///
+/// **No lleva los motivos de lo que no es utilizable.** Los llevaba, como
+/// [Omission] con su sujeto, para que `run` los adjuntara al testigo — pero
+/// eso era saldar la obligación de ese sujeto sin haberlo verificado, que es
+/// justo el falso verde que la tarea 8b cierra. Un sujeto no utilizable
+/// aborta la corrida antes de llegar acá: por el momento en que se
+/// construye este record, todo sujeto pedido YA es sano, así que un campo de
+/// motivos solo podría llegar vacío.
 typedef Alcance = ({
   List<String> sanos,
-  List<Omission> motivos,
   int archivos,
 });
 
@@ -89,27 +94,8 @@ abstract base class PasoDeCascada implements Verifier {
     // podrían discrepar y el testigo afirmaría dos cosas incompatibles.
     final observacion = await observador.observe(pedidos);
 
-    // **Las omisiones se arman en el orden en que se PIDIERON, no en el orden
-    // en que el observador las clasificó.** Recorrer `observed` y
-    // `unobserved` como dos bloques separados da el mismo contenido, pero en
-    // otro orden apenas una misma corrida mezcla un sujeto ajeno con uno
-    // inobservable. Por eso se arma un mapa y se recorre `requested`.
-    //
-    // Cada omisión nombra su sujeto: es lo que salda la obligación de ese
-    // par paso-sujeto, y por eso viene del observador y no se resume a texto.
-    final omisionPorSujeto = <String, Omission>{
-      for (final o in observacion.observed)
-        if (!o.ofStack)
-          o.subject: Omission(subject: o.subject, reason: o.reason!),
-      for (final u in observacion.unobserved)
-        u.subject: Omission(subject: u.subject, reason: u.cause),
-    };
     final alcance = (
       sanos: observacion.usable(),
-      motivos: <Omission>[
-        for (final s in observacion.requested)
-          if (omisionPorSujeto[s] case final omision?) omision,
-      ],
       archivos: observacion.observed
           .where((o) => o.ofStack)
           .fold(0, (n, o) => n + o.files),
@@ -157,16 +143,12 @@ abstract base class PasoDeCascada implements Verifier {
     // El programa y los argumentos se calculan UNA vez y se reusan. Se
     // calculaban dos veces —una para el texto del testigo y otra para la
     // invocación real— y nada garantizaba que dieran lo mismo.
-    // **La herramienta recibe SOLO los sujetos utilizables.**
     //
-    // Recibía `pedidos` entero, así que un sujeto ya descartado llegaba
-    // igual: `verify README.md` le daba el markdown a la herramienta del
-    // stack, que intentaba parsearlo y devolvía cinco diagnósticos sobre un
-    // archivo que no es de su incumbencia. Lo cobró un review, y afecta a
-    // cualquier cambio normal que mezcle código y documentación.
-    //
-    // Lo descartado no desaparece: sigue en `omitted` con su motivo, que es
-    // donde el corolario 5 de ADR-011 pide que esté.
+    // **`alcance.sanos` es, a esta altura, exactamente `pedidos`.** Si algún
+    // pedido no fuera sano, la corrida ya abortó más arriba: no queda ningún
+    // sujeto que descartar en silencio ni que declarar omitido con su
+    // nombre. Se sigue pasando `alcance.sanos` y no `pedidos` porque es la
+    // forma en que este código afirma esa igualdad, no porque filtre nada.
     final prog = programa;
     final args = List<String>.unmodifiable(argumentos(alcance.sanos));
     final invocacion = [prog, ...args].join(' ');
@@ -208,7 +190,6 @@ abstract base class PasoDeCascada implements Verifier {
           exitCode: r.codigo,
           finishedAt: DateTime.now().toUtc(),
           omitted: [
-            ...alcance.motivos,
             Omission(
                 reason: 'Código de salida ${r.codigo}, que no está entre los '
                     'que significan que la herramienta corrió '
@@ -235,7 +216,6 @@ abstract base class PasoDeCascada implements Verifier {
           exitCode: r.codigo,
           finishedAt: DateTime.now().toUtc(),
           omitted: [
-            ...alcance.motivos,
             Omission(reason: 'No se pudo interpretar la salida: ${e.reason}'),
           ],
         ),
@@ -300,7 +280,7 @@ final class PasoDeFormato extends PasoDeCascada {
   @override
   Cobertura cobertura(Alcance alcance, QuotedText salida) {
     const norma = NormalizadorDeFormato();
-    final (:sanos, :motivos, :archivos) = alcance;
+    final (:sanos, :archivos) = alcance;
     final mirados = norma.archivosMirados(salida);
     final sinParsear = norma.archivosQueNoParsean(salida).length;
 
@@ -308,7 +288,6 @@ final class PasoDeFormato extends PasoDeCascada {
       return (
         cubierto: const <String>[],
         omitido: [
-          ...motivos,
           Omission(
               reason: 'La herramienta informó que no miró NINGÚN archivo. Su '
                   'código de salida es 0 igual, así que esto no se puede '
@@ -336,7 +315,6 @@ final class PasoDeFormato extends PasoDeCascada {
       return (
         cubierto: const <String>[],
         omitido: [
-          ...motivos,
           Omission(
               reason: 'El alcance tiene $archivos archivo(s) de fuente y la '
                   'herramienta informó $mirados formateado(s) más '
@@ -353,7 +331,6 @@ final class PasoDeFormato extends PasoDeCascada {
     return (
       cubierto: sanos,
       omitido: [
-        ...motivos,
         if (sinParsear > 0)
           Omission(
               reason: '$sinParsear archivo(s) no parsean y quedaron sin '
@@ -412,7 +389,7 @@ final class PasoDeAnalisis extends PasoDeCascada {
 
   @override
   Cobertura cobertura(Alcance alcance, QuotedText salida) {
-    final (:sanos, :motivos, :archivos) = alcance;
+    final (:sanos, :archivos) = alcance;
     // **No hay nada que reconciliar acá, y ese es el punto.** El formateador
     // informa cuántos archivos miró y por eso su cobertura se puede comprobar;
     // este no informa nada, así que la única cuenta es la del arnés y queda
@@ -424,6 +401,6 @@ final class PasoDeAnalisis extends PasoDeCascada {
             'cobertura se comprobó contando los $archivos archivo(s) del '
             'alcance, no leyendo su reporte. Que los haya leído TODOS no lo '
             'verifica este paso.');
-    return (cubierto: sanos, omitido: [...motivos, residuo]);
+    return (cubierto: sanos, omitido: [residuo]);
   }
 }
