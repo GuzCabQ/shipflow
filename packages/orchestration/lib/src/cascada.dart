@@ -4,6 +4,12 @@
 /// el composition root, y una regla de arquitectura lo hace cumplir: este
 /// paquete no puede ver ningún plugin. Esa ignorancia es la que permite que
 /// cambiar de stack no toque la orquestación.
+///
+/// **Clasifica sobre hechos, no sobre conclusiones del paso.** El salto y lo
+/// no observable ya no salen de lo que un verificador declaró sobre sí mismo
+/// —eso era pedirle que juzgara su propia cobertura, ADR-011 corolario 4— sino
+/// de lo que devolvió el [ScopeObserver]: hechos por sujeto, mirados una sola
+/// vez para toda la corrida.
 library;
 
 import 'package:core/core.dart';
@@ -28,7 +34,8 @@ enum EstadoDeCorrida {
   verde,
   rojo,
 
-  /// Algo no se pudo observar. Se trata como rojo (ADR-011).
+  /// Algo no se pudo observar, o algo quedó sin explicar. Se trata como rojo
+  /// (ADR-011).
   noConcluyente,
 
   /// El arnés se rompió. **Distinto de «el cambio no verificó»**: acá no se
@@ -36,197 +43,171 @@ enum EstadoDeCorrida {
   errorInterno,
 }
 
-/// Un paso que **no tuvo nada que hacer**, con su motivo.
+/// Un paso tal como quedó registrado **para una corrida dada**: su id y el
+/// alcance que se esperaba que cubriera.
 ///
-/// Es un tercer estado, distinto de «corrió» y de «no pudo mirar», y el corpus
-/// lo traza: *«sin anotaciones tocadas → SALTAR · testigo: motivo registrado»*,
-/// y su meta-check lo cuenta aparte —*«registrados: 7 · ejecutados: 6 ·
-/// saltados: 1 con motivo → sin discrepancia»*—.
+/// **La cascada lo arma adentro, después de observar.** No se construye al
+/// componer el registro —ahí todavía no hay alcance observado— sino dentro de
+/// `correr`, y por eso su [expectedScope] puede depender de la observación de
+/// esa corrida.
 ///
-/// **Confundirlo con «no pude mirar» es el falso rojo simétrico del falso verde
-/// que ADR-011 caza**, y estaba ocurriendo: un alcance sin archivos del stack
-/// daba «no concluyente: algún paso no pudo observar su alcance» cuando el paso
-/// había terminado completo y no tenía nada suyo que mirar.
-///
-/// **La herramienta NO corrió, y ahora el tipo lo dice.** Antes esto se
-/// representaba con un testigo de `Termination.completa` y código 0 —«la
-/// herramienta corrió y produjo un resultado»— y la cascada **exigía ese hecho
-/// falso** para clasificar bien. Dos reviews seguidos lo señalaron: primero la
-/// prosa que no se comprobaba, y después la mentira de la que dependía lo
-/// correcto.
-///
-/// **Lo clasifica la cascada, no el paso.** ADR-011 corolario 4: ningún
-/// verificador juzga su propia cobertura. El paso declara un hecho contable
-/// sobre su entrada —`Witness.ownSubjects`— y quien compone la corrida decide
-/// qué significa.
-class PasoSaltado {
+/// **Hoy el alcance esperado de TODOS los pasos es el mismo: el alcance
+/// utilizable de la corrida entera.** No hay todavía aplicabilidad por paso
+/// —un paso que declare que un sujeto, aunque sea del stack, no es asunto
+/// suyo—. Cuando llegue, el constructor gana un parámetro **opcional** que
+/// estrecha este campo para el paso que lo declare, y eso no rompe a nadie:
+/// todo lo que hoy lo construye sigue construyendo exactamente lo mismo.
+class RegisteredStep {
   final String id;
+  final List<String> expectedScope;
 
-  /// Por qué. **Sale del testigo, no de una frase escrita acá**: es lo que el
-  /// propio paso declaró haber omitido.
-  final List<String> motivos;
-
-  /// Lo que el paso declaró. **No es un testigo**: no hubo invocación que
-  /// atestiguar, y fabricar una era el hecho falso del que dependía esta
-  /// clasificación.
-  final NotApplicable declaracion;
-
-  PasoSaltado({
-    required this.id,
-    required List<String> motivos,
-    required this.declaracion,
-  }) : motivos = List.unmodifiable(motivos) {
-    // **Un salto sin motivo es un salto silencioso**, que es justo lo que
-    // ADR-011 corolario 1 prohíbe y lo que la documentación de este tipo
-    // promete que no pasa. La promesa estaba escrita y el tipo la dejaba
-    // romper: un review construyó uno con la lista vacía.
-    if (this.motivos.isEmpty || this.motivos.any((m) => m.trim().isEmpty)) {
-      throw ArgumentError.value(
-          motivos,
-          'motivos',
-          'Un salto sin motivo es un salto silencioso, y un motivo en blanco '
-              'no es un motivo. Si el paso no supo decir por qué no tenía nada '
-              'que hacer, no se puede afirmar que no lo tenía');
+  RegisteredStep({required this.id, required List<String> expectedScope})
+      : expectedScope = List.unmodifiable(expectedScope) {
+    if (id.trim().isEmpty) {
+      throw ArgumentError.value(id, 'id', 'Un paso sin id no es registrable');
     }
   }
 }
 
-/// Cómo terminó **un paso**, para quien mira la corrida mientras ocurre.
-///
-/// **Todo `started` necesita un desenlace observable.** Solo se avisaba de los
-/// pasos que producían resultado: un salto y un fallo interno dejaban el
-/// evento de inicio abierto para siempre, y un consumidor del protocolo en
-/// streaming se quedaba esperando. Lo encontró un review sobre `--verbose`, que
-/// además prometía el testigo de cada paso y no lo daba para los saltos.
-sealed class DesenlaceDePaso {
-  final String id;
-  const DesenlaceDePaso(this.id);
-}
+/// Un par paso-sujeto que el paso tenía que cubrir o explicar.
+typedef Obligacion = ({String paso, String sujeto});
 
-/// Corrió y produjo su veredicto.
-class PasoEjecutado extends DesenlaceDePaso {
-  final VerificationOutcome resultado;
-  PasoEjecutado(this.resultado) : super(resultado.verifierId);
-}
-
-/// No tuvo nada que hacer.
-class PasoSinNadaQueHacer extends DesenlaceDePaso {
-  final NotApplicable declaracion;
-  PasoSinNadaQueHacer(super.id, this.declaracion);
-}
-
-/// Se rompió. **No es un veredicto sobre el cambio**: es el arnés.
-class PasoRoto extends DesenlaceDePaso {
-  final String causa;
-  PasoRoto(super.id, this.causa);
+/// Por qué una corrida no puede afirmar cobertura. **Es una lista, no un
+/// valor**: pueden concurrir, y la acción siguiente sale de la primera.
+enum CausaNoConcluyente {
+  sinVerificadores,
+  nadaEjecutado,
+  alcanceNoObservable,
+  pasoAbortado,
+  pasoNoConcluyente,
+  obligacionSinSaldar,
 }
 
 /// Lo que resulta de correr una cascada.
 ///
-/// [estado] se **deriva**, igual que `VerificationOutcome.verdict`. No hay
-/// campo donde escribirlo, así que no hay forma de poner una corrida en verde
-/// desde afuera.
+/// [estado] se **deriva**, igual que `Executed.verdict`. No hay campo donde
+/// escribirlo, así que no hay forma de poner una corrida en verde desde
+/// afuera.
 class ResultadoDeCascada {
-  /// Los pasos que el registro declara. **Es el denominador.**
-  final List<String> registrados;
+  /// Los pasos que la corrida registró, con el alcance que se esperaba que
+  /// cada uno cubriera. **Es el denominador**: todo paso de acá tiene su
+  /// desenlace, y el libro de obligaciones lee su [RegisteredStep.expectedScope]
+  /// en vez de una noción global de «lo utilizable».
+  final List<RegisteredStep> registrados;
 
-  /// Lo que devolvió cada paso que llegó a devolver algo.
-  final List<VerificationOutcome> resultados;
+  /// La foto única del alcance de esta corrida.
+  final ScopeObservation alcance;
 
-  /// Los pasos que se rompieron, con su causa. Un paso que lanza no produjo
-  /// un veredicto: produjo un error del arnés.
-  final Map<String, String> fallosInternos;
-
-  /// Los pasos que **no tuvieron nada que hacer**, con su motivo.
-  final List<PasoSaltado> saltados;
+  /// Lo que produjo cada paso, por su id.
+  final Map<String, StepOutcome> desenlaces;
 
   ResultadoDeCascada({
-    required List<String> registrados,
-    required List<VerificationOutcome> resultados,
-    Map<String, String> fallosInternos = const {},
-    List<PasoSaltado> saltados = const [],
+    required List<RegisteredStep> registrados,
+    required this.alcance,
+    required Map<String, StepOutcome> desenlaces,
   })  : registrados = List.unmodifiable(registrados),
-        resultados = List.unmodifiable(resultados),
-        fallosInternos = Map.unmodifiable(fallosInternos),
-        saltados = List.unmodifiable(saltados);
-
-  /// Qué pasos produjeron un resultado.
-  List<String> get ejecutados =>
-      List.unmodifiable([for (final r in resultados) r.verifierId]);
-
-  /// **Registrados menos ejecutados menos saltados.** Es el corolario 2 de
-  /// ADR-011: la diferencia se reporta. Sin esto, un paso que no corre se lee
-  /// igual que un paso que corrió y no encontró nada — que es el modo de fallo
-  /// que `docs/03` §6 nombra con nombre y apellido.
-  ///
-  /// **Un salto está contado**: Un salto está contado:
-  /// no es una discrepancia, es un desenlace declarado con su motivo. Lo que
-  /// queda acá es lo que no corrió **y nadie explicó**.
-  List<String> get sinEjecutar {
-    final contados = {...ejecutados, for (final s in saltados) s.id};
-    return List.unmodifiable([
-      for (final id in registrados)
-        if (!contados.contains(id)) id,
-    ]);
+        desenlaces = Map.unmodifiable(desenlaces) {
+    final ids = this.registrados.map((r) => r.id).toSet();
+    // **`sinEjecutar` desaparece porque no puede existir.** Antes era una
+    // resta que podía dar distinto de cero; ahora todo registrado tiene su
+    // desenlace o el resultado no se construye.
+    final faltan = ids.where((id) => !this.desenlaces.containsKey(id));
+    if (faltan.isNotEmpty) {
+      throw ArgumentError.value(
+          faltan.toList(),
+          'desenlaces',
+          'Estos pasos están registrados y no tienen desenlace. Un `started` '
+              'sin cerrar deja esperando a quien consuma el protocolo');
+    }
+    final sobran = this.desenlaces.keys.where((id) => !ids.contains(id));
+    if (sobran.isNotEmpty) {
+      throw ArgumentError.value(sobran.toList(), 'desenlaces',
+          'Hay desenlaces de pasos que no están registrados');
+    }
   }
 
-  /// El estado de la corrida, calculado. La precedencia es
-  /// `errorInterno > noConcluyente > rojo > verde`.
+  /// Qué pasos ejecutaron de verdad, es decir, corrieron hasta el final.
+  List<String> get ejecutados => List.unmodifiable([
+        for (final e in desenlaces.entries)
+          if (e.value is Executed) e.key
+      ]);
+
+  /// Todos los diagnósticos, en el orden en que los pasos los produjeron.
+  List<Diagnostic> get diagnosticos => List.unmodifiable([
+        for (final d in desenlaces.values)
+          if (d is Executed) ...d.diagnostics,
+      ]);
+
+  /// **El libro.** Para cada paso que ejecutó, cada sujeto de su alcance
+  /// esperado tiene que estar cubierto por su testigo o nombrado por una de
+  /// sus omisiones.
   ///
-  /// **Que lo no concluyente gane sobre el rojo no es un descuido.** No se
-  /// puede afirmar que el cambio falló cuando parte de la verificación no se
-  /// ejecutó: el rojo invita a arreglar y volver a correr, y volver a correr
-  /// puede seguir sin observar lo que faltó. Los diagnósticos bloqueantes
-  /// igual se reportan; lo que cambia es qué se afirma del conjunto.
+  /// **Es por PAR paso-sujeto, no por unión.** Que otro paso haya cubierto el
+  /// sujeto no salda la obligación de este. La versión existencial —«algún
+  /// paso cubrió cada sujeto»— dejaba pasar exactamente el caso que esta
+  /// rebanada existe para cerrar: un paso que cubre la mitad del alcance
+  /// mientras otro cubre todo, y la corrida sale verde sobre una obligación
+  /// que ese primer paso nunca saldó.
+  ///
+  /// Un paso que no ejecutó —saltado, no observable, abortado, roto— no
+  /// contrae ninguna obligación: no hay testigo del que leer cobertura, y no
+  /// se le puede reprochar no explicar lo que ni siquiera corrió.
+  List<Obligacion> get obligacionesSinSaldar {
+    final abiertas = <Obligacion>[];
+    for (final registro in registrados) {
+      final desenlace = desenlaces[registro.id];
+      if (desenlace is! Executed) continue;
+      final saldados = {
+        ...desenlace.witness.subjects,
+        for (final o in desenlace.witness.omitted)
+          if (o.subject != null) o.subject!,
+      };
+      for (final sujeto in registro.expectedScope) {
+        if (!saldados.contains(sujeto)) {
+          abiertas.add((paso: registro.id, sujeto: sujeto));
+        }
+      }
+    }
+    return List.unmodifiable(abiertas);
+  }
+
+  /// Las causas, en el orden del flujo de decisión. La acción siguiente sale
+  /// de la primera, y por eso solo puede nombrar evidencia presente.
+  List<CausaNoConcluyente> get causas {
+    final c = <CausaNoConcluyente>[];
+    if (registrados.isEmpty) c.add(CausaNoConcluyente.sinVerificadores);
+    if (ejecutados.isEmpty && registrados.isNotEmpty) {
+      c.add(CausaNoConcluyente.nadaEjecutado);
+    }
+    if (alcance.unobserved.isNotEmpty) {
+      c.add(CausaNoConcluyente.alcanceNoObservable);
+    }
+    if (desenlaces.values.any((d) => d is Aborted)) {
+      c.add(CausaNoConcluyente.pasoAbortado);
+    }
+    if (desenlaces.values
+        .any((d) => d is Executed && d.verdict == Verdict.noConcluyente)) {
+      c.add(CausaNoConcluyente.pasoNoConcluyente);
+    }
+    if (obligacionesSinSaldar.isNotEmpty) {
+      c.add(CausaNoConcluyente.obligacionSinSaldar);
+    }
+    return List.unmodifiable(c);
+  }
+
+  /// **No hay rama por defecto.** El verde es la hoja que queda cuando todas
+  /// las preguntas negativas se contestaron que no.
   EstadoDeCorrida get estado {
-    if (fallosInternos.isNotEmpty) return EstadoDeCorrida.errorInterno;
-
-    // Una cascada sin pasos que «termina bien» sería el falso verde más barato
-    // de todos: no miró nada y nadie se lo preguntó.
-    if (registrados.isEmpty) return EstadoDeCorrida.noConcluyente;
-
-    // **Hoy `Cascada` no puede producir este estado**: todo paso que no
-    // ejecuta queda además anotado como fallo interno, así que la rama de
-    // arriba dispara primero. La comprobación no sobra: protege al TIPO de
-    // cualquier otro constructor, y el primero que va a producir esa forma es
-    // el corte temprano —un paso salteado por política está registrado, no
-    // ejecutado, y no es un fallo—. Su prueba construye el resultado
-    // directamente, porque un guardia que otro tapa no está probado.
-    if (sinEjecutar.isNotEmpty) return EstadoDeCorrida.noConcluyente;
-
-    // **Si se saltaron los pasos enteros, no se verificó nada.** Cada salto por separado es
-    // legítimo; todos juntos son una corrida que no miró. Es el mismo falso
-    // verde que la rama de arriba impide para la cascada vacía, por la otra
-    // puerta: acá hay pasos registrados y ninguno tuvo nada que hacer.
-    if (resultados.isEmpty) return EstadoDeCorrida.noConcluyente;
-
-    // **Un alcance que no se pudo observar entero no da verde.**
-    //
-    // `docs/03` §6 dejaba esta decisión explícitamente acá —*«si una omisión
-    // debe detener algo es política de `orchestration`»*— y hasta ahora
-    // `orchestration` no consumía el dato: un paso que cubría `lib/` y no
-    // podía mirar `no/existe` atestiguaba igual, y con otro paso en verde la
-    // corrida salía VERDE sobre un alcance parcialmente no observado. La
-    // seguridad dependía de que OTRO paso tropezara con el mismo obstáculo.
-    //
-    // `null` no es cero: es «no pude establecerlo». Un verde sobre eso es
-    // exactamente el verde que nadie miró.
-    if (resultados.any((r) => r.witness?.ownSubjects == null)) {
-      return EstadoDeCorrida.noConcluyente;
+    if (desenlaces.values.any((d) => d is Broken)) {
+      return EstadoDeCorrida.errorInterno;
     }
-
-    if (resultados.any((r) => r.verdict == Verdict.noConcluyente)) {
-      return EstadoDeCorrida.noConcluyente;
-    }
-    if (resultados.any((r) => r.verdict == Verdict.rojo)) {
+    if (causas.isNotEmpty) return EstadoDeCorrida.noConcluyente;
+    if (desenlaces.values
+        .any((d) => d is Executed && d.verdict == Verdict.rojo)) {
       return EstadoDeCorrida.rojo;
     }
     return EstadoDeCorrida.verde;
   }
-
-  /// Todos los diagnósticos, en el orden en que los pasos los produjeron.
-  List<Diagnostic> get diagnosticos =>
-      List.unmodifiable([for (final r in resultados) ...r.diagnostics]);
 }
 
 /// Un registro ordenado de pasos.
@@ -242,11 +223,16 @@ class ResultadoDeCascada {
 class Cascada {
   final List<Verifier> pasos;
 
-  Cascada(List<Verifier> pasos) : pasos = List.unmodifiable(pasos) {
+  /// Quién mira el alcance. **No lo mira ningún paso**: ADR-011 corolario 4,
+  /// y por eso es la cascada —no `Verifier`— quien lo consulta.
+  final ScopeObserver observador;
+
+  Cascada(List<Verifier> pasos, {required this.observador})
+      : pasos = List.unmodifiable(pasos) {
     // **El id de un paso es una CLAVE**, no una etiqueta: es con lo que se
-    // comparan registrados contra ejecutados. Dos pasos con el mismo id
-    // dejarían ese meta-check ciego —uno taparía al otro— y un paso podría no
-    // correr sin que nada lo note.
+    // arma el libro de obligaciones y se comparan registrados contra
+    // ejecutados. Dos pasos con el mismo id dejarían esa cuenta ciega —uno
+    // taparía al otro— y un paso podría no correr sin que nada lo note.
     //
     // Es la misma lección que el motor de checks aprendió con las clases
     // homónimas de `core`, y por eso se rechaza al construir en vez de
@@ -267,7 +253,8 @@ class Cascada {
     }
   }
 
-  /// Los ids registrados, en orden.
+  /// Los ids registrados, en orden. **Sin alcance**: eso solo se sabe al
+  /// correr, y de ahí sale [ResultadoDeCascada.registrados].
   List<String> get registrados =>
       List.unmodifiable([for (final p in pasos) p.id]);
 
@@ -279,82 +266,75 @@ class Cascada {
   /// tardaba, y los eventos llevaban la hora de cuando se armó el reporte, no
   /// la del paso. La superficie pide que una operación de más de tres segundos
   /// muestre el paso en curso, y eso no se puede hacer desde el final.
-  ///
-  /// **Un paso que lanza no interrumpe la cascada**: se registra como fallo
-  /// interno y los demás corren igual. Cortar ahí dejaría a los siguientes sin
-  /// ejecutar Y sin explicación, y las dos cosas se confundirían en el
-  /// reporte de registrados contra ejecutados.
   Future<ResultadoDeCascada> correr(
     List<String> sujetos, {
     void Function(String id)? alEmpezar,
-    void Function(DesenlaceDePaso desenlace)? alTerminar,
+    void Function(String id, StepOutcome desenlace)? alTerminar,
   }) async {
     // **Se congela al entrar.** La lista es del llamador, que puede mutarla
-    // entre paso y paso: el primero correría sobre un alcance y el segundo
-    // sobre otro, y el reporte diría que los dos cubrieron lo mismo. Es el
-    // mismo invariante que `PasoDeCascada.run` ya aplica un nivel más abajo, y
-    // que acá faltaba.
+    // mientras la corrida está en curso.
     final alcance = List<String>.unmodifiable(sujetos);
-    final resultados = <VerificationOutcome>[];
-    final fallos = <String, String>{};
-    final saltados = <PasoSaltado>[];
+
+    // **Una sola foto para toda la corrida.** Dos lecturas pueden diferir, y
+    // entonces dos pasos verifican alcances distintos que el reporte declara
+    // iguales. Es la cláusula 4 del contrato de `ScopeObserver`, y esto es lo
+    // único en todo el arnés que la puede cumplir: si cada paso volviera a
+    // llamar a `observe`, la cláusula no tendría quién la hiciera valer.
+    final observacion = await observador.observe(alcance);
+    final utilizables = observacion.usable();
+    final ajenos = [
+      for (final o in observacion.observed)
+        if (!o.ofStack) o
+    ];
+
+    // **Se arma acá, no al componer el registro.** Recién ahora hay una
+    // observación de la que sacar el alcance esperado. Hoy es el mismo para
+    // todos los pasos: el utilizable de la corrida entera.
+    final registrados = [
+      for (final paso in pasos)
+        RegisteredStep(id: paso.id, expectedScope: utilizables),
+    ];
+
+    final desenlaces = <String, StepOutcome>{};
 
     for (final paso in pasos) {
       alEmpezar?.call(paso.id);
-      DesenlaceDePaso? desenlace;
-      try {
-        final r = await paso.run(alcance);
-        // Un paso que devuelve el resultado de OTRO paso rompe la cuenta.
-        if (r.verifierId != paso.id) {
-          fallos[paso.id] = 'devolvió un resultado con id «${r.verifierId}»; '
-              'la cuenta de registrados contra ejecutados se apoya en que '
-              'coincidan.';
-          desenlace = PasoRoto(paso.id, fallos[paso.id]!);
-        } else {
-          // **La clasificación es una distinción de tipo, no un conjunto de
-          // condiciones.** Eran cuatro —cero propios, nada cubierto,
-          // terminación completa, algún motivo— y cada review encontraba la
-          // combinación que faltaba, porque intentaban reconstruir desde los
-          // campos un hecho que el tipo no sabía expresar.
-          //
-          // Queda una sola condición extra: un salto es la ausencia de
-          // trabajo, **no la desaparición de un hallazgo**.
-          final na = r.notApplicable;
-          if (na != null && r.diagnostics.isEmpty) {
-            saltados.add(
-                PasoSaltado(id: paso.id, motivos: na.reasons, declaracion: na));
-            desenlace = PasoSinNadaQueHacer(paso.id, na);
-          } else {
-            resultados.add(r);
-            desenlace = PasoEjecutado(r);
-          }
+      // No `final`: el analizador no infiere asignación única a través de un
+      // `try`/`catch` anidado en una rama de `if`. La garantía de que las dos
+      // ramas asignan exactamente una vez la sostienen las pruebas, no el
+      // compilador.
+      StepOutcome desenlace;
+      if (utilizables.isEmpty) {
+        // **No pude mirar gana sobre no había nada mío.** Para afirmar que no
+        // había nada hay que haber podido mirar todo: un sujeto que no se
+        // pudo observar puede resultar del stack, y entonces «ninguno era
+        // mío» sería un hecho que nadie comprobó.
+        desenlace = observacion.unobserved.isNotEmpty
+            ? Unobservable(causes: observacion.unobserved)
+            : Skipped(notOfStack: ajenos);
+      } else {
+        try {
+          desenlace = await paso.run(utilizables);
+        } on Object catch (e) {
+          // Se atrapa cualquier excepción a propósito, y solo acá: un paso
+          // que se rompe es un error del arnés, no un veredicto sobre el
+          // cambio.
+          desenlace = Broken(
+              component: paso.id,
+              error: '$e',
+              context: 'alcance: $utilizables');
         }
-      } on Object catch (e) {
-        // Se atrapa cualquier excepción a propósito, y solo acá: un paso que
-        // se rompe es un error del arnés, no un veredicto sobre el cambio, y
-        // confundirlos es lo que el código de salida `70` existe para impedir.
-        fallos[paso.id] = '$e';
-        desenlace = PasoRoto(paso.id, '$e');
       }
-
-      // **Todo `started` termina con un desenlace.** Antes esto vivía dentro
-      // del cuerpo y los `continue` lo salteaban: un salto y un fallo interno
-      // dejaban el evento de inicio abierto para siempre, y quien consumiera
-      // el protocolo en streaming se quedaba esperando. Por eso ya no hay
-      // `continue`: las tres ramas asignan y la notificación es una sola, al
-      // final, fuera del `try` —una excepción del observador es del arnés, no
-      // del verificador que hizo su trabajo—.
-      // Sin `!`: el analizador prueba que las tres ramas asignan. **La
-      // garantía de que todo `started` cierra la sostiene el compilador**, no
-      // un comentario ni una prueba.
-      alTerminar?.call(desenlace);
+      desenlaces[paso.id] = desenlace;
+      // Fuera del `try`: una excepción del observador de progreso es del
+      // arnés, no del verificador que hizo su trabajo.
+      alTerminar?.call(paso.id, desenlace);
     }
 
     return ResultadoDeCascada(
       registrados: registrados,
-      resultados: resultados,
-      fallosInternos: fallos,
-      saltados: saltados,
+      alcance: observacion,
+      desenlaces: desenlaces,
     );
   }
 }

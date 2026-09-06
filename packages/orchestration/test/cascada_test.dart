@@ -2,26 +2,80 @@
 ///
 /// El doble vive acá y no en `plugin_fake` a propósito: `orchestration` no
 /// puede depender de ningún plugin —esa es la regla que lo mantiene ignorante
-/// del stack— así que su prueba trae el suyo.
+/// del stack— así que su prueba trae el suyo. Vale también para
+/// [ObservadorDeAlcanceFalso]: es la segunda implementación de `ScopeObserver`
+/// que ya existe en `plugin_fake`, pero esta suite necesita la propia, no esa.
 library;
 
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:test/test.dart';
 
-/// **Declara cuántos elementos eran suyos.** Omitirlo deja el conteo en
-/// `null`, que significa «no se pudo establecer» y por sí solo impide el
-/// verde: un doble que no lo declara estaría probando otra cosa.
-Witness _testigo({List<String> sujetos = const ['lib/'], int propios = 2}) =>
-    Witness(
+/// Un testigo de que un paso corrió, sobre qué sujetos.
+Witness _testigo({List<String> sujetos = const ['lib']}) => Witness(
       invocation: 'herramienta',
       subjects: sujetos,
-      omitted: const [],
-      termination: Termination.completa,
       exitCode: 0,
-      ownSubjects: propios,
+      omitted: const [],
       finishedAt: DateTime.utc(2026),
     );
+
+/// Un observador de alcance que responde de una tabla, y cuenta cuántas veces
+/// lo llamaron. **No toca el disco**: existe para que esta suite pruebe la
+/// clasificación de la cascada sin toolchain ni árbol.
+class ObservadorDeAlcanceFalso implements ScopeObserver {
+  /// Qué se sabe de cada sujeto que sí se pudo mirar.
+  final Map<String, ObservedSubject> observados;
+
+  /// Sujeto a causa, para los que no se pudieron mirar.
+  final Map<String, String> noObservados;
+
+  /// Qué se le pidió en cada llamada, para poder comprobar la cláusula 4 del
+  /// contrato: se observa UNA vez por corrida.
+  final List<List<String>> llamadas = [];
+
+  ObservadorDeAlcanceFalso({
+    required Map<String, ObservedSubject> observados,
+    Map<String, String> noObservados = const {},
+  })  : observados = Map.unmodifiable(observados),
+        noObservados = Map.unmodifiable(noObservados);
+
+  @override
+  Future<ScopeObservation> observe(List<String> requested) async {
+    llamadas.add(List.unmodifiable(requested));
+    final vistos = <ObservedSubject>[];
+    final ciegos = <UnobservedSubject>[];
+    for (final s in requested) {
+      final causa = noObservados[s];
+      if (causa != null) {
+        ciegos.add(UnobservedSubject(subject: s, cause: causa));
+        continue;
+      }
+      final o = observados[s];
+      // Un sujeto que la tabla no declara no se inventa como ajeno: sería el
+      // fake decidiendo, que es justo lo que el puerto vino a impedir.
+      if (o == null) {
+        throw ArgumentError.value(
+            s,
+            'requested',
+            'El fake no tiene declarado este sujeto. Declaralo en `observados` '
+                'o en `noObservados`: adivinar sería clasificar por su cuenta');
+      }
+      vistos.add(o);
+    }
+    return ScopeObservation(
+      requested: requested,
+      observed: vistos,
+      unobserved: ciegos,
+      observedAt: DateTime.utc(2026),
+    );
+  }
+}
+
+/// Un observador que ya tiene `lib` declarado como del stack.
+ObservadorDeAlcanceFalso _obsDeLib() => ObservadorDeAlcanceFalso(observados: {
+      'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+    });
 
 /// Un paso al que se le declara qué devolver, o que se rompe.
 class _Paso implements Verifier {
@@ -34,14 +88,12 @@ class _Paso implements Verifier {
   _Paso(this.id, {this.devuelve, this.lanza});
 
   /// Un paso verde, con testigo.
-  factory _Paso.verde(String id) => _Paso(id,
-      devuelve: VerificationOutcome(
-          verifierId: id, diagnostics: const [], witness: _testigo()));
+  factory _Paso.verde(String id) =>
+      _Paso(id, devuelve: Executed(witness: _testigo(), diagnostics: const []));
 
   /// Un paso rojo: un diagnóstico que bloquea.
   factory _Paso.rojo(String id) => _Paso(id,
-      devuelve: VerificationOutcome(
-        verifierId: id,
+      devuelve: Executed(
         witness: _testigo(),
         diagnostics: [
           Diagnostic(
@@ -52,12 +104,18 @@ class _Paso implements Verifier {
         ],
       ));
 
-  /// Un paso que no pudo mirar: testigo sin sujetos.
-  factory _Paso.ciego(String id) => _Paso(id,
-      devuelve: VerificationOutcome(
-          verifierId: id,
-          diagnostics: const [],
-          witness: _testigo(sujetos: const [])));
+  /// Un paso que empezó y no llegó a terminar.
+  factory _Paso.abortado(String id) => _Paso(id,
+      devuelve: Aborted(
+        attempt: Attempt(
+          invocation: 'herramienta',
+          subjects: const ['lib'],
+          termination: Termination.tiempoAgotado,
+          exitCode: -1,
+          note: 'la herramienta no llegó a producir un resultado',
+          finishedAt: DateTime.utc(2026),
+        ),
+      ));
 
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
@@ -67,415 +125,7 @@ class _Paso implements Verifier {
   }
 }
 
-/// Lo que declara un paso que **no tuvo nada que hacer**. No es un testigo:
-/// no hubo invocación que atestiguar.
-NotApplicable _sinNadaSuyo({
-  List<String> motivos = const ['lib/: no contiene ningún archivo de fuente'],
-}) =>
-    NotApplicable(
-      subjects: const ['lib/'],
-      reasons: motivos,
-      decidedAt: DateTime.utc(2026),
-    );
-
-/// Un paso que no tiene nada suyo que hacer.
-_Paso _pasoSinNadaSuyo(String id) => _Paso(id,
-    devuelve: VerificationOutcome(
-        verifierId: id, diagnostics: const [], notApplicable: _sinNadaSuyo()));
-
-void main() {
-  group('el registro', () {
-    test('dos pasos con el mismo id no forman un registro', () {
-      // El id es con lo que se comparan registrados contra ejecutados: uno
-      // taparía al otro y un paso podría no correr sin que nadie se entere.
-      expect(() => Cascada([_Paso.verde('A'), _Paso.verde('A')]),
-          throwsA(isA<CascadaNoRegistrable>()));
-    });
-
-    test('un paso sin id tampoco', () {
-      expect(() => Cascada([_Paso.verde('  ')]),
-          throwsA(isA<CascadaNoRegistrable>()));
-    });
-  });
-
-  group('la cuenta de registrados contra ejecutados', () {
-    test('una cascada SIN pasos no es verde', () async {
-      // El falso verde más barato de todos: no miró nada y nadie se lo
-      // preguntó. ADR-011 corolario 2 en su forma degenerada.
-      final r = await Cascada(const []).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-    });
-
-    test('un paso que se rompe queda SIN EJECUTAR, y se dice cuál', () async {
-      final a = _Paso.verde('A');
-      final b = _Paso('B', lanza: StateError('se rompió'));
-      final r = await Cascada([a, b]).correr(['lib/']);
-      expect(r.registrados, ['A', 'B']);
-      expect(r.ejecutados, ['A']);
-      expect(r.sinEjecutar, ['B']);
-      expect(r.fallosInternos.keys, ['B']);
-    });
-
-    test('un paso que se rompe NO detiene a los siguientes', () async {
-      // Cortar ahí dejaría a los demás sin ejecutar Y sin explicación, y las
-      // dos cosas se confundirían en la cuenta.
-      final a = _Paso('A', lanza: StateError('x'));
-      final b = _Paso.verde('B');
-      await Cascada([a, b]).correr(['lib/']);
-      expect(b.corrio, isTrue);
-    });
-
-    test('un paso que devuelve el resultado de OTRO rompe la cuenta', () async {
-      // Sin esto, «ejecutados» diría que corrió algo que no corrió.
-      final impostor = _Paso('A',
-          devuelve: VerificationOutcome(
-              verifierId: 'B', diagnostics: const [], witness: _testigo()));
-      final r = await Cascada([impostor]).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.errorInterno);
-      expect(r.fallosInternos['A'], contains('B'));
-    });
-
-    test('un hueco SIN fallo interno tampoco es verde', () {
-      // El corolario 2 en su forma pura: registrado, no ejecutado, y nadie se
-      // rompió. `Cascada` no puede producirlo hoy —todo paso que no ejecuta
-      // queda anotado como fallo— así que se construye el resultado directo.
-      // Sin esto el guardia queda tapado por el de fallos internos y no
-      // dispara nunca, que es lo mismo que no estar.
-      final r = ResultadoDeCascada(
-        registrados: const ['A', 'B'],
-        resultados: [
-          VerificationOutcome(
-              verifierId: 'A', diagnostics: const [], witness: _testigo()),
-        ],
-      );
-      expect(r.sinEjecutar, ['B']);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-    });
-  });
-
-  test('el alcance no puede cambiar entre paso y paso', () async {
-    // La lista es del llamador. Si muta durante la corrida, el primer paso
-    // verifica un alcance y el segundo otro, y el reporte dice que los dos
-    // cubrieron lo mismo. Es el invariante que `PasoDeCascada.run` ya aplicaba
-    // un nivel más abajo y que acá faltaba.
-    final lista = ['lib/'];
-    final espia = _Espia('B');
-    await Cascada([_Mutador('A', lista), espia]).correr(lista);
-    expect(espia.recibio, ['lib/'],
-        reason:
-            'el segundo paso tiene que ver el mismo alcance que el primero');
-  });
-
-  test('avisa MIENTRAS corre, no al final', () async {
-    // Devolvía todo junto y el CLI recorría los resultados después: no había
-    // nada que mirar mientras una herramienta tardaba, y la marca de tiempo
-    // era la de armar el reporte. La superficie pide que una operación de más
-    // de tres segundos muestre el paso en curso.
-    final orden = <String>[];
-    await Cascada([_Paso.verde('A'), _Paso.verde('B')]).correr(
-      ['lib/'],
-      alEmpezar: (id) => orden.add('empieza:$id'),
-      alTerminar: (d) => orden.add('termina:${d.id}'),
-    );
-    expect(orden, ['empieza:A', 'termina:A', 'empieza:B', 'termina:B'],
-        reason: 'B no puede anunciarse antes de que A haya terminado');
-  });
-
-  test('TODO paso avisa su desenlace, incluidos el saltado y el roto',
-      () async {
-    // Solo se avisaba de los que producían resultado: un salto y un fallo
-    // interno dejaban el `started` abierto para siempre, y un consumidor del
-    // protocolo en streaming se quedaba esperando. Lo encontró un review.
-    final desenlaces = <String>[];
-    await Cascada([
-      _Paso.verde('A'),
-      _pasoSinNadaSuyo('B'),
-      _Paso('C', lanza: StateError('se rompió')),
-    ]).correr(
-      ['lib/'],
-      alTerminar: (d) => desenlaces.add('${d.id}:${d.runtimeType}'),
-    );
-    expect(desenlaces, [
-      'A:PasoEjecutado',
-      'B:PasoSinNadaQueHacer',
-      'C:PasoRoto',
-    ]);
-  });
-
-  test('un fallo del OBSERVADOR no se le atribuye al verificador', () async {
-    // `alTerminar` estaba dentro del `try` que clasifica fallos del paso: el
-    // mismo paso quedaba registrado como ejecutado Y como fallido, y el
-    // reporte culpaba a quien había hecho su trabajo. Si el observador se
-    // rompe, que suba y sea un error del arnés, que es lo que es.
-    expect(
-      () => Cascada([_Paso.verde('A')]).correr(
-        ['lib/'],
-        alTerminar: (_) => throw StateError('falló el observador'),
-      ),
-      throwsStateError,
-    );
-  });
-
-  group('la precedencia se deriva', () {
-    test('verde solo si TODOS corrieron y ninguno objetó', () async {
-      final r =
-          await Cascada([_Paso.verde('A'), _Paso.verde('B')]).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.verde);
-    });
-
-    test('rojo cuando hay un diagnóstico que bloquea', () async {
-      final r =
-          await Cascada([_Paso.verde('A'), _Paso.rojo('B')]).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.rojo);
-      expect(r.diagnosticos, hasLength(1));
-    });
-
-    test('lo NO CONCLUYENTE gana sobre el rojo', () async {
-      // No se puede afirmar que el cambio falló cuando parte de la
-      // verificación no se ejecutó. Los diagnósticos igual se reportan.
-      final r =
-          await Cascada([_Paso.rojo('A'), _Paso.ciego('B')]).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-      expect(r.diagnosticos, hasLength(1),
-          reason: 'el hallazgo real no se pierde: lo que cambia es qué se '
-              'afirma del conjunto');
-    });
-
-    test('el error interno gana sobre todo', () async {
-      final r = await Cascada([
-        _Paso.rojo('A'),
-        _Paso.ciego('B'),
-        _Paso('C', lanza: StateError('x')),
-      ]).correr(['lib/']);
-      expect(r.estado, EstadoDeCorrida.errorInterno,
-          reason: 'que el arnés se rompa no es un veredicto sobre el cambio');
-    });
-  });
-
-  group('un paso que no tuvo nada que hacer', () {
-    // El tercer estado, distinto de «corrió» y de «no pudo mirar». Confundirlo
-    // con el segundo es el falso rojo simétrico del falso verde que ADR-011
-    // caza, y estaba ocurriendo: un alcance sin archivos del stack daba «no
-    // concluyente: algún paso no pudo observar su alcance», cuando la
-    // herramienta había corrido, terminado completa, y no tenía nada suyo.
-
-    test('se cuenta como SALTADO, no como discrepancia', () async {
-      final r = await Cascada([_Paso.verde('A'), _pasoSinNadaSuyo('B')])
-          .correr(['lib/']);
-
-      expect(r.ejecutados, ['A']);
-      expect(r.saltados.map((s) => s.id), ['B']);
-      expect(r.sinEjecutar, isEmpty,
-          reason: 'un salto está contado: no es una discrepancia');
-      expect(r.estado, EstadoDeCorrida.verde);
-    });
-
-    test('el salto lleva su MOTIVO, sacado del testigo', () async {
-      final r = await Cascada([_Paso.verde('A'), _pasoSinNadaSuyo('B')])
-          .correr(['lib/']);
-      expect(r.saltados.single.motivos,
-          contains('lib/: no contiene ningún archivo de fuente'));
-      expect(r.saltados.single.declaracion.subjects, ['lib/']);
-    });
-
-    test('si se saltan todos, la corrida NO es verde', () async {
-      // Cada salto por separado es legítimo; todos juntos son una corrida que
-      // no verificó nada. Es el falso verde de la cascada vacía por la otra
-      // puerta: hay pasos registrados y ninguno tuvo nada que hacer.
-      final r = await Cascada([_pasoSinNadaSuyo('A'), _pasoSinNadaSuyo('B')])
-          .correr(['lib/']);
-
-      expect(r.saltados, hasLength(2));
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-    });
-
-    test('un paso que SÍ tenía archivos suyos no se salta', () async {
-      // El control negativo, y lo pidió una mutación: sin él, «cero» y «no
-      // nulo» eran indistinguibles, y un paso que cubrió tres archivos se
-      // habría contado como saltado — un verde que nadie miró, por la puerta
-      // que esta rebanada vino a cerrar.
-      final conTrabajo = _Paso('A',
-          devuelve: VerificationOutcome(
-              verifierId: 'A',
-              diagnostics: const [],
-              witness: Witness(
-                invocation: 'herramienta --sobre lib/',
-                subjects: const ['lib/a.fuente'],
-                omitted: const [],
-                termination: Termination.completa,
-                exitCode: 0,
-                ownSubjects: 3,
-                finishedAt: DateTime.utc(2026),
-              )));
-      final r = await Cascada([conTrabajo]).correr(['lib/']);
-      expect(r.saltados, isEmpty);
-      expect(r.ejecutados, ['A']);
-      expect(r.estado, EstadoDeCorrida.verde);
-    });
-
-    test('un paso CON DIAGNÓSTICO nunca se salta', () async {
-      // El falso verde que esta rebanada abrió al cerrar el falso rojo, y lo
-      // encontró un review: un paso con un diagnóstico bloqueante y cero
-      // archivos propios se clasificaba como saltado, su resultado nunca
-      // entraba en `resultados`, y la corrida salía VERDE con el diagnóstico
-      // desaparecido. Un salto es la ausencia de trabajo, no la desaparición
-      // de un hallazgo.
-      final conHallazgo = _Paso('B',
-          devuelve: VerificationOutcome(
-            verifierId: 'B',
-            notApplicable: _sinNadaSuyo(),
-            diagnostics: [
-              Diagnostic(
-                  file: 'a',
-                  severity: Severity.bloquea,
-                  ruleId: 'r',
-                  message: QuotedText('rompe todo', source: 'h')),
-            ],
-          ));
-      final r = await Cascada([_Paso.verde('A'), conHallazgo]).correr(['lib/']);
-
-      expect(r.saltados, isEmpty);
-      expect(r.diagnosticos, hasLength(1),
-          reason: 'el hallazgo no puede desaparecer');
-      expect(r.estado, isNot(EstadoDeCorrida.verde));
-    });
-
-    test('un salto SIN motivo no es un salto', () async {
-      // ADR-011 corolario 1 prohíbe el salto silencioso. La promesa estaba
-      // escrita en prosa y el tipo la dejaba romper.
-      final mudo = _Paso('B',
-          devuelve: VerificationOutcome(
-              verifierId: 'B',
-              diagnostics: const [],
-              witness: Witness(
-                invocation: 'herramienta',
-                subjects: const [],
-                omitted: const [],
-                termination: Termination.completa,
-                exitCode: 0,
-                ownSubjects: 0,
-                finishedAt: DateTime.utc(2026),
-              )));
-      final r = await Cascada([_Paso.verde('A'), mudo]).correr(['lib/']);
-      expect(r.saltados, isEmpty);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-    });
-
-    test('y el tipo tampoco deja construir uno mudo', () {
-      expect(
-          () => PasoSaltado(
-              id: 'B', motivos: const ['  '], declaracion: _sinNadaSuyo()),
-          throwsArgumentError);
-    });
-
-    test('un salto con un motivo en blanco entre válidos tampoco se construye',
-        () {
-      expect(
-          () => PasoSaltado(
-              id: 'B',
-              motivos: const ['no es de este stack', '  '],
-              declaracion: _sinNadaSuyo()),
-          throwsArgumentError);
-    });
-
-    test('un salto sin ningún motivo tampoco', () {
-      expect(
-          () => PasoSaltado(
-              id: 'B', motivos: const [], declaracion: _sinNadaSuyo()),
-          throwsArgumentError);
-    });
-
-    test('un alcance parcialmente inobservable NO da verde', () async {
-      // El plugin calculaba bien el «no sé» y la cascada nunca lo consumía: un
-      // paso que cubría `lib/` y no podía mirar `no/existe` atestiguaba igual,
-      // y con otro paso en verde la corrida salía VERDE sobre un alcance
-      // parcialmente no observado. La seguridad dependía de que OTRO paso
-      // tropezara con el mismo obstáculo. Lo encontró un review.
-      final parcial = _Paso('B',
-          devuelve: VerificationOutcome(
-              verifierId: 'B',
-              diagnostics: const [],
-              witness: Witness(
-                invocation: 'herramienta --sobre lib/',
-                subjects: const ['lib/'],
-                omitted: const ['no/existe: no existe en el árbol'],
-                termination: Termination.completa,
-                exitCode: 0,
-                ownSubjects: null,
-                finishedAt: DateTime.utc(2026),
-              )));
-      final r = await Cascada([_Paso.verde('A'), parcial])
-          .correr(['lib/', 'no/existe']);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-      expect(r.saltados, isEmpty);
-    });
-
-    test('un paso que CUBRIÓ algo no se salta, aunque diga cero propios',
-        () async {
-      // Dos afirmaciones incompatibles en el mismo testigo. Sin esta guardia
-      // se clasificaba como salto y lo cubierto desaparecía del reporte junto
-      // con el resultado.
-      final incoherente = _Paso('B',
-          devuelve: VerificationOutcome(
-              verifierId: 'B',
-              diagnostics: const [],
-              witness: Witness(
-                invocation: 'herramienta',
-                subjects: const ['lib/a.fuente'],
-                omitted: const ['algo'],
-                termination: Termination.completa,
-                exitCode: 0,
-                ownSubjects: 0,
-                finishedAt: DateTime.utc(2026),
-              )));
-      final r = await Cascada([_Paso.verde('A'), incoherente]).correr(['lib/']);
-      expect(r.saltados, isEmpty);
-      expect(r.ejecutados, ['A', 'B']);
-    });
-
-    test('un paso que SÍ invocó algo nunca es un salto', () async {
-      // La distinción es de tipo: hay testigo, entonces hubo invocación, y una
-      // invocación que no cubrió nada es «no pude», no «no había nada mío».
-      // Antes esto se reconstruía desde cuatro campos y cada review encontraba
-      // la combinación que faltaba.
-      final murio = _Paso('A',
-          devuelve: VerificationOutcome(
-              verifierId: 'A',
-              diagnostics: const [],
-              witness: Witness(
-                invocation: 'herramienta --sobre lib/',
-                subjects: const [],
-                omitted: const ['la herramienta no llegó a producir nada'],
-                termination: Termination.tiempoAgotado,
-                exitCode: -1,
-                ownSubjects: 0,
-                finishedAt: DateTime.utc(2026),
-              )));
-      final r = await Cascada([murio]).correr(['lib/']);
-      expect(r.saltados, isEmpty);
-      expect(r.estado, EstadoDeCorrida.noConcluyente);
-    });
-  });
-}
-
-/// Muta la lista del llamador en medio de la corrida.
-class _Mutador implements Verifier {
-  @override
-  final String id;
-  final List<String> lista;
-  _Mutador(this.id, this.lista);
-
-  @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
-    lista
-      ..clear()
-      ..add('otro/alcance');
-    return VerificationOutcome(
-        verifierId: id, diagnostics: const [], witness: _testigo());
-  }
-}
-
-/// Anota qué alcance le llegó.
+/// Anota qué alcance le llegó, y atestigua justo sobre eso.
 class _Espia implements Verifier {
   @override
   final String id;
@@ -485,7 +135,286 @@ class _Espia implements Verifier {
   @override
   Future<VerificationOutcome> run(List<String> subjects) async {
     recibio = List.of(subjects);
-    return VerificationOutcome(
-        verifierId: id, diagnostics: const [], witness: _testigo());
+    return Executed(
+        witness: _testigo(sujetos: subjects), diagnostics: const []);
   }
+}
+
+/// Un paso que declara exactamente qué sujetos cubrió, y qué omitió.
+class _PasoQueCubre implements Verifier {
+  @override
+  final String id;
+  final List<String> cubiertos;
+  final List<Omission> omite;
+
+  _PasoQueCubre(this.id, this.cubiertos, {this.omite = const []});
+
+  @override
+  Future<VerificationOutcome> run(List<String> subjects) async => Executed(
+        witness: Witness(
+          invocation: 'herramienta',
+          subjects: cubiertos,
+          exitCode: 0,
+          omitted: omite,
+          finishedAt: DateTime.utc(2026),
+        ),
+        diagnostics: const [],
+      );
+}
+
+void main() {
+  group('el registro', () {
+    test('dos pasos con el mismo id no forman un registro', () {
+      // El id es con lo que se arma el libro de obligaciones y se comparan
+      // registrados contra ejecutados: uno taparía al otro y un paso podría
+      // no correr sin que nadie se entere.
+      expect(
+          () => Cascada([_Paso.verde('A'), _Paso.verde('A')],
+              observador: _obsDeLib()),
+          throwsA(isA<CascadaNoRegistrable>()));
+    });
+
+    test('un paso sin id tampoco', () {
+      expect(() => Cascada([_Paso.verde('  ')], observador: _obsDeLib()),
+          throwsA(isA<CascadaNoRegistrable>()));
+    });
+  });
+
+  test('el alcance se observa UNA vez para toda la corrida', () async {
+    final obs = ObservadorDeAlcanceFalso(observados: {
+      'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+    });
+    await Cascada([_Paso.verde('A'), _Paso.verde('B')], observador: obs)
+        .correr(['lib']);
+    expect(obs.llamadas, hasLength(1),
+        reason: 'dos lecturas del árbol pueden diferir, y el reporte diría '
+            'que los dos pasos cubrieron lo mismo');
+  });
+
+  test('ningún sujeto del stack: los pasos se SALTAN, y no se los invoca',
+      () async {
+    final obs = ObservadorDeAlcanceFalso(observados: {
+      'LEEME.md': ObservedSubject(
+          subject: 'LEEME.md',
+          ofStack: false,
+          files: 0,
+          reason: 'no es de este stack'),
+    });
+    final a = _Paso.verde('A');
+    final r = await Cascada([a], observador: obs).correr(['LEEME.md']);
+    expect(a.corrio, isFalse);
+    expect(r.desenlaces['A'], isA<Skipped>());
+  });
+
+  test('un sujeto que no se pudo mirar y nada utilizable: NO OBSERVABLE',
+      () async {
+    final obs = ObservadorDeAlcanceFalso(
+        observados: const {}, noObservados: const {'no/existe': 'no existe'});
+    final r = await Cascada([_Paso.verde('A')], observador: obs)
+        .correr(['no/existe']);
+    expect(r.desenlaces['A'], isA<Unobservable>());
+  });
+
+  test('no pude mirar GANA sobre no era mío', () async {
+    // Con un sujeto ajeno y otro inobservable, y nada utilizable, no se puede
+    // afirmar que no había nada: es no observable.
+    final obs = ObservadorDeAlcanceFalso(
+      observados: {
+        'LEEME.md': ObservedSubject(
+            subject: 'LEEME.md', ofStack: false, files: 0, reason: 'ajeno'),
+      },
+      noObservados: const {'no/existe': 'no existe'},
+    );
+    final r = await Cascada([_Paso.verde('A')], observador: obs)
+        .correr(['LEEME.md', 'no/existe']);
+    expect(r.desenlaces['A'], isA<Unobservable>());
+  });
+
+  test('el paso recibe SOLO los sujetos utilizables', () async {
+    final obs = ObservadorDeAlcanceFalso(observados: {
+      'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+      'LEEME.md': ObservedSubject(
+          subject: 'LEEME.md', ofStack: false, files: 0, reason: 'ajeno'),
+    });
+    final espia = _Espia('A');
+    await Cascada([espia], observador: obs).correr(['lib', 'LEEME.md']);
+    expect(espia.recibio, ['lib']);
+  });
+
+  test('un paso que lanza es Roto, y no detiene a los siguientes', () async {
+    final b = _Paso.verde('B');
+    final r = await Cascada([_Paso('A', lanza: StateError('x')), b],
+            observador: _obsDeLib())
+        .correr(['lib']);
+    expect(r.desenlaces['A'], isA<Broken>());
+    expect(b.corrio, isTrue);
+  });
+
+  test('TODO paso registrado recibe exactamente un desenlace', () async {
+    final vistos = <String>[];
+    final r = await Cascada([
+      _Paso.verde('A'),
+      _Paso('B', lanza: StateError('x')),
+    ], observador: _obsDeLib())
+        .correr(['lib'], alTerminar: (id, _) => vistos.add(id));
+    expect(vistos, ['A', 'B']);
+    expect(r.desenlaces.keys, ['A', 'B']);
+  });
+
+  test('el id lo pone el registro: un paso no puede devolver el de otro',
+      () async {
+    // El impostor dejó de ser representable: el desenlace no lleva id. Lo
+    // atribuye la cascada desde su registro.
+    final r = await Cascada([_Paso.verde('A')], observador: _obsDeLib())
+        .correr(['lib']);
+    expect(r.desenlaces.keys.single, 'A');
+  });
+
+  test('avisa MIENTRAS corre, no al final', () async {
+    final orden = <String>[];
+    await Cascada([_Paso.verde('A'), _Paso.verde('B')], observador: _obsDeLib())
+        .correr(
+      ['lib'],
+      alEmpezar: (id) => orden.add('empieza:$id'),
+      alTerminar: (id, _) => orden.add('termina:$id'),
+    );
+    expect(orden, ['empieza:A', 'termina:A', 'empieza:B', 'termina:B'],
+        reason: 'B no puede anunciarse antes de que A haya terminado');
+  });
+
+  test('un fallo del observador de progreso no se le atribuye al verificador',
+      () async {
+    // `alTerminar` está fuera del `try` que clasifica fallos del paso: si
+    // quien consume el protocolo se rompe, que suba y sea un error del
+    // arnés, no un fallo del paso que ya había terminado su trabajo.
+    expect(
+      () => Cascada([_Paso.verde('A')], observador: _obsDeLib()).correr(
+        ['lib'],
+        alTerminar: (_, __) => throw StateError('falló el observador'),
+      ),
+      throwsStateError,
+    );
+  });
+
+  group('el libro de obligaciones', () {
+    test('un paso que cubre un subconjunto SIN explicar el resto no da verde',
+        () async {
+      // El falso verde reproducido sobre el código anterior: un paso cubría
+      // los dos archivos y el otro uno solo, y la corrida salía verde. La
+      // unión de los pasos no es la obligación de cada paso.
+      final obs = ObservadorDeAlcanceFalso(observados: {
+        'a.fuente':
+            ObservedSubject(subject: 'a.fuente', ofStack: true, files: 1),
+        'b.fuente':
+            ObservedSubject(subject: 'b.fuente', ofStack: true, files: 1),
+      });
+      final r = await Cascada([
+        _PasoQueCubre('A', const ['a.fuente', 'b.fuente']),
+        _PasoQueCubre('B', const ['a.fuente']),
+      ], observador: obs)
+          .correr(['a.fuente', 'b.fuente']);
+
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.obligacionesSinSaldar, [(paso: 'B', sujeto: 'b.fuente')]);
+      expect(r.causas, contains(CausaNoConcluyente.obligacionSinSaldar));
+    });
+
+    test('una omisión que NOMBRA el sujeto sí salda la obligación', () async {
+      final obs = ObservadorDeAlcanceFalso(observados: {
+        'a.fuente':
+            ObservedSubject(subject: 'a.fuente', ofStack: true, files: 1),
+        'b.fuente':
+            ObservedSubject(subject: 'b.fuente', ofStack: true, files: 1),
+      });
+      final r = await Cascada([
+        _PasoQueCubre('A', const ['a.fuente'],
+            omite: [Omission(subject: 'b.fuente', reason: 'no lo leí')]),
+      ], observador: obs)
+          .correr(['a.fuente', 'b.fuente']);
+      expect(r.obligacionesSinSaldar, isEmpty);
+      expect(r.estado, EstadoDeCorrida.verde);
+    });
+
+    test('una omisión SIN sujeto no salda ninguna obligación', () async {
+      // Es residuo general: el paso cuya herramienta no informa qué leyó no
+      // puede atribuirlo a nadie, así que tampoco puede saldar con él.
+      final obs = ObservadorDeAlcanceFalso(observados: {
+        'a.fuente':
+            ObservedSubject(subject: 'a.fuente', ofStack: true, files: 1),
+      });
+      final r = await Cascada([
+        _PasoQueCubre('A', const [],
+            omite: [Omission(reason: 'no informa qué leyó')]),
+      ], observador: obs)
+          .correr(['a.fuente']);
+      expect(r.obligacionesSinSaldar, [(paso: 'A', sujeto: 'a.fuente')]);
+    });
+
+    test('un paso saltado o no observable no contrae obligaciones', () async {
+      // Su alcance esperado está vacío: no había sujetos utilizables.
+      final obs = ObservadorDeAlcanceFalso(observados: {
+        'LEEME.md': ObservedSubject(
+            subject: 'LEEME.md', ofStack: false, files: 0, reason: 'ajeno'),
+      });
+      final r = await Cascada([_Paso.verde('A')], observador: obs)
+          .correr(['LEEME.md']);
+      expect(r.obligacionesSinSaldar, isEmpty);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.causas, contains(CausaNoConcluyente.nadaEjecutado));
+    });
+  });
+
+  group('la precedencia se deriva', () {
+    test('un registro vacío no es verde', () async {
+      final r =
+          await Cascada(const [], observador: _obsDeLib()).correr(['lib']);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.causas, contains(CausaNoConcluyente.sinVerificadores));
+    });
+
+    test('lo roto gana sobre todo', () async {
+      final r = await Cascada([
+        _Paso.rojo('A'),
+        _Paso('B', lanza: StateError('x')),
+      ], observador: _obsDeLib())
+          .correr(['lib']);
+      expect(r.estado, EstadoDeCorrida.errorInterno);
+    });
+
+    test('lo no concluyente gana sobre el rojo, y el hallazgo se conserva',
+        () async {
+      final r = await Cascada([_Paso.rojo('A'), _Paso.abortado('B')],
+              observador: _obsDeLib())
+          .correr(['lib']);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.diagnosticos, hasLength(1));
+      expect(r.causas, contains(CausaNoConcluyente.pasoAbortado));
+    });
+
+    test('un sujeto no observado impide el verde aunque todo lo demás pase',
+        () async {
+      final obs = ObservadorDeAlcanceFalso(
+        observados: {
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1)
+        },
+        noObservados: const {'no/existe': 'no existe'},
+      );
+      final r = await Cascada([
+        _PasoQueCubre('A', const ['lib'])
+      ], observador: obs)
+          .correr(['lib', 'no/existe']);
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.causas, contains(CausaNoConcluyente.alcanceNoObservable));
+    });
+
+    test('verde solo cuando ninguna pregunta negativa se contesta que sí',
+        () async {
+      final r = await Cascada([
+        _PasoQueCubre('A', const ['lib'])
+      ], observador: _obsDeLib())
+          .correr(['lib']);
+      expect(r.estado, EstadoDeCorrida.verde);
+      expect(r.causas, isEmpty);
+    });
+  });
 }
