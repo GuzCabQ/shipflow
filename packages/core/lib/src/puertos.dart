@@ -17,6 +17,7 @@ library;
 import 'alcance.dart';
 import 'entidades.dart';
 import 'credencial.dart';
+import 'desenlace.dart';
 import 'observacion.dart';
 import 'regla.dart';
 import 'valores.dart';
@@ -119,21 +120,21 @@ abstract interface class ScopeObserver {
 /// al diferir: uno puede comprobar su propia cobertura y el otro no, porque su
 /// herramienta no la informa. Esa diferencia no se tapa — se declara.
 ///
-/// 1. **Siempre devuelve un testigo.** Sin él el veredicto es
-///    [Verdict.noConcluyente], que ya es lo correcto, pero un paso que lo
-///    omite no dice POR QUÉ, y un rojo que no se puede accionar es casi tan
-///    inútil como un verde que no se puede creer.
-/// 2. **Una terminación distinta de [Termination.completa] no es verde**, sin
-///    importar el código de salida. Es lo mismo que decir que no medir no se
-///    lee como medir y no encontrar nada.
-/// 3. **Un alcance vacío no se invoca**, y el resultado no es verde: correr
-///    sobre nada y correr sobre algo limpio no pueden dar la misma lectura.
-/// 4. **El testigo nombra la invocación que de verdad se hizo.** Un testigo
+/// 1. **Siempre devuelve un desenlace tipado; solo el ejecutado lleva
+///    testigo.** Un intento que no llegó a completarse se declara [Aborted],
+///    no un [Executed] con un testigo fingido: la terminación que antes vivía
+///    suelta en [Witness] ahora es la diferencia entre las dos variantes.
+/// 2. **Un alcance vacío es precondición violada, no un desenlace.** Invocar
+///    con una lista de sujetos vacía no es un caso que el verificador declare
+///    con ningún miembro de [VerificationOutcome]: es un error de quien lo
+///    llama, y se comprueba antes de invocar nada — correr sobre nada y
+///    correr sobre algo limpio no pueden dar la misma lectura.
+/// 3. **El testigo nombra la invocación que de verdad se hizo.** Un testigo
 ///    que nombra otra cosa es peor que no tener testigo: da confianza sobre un
 ///    hecho que no ocurrió.
-/// 5. **Lo que el paso NO pudo cubrir va en `omitted`, con su motivo.** Es el
-///    corolario 5 de ADR-011 vuelto dato: cada control declara si puede
-///    detectar una omisión. El que no puede, lo escribe.
+/// 4. **Lo que el paso NO pudo cubrir va en `witness.omitted`, con su
+///    motivo.** Es el corolario 5 de ADR-011 vuelto dato: cada control
+///    declara si puede detectar una omisión. El que no puede, lo escribe.
 abstract interface class Verifier {
   String get id;
   Future<VerificationOutcome> run(List<String> subjects);

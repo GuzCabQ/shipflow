@@ -77,15 +77,25 @@ void main() {
 
   // exitCode 3 y no 0: un cero sería el valor por defecto, y entonces este
   // campo no probaría nada.
+  final omision = Omission(
+    subject: 'lib/ilegible.fuente',
+    reason: 'no se pudo leer',
+  );
+
   final testigo = Witness(
     invocation: 'verificador --sobre lib/',
     subjects: const ['lib/algo.fuente'],
-    omitted: const ['lib/ilegible.fuente: no se pudo leer'],
+    omitted: [omision],
     exitCode: 3,
-    termination: Termination.completa,
-    // Distinto del default —que es `null`— porque si no, el viaje de ida y
-    // vuelta no distingue «llegó» de «se perdió». Lo cazó este mismo check.
-    ownSubjects: 7,
+    finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
+  );
+
+  final intento = Attempt(
+    invocation: 'verificador --sobre lib/',
+    subjects: const ['lib/algo.fuente'],
+    termination: Termination.tiempoAgotado,
+    exitCode: 124,
+    note: 'se cortó por presupuesto de tiempo',
     finishedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
   );
 
@@ -125,12 +135,6 @@ void main() {
 
   final rebanada =
       PullRequestSlice(id: 'PR-1', intent: 'por qué existe', files: ['a.txt']);
-
-  final noAplicaba = NotApplicable(
-    subjects: const ['lib/prosa'],
-    reasons: const ['lib/prosa: no contiene ningún archivo de fuente'],
-    decidedAt: DateTime.utc(2026, 8, 29, 12, 34, 56),
-  );
 
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
@@ -179,28 +183,51 @@ void main() {
       Finding.fromJson
     ),
     'Rule': (regla.toJson(), Rule.fromJson),
-    'VerificationOutcome': (
-      VerificationOutcome(
-        verifierId: 'V-1',
-        diagnostics: [diagnostico],
-        witness: testigo,
-      ).toJson(),
-      VerificationOutcome.fromJson
+    'Omission': (omision.toJson(), Omission.fromJson),
+    'Attempt': (intento.toJson(), Attempt.fromJson),
+    'Executed': (
+      Executed(witness: testigo, diagnostics: [diagnostico]).toJson(),
+      Executed.fromJson
     ),
-    // **Dos instancias canónicas, y es el invariante hablando.** `witness` y
-    // `notApplicable` son excluyentes: o el paso invocó algo, o no tuvo nada
-    // que hacer. Una sola instancia no puede tener los dos campos con valor,
-    // así que la precondición de este check —ningún campo en su default— se
-    // cumple entre las dos y no dentro de una.
-    'VerificationOutcome · sin nada que hacer': (
-      VerificationOutcome(
-        verifierId: 'V',
-        diagnostics: const [],
-        notApplicable: noAplicaba,
-      ).toJson(),
-      VerificationOutcome.fromJson
+    'Aborted': (
+      Aborted(attempt: intento).toJson(),
+      Aborted.fromJson
     ),
-    'NotApplicable': (noAplicaba.toJson(), NotApplicable.fromJson),
+    // **Dos instancias canónicas, y es el invariante hablando** — el mismo
+    // motivo que ya obliga a `ObservedSubject` acá abajo. `notOfStack` solo
+    // tiene sentido con sujetos ajenos al stack, y esos SIEMPRE traen
+    // `files: 0` y `ofStack: false`: ningún sujeto ajeno real puede probar
+    // que esos dos campos sobreviven el viaje con un valor distinto del
+    // default. La segunda instancia usa un sujeto DEL stack —tipo-válido para
+    // este campo, aunque no sea el uso real de `Skipped`— solo para que
+    // `files` y `ofStack` viajen con un valor no default al menos una vez.
+    'Skipped · con un sujeto ajeno al stack': (
+      Skipped(notOfStack: [
+        ObservedSubject(
+            subject: 'lib/ajeno', ofStack: false, files: 0, reason: 'no es del stack')
+      ]).toJson(),
+      Skipped.fromJson
+    ),
+    'Skipped · con un sujeto del stack': (
+      Skipped(notOfStack: [
+        ObservedSubject(subject: 'lib/candidato', ofStack: true, files: 4)
+      ]).toJson(),
+      Skipped.fromJson
+    ),
+    'Unobservable': (
+      Unobservable(causes: [
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+      ]).toJson(),
+      Unobservable.fromJson
+    ),
+    'Broken': (
+      Broken(
+        component: 'analizador-x',
+        error: 'no se pudo invocar el binario',
+        context: 'paso lib/algo.fuente',
+      ).toJson(),
+      Broken.fromJson
+    ),
     'ObservedSubject · del stack': (
       ObservedSubject(subject: 'lib/codigo', ofStack: true, files: 2).toJson(),
       ObservedSubject.fromJson
@@ -261,7 +288,7 @@ void main() {
   /// Es una excepción declarada, no un silencio: si mañana alguien agrega un
   /// tercer campo excluyente y no suma su instancia, este check lo caza igual
   /// —el campo nuevo quedaría en su default en TODAS—.
-  const excluyentes = {'VerificationOutcome', 'ObservedSubject', 'ScopeObservation'};
+  const excluyentes = {'Skipped', 'ObservedSubject', 'ScopeObservation'};
 
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
