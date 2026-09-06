@@ -46,6 +46,18 @@ class _EjecutorQueCreaUnArchivo implements EjecutorDeProceso {
   }
 }
 
+/// El alcance como lo observaría la cascada. **Los pasos ya no observan:
+/// reciben** — cláusula 5 de `Verifier`.
+Future<ScopeObservation> _alc(String raiz, List<String> sujetos) =>
+    ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos);
+
+/// Una observación de la nada: partición válida de la lista vacía.
+ScopeObservation _vacio() => ScopeObservation(
+    requested: const [],
+    observed: const [],
+    unobserved: const [],
+    observedAt: DateTime.utc(2026));
+
 void main() {
   late Directory raiz;
 
@@ -69,15 +81,14 @@ void main() {
       // esto: si llega, es error del arnés, no un desenlace del cambio.
       final paso = PasoDeFormato(
           ejecutor: EjecutorDeclarado(salida()), directorio: raiz.path);
-      expect(() => paso.run(const []), throwsArgumentError);
+      expect(() => paso.run(_vacio()), throwsArgumentError);
     });
 
     test('si NINGÚN sujeto es utilizable, también es precondición violada',
         () async {
       // Dos sujetos que no existen: ninguno del stack, ninguno mirable.
-      expect(
-          () => formato(salida(estandar: formatoLimpio))
-              .run(['no/existe', 'tampoco/esta']),
+      final alc = await _alc(raiz.path, const ['no/existe', 'tampoco/esta']);
+      expect(() => formato(salida(estandar: formatoLimpio)).run(alc),
           throwsArgumentError);
     });
 
@@ -90,7 +101,8 @@ void main() {
       final vedado = Directory('${raiz.path}/vedado')..createSync();
       Process.runSync('chmod', ['000', vedado.path]);
       addTearDown(() => Process.runSync('chmod', ['755', vedado.path]));
-      expect(() => analisis(salida(estandar: analisisLimpio)).run(['vedado']),
+      final alc = await _alc(raiz.path, const ['vedado']);
+      expect(() => analisis(salida(estandar: analisisLimpio)).run(alc),
           throwsArgumentError);
     }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
   });
@@ -109,12 +121,13 @@ void main() {
             reason: 'el observador dice que no'),
       });
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
-      final paso = PasoDeFormato(
-          ejecutor: ejecutor, directorio: raiz.path, observador: falso);
-      await expectLater(() => paso.run(['lib']), throwsArgumentError);
+      final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
+      final alc = await falso.observe(const ['lib']);
+      await expectLater(() => paso.run(alc), throwsArgumentError);
       expect(ejecutor.invocaciones, isEmpty);
       expect(falso.llamadas, hasLength(1),
-          reason: 'una sola foto del árbol por corrida de paso');
+          reason: 'la ÚNICA foto del árbol la sacó quien compone; el paso no '
+              'tiene con qué sacar otra');
     });
 
     test(
@@ -143,53 +156,52 @@ void main() {
         },
         noObservados: {'fantasma': 'el observador dice que no se pudo mirar'},
       );
-      final paso = PasoDeFormato(
-          ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-          directorio: raiz.path,
-          observador: falso);
-      final o = await paso.run(['fantasma', 'ajeno', 'lib']);
-      expect(o, isA<Aborted>());
-      final nota = (o as Aborted).attempt.note;
-      expect(nota, contains('fantasma'));
-      expect(nota, contains('ajeno'));
-      expect(nota.indexOf('fantasma'), lessThan(nota.indexOf('ajeno')),
-          reason: 'el pedido nombró primero a fantasma; si el paso agrupara '
-              'por clasificación en vez de recorrer el pedido, este orden '
-              'saldría invertido y ninguna otra prueba lo notaría');
+      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
+      final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
+      final o = await paso
+          .run(await falso.observe(const ['fantasma', 'ajeno', 'lib']));
+
+      // **El paso invoca sobre lo utilizable y sobre nada más.** No aborta ni
+      // omite: 'fantasma' y 'ajeno' no son incumbencia suya, y qué significan
+      // lo decide la cascada —ADR-011 corolario 4—, que los tiene en
+      // `unobserved` y entre los ajenos de esta misma observación.
+      expect(o, isA<Executed>());
+      expect((o as Executed).witness.invocation, contains('lib'));
+      expect(o.witness.invocation, isNot(contains('fantasma')));
+      expect(o.witness.invocation, isNot(contains('ajeno')));
+      expect(ejecutor.invocaciones, hasLength(1));
     });
 
-    test('un sujeto ajeno al stack ABORTA la corrida: no llega ni él ni nada',
-        () async {
+    test('un sujeto ajeno al stack no llega a la herramienta', () async {
       // `separar` clasificaba bien y la invocación se armaba igual con TODOS
       // los pedidos: `verify README.md` le daba el markdown a la herramienta
       // del stack, que intentaba parsearlo y devolvía diagnósticos sobre un
-      // archivo que no es de su incumbencia. Afecta a cualquier cambio normal
-      // que mezcle código y documentación. Lo cobró un review.
+      // archivo que no es de su incumbencia. Lo cobró un review.
       //
-      // La corrección original dejaba seguir al paso, certificando
-      // 'lib/a.dart' e invocando la herramienta solo sobre lo utilizable. La
-      // tarea 8b endurece esto: un sujeto que la propia observación del paso
-      // encuentra ajeno es la misma señal de alcance incoherente que un
-      // sujeto que cambió, así que ahora aborta ANTES de invocar nada — ni
-      // siquiera sobre 'lib/a.dart', que sí era del stack.
+      // Hubo una versión que endurecía esto hasta abortar la corrida entera
+      // ante un ajeno. Era defensa contra un llamador que entregara sujetos
+      // que él mismo había clasificado como no utilizables, y ese llamador ya
+      // no se puede escribir: el paso recibe la observación y saca lo
+      // utilizable de ahí. Un ajeno no es incoherencia, es la partición
+      // haciendo su trabajo.
       File('${raiz.path}/lib/LEEME.md').writeAsStringSync('# prosa\n');
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final paso = PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path);
-      final o = await paso.run(['lib/a.dart', 'lib/LEEME.md']);
+      final o =
+          await paso.run(await _alc(raiz.path, ['lib/a.dart', 'lib/LEEME.md']));
 
-      expect(o, isA<Aborted>());
-      expect((o as Aborted).attempt.note, contains('lib/LEEME.md'),
-          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
-      expect(ejecutor.invocaciones, isEmpty,
-          reason: 'no se invoca la herramienta sobre un alcance incoherente, '
-              'ni siquiera sobre el sujeto que sí era del stack');
+      expect(o, isA<Executed>());
+      expect((o as Executed).witness.invocation, contains('lib/a.dart'));
+      expect(o.witness.invocation, isNot(contains('LEEME.md')),
+          reason: 'la herramienta del stack no parsea lo que no es suyo');
     });
 
     test('un código de salida desconocido deja el resultado no concluyente',
         () async {
       // Una herramienta que devuelve algo que no entendemos no dice «no tuve
       // nada que hacer»: dice «no sé». Lo pidió una mutación.
-      final o = await formato(salida(codigo: 64)).run(['lib']) as Executed;
+      final o = await formato(salida(codigo: 64))
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.witness.omitted.map((x) => x.reason).join(), contains('64'));
     });
@@ -206,7 +218,7 @@ void main() {
           ejecutor: _EjecutorQueCreaUnArchivo(
               '${raiz.path}/lib', salida(estandar: formatoLimpio)),
           directorio: raiz.path);
-      final o = await paso.run(['lib']) as Executed;
+      final o = await paso.run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.verde);
       expect(o.witness.subjects, ['lib']);
     });
@@ -216,7 +228,7 @@ void main() {
               terminacion: Termination.herramientaAusente,
               codigo: -1,
               error: 'No such file or directory'))
-          .run(['lib']);
+          .run(await _alc(raiz.path, ['lib']));
       expect(o, isA<Aborted>());
       expect(
           (o as Aborted).attempt.termination, Termination.herramientaAusente);
@@ -227,7 +239,7 @@ void main() {
         () async {
       final o = await analisis(
               salida(terminacion: Termination.tiempoAgotado, codigo: -1))
-          .run(['lib']);
+          .run(await _alc(raiz.path, ['lib']));
       expect(o, isA<Aborted>());
       expect((o as Aborted).attempt.note, contains('descendientes'));
     });
@@ -238,7 +250,7 @@ void main() {
       // definición. Que no sepamos leerlo es nuestro problema, y va en la
       // omisión — no se falsea la terminación.
       final o = await formato(salida(codigo: 111, estandar: formatoLimpio))
-          .run(['lib']);
+          .run(await _alc(raiz.path, ['lib']));
       expect(o, isA<Executed>());
       final e = o as Executed;
       expect(e.verdict, Verdict.noConcluyente);
@@ -249,7 +261,7 @@ void main() {
         'una salida ilegible tampoco es una terminación distinta: sigue '
         'siendo Executed', () async {
       final o = await formato(salida(estandar: 'basura sin resumen'))
-          .run(['lib']) as Executed;
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.diagnostics, isEmpty,
           reason: 'culpar al código del usuario de que el arnés no sepa leer '
@@ -260,11 +272,15 @@ void main() {
       // El review lo reprodujo: la lista mutaba durante el `await` y el
       // testigo terminaba nombrando una invocación sobre un alcance y
       // declarando cobertura sobre otro.
+      // **Ahora lo cierra el tipo.** `ScopeObservation` congela sus listas al
+      // construirse, así que el paso ya no necesita copia defensiva: lo que
+      // recibe no lo puede mutar nadie mientras él espera en el `await`.
       final lista = ['lib'];
+      final alc = await _alc(raiz.path, lista);
       final o = await PasoDeFormato(
         ejecutor: _MutaDurante(lista, salida(estandar: formatoLimpio)),
         directorio: raiz.path,
-      ).run(lista) as Executed;
+      ).run(alc) as Executed;
       expect(o.witness.subjects, ['lib']);
       expect(o.witness.invocation, contains('lib'));
       expect(o.witness.invocation, isNot(contains('no/existe')));
@@ -279,7 +295,7 @@ void main() {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final paso =
           _ProgramaInestable(ejecutor: ejecutor, directorio: raiz.path);
-      final o = await paso.run(['lib']) as Executed;
+      final o = await paso.run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.witness.invocation, ejecutor.invocaciones.single,
           reason: 'el testigo tiene que nombrar el programa que se invocó, no '
               'otra lectura del mismo getter');
@@ -288,97 +304,56 @@ void main() {
     test('el testigo nombra la invocación que de verdad se hizo', () async {
       final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
       final o = await PasoDeFormato(ejecutor: ejecutor, directorio: raiz.path)
-          .run(['lib']) as Executed;
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(ejecutor.invocaciones.single, o.witness.invocation);
     });
   });
 
-  group('el paso no puede contradecir en silencio a la cascada', () {
-    test('si la observación del paso discrepa de lo que le entregaron, ABORTA',
-        () async {
-      // La cascada observa una vez y entrega solo los sujetos utilizables. Si
-      // el paso vuelve a mirar y ve otra cosa, el árbol cambió entre las dos
-      // lecturas y la evidencia de la corrida dejó de ser coherente.
-      //
-      // Lo que NO puede hacer es descartar el sujeto y declararlo como
-      // omisión con su sujeto: eso SALDA la obligación de ese par
-      // paso-sujeto, y el sujeto queda sin verificar con la corrida en verde.
-      // Falla abierto.
-      final discrepante = ObservadorDeAlcanceFalso(observados: {
-        'lib/a.dart':
-            ObservedSubject(subject: 'lib/a.dart', ofStack: true, files: 1),
-        'lib/b.dart': ObservedSubject(
-            subject: 'lib/b.dart',
-            ofStack: false,
-            files: 0,
-            reason: 'el árbol cambió entre las dos lecturas'),
-      });
-      final ejecutor = EjecutorDeclarado(salida(estandar: formatoLimpio));
-      final paso = PasoDeFormato(
-          ejecutor: ejecutor, directorio: raiz.path, observador: discrepante);
-
-      final o = await paso.run(['lib/a.dart', 'lib/b.dart']);
-
-      expect(o, isA<Aborted>(),
-          reason: 'no se puede concluir sobre un alcance que cambió debajo');
-      expect((o as Aborted).attempt.termination, Termination.interrumpida);
-      expect(o.attempt.note, contains('lib/b.dart'),
-          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
-      expect(ejecutor.invocaciones, isEmpty,
-          reason: 'no se invoca la herramienta sobre un alcance incoherente');
-    });
-
-    test('y sin discrepancia sigue ejecutando normalmente', () async {
-      // El control negativo: sin esto, un paso que abortara SIEMPRE pasaría
-      // la prueba de arriba por la vía de no funcionar.
-      final coherente = ObservadorDeAlcanceFalso(observados: {
-        'lib/a.dart':
-            ObservedSubject(subject: 'lib/a.dart', ofStack: true, files: 1),
-      });
-      final o = await PasoDeFormato(
-              ejecutor: EjecutorDeclarado(salida(estandar: formatoLimpio)),
-              directorio: raiz.path,
-              observador: coherente)
-          .run(['lib/a.dart']);
-      expect(o, isA<Executed>());
-      expect((o as Executed).verdict, Verdict.verde);
-    });
-  });
+  // **Acá vivía el grupo «el paso no puede contradecir en silencio a la
+  // cascada», y se fue con el mecanismo que probaba.** Sus dos pruebas
+  // comprobaban que el paso abortara cuando su PROPIA observación discrepaba
+  // de la que la cascada le había entregado. Ese abort existía solamente
+  // porque el paso volvía a mirar el árbol, y era además una salvaguarda
+  // falsa: comparaba nombres y no tamaños, así que un árbol de otro tamaño
+  // con el sujeto todavía utilizable no divergía y la corrida salía verde
+  // reportando un alcance que nadie había verificado.
+  //
+  // Con una sola lectura no hay dos fotos que reconciliar. Lo que la reemplaza
+  // no es otra guardia: es la firma de `Verifier.run`, que no le da al paso
+  // con qué pedir una segunda observación, y la prueba de integración sobre
+  // `cascadaPorDefecto` que cuenta las lecturas de una corrida entera.
 
   group('cobertura POR SUJETO, no agregada', () {
-    test('un sujeto que ya no existe ABORTA en vez de certificar lo demás',
+    test('un sujeto que no se pudo observar no lo certifica ni lo decide',
         () async {
       // El falso verde que encontró el review: la herramienta miraba un
-      // archivo y el paso devolvía TODOS los sujetos como cubiertos. La
-      // corrección de entonces certificaba solo 'lib' y omitía 'no/existe'
-      // con su nombre.
+      // archivo y el paso devolvía TODOS los sujetos como cubiertos.
       //
-      // La tarea 8b va más allá: una omisión con sujeto SALDA la obligación
-      // de ese par paso-sujeto, así que 'no/existe' quedaría declarado sin
-      // haber sido verificado de verdad. Que la propia observación del paso
-      // ya no lo vea es la misma señal de alcance incoherente que un sujeto
-      // que cambió entre las dos lecturas: aborta, y no certifica ni
-      // siquiera 'lib'.
+      // Hubo una versión que abortaba ante 'no/existe'. Ya no: el paso no
+      // decide qué significa un sujeto que no se pudo mirar —eso sería juzgar
+      // su propia incumbencia, ADR-011 corolario 4—. Verifica lo utilizable y
+      // no dice nada del resto. **Quien no lo deja pasar es la cascada**, que
+      // con un `unobserved` no vacío levanta `alcanceNoObservable` y la
+      // corrida entera deja de ser verde aunque este paso haya ejecutado
+      // limpio. Esa mitad se prueba en `cascada_test`.
       final o = await formato(salida(estandar: formatoLimpio))
-          .run(['lib', 'no/existe']);
-      expect(o, isA<Aborted>());
-      expect((o as Aborted).attempt.note, contains('no/existe'),
-          reason: 'la evidencia tiene que nombrar el sujeto que discrepó');
+          .run(await _alc(raiz.path, ['lib', 'no/existe'])) as Executed;
+      expect(o.witness.subjects, ['lib']);
+      expect(o.witness.invocation, isNot(contains('no/existe')),
+          reason: 'no se invoca la herramienta sobre lo que no se pudo mirar');
     });
 
-    test('un directorio que existe pero no tiene fuentes ABORTA la corrida',
+    test('un directorio sin fuentes es ajeno, y el paso lo trata como tal',
         () async {
-      // 'vacio' es justo el tipo de sujeto que la cascada no debería haber
-      // entregado como utilizable: que la propia observación del paso lo
-      // encuentre sin fuentes es la misma incoherencia de alcance que
-      // cualquier otra discrepancia, y por eso aborta en vez de certificar
-      // 'lib' y saldar la obligación de 'vacio' con una omisión que nadie
-      // verificó.
+      // Medido con el observador de verdad: un directorio que existe y no
+      // tiene ningún archivo de fuente vuelve OBSERVADO y no del stack, con
+      // el motivo escrito. No es un sujeto que no se pudo mirar: se miró y no
+      // había nada nuestro. El paso verifica 'lib' y no invoca sobre 'vacio'.
       Directory('${raiz.path}/vacio').createSync();
       final o = await analisis(salida(estandar: analisisLimpio))
-          .run(['lib', 'vacio']);
-      expect(o, isA<Aborted>());
-      expect((o as Aborted).attempt.note, contains('vacio'));
+          .run(await _alc(raiz.path, ['lib', 'vacio'])) as Executed;
+      expect(o.witness.subjects, ['lib']);
+      expect(o.witness.invocation, isNot(contains('vacio')));
     });
   });
 
@@ -396,7 +371,7 @@ void main() {
         () async {
       final o = await formato(salida(
               estandar: 'Formatted 1 file (0 changed) in 0.00 seconds.\n'))
-          .run(['lib', 'dos']) as Executed;
+          .run(await _alc(raiz.path, ['lib', 'dos'])) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.witness.subjects, isEmpty);
       expect(
@@ -406,7 +381,7 @@ void main() {
     test('miró todos: certifica los dos sujetos', () async {
       final o = await formato(salida(
               estandar: 'Formatted 2 files (0 changed) in 0.00 seconds.\n'))
-          .run(['lib', 'dos']) as Executed;
+          .run(await _alc(raiz.path, ['lib', 'dos'])) as Executed;
       expect(o.verdict, Verdict.verde);
       expect(o.witness.subjects, ['lib', 'dos']);
     });
@@ -422,7 +397,7 @@ void main() {
         error: 'Could not format because the source could not be parsed:\n'
             "line 2, column 1 of dos/roto.dart: Expected to find '}'.\n"
             "line 2, column 1 of dos/roto.dart: Expected an identifier.\n",
-      )).run(['lib', 'dos']) as Executed;
+      )).run(await _alc(raiz.path, ['lib', 'dos'])) as Executed;
       expect(o.verdict, Verdict.rojo,
           reason: 'tres archivos: dos formateados y uno que no parsea');
       expect(o.witness.subjects, ['lib', 'dos']);
@@ -436,7 +411,7 @@ void main() {
       final o = await formato(salida(
         estandar: 'Formatted no files in 0.00 seconds.\n',
         error: 'No file or directory found at "lib".\n',
-      )).run(['lib']) as Executed;
+      )).run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.witness.subjects, isEmpty);
       expect(o.witness.omitted.map((x) => x.reason).join(),
@@ -444,8 +419,8 @@ void main() {
     });
 
     test('un archivo mirado y limpio sí es verde', () async {
-      final o = await formato(salida(estandar: formatoLimpio)).run(['lib'])
-          as Executed;
+      final o = await formato(salida(estandar: formatoLimpio))
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.verde);
       expect(o.witness.subjects, ['lib']);
       expect(o.witness.omitted, isEmpty);
@@ -455,7 +430,7 @@ void main() {
       final o = await formato(salida(
               estandar: 'Changed lib/a.dart\n'
                   'Formatted 1 file (1 changed) in 0.0 seconds.\n'))
-          .run(['lib']) as Executed;
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.rojo);
       expect(o.diagnostics.single.file, 'lib/a.dart');
     });
@@ -467,7 +442,7 @@ void main() {
         estandar: 'Formatted no files in 0.0 seconds.\n',
         error: 'Could not format because the source could not be parsed:\n'
             "line 2, column 1 of lib/roto.dart: Expected to find '}'.\n",
-      )).run(['lib']) as Executed;
+      )).run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.verdict, Verdict.noConcluyente);
       expect(o.diagnostics.single.ruleId, 'formato/no-parsea');
     });
@@ -476,8 +451,8 @@ void main() {
   group('StaticAnalysis · NO puede, y lo declara', () {
     test('declara siempre que no sabe qué archivos leyó la herramienta',
         () async {
-      final o = await analisis(salida(estandar: analisisLimpio)).run(['lib'])
-          as Executed;
+      final o = await analisis(salida(estandar: analisisLimpio))
+          .run(await _alc(raiz.path, ['lib'])) as Executed;
       expect(o.witness.omitted.map((x) => x.reason).join(),
           contains('no informa qué archivos leyó'));
       expect(o.verdict, Verdict.verde,

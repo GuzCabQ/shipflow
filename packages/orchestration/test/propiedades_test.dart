@@ -4,6 +4,17 @@
 /// El generador es exhaustivo y no aleatorio: el espacio es chico y una
 /// corrida reproducible vale más que una muestra.
 ///
+/// **«Construible» es lo que el constructor deja pasar, y eso es una
+/// dependencia real de este archivo.** El generador solo fabrica ids únicos,
+/// así que un `ResultadoDeCascada` con dos registros del mismo id nunca
+/// aparece acá. Mientras el constructor lo aceptaba, esa ausencia era un
+/// hueco y la frase de arriba era falsa: había un estado construible que
+/// ninguna propiedad recorría, y salía verde con un desenlace saldando dos
+/// registros. Lo cierra el constructor —ver «dos registros con el MISMO id no
+/// se dejan construir» en la suite de la cascada—, no este generador: si
+/// alguna vez se afloja allá, este archivo vuelve a mentir sin cambiar una
+/// línea.
+///
 /// **Cuatro escenarios, para cubrir los cinco `StepKind` SIN enmascarar
 /// mutaciones entre sí.** El escenario A tiene dos sujetos y los dos son del
 /// stack: sobre él se puede construir `Executed`, `Aborted` y `Broken`, pero

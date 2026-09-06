@@ -33,15 +33,9 @@ Cascada cascadaPorDefecto({
   final obs = observador ?? ObservadorDeAlcanceDart(directorio: directorio);
   return Cascada([
     PasoDeFormato(
-        ejecutor: ejecutor,
-        directorio: directorio,
-        observador: obs,
-        presupuesto: presupuesto),
+        ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
     PasoDeAnalisis(
-        ejecutor: ejecutor,
-        directorio: directorio,
-        observador: obs,
-        presupuesto: presupuesto),
+        ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
   ], observador: obs);
 }
 
@@ -172,6 +166,12 @@ Future<int> correrVerify(
   // la excepción tire abajo el resto de la corrida.
   final sinTerminalEntregado = <String>[];
 
+  /// Pasos cuyo terminal SÍ se entregó y cuya emisión posterior —diagnósticos
+  /// o callback— se rompió. Es error interno del arnés, pero no un `started`
+  /// abierto: nombrarlos en `unterminated` sería afirmar que el consumidor no
+  /// recibió algo que recibió.
+  final falloDespuesDelTerminal = <String>[];
+
   // **Los eventos salen mientras la corrida ocurre**, no al final. Antes se
   // recorrían los resultados después de que todo había terminado: no había
   // nada que mirar mientras una herramienta tardaba, y la marca de tiempo era
@@ -188,10 +188,18 @@ Future<int> correrVerify(
       '  ...       $id',
     ),
     alTerminar: (id, desenlace) {
+      // **El `try` se ciñe al terminal, y por una razón exacta.** Envolvía
+      // también los diagnósticos y el callback posterior, así que una
+      // excepción de cualquiera de los dos anotaba el paso como «terminal no
+      // entregado» — sobre un terminal que el consumidor YA había recibido.
+      // El resultado afirmaba lo contrario de lo ocurrido y recomendaba
+      // recuperarse de algo que no pasó.
+      //
+      // Peor: la única prueba del mecanismo lanzaba justamente desde el
+      // callback posterior y solo comprobaba que la lista no estuviera
+      // vacía, así que no podía distinguir las dos situaciones y consolidaba
+      // la contradicción. Cobertura hueca, encontrada por un review.
       try {
-        // **Cada uno de los cinco desenlaces se dice como lo que es.** Antes
-        // solo se avisaba de los pasos con resultado, así que un salto y un
-        // fallo interno dejaban su `started` sin cerrar.
         imp.evento(
           EventEnvelope(
             command: nombreDelComando,
@@ -205,6 +213,17 @@ Future<int> correrVerify(
           ),
           _desenlaceEnTexto(id, desenlace, detallado: o.detallado),
         );
+      } on Object {
+        // El terminal no llegó: el consumidor tiene un `started` abierto que
+        // nadie va a cerrar, y eso es lo que `unterminated` nombra.
+        sinTerminalEntregado.add(id);
+        return;
+      }
+
+      // **Desde acá el terminal está entregado y eso ya no se reescribe.** Un
+      // fallo de los diagnósticos o del callback sigue siendo error interno
+      // del arnés —código 70— pero no falsea la historia del protocolo.
+      try {
         final diagnosticos = switch (desenlace) {
           Executed(:final diagnostics) => diagnostics,
           _ => const <Diagnostic>[],
@@ -223,16 +242,19 @@ Future<int> correrVerify(
         }
         alTerminarDeProgreso?.call(id, desenlace);
       } on Object {
-        sinTerminalEntregado.add(id);
+        falloDespuesDelTerminal.add(id);
       }
     },
   );
 
   final huboFalloDeEntrega = sinTerminalEntregado.isNotEmpty;
+  // **Los dos son error del arnés; solo uno es un `started` sin cerrar.**
+  final huboFalloDeEmision =
+      huboFalloDeEntrega || falloDespuesDelTerminal.isNotEmpty;
   final estado = r.estado;
   final exitCode =
-      huboFalloDeEntrega ? Codigo.errorInterno : Codigo.deCorrida(estado);
-  final verdict = huboFalloDeEntrega
+      huboFalloDeEmision ? Codigo.errorInterno : Codigo.deCorrida(estado);
+  final verdict = huboFalloDeEmision
       ? veredictoDe(EstadoDeCorrida.errorInterno)
       : veredictoDe(estado);
   final accion = huboFalloDeEntrega
@@ -240,7 +262,12 @@ Future<int> correrVerify(
           'de estos pasos: ${sinTerminalEntregado.join(", ")}. La cascada sí '
           'terminó de correr: `outcomes`, en este mismo documento, tiene lo '
           'que cada uno produjo.'
-      : _queHacer(r);
+      : falloDespuesDelTerminal.isNotEmpty
+          ? 'El desenlace de estos pasos SÍ se entregó y la emisión se rompió '
+              'después: ${falloDespuesDelTerminal.join(", ")}. Puede faltar '
+              'algún diagnóstico en el flujo de eventos; `outcomes`, en este '
+              'mismo documento, los tiene completos.'
+          : _queHacer(r);
 
   imp.resultado(
     ResultEnvelope(
@@ -286,6 +313,8 @@ Future<int> correrVerify(
         // algo que este documento no contiene.
         'scope': r.alcance.toJson(),
         if (huboFalloDeEntrega) 'unterminated': sinTerminalEntregado,
+        if (falloDespuesDelTerminal.isNotEmpty)
+          'emissionFailedAfterTerminal': falloDespuesDelTerminal,
       },
     ),
     _resumenEnTexto(r, accion),

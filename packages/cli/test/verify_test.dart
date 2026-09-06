@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:cli/cli.dart';
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
+import 'package:plugin_dart/plugin_dart.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
@@ -212,10 +213,39 @@ void main() {
     test(
         'la garantía de entrega: si el canal se rompe, el consumidor no '
         'espera', () async {
-      final (c, salida) = await invocarConObservadorRoto();
+      // La salida se rompe AL ESCRIBIR el terminal de `A`, que es la única
+      // forma real de dejar un `started` abierto. La versión anterior lanzaba
+      // desde el callback posterior —con el terminal ya entregado— y solo
+      // comprobaba que la lista no estuviera vacía, así que no distinguía
+      // «no se entregó» de «se entregó y algo falló después».
+      final (c, salida) = await invocarConTerminalRoto();
       expect(c, 70);
       final data = lineas(salida).last['data']! as Map<String, Object?>;
-      expect(data['unterminated'], isNotEmpty);
+      expect(data['unterminated'], ['A']);
+      expect(data['emissionFailedAfterTerminal'], isNull);
+    });
+
+    test('un fallo DESPUÉS del terminal no reescribe la historia', () async {
+      // El bug que encontró un review: el `try` envolvía el terminal, los
+      // diagnósticos y el callback, así que romper cualquiera de los dos
+      // últimos declaraba «no entregado» un terminal que el consumidor ya
+      // tenía, y le recomendaba recuperarse de algo que no pasó.
+      final (c, salida) = await invocarConFalloDespuesDelTerminal();
+      expect(c, 70, reason: 'sigue siendo error del arnés');
+      final doc = lineas(salida).last;
+      final data = doc['data']! as Map<String, Object?>;
+      expect(data['unterminated'], isNull,
+          reason: 'el terminal SÍ se entregó: decir lo contrario es falsear '
+              'el protocolo, no reportarlo');
+      expect(data['emissionFailedAfterTerminal'], ['A']);
+
+      // Y el consumidor de verdad lo recibió: está en el flujo de eventos.
+      final terminales = lineas(salida)
+          .where((e) => e['type'] == 'progress')
+          .map((e) => (e['data']! as Map<String, Object?>)['stage'])
+          .toList();
+      expect(terminales, contains('executed'),
+          reason: 'lo que el resultado niega tiene que no estar en el flujo');
     });
   });
 
@@ -526,6 +556,29 @@ void main() {
       final r = await shipflow(const ['--help']);
       expect(r.exitCode, 0);
     }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('la composición real observa el alcance UNA sola vez', () async {
+      // **La cláusula 4 de `ScopeObserver`, probada donde se incumplía.** La
+      // cascada observaba una vez y cada paso volvía a observar por su
+      // cuenta, así que la corrida entera leía el árbol tres veces y podía
+      // reportar un alcance que los verificadores nunca vieron. La guardia
+      // que lo justificaba comparaba NOMBRES: si el directorio seguía siendo
+      // utilizable, un árbol de otro tamaño no divergía y la corrida salía
+      // verde con un conteo ajeno a lo verificado.
+      //
+      // Se prueba sobre `cascadaPorDefecto` a propósito: una cascada con
+      // pasos ficticios que nunca observan no puede ver esto, y por eso no
+      // lo vio nadie durante doce tareas.
+      File('${raiz.path}/lib/a.dart').writeAsStringSync('void a() {}\n');
+      final espia =
+          _ObservadorQueCuenta(ObservadorDeAlcanceDart(directorio: raiz.path));
+      final cascada =
+          cascadaPorDefecto(directorio: raiz.path, observador: espia);
+      await cascada.correr(const ['lib']);
+      expect(espia.llamadas, 1,
+          reason: 'dos lecturas del árbol pueden diferir, y entonces el '
+              'reporte declara un alcance que nadie verificó');
+    }, timeout: const Timeout(Duration(minutes: 3)));
   });
 
   // Los seis ataques que se reprodujeron sobre el código anterior y salían
@@ -569,10 +622,10 @@ void main() {
     });
 
     test('C6 · un start sin terminal queda declarado', () async {
-      final (c, salida) = await invocarConObservadorRoto();
+      final (c, salida) = await invocarConTerminalRoto();
       expect(c, 70);
       final data = lineas(salida).last['data']! as Map<String, Object?>;
-      expect(data['unterminated'], isNotEmpty);
+      expect(data['unterminated'], ['A']);
     });
 
     test('C9 · un paso sin evidencia no se puede construir', () {
@@ -612,4 +665,20 @@ void main() {
           throwsArgumentError);
     });
   });
+}
+
+/// Cuenta cuántas veces se mira el árbol en una corrida. Delega en el
+/// observador de verdad: lo que se prueba es la CANTIDAD de lecturas, no lo
+/// que cada una devuelve.
+class _ObservadorQueCuenta implements ScopeObserver {
+  final ScopeObserver interno;
+  int llamadas = 0;
+
+  _ObservadorQueCuenta(this.interno);
+
+  @override
+  Future<ScopeObservation> observe(List<String> subjects) {
+    llamadas++;
+    return interno.observe(subjects);
+  }
 }

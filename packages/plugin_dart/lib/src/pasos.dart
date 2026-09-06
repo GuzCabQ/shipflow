@@ -9,7 +9,6 @@ library;
 
 import 'package:core/core.dart';
 
-import 'alcance.dart';
 import 'ejecutor.dart';
 import 'normalizadores.dart';
 
@@ -38,16 +37,16 @@ abstract base class PasoDeCascada implements Verifier {
   final String directorio;
   final Duration presupuesto;
 
-  /// Quién mira el alcance. **No lo mira el paso**: ADR-011 corolario 4.
-  final ScopeObserver observador;
-
+  /// **El paso no mira el alcance y ya no tiene con qué.** ADR-011 corolario
+  /// 4 dice que ningún verificador juzga su propia incumbencia, y mientras el
+  /// paso guardó un `ScopeObserver` eso dependía de que nadie lo usara. Lo
+  /// usaba: una corrida de dos pasos leía el árbol tres veces. La observación
+  /// llega por parámetro, que es la única forma de que no haya una segunda.
   PasoDeCascada({
     required this.ejecutor,
     required this.directorio,
-    ScopeObserver? observador,
     this.presupuesto = const Duration(minutes: 5),
-  }) : observador =
-            observador ?? ObservadorDeAlcanceDart(directorio: directorio);
+  });
 
   /// El programa y sus argumentos para un alcance dado.
   String get programa;
@@ -81,19 +80,16 @@ abstract base class PasoDeCascada implements Verifier {
   Cobertura cobertura(Alcance alcance, QuotedText salida);
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
-    // **Se copia y se congela antes de nada.** La lista es del llamador, que
-    // puede mutarla mientras el proceso está suspendido en el `await`: pasó, y
-    // el testigo quedó nombrando una invocación sobre un alcance y declarando
-    // cobertura sobre otro. Es el mismo invariante que `colecciones-inmutables`
-    // exige en `core`, acá en el punto donde se construye la evidencia.
-    final pedidos = List<String>.unmodifiable(subjects);
-
-    // **Una sola foto del árbol, y viaja.** De acá salen la partición, el
-    // conteo del alcance y la reconciliación: si cada una volviera a mirar,
-    // podrían discrepar y el testigo afirmaría dos cosas incompatibles.
-    final observacion = await observador.observe(pedidos);
-
+  Future<VerificationOutcome> run(ScopeObservation observacion) async {
+    // **La foto la trae quien compone, y es la misma para toda la corrida.**
+    // De acá salen la partición, el conteo del alcance y la reconciliación.
+    // Cuando el paso la pedía por su cuenta, cada una de esas tres cosas
+    // podía salir de una lectura distinta, y el testigo afirmaba dos cosas
+    // incompatibles sobre el mismo alcance.
+    //
+    // `ScopeObservation` es inmodificable por construcción, así que no hace
+    // falta congelar nada acá: el invariante que antes sostenía la copia
+    // defensiva ahora lo sostiene el tipo.
     final alcance = (
       sanos: observacion.usable(),
       archivos: observacion.observed
@@ -109,46 +105,31 @@ abstract base class PasoDeCascada implements Verifier {
       // compone la corrida —no este paso— decide qué significa un alcance
       // así: si es un salto legítimo o si el alcance esperado no se cumplió.
       throw ArgumentError.value(
-          subjects,
-          'subjects',
+          observacion.requested,
+          'alcance',
           'No hay ningún sujeto utilizable. Invocar la herramienta sin rutas '
               'la haría mirar el directorio entero, y fabricar un testigo '
               'sería declarar una ejecución que no ocurrió. Quien compone la '
               'corrida decide qué significa un alcance así');
     }
 
-    // **La cascada ya vetó estos sujetos.** Que la observación del paso vea
-    // otra cosa significa que el árbol cambió entre las dos lecturas, y
-    // entonces la evidencia de la corrida no es coherente.
-    //
-    // Descartarlo como omisión con sujeto sería peor que inútil: una omisión
-    // con sujeto SALDA la obligación de ese par paso-sujeto, así que el sujeto
-    // quedaría sin verificar y la corrida podría salir verde. Falla abierto, y
-    // es justo el modo de fallo que esta rebanada existe para cerrar.
-    final discrepan = pedidos.where((s) => !alcance.sanos.contains(s)).toList();
-    if (discrepan.isNotEmpty) {
-      return Aborted(
-          attempt: Attempt(
-        invocation: '',
-        subjects: pedidos,
-        termination: Termination.interrumpida,
-        exitCode: -1,
-        note: 'El alcance cambió entre la observación de la corrida y la de '
-            'este paso: ${discrepan.join(", ")} ya no es utilizable. No se '
-            'invocó nada: no se puede concluir sobre un alcance incoherente.',
-        finishedAt: DateTime.now().toUtc(),
-      ));
-    }
+    // **Acá vivía una guardia de divergencia, y se fue con su causa.**
+    // Comparaba la lectura del paso contra la que la cascada había vetado, y
+    // era lo que hacía tolerable la doble lectura. No la hacía tolerable:
+    // comparaba NOMBRES, así que un árbol que cambiaba de tamaño con el
+    // sujeto todavía utilizable no divergía, y la corrida salía verde
+    // reportando un alcance que los verificadores no habían visto. Con una
+    // sola lectura no hay dos fotos que reconciliar, que es más barato y más
+    // cierto que reconciliarlas bien.
 
     // El programa y los argumentos se calculan UNA vez y se reusan. Se
     // calculaban dos veces —una para el texto del testigo y otra para la
     // invocación real— y nada garantizaba que dieran lo mismo.
     //
-    // **`alcance.sanos` es, a esta altura, exactamente `pedidos`.** Si algún
-    // pedido no fuera sano, la corrida ya abortó más arriba: no queda ningún
-    // sujeto que descartar en silencio ni que declarar omitido con su
-    // nombre. Se sigue pasando `alcance.sanos` y no `pedidos` porque es la
-    // forma en que este código afirma esa igualdad, no porque filtre nada.
+    // **Se invoca sobre lo utilizable, y solo sobre eso.** Lo que la
+    // observación no dio como del stack no se le pasa a la herramienta: no es
+    // un descarte silencioso, es la partición que el observador ya decidió y
+    // que este paso no vuelve a juzgar.
     final prog = programa;
     final args = List<String>.unmodifiable(argumentos(alcance.sanos));
     final invocacion = [prog, ...args].join(' ');
@@ -248,7 +229,6 @@ final class PasoDeFormato extends PasoDeCascada {
   PasoDeFormato({
     required super.ejecutor,
     required super.directorio,
-    super.observador,
     super.presupuesto,
   });
 
@@ -357,7 +337,6 @@ final class PasoDeAnalisis extends PasoDeCascada {
   PasoDeAnalisis({
     required super.ejecutor,
     required super.directorio,
-    super.observador,
     super.presupuesto,
   });
 

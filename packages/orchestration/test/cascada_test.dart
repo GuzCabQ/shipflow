@@ -118,7 +118,7 @@ class _Paso implements Verifier {
       ));
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
+  Future<VerificationOutcome> run(ScopeObservation alcance) async {
     corrio = true;
     if (lanza != null) throw lanza!;
     return devuelve!;
@@ -133,7 +133,11 @@ class _Espia implements Verifier {
   _Espia(this.id);
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
+  Future<VerificationOutcome> run(ScopeObservation alcance) async {
+    // El paso recibe la observación de la corrida; los sujetos sobre los que
+    // invocar son los utilizables, que es exactamente lo que la cascada le
+    // pasaba antes.
+    final subjects = alcance.usable();
     recibio = List.of(subjects);
     return Executed(
         witness: _testigo(sujetos: subjects), diagnostics: const []);
@@ -150,7 +154,7 @@ class _PasoQueCubre implements Verifier {
   _PasoQueCubre(this.id, this.cubiertos, {this.omite = const []});
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async => Executed(
+  Future<VerificationOutcome> run(ScopeObservation alcance) async => Executed(
         witness: Witness(
           invocation: 'herramienta',
           subjects: cubiertos,
@@ -436,6 +440,34 @@ void main() {
       expect(r.causas, contains(CausaNoConcluyente.alcanceNoObservable));
     });
 
+    test('un sujeto inobservable impide el verde AUNQUE el paso ejecute',
+        () async {
+      // **La mitad que la cascada le quita al paso.** Cuando el paso volvía a
+      // mirar el árbol, abortaba ante un sujeto que ya no podía observar, y
+      // esa era la protección. El paso ya no observa: verifica lo utilizable
+      // y no dice nada del resto, que es lo correcto —ADR-011 corolario 4, un
+      // verificador no juzga su propia incumbencia—.
+      //
+      // Entonces la protección tiene que estar acá, y con un sujeto que SÍ se
+      // pudo verificar al lado: el caso de al lado no tiene ninguno, así que
+      // un `alcanceNoObservable` que solo se disparara con la corrida entera
+      // parada habría pasado sus dos pruebas.
+      final obs = ObservadorDeAlcanceFalso(
+        observados: {
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+        },
+        noObservados: const {'no/existe': 'no existe en el árbol'},
+      );
+      final r = await Cascada([_Paso.verde('A')], observador: obs)
+          .correr(['lib', 'no/existe']);
+      expect(r.desenlaces['A'], isA<Executed>(),
+          reason: 'el paso ejecutó limpio sobre lo utilizable');
+      expect(r.estado, EstadoDeCorrida.noConcluyente);
+      expect(r.causas, contains(CausaNoConcluyente.alcanceNoObservable),
+          reason: 'un sujeto que nadie pudo mirar no lo redime un paso verde '
+              'sobre otro sujeto');
+    });
+
     test(
         'alcance MIXTO —un ajeno y uno inobservable, nada utilizable—: la '
         'primera causa es lo no observable, no nada ejecutado', () async {
@@ -525,6 +557,34 @@ void main() {
           unobserved: const [],
           observedAt: DateTime.utc(2026),
         );
+
+    test('dos registros con el MISMO id no se dejan construir', () async {
+      // **Invariante del productor confundido con invariante del tipo, otra
+      // vez.** `Cascada` rechaza ids duplicados al construirse, así que por
+      // el camino real esto no llega. Pero `ResultadoDeCascada` es público y
+      // se exporta: sus invariantes tienen que sostenerse venga de donde
+      // venga, que es la tesis entera de esta rama.
+      //
+      // El agujero era el `.toSet()` sobre los ids registrados: colapsaba la
+      // multiplicidad ANTES de comparar contra los desenlaces, así que dos
+      // registros 'A' quedaban saldados por un solo desenlace 'A' y las dos
+      // comprobaciones —ninguno falta, ninguno sobra— pasaban en verde.
+      final alcance = obsConDosUtilizables();
+      expect(
+          () => ResultadoDeCascada(
+                registrados: [
+                  RegisteredStep(id: 'A', expectedScope: alcance.usable()),
+                  RegisteredStep(id: 'A', expectedScope: alcance.usable()),
+                ],
+                alcance: alcance,
+                desenlaces: {
+                  'A': Executed(
+                      witness: _testigo(sujetos: alcance.usable()),
+                      diagnostics: const []),
+                },
+              ),
+          throwsArgumentError);
+    });
 
     test(
         'un alcance esperado más CHICO que lo utilizable no se deja '

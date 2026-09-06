@@ -107,7 +107,32 @@ class ResultadoDeCascada {
     required Map<String, StepOutcome> desenlaces,
   })  : registrados = List.unmodifiable(registrados),
         desenlaces = Map.unmodifiable(desenlaces) {
-    final ids = this.registrados.map((r) => r.id).toSet();
+    // **El id es una CLAVE, y dos registros con la misma clave no son un
+    // registro.** `Cascada` ya rechaza ids duplicados al construirse, pero
+    // eso es un invariante del PRODUCTOR y este tipo es público y exportado:
+    // quien lo arme por otro camino tiene que chocar con el mismo muro.
+    //
+    // El agujero estaba en el `.toSet()` de abajo, que colapsaba la
+    // multiplicidad antes de comparar contra los desenlaces: dos registros
+    // 'A' quedaban saldados por un solo desenlace 'A', «ninguno falta» y
+    // «ninguno sobra» pasaban las dos, y un paso podía no haber corrido sin
+    // que la cuenta lo notara. Es exactamente lo que el constructor de
+    // `Cascada` explica para su propia comprobación, un nivel más arriba.
+    final repetidos = <String>{};
+    final unaVez = <String>{};
+    for (final r in this.registrados) {
+      if (!unaVez.add(r.id)) repetidos.add(r.id);
+    }
+    if (repetidos.isNotEmpty) {
+      throw ArgumentError.value(
+          repetidos.toList(),
+          'registrados',
+          'Estos ids están registrados más de una vez. Se comparan '
+              'registrados contra desenlaces por id, así que un desenlace '
+              'saldaría a los dos y un paso podría no haber corrido sin que '
+              'nadie se entere');
+    }
+    final ids = unaVez;
     // **`sinEjecutar` desaparece porque no puede existir.** Antes era una
     // resta que podía dar distinto de cero; ahora todo registrado tiene su
     // desenlace o el resultado no se construye.
@@ -468,23 +493,18 @@ class Cascada {
     // mientras la corrida está en curso.
     final alcance = List<String>.unmodifiable(sujetos);
 
-    // **Una sola foto para toda la corrida — de ESTE lado.** Dos lecturas
+    // **Una sola foto para toda la corrida, y ahora de verdad.** Dos lecturas
     // pueden diferir, y entonces dos pasos verifican alcances distintos que
     // el reporte declara iguales: es la cláusula 4 del contrato de
-    // `ScopeObserver`. Esta es la única llamada a `observe` que hace la
-    // cascada, pero **no es la única que hace el arnés**: `PasoDeCascada.run`
-    // (en el plugin del stack) guarda su propio `ScopeObserver` y vuelve a
-    // llamar a `observe`, una vez por paso, sobre el alcance que esta línea
-    // ya observó. La cláusula no se cumple hoy de punta a punta —falla
-    // cerrada, no silencioso: `PasoDeCascada.run` aborta si su propia lectura
-    // discrepa de la que esta línea vetó, así que el reporte incoherente que
-    // la cláusula existe para prevenir no se cuela— pero afirmar acá que esto
-    // «es lo único en todo el arnés que la puede cumplir» era exactamente lo
-    // que impedía verlo: doce tareas con la doble lectura instalada y sin que
-    // nadie lo notara. Ver la cláusula 4 en el archivo de los puertos para el
-    // detalle y para qué haría falta —pasarle a cada paso la observación ya
-    // hecha, en vez de que cada uno pida la suya— para que la cláusula valga
-    // de verdad.
+    // `ScopeObserver`.
+    //
+    // Este comentario decía «de ESTE lado» y confesaba que cada paso volvía a
+    // observar por su cuenta, apoyándose en que el paso abortaba si su
+    // lectura discrepaba. Esa salvaguarda comparaba nombres y no tamaños, así
+    // que no salvaba nada. Se cerró donde correspondía: `Verifier.run` recibe
+    // esta observación y ningún paso tiene con qué pedir otra, así que la
+    // línea de abajo es la única lectura del árbol en toda la corrida por
+    // construcción y no por disciplina.
     final observacion = await observador.observe(alcance);
     final utilizables = observacion.usable();
     final ajenos = [
@@ -519,7 +539,7 @@ class Cascada {
             : Skipped(notOfStack: ajenos);
       } else {
         try {
-          desenlace = await paso.run(utilizables);
+          desenlace = await paso.run(observacion);
         } on Object catch (e) {
           // Se atrapa cualquier excepción a propósito, y solo acá: un paso
           // que se rompe es un error del arnés, no un veredicto sobre el

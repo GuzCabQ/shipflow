@@ -45,6 +45,19 @@ final implementaciones = <String, (Construir, String)>{
   ),
 };
 
+/// El alcance tal como lo observaría la cascada. **Los pasos ya no observan:
+/// reciben** (cláusula 5 de `Verifier`), así que la suite tiene que producir
+/// la observación igual que lo hace quien compone la corrida.
+Future<ScopeObservation> _alcance(String raiz, List<String> sujetos) =>
+    ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos);
+
+/// Una observación de la nada: partición válida de una lista vacía.
+ScopeObservation _vacio() => ScopeObservation(
+    requested: const [],
+    observed: const [],
+    unobserved: const [],
+    observedAt: DateTime.utc(2026));
+
 void main() {
   // Un sujeto de verdad en disco. `StaticAnalysis` cuenta los archivos del
   // alcance porque su herramienta no informa cuáles leyó, así que un alcance
@@ -73,13 +86,13 @@ void main() {
       test('cláusula 1 · devuelve Ejecutado o Abortado, nunca otra cosa',
           () async {
         final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(['lib']);
+            .run(await _alcance(raiz.path, ['lib']));
         expect(o, anyOf(isA<Executed>(), isA<Aborted>()));
       });
 
       test('cláusula 2 · un alcance sin sujetos utilizables lanza', () async {
         final ejecutor = EjecutorDeclarado(_salida());
-        expect(() => paso(ejecutor).run(const []), throwsArgumentError);
+        expect(() => paso(ejecutor).run(_vacio()), throwsArgumentError);
         expect(ejecutor.invocaciones, isEmpty);
       });
 
@@ -91,7 +104,7 @@ void main() {
         ]) {
           final o =
               await paso(EjecutorDeclarado(_salida(terminacion: t, codigo: -1)))
-                  .run(['lib']);
+                  .run(await _alcance(raiz.path, ['lib']));
           expect(o, isA<Aborted>(), reason: 'terminación $t');
           expect((o as Aborted).attempt.termination, t);
         }
@@ -100,7 +113,8 @@ void main() {
       test('cláusula 4 · el testigo nombra la invocación que se hizo',
           () async {
         final ejecutor = EjecutorDeclarado(_salida(estandar: limpio));
-        final o = await paso(ejecutor).run(['lib']) as Executed;
+        final o = await paso(ejecutor).run(await _alcance(raiz.path, ['lib']))
+            as Executed;
         expect(ejecutor.invocaciones, hasLength(1));
         expect(o.witness.invocation, ejecutor.invocaciones.single);
       });
@@ -108,7 +122,7 @@ void main() {
       test('cláusula 5 · un código desconocido no se supone benigno', () async {
         final o = await paso(
                 EjecutorDeclarado(_salida(codigo: 111, estandar: limpio)))
-            .run(['lib']) as Executed;
+            .run(await _alcance(raiz.path, ['lib'])) as Executed;
         expect(o.verdict, Verdict.noConcluyente);
         expect(o.witness.omitted.map((x) => x.reason).join(), contains('111'));
       });
@@ -116,7 +130,7 @@ void main() {
       test('cláusula 6 · el testigo no nombra sujetos que no recibió',
           () async {
         final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(['lib']) as Executed;
+            .run(await _alcance(raiz.path, ['lib'])) as Executed;
         expect(o.witness.subjects.every((s) => s == 'lib'), isTrue);
       });
 
@@ -126,7 +140,7 @@ void main() {
         // Sin esto, un paso que devolviera no concluyente siempre pasaría
         // todas las cláusulas de arriba, por la vía de no funcionar.
         final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(['lib']) as Executed;
+            .run(await _alcance(raiz.path, ['lib'])) as Executed;
         expect(o.verdict, Verdict.verde);
         expect(o.witness.subjects, isNotEmpty);
       });

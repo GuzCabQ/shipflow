@@ -74,7 +74,11 @@ class Paso implements Verifier {
   factory Paso.ciego(String id) => Paso(id, ciego: true);
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async {
+  Future<VerificationOutcome> run(ScopeObservation alcance) async {
+    // El paso recibe la observación de la corrida; los sujetos sobre los que
+    // invocar son los utilizables, que es exactamente lo que la cascada le
+    // pasaba antes.
+    final subjects = alcance.usable();
     if (lanza != null) throw lanza!;
     if (nota != null) {
       return Aborted(
@@ -121,7 +125,7 @@ class PasoQueCubre implements Verifier {
   PasoQueCubre(this.id, this.cubre, {this.omite = const []});
 
   @override
-  Future<VerificationOutcome> run(List<String> subjects) async => Executed(
+  Future<VerificationOutcome> run(ScopeObservation alcance) async => Executed(
         witness: Witness(
           invocation: 'herramienta ${cubre.join(" ")}',
           subjects: cubre,
@@ -162,10 +166,63 @@ Future<(int, String)> correrConAlcance(
       construir: (_) => Cascada(pasos, observador: obs));
 }
 
-/// Corre `verify` con un observador de progreso que lanza en el primer
-/// desenlace. Es el canal roto: el consumidor recibe el `started` y nunca su
-/// terminal.
-Future<(int, String)> invocarConObservadorRoto() async {
+/// Una salida que se rompe **al escribir el terminal de un paso**.
+///
+/// El `StringSink` es el único punto por donde el terminal llega al
+/// consumidor, así que romperlo acá es la ÚNICA forma de provocar de verdad
+/// «el `started` quedó abierto». Antes esto se simulaba lanzando desde el
+/// callback posterior al terminal, y esa simulación era falsa: el terminal ya
+/// se había escrito, el consumidor lo tenía, y el arnés lo declaraba no
+/// entregado igual. La prueba pasaba y consolidaba la contradicción.
+class SalidaQueFallaEnElTerminal implements StringSink {
+  final StringBuffer entregado = StringBuffer();
+  final String cuandoContenga;
+  var _fallo = false;
+
+  SalidaQueFallaEnElTerminal({required this.cuandoContenga});
+
+  @override
+  void writeln([Object? obj = '']) {
+    final texto = '$obj';
+    if (!_fallo && texto.contains(cuandoContenga)) {
+      _fallo = true;
+      throw StateError('canal roto al escribir el terminal');
+    }
+    entregado.writeln(texto);
+  }
+
+  @override
+  void write(Object? obj) => entregado.write(obj);
+  @override
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      entregado.writeAll(objects, separator);
+  @override
+  void writeCharCode(int charCode) => entregado.writeCharCode(charCode);
+}
+
+/// Corre `verify` con una salida que se rompe justo al escribir el terminal
+/// del paso `A`. Es el canal roto de verdad: el consumidor recibe el
+/// `started` de `A` y nunca su terminal.
+Future<(int, String)> invocarConTerminalRoto() async {
+  final obs = _observadorPara(const ['lib']);
+  final out = SalidaQueFallaEnElTerminal(cuandoContenga: '"stage":"executed"');
+  final c = await ejecutar(
+    const ['verify', 'lib', '--json'],
+    directorio: '.',
+    salida: out,
+    error: StringBuffer(),
+    construirCascada: (_) => Cascada([
+      PasoQueCubre('A', const ['lib']),
+      PasoQueCubre('B', const ['lib'])
+    ], observador: obs),
+  );
+  return (c, out.entregado.toString());
+}
+
+/// Corre `verify` con un fallo **posterior** al terminal: el desenlace se
+/// entregó y la emisión se rompió después. Es error del arnés, pero no un
+/// `started` sin cerrar, y el resultado no puede decir que lo sea.
+Future<(int, String)> invocarConFalloDespuesDelTerminal() async {
   final obs = _observadorPara(const ['lib']);
   final out = StringBuffer();
   var primero = true;
@@ -181,7 +238,7 @@ Future<(int, String)> invocarConObservadorRoto() async {
     alTerminarDeProgreso: (_, __) {
       if (primero) {
         primero = false;
-        throw StateError('canal roto');
+        throw StateError('se rompió DESPUÉS del terminal');
       }
     },
   );

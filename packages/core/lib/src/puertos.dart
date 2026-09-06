@@ -105,25 +105,24 @@ abstract interface class ArtifactPolicy {
 /// 3. **No se pudo mirar y no era mío son distintos.** Lo primero es un sujeto
 ///    no observado con su causa; lo segundo, uno observado y ajeno con su
 ///    motivo. Confundirlos es el falso rojo simétrico del falso verde.
-/// 4. **La intención es que se llame UNA vez por corrida** —dos lecturas del
-///    árbol pueden diferir, y entonces dos pasos verificarían alcances
-///    distintos que el reporte declara iguales— **pero hoy ningún productor
-///    la cumple de punta a punta.** `Cascada.correr` observa una sola vez
-///    para toda la corrida, como dice esta cláusula. Pero `PasoDeCascada.run`
-///    (en el plugin del stack) guarda su PROPIO `ScopeObserver` y vuelve a
-///    llamar a `observe`, una vez POR PASO, además de la lectura que ya hizo
-///    la cascada — doce tareas sin que nadie lo notara, tapado por un
-///    comentario del archivo de la cascada que afirmaba lo contrario (ver
-///    ahí). Falla cerrada, no silencioso: si la segunda lectura de un paso
-///    difiere de la que la cascada ya vetó, el paso aborta en vez de confiar
-///    en una foto distinta —es la discrepancia que `PasoDeCascada.run`
-///    comprueba explícitamente—, así que el reporte incoherente que esta
-///    cláusula existe para prevenir no se cuela. Pero eso es una salvaguarda
-///    alrededor del incumplimiento, no el cumplimiento: para que la cláusula
-///    valga de verdad, `Cascada` tendría que pasarle a cada paso la
-///    observación que ya hizo —en vez de que cada paso reciba su propio
-///    `ScopeObserver` y vuelva a preguntar—, y eso es un cambio de firma que
-///    no se hace en este arreglo.
+/// 4. **Se llama UNA vez por corrida, y la observación viaja.** Dos lecturas
+///    del árbol pueden diferir, y entonces dos pasos verificarían alcances
+///    distintos que el reporte declara iguales.
+///
+///    **Lo hace cumplir la forma de [Verifier.run], no la disciplina de
+///    quien compone**: un paso recibe la [ScopeObservation] ya hecha y no
+///    tiene con qué pedir otra. Antes cada paso guardaba su propio
+///    `ScopeObserver` y volvía a llamar a `observe`, así que una corrida de
+///    dos pasos leía el árbol tres veces. Estuvo instalado doce tareas y no
+///    lo vio nadie, tapado por un comentario que afirmaba lo contrario.
+///
+///    **Y la salvaguarda que lo hacía tolerable no existía.** El paso
+///    comparaba su lectura contra la que la cascada ya había vetado y
+///    abortaba si discrepaban, pero comparaba NOMBRES: mientras el sujeto
+///    siguiera siendo utilizable, un árbol de otro tamaño no divergía. Una
+///    corrida podía reportar diez archivos de alcance con los verificadores
+///    habiendo visto nueve, y salir verde. El comentario decía «falla
+///    cerrada»; el código comparaba otra cosa.
 abstract interface class ScopeObserver {
   Future<ScopeObservation> observe(List<String> requested);
 }
@@ -151,9 +150,15 @@ abstract interface class ScopeObserver {
 /// 4. **Lo que el paso NO pudo cubrir va en `witness.omitted`, con su
 ///    motivo.** Es el corolario 5 de ADR-011 vuelto dato: cada control
 ///    declara si puede detectar una omisión. El que no puede, lo escribe.
+/// 5. **Recibe la observación del alcance; no la pide.** Es la cláusula 4 de
+///    [ScopeObserver] vuelta firma: un verificador que tomara los sujetos y
+///    mirara el árbol por su cuenta agregaría una lectura por paso, y ningún
+///    invariante posterior puede reparar dos fotografías distintas del mismo
+///    alcance. Los sujetos sobre los que invocar salen de
+///    [ScopeObservation.usable].
 abstract interface class Verifier {
   String get id;
-  Future<VerificationOutcome> run(List<String> subjects);
+  Future<VerificationOutcome> run(ScopeObservation alcance);
 }
 
 /// Se lanza cuando un [DiagnosticNormalizer] **no puede interpretar** lo que
