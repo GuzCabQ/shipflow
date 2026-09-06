@@ -37,14 +37,26 @@
 /// - [alcanceNoObservable] tiene un único sujeto, y no se pudo observar. No
 ///   hay ningún ajeno, así que `nadaEjecutado` no puede dispararse —exige al
 ///   menos un ajeno REAL, ver el comentario de `causas` en el archivo de la
-///   cascada—,
-///   y lo simétrico vale para `alcanceNoObservable`.
+///   cascada—, y lo simétrico vale acá: romper la detección de
+///   `alcanceNoObservable` tampoco tiene dónde esconderse.
 ///
 /// Cada uno construye su `Skipped`/`Unobservable` reusando el
 /// `ObservedSubject`/`UnobservedSubject` que la propia observación
 /// clasificó, no sujetos inventados: no repiten la guardia de coherencia que
 /// ya prueba la suite de la cascada, solo llenan el hueco de variantes de
 /// este archivo.
+///
+/// **Ronda 3 encontró un tercer par de guardias que se disparaban juntas,
+/// esta vez ADENTRO del escenario A.** `pasoNoConcluyente` y
+/// `obligacionSinSaldar` se disparaban siempre a la vez: la rejilla de
+/// omisiones de [desenlacesPosiblesA] solo nombraba UN sujeto por vez, así
+/// que con cobertura vacía siempre quedaba el otro sujeto sin saldar —una
+/// obligación real tapando cualquier ruptura de la detección de lo no
+/// concluyente—. Un `grep` global confirmó que ninguna prueba del
+/// repositorio, ni de propiedades ni dirigida, ejercitaba `pasoNoConcluyente`
+/// aislada. La rejilla ahora agrega una omisión que nombra los DOS sujetos:
+/// con cobertura vacía y los dos saldados por omisión, no queda ninguna
+/// obligación abierta y `pasoNoConcluyente` deja de tener quién la tape.
 ///
 /// **Notas de adaptación.** El brief de esta tarea se escribió antes de tres
 /// cosas que este archivo tiene que respetar:
@@ -145,6 +157,16 @@ Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
     const [],
     [Omission(reason: 'residuo general')],
     [Omission(subject: 'b.fuente', reason: 'no lo leí')],
+    // **La que separa `pasoNoConcluyente` de `obligacionSinSaldar`.** Nombra
+    // los DOS sujetos: combinada con cobertura vacía, saldan las dos
+    // obligaciones por omisión y no queda ninguna abierta. Sin este caso, la
+    // rejilla nunca producía un `Executed` no concluyente CON el libro
+    // saldado, así que las dos causas se disparaban siempre juntas y romper
+    // la detección de una quedaba tapado por la otra (ronda 3 de revisión).
+    [
+      Omission(subject: 'a.fuente', reason: 'no lo leí'),
+      Omission(subject: 'b.fuente', reason: 'no lo leí'),
+    ],
   ];
   for (final c in coberturas) {
     for (final d in diagnosticos) {
