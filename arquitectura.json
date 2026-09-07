@@ -426,6 +426,18 @@
         "StepOutcome": {
           "por_que": "Es la base de una jerarquia sellada, sin campo propio: cada variante concreta (Executed, Aborted, Skipped, Unobservable, Broken) trae su propio toJson/fromJson, discriminados por kind. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear-, y dejarlo sin declarar seria la tercera opcion silenciosa que esta misma regla prohibe. DIFERIDO CON MOTIVO: la etiqueta esta mal y se sabe. El encabezado de esta lista dice «clases que NO serializan a proposito» y estas SI serializan, por sus variantes; un review lo llamo imprecision taxonomica y la categoria correcta seria «jerarquia sellada serializable», con despachador valido, discriminador cerrado y round-trip de todas las variantes. No se construye ahora porque el hueco real es chico: las cinco variantes concretas ya estan entre las clases verificadas campo por campo -tienen toJson, viven en core y no estan en esta lista, asi que la regla las clasifico como serializables y pasaron-, y lo unico sin comprobar es que el despachador de la base enrute cada kind. Es trabajo de arnes, no de dominio, y no lo toca ninguna etapa por construir. Se reabre cuando una variante nueva entre a la jerarquia, que es cuando el despachador puede quedarse corto en silencio."
         },
+        "CommitOutcome": {
+          "por_que": "Es el desenlace IN-PROCESS de aplicar un candidato: lo devuelve `ChangeSink` y lo consume quien coordina la corrida, en el mismo proceso. Lo que se persiste no es este tipo sino el ESTADO de la corrida —`committed`, `notApplied`, `localInconsistent`— que `cli` compone junto con la rebanada, la rama y la base; serializar ademas el desenlace crearia dos fuentes del mismo hecho, que es justamente lo que el documento autoritativo de la corrida existe para evitar. Se reabre el dia que el desenlace tenga que cruzar un limite de proceso —un `--retry-publication` que lo lea de disco en vez de recomponerlo— porque ahi la eleccion vuelve a estar abierta y este motivo deja de valer."
+        },
+        "Committed": {
+          "por_que": "Variante de CommitOutcome: mismo motivo. Su unico campo, la revision, viaja en el estado de la corrida que compone cli."
+        },
+        "NotApplied": {
+          "por_que": "Variante de CommitOutcome: mismo motivo. Sus campos —la revision inalcanzable, la base esperada y el HEAD observado— se reportan en el canal local de la corrida, no se serializan como este tipo."
+        },
+        "LocalInconsistent": {
+          "por_que": "Variante de CommitOutcome: mismo motivo. Nombra un estado local a medias —commit hecho, indice sin sincronizar— que cli traduce al estado `localInconsistent` de la corrida."
+        },
         "VerificationOutcome": {
           "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
         }

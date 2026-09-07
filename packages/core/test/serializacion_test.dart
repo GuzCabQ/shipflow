@@ -136,6 +136,14 @@ void main() {
   final rebanada =
       PullRequestSlice(id: 'PR-1', intent: 'por qué existe', files: ['a.txt']);
 
+  final candidato = CandidateIdentity(
+      contentRevision: 'arbol-del-candidato', baseRevision: 'commit-de-base');
+
+  final noMaterializada = RutaNoMaterializada(
+      ruta: 'enlace-que-escapa',
+      modo: '120000',
+      porQue: 'apunta fuera del candidato');
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -148,6 +156,11 @@ void main() {
       ChangeClass.fromJson
     ),
     'Diagnostic': (diagnostico.toJson(), Diagnostic.fromJson),
+    'CandidateIdentity': (candidato.toJson(), CandidateIdentity.fromJson),
+    'RutaNoMaterializada': (
+      noMaterializada.toJson(),
+      RutaNoMaterializada.fromJson
+    ),
     'Package': (
       Package(name: 'p', path: 'packages/p', dependsOn: ['core']).toJson(),
       Package.fromJson

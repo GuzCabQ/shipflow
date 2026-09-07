@@ -273,3 +273,92 @@ class Plan {
         ],
       );
 }
+
+/// Qué contenido exacto se expuso a la cascada, y sobre qué base.
+///
+/// **Es una identidad opaca para el dominio.** En el adapter de git
+/// [contentRevision] es el OID de un `tree` y [baseRevision] el de un commit,
+/// pero `core` no lo sabe ni puede saberlo: un doble puede usar cualquier otra
+/// representación mientras sostenga la única cláusula que importa —dos
+/// preparaciones del mismo contenido dan la misma [contentRevision], y una
+/// distinta da otra—.
+///
+/// **Por qué el contenido es un árbol y no un digest por ruta.** Está medido:
+/// con `text eol=lf`, con un filtro `clean` o con `core.autocrlf`, los bytes
+/// que git guarda **no** son los del archivo de trabajo; con un filtro no
+/// determinista el mismo archivo sin tocar da dos objetos distintos en dos
+/// stagings; un cambio de bit ejecutable **conserva** el objeto del archivo y
+/// cambia el commit; y un borrado no tiene ningún objeto resultante, así que
+/// un digest obligatorio por ruta es un tipo mal formado. Un árbol cubre
+/// contenido, modo, altas, modificaciones y bajas con un solo identificador.
+///
+/// Lo que esto garantiza es **identidad del objeto**, nunca cobertura: que el
+/// contenido expuesto a los controles sea el mismo que se commitea no dice que
+/// ningún control lo haya mirado entero. Eso lo acota cada afirmación, y solo
+/// hasta los sujetos de su propio testigo.
+class CandidateIdentity {
+  /// Qué contenido se expuso a la cascada.
+  final String contentRevision;
+
+  /// Sobre qué base se construyó. Es la condición del commit: si la rama se
+  /// movió, el cambio no se aplica.
+  final String baseRevision;
+
+  CandidateIdentity({
+    required this.contentRevision,
+    required this.baseRevision,
+  }) {
+    if (contentRevision.trim().isEmpty || baseRevision.trim().isEmpty) {
+      throw ArgumentError(
+          'Una identidad de candidato en blanco no identifica nada.');
+    }
+  }
+
+  Map<String, Object?> toJson() =>
+      {'contentRevision': contentRevision, 'baseRevision': baseRevision};
+
+  factory CandidateIdentity.fromJson(Map<String, Object?> json) =>
+      CandidateIdentity(
+        contentRevision: json['contentRevision']! as String,
+        baseRevision: json['baseRevision']! as String,
+      );
+}
+
+/// Una ruta que el candidato **contiene y no materializó**, con su motivo.
+///
+/// **No se recorta en silencio.** Las dos formas que hoy la producen —un
+/// enlace simbólico que apunta fuera del candidato, y un submódulo— no se
+/// pueden reproducir sin romper una promesa: el enlace dejaría que una
+/// herramienta leyera el repositorio real u otro lugar que ningún testigo
+/// cubre, y el submódulo no es contenido de este árbol. Quitarlas de la lista
+/// convertiría una fuga o un hueco en un dato con aspecto correcto.
+class RutaNoMaterializada {
+  final String ruta;
+
+  /// El modo con que el árbol la representa: `120000` un enlace, `160000` un
+  /// submódulo.
+  final String modo;
+
+  final String porQue;
+
+  RutaNoMaterializada({
+    required this.ruta,
+    required this.modo,
+    required this.porQue,
+  }) {
+    if (porQue.trim().isEmpty) {
+      throw ArgumentError.value(
+          porQue, 'porQue', 'Una ruta declarada sin motivo no declara nada.');
+    }
+  }
+
+  Map<String, Object?> toJson() =>
+      {'ruta': ruta, 'modo': modo, 'porQue': porQue};
+
+  factory RutaNoMaterializada.fromJson(Map<String, Object?> json) =>
+      RutaNoMaterializada(
+        ruta: json['ruta']! as String,
+        modo: json['modo']! as String,
+        porQue: json['porQue']! as String,
+      );
+}

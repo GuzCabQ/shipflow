@@ -9,9 +9,9 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, cuarta rebanada. **Hay un comando.**
+## Estado: fase 2, quinta rebanada. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** 6 de los 25
+`core` existe: **las entidades y los puertos, como tipos.** 7 de los 26
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
 de verdad, con toolchain de verdad.
 
@@ -28,7 +28,9 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
 
-**No existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
+**El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
+commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
+**no existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
 control.
@@ -971,6 +973,137 @@ y su caso ciego. **El arnés aplica 105 sabotajes.**
 
 ---
 
+## El candidato: los bytes que se verifican son los que se commitean
+
+`apply` tenía una ventana abierta que ninguna prueba veía. Entre que la cascada
+mira los archivos y `git add` los stagea, el contenido puede cambiar —el
+usuario, el IDE, un watcher, un generador, otro proceso— y `apply` commitea lo
+que exista **en ese momento**. No hace falta concurrencia exótica: la propia
+operación ya se lo hizo a sí misma una vez, con un gancho que reescribía el
+archivo adentro del commit.
+
+`ChangeSink` gana un segundo verbo. `prepareCandidate` **fija** el contenido, y
+`commit()` se lleva exactamente eso:
+
+```
+árbol EXPUESTO a los controles  =  árbol del candidato  =  árbol commiteado
+```
+
+**Igualdad de objeto, nunca cobertura.** Que el contenido verificado sea el
+commiteado no dice que ningún control lo haya mirado entero — está medido que
+`dart analyze` no informa qué archivos leyó. La cobertura la acota cada testigo,
+y solo hasta sus sujetos.
+
+### Lo que la medición descartó antes de escribir una línea
+
+El diseño afirmaba «los mismos bytes del archivo de trabajo». Una sonda
+ejecutable lo falsificó, y con él tres invariantes más:
+
+| Hecho medido | Qué invalidó |
+|---|---|
+| Con `text eol=lf`, un filtro `clean` o `core.autocrlf`, **el objeto difiere de los bytes del archivo** | «los mismos bytes del archivo de trabajo» |
+| Con un filtro no determinista, el mismo archivo sin tocar da objetos distintos en dos stagings | un digest capturado antes de la cascada sería incomparable después |
+| Un cambio de bit ejecutable **conserva** el objeto del archivo y cambia el commit | el objeto solo no identifica lo que se commitea |
+| Un borrado no tiene ningún objeto resultante | un `digest` obligatorio por ruta es un tipo mal formado |
+| `check-attr` da `unspecified` en las tres claves con `core.autocrlf` activo | **no hay preflight barato**: hay que materializar siempre |
+
+Por eso la identidad es **un árbol**: cubre contenido, modo, altas,
+modificaciones y bajas con un solo identificador, y no tiene el problema del
+borrado sin digest.
+
+### Se materializa por plumbing, nunca con `checkout`
+
+`checkout-index` aplica la conversión **inversa** —`smudge`, normalización de
+fin de línea, `working-tree-encoding`— y rompe la igualdad. Medido, en los dos
+casos:
+
+| Archivo | objeto | tras `checkout-index` | |
+|---|---|---|---|
+| con filtro `smudge` | `5186921034` | `12dc3238e9` | **distinto** |
+| con `text eol=crlf` | `8a8f4b9135` | `8feab959bc` | **distinto** |
+
+La materialización enumera el árbol y vuelca cada objeto sin pasar por ninguna
+conversión. Los registros se parsean **por bytes delimitados por `NUL`**: un
+nombre con salto de línea partiría un registro en dos con cualquier lectura por
+líneas.
+
+### Lo que NO se materializa queda declarado, no recortado
+
+| Modo | Qué pasa |
+|---|---|
+| `100644` · `100755` | se vuelca; el bit ejecutable sale del árbol, no del objeto |
+| `120000` interno | se crea el enlace |
+| `120000` absoluto o con `..` | **no se recrea**, y se declara. Recrearlo dejaría que una herramienta lo siguiera y leyera algo que ningún testigo cubre |
+| `160000` | **no soportado**, y se declara |
+
+Una ruta que no sea UTF-8 tampoco se adivina: se rechaza nombrándola en
+hexadecimal. Decodificarla con reemplazo produciría una ruta *parecida* a la
+real, que es peor que no tenerla.
+
+### Cero efectos hasta que alguien autorice
+
+La preparación entera ocurre en un almacén de objetos **aislado** —no solo en
+un ensayo—. Está medido que preparar contra el almacén real deja objetos
+inalcanzables antes de que nadie confirme nada, y hay tres caminos que prometen
+cero efectos: el ensayo, la ausencia de terminal, y el usuario que dice que no.
+
+`commit()` promueve los objetos **recursivamente y preservando el tipo**. Una
+versión del diseño promovía solo los objetos de archivo; medido, con el
+temporal borrado `commit-tree` falla con *«is not a valid object»*, porque los
+árboles —incluidos los subárboles— también nacen ahí.
+
+### La rama se mueve con un compare-and-swap
+
+```
+NEW=$(git commit-tree $ARBOL -p $base -m "<intent>")
+git update-ref refs/heads/<rama> $NEW $base
+```
+
+**No hay `git add` en el momento del commit.** Ahí muere el TOCTOU. Y
+`update-ref` de tres argumentos falla cerrado: con `HEAD` movido por otro
+proceso, el commit ajeno sobrevive y el nuestro queda inalcanzable —basura que
+`git gc` recoge, no daño—.
+
+El desenlace es un tipo sellado de tres variantes, no una excepción con dos
+casos felices: `Committed`, `NotApplied` y `LocalInconsistent`. Que la rama no
+se haya movido **no es un fallo de la herramienta**, y modelarlo como excepción
+deja que quien llama se olvide de atraparlo y reporte éxito.
+
+### Cinco sabotajes, y uno que no se puso rojo
+
+Cada premisa medida tiene su prueba permanente, y cada prueba se vio en rojo:
+
+| Sabotaje | Qué se puso rojo |
+|---|---|
+| Recomputar el árbol al commitear | 13 pruebas, incluida la del TOCTOU |
+| Materializar con `checkout-index` | 4 pruebas, entre ellas la igualdad con `smudge` y con `eol=crlf` |
+| Promover solo los objetos de archivo | 14 pruebas: `commit-tree` no encuentra el árbol |
+| `update-ref` sin el valor viejo | **una sola**: la del `HEAD` movido |
+| Preparar contra el almacén real | **una sola**: la de cero objetos |
+
+El sexto no está en la tabla porque **falló como sabotaje**: reintroducir un
+`git add` justo antes de commitear no puso nada en rojo. No es un hueco de las
+pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
+`commit-tree` recibe. La única forma de reabrir la ventana es recomputar el
+árbol, y ese es el sabotaje que sí quedó.
+
+### Lo que esta rebanada NO hace
+
+- **No existe `ship`.** El candidato es un puerto; no hay comando que lo use,
+  ni preview, ni confirmación, ni compuerta por estado, ni PR.
+- **El detector de secretos no corre sobre el candidato.** Sigue en `apply`,
+  sobre el diff del índice aislado. Llevarlo al par de revisiones necesita que
+  `core` tenga un tipo de hallazgo que hoy no tiene, y se decide con la
+  rebanada que lo consuma, no antes.
+- **Los assets de ejecución no se preparan.** El candidato materializa el árbol
+  y nada más: sin `pubspec.lock` resuelto ni `.dart_tool`, correr la cascada
+  ahí adentro todavía no está construido.
+- **El entorno de los subprocesos no está saneado.** `git` hereda el del padre.
+- **`ChangeSink` sigue con una sola implementación y ningún fake**, por el
+  mismo motivo que ya estaba declarado: no hay etapa que lo consuma.
+
+---
+
 ## El falso rojo simétrico
 
 El arnés entero está construido contra un error de dirección: **un verde que
@@ -1801,7 +1934,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 25 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **19 de los 26 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |

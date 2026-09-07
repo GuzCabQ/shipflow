@@ -385,3 +385,56 @@ class Broken extends StepOutcome {
     );
   }
 }
+
+/// El desenlace de aplicar un candidato: **tres variantes cerradas**, porque
+/// la transición tiene exactamente tres finales y ninguno es un caso de error
+/// genérico.
+///
+/// **Por qué no es una excepción con dos casos felices.** Que la rama se haya
+/// movido no es un fallo de la herramienta: es la respuesta correcta de un
+/// compare-and-swap, y el trabajo ajeno que lo provocó sobrevive intacto.
+/// Modelarlo como excepción deja que quien llama se olvide de atraparlo y
+/// reporte éxito. Con un tipo sellado el `switch` no compila si falta un caso.
+///
+/// **[LocalInconsistent] es un final, no una advertencia.** El commit existe y
+/// no se deshace; lo que no quedó es el índice del usuario al día. Devolver
+/// [Committed] ahí sería afirmar un estado que no se comprobó, y lanzar
+/// perdería la revisión que sí se creó.
+sealed class CommitOutcome {
+  const CommitOutcome();
+}
+
+/// El candidato quedó en la rama, y el índice del usuario al día.
+final class Committed extends CommitOutcome {
+  final String revision;
+  const Committed(this.revision);
+}
+
+/// El compare-and-swap fue rechazado: **la rama no se movió**.
+///
+/// El objeto commit puede existir y quedar inalcanzable; eso no es daño, es
+/// basura que `git gc` recoge. Lo que importa es que [headObservado] no es
+/// [baseEsperada], así que commitear encima habría enterrado trabajo ajeno.
+final class NotApplied extends CommitOutcome {
+  /// La revisión que se creó y **no** se aplicó. Inalcanzable desde toda rama.
+  final String revision;
+  final String baseEsperada;
+  final String headObservado;
+
+  const NotApplied({
+    required this.revision,
+    required this.baseEsperada,
+    required this.headObservado,
+  });
+}
+
+/// La rama avanzó y el índice del usuario **no** quedó al día.
+///
+/// El cambio está commiteado —[revision] es real y alcanzable— pero el estado
+/// local quedó a medias y `git status` va a mentir hasta que alguien lo
+/// resuelva. Se nombra entero en vez de elegir una de las dos mitades.
+final class LocalInconsistent extends CommitOutcome {
+  final String revision;
+  final String detalle;
+  const LocalInconsistent({required this.revision, required this.detalle});
+}
