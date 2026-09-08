@@ -324,41 +324,57 @@ class CandidateIdentity {
       );
 }
 
+/// Por qué una ruta del candidato no se pudo materializar.
+///
+/// **Es vocabulario del dominio, no del sistema de versiones.** Antes esto era
+/// el modo del árbol —`120000`, `160000`— y contradecía a [CandidateIdentity],
+/// que declara opaca la representación del VCS. Un motivo cerrado dice lo que
+/// el llamador necesita decidir sin obligarlo a saber cómo lo codifica `git`.
+enum MotivoDeNoMaterializacion {
+  /// Un enlace que no se puede reproducir dentro del candidato. Recrearlo
+  /// dejaría que una herramienta lo siguiera y leyera algo que ningún testigo
+  /// cubre.
+  enlaceQueNoQuedaAdentro,
+
+  /// Una referencia a otro repositorio. No es contenido de este árbol.
+  referenciaAOtroRepositorio,
+}
+
 /// Una ruta que el candidato **contiene y no materializó**, con su motivo.
 ///
-/// **No se recorta en silencio.** Las dos formas que hoy la producen —un
-/// enlace simbólico que apunta fuera del candidato, y un submódulo— no se
-/// pueden reproducir sin romper una promesa: el enlace dejaría que una
-/// herramienta leyera el repositorio real u otro lugar que ningún testigo
-/// cubre, y el submódulo no es contenido de este árbol. Quitarlas de la lista
-/// convertiría una fuga o un hueco en un dato con aspecto correcto.
+/// **No se recorta en silencio.** Quitarla de la lista convertiría una fuga o
+/// un hueco en un dato con aspecto correcto.
 class RutaNoMaterializada {
   final String ruta;
+  final MotivoDeNoMaterializacion motivo;
 
-  /// El modo con que el árbol la representa: `120000` un enlace, `160000` un
-  /// submódulo.
-  final String modo;
-
-  final String porQue;
+  /// Qué se encontró, en concreto. Nunca en blanco: el motivo dice la
+  /// categoría, y esto dice el caso.
+  final String detalle;
 
   RutaNoMaterializada({
     required this.ruta,
-    required this.modo,
-    required this.porQue,
+    required this.motivo,
+    required this.detalle,
   }) {
-    if (porQue.trim().isEmpty) {
+    if (ruta.trim().isEmpty) {
       throw ArgumentError.value(
-          porQue, 'porQue', 'Una ruta declarada sin motivo no declara nada.');
+          ruta, 'ruta', 'Una ruta en blanco no nombra nada.');
+    }
+    if (detalle.trim().isEmpty) {
+      throw ArgumentError.value(detalle, 'detalle',
+          'Una ruta declarada sin detalle no declara nada.');
     }
   }
 
   Map<String, Object?> toJson() =>
-      {'ruta': ruta, 'modo': modo, 'porQue': porQue};
+      {'ruta': ruta, 'motivo': motivo.name, 'detalle': detalle};
 
   factory RutaNoMaterializada.fromJson(Map<String, Object?> json) =>
       RutaNoMaterializada(
         ruta: json['ruta']! as String,
-        modo: json['modo']! as String,
-        porQue: json['porQue']! as String,
+        motivo:
+            MotivoDeNoMaterializacion.values.byName(json['motivo']! as String),
+        detalle: json['detalle']! as String,
       );
 }

@@ -72,6 +72,16 @@ void main() {
           {String intent = 'porque sí'}) =>
       PullRequestSlice(id: 'r1', intent: intent, files: files);
 
+  /// Crear la revisión y aplicarla, que es lo que hace el coordinador.
+  ///
+  /// **Son dos llamadas y no una, a propósito.** En medio va la persistencia
+  /// de `prepared` con la revisión adentro; el puerto las separa justamente
+  /// para que ahí quepa. Acá no se persiste nada, pero el orden se respeta.
+  Future<CommitOutcome> aplicar(PreparedCandidate c) async {
+    await c.createRevision();
+    return c.applyRevision();
+  }
+
   /// Prepara y **siempre** libera, incluso si la prueba falla.
   Future<T> conCandidato<T>(PullRequestSlice slice,
       Future<T> Function(PreparedCandidate) usar) async {
@@ -131,7 +141,7 @@ void main() {
     test('el contenido preparado es el árbol que se commitea', () async {
       escribir('a.txt', 'modificado\n');
       final revision = await conCandidato(rebanada(['a.txt']), (c) async {
-        final d = await c.commit();
+        final d = await aplicar(c);
         expect(d, isA<Committed>());
         expect((d as Committed).revision, isNotEmpty);
         expect(git(['rev-parse', '${d.revision}^{tree}']),
@@ -160,7 +170,7 @@ void main() {
         // candidato está preparado, su árbol vive en un almacén que el `git`
         // del usuario no ve: preguntarle desde afuera falla, que es justo la
         // propiedad de aislamiento que otra prueba de este archivo fija.
-        await c.commit();
+        await aplicar(c);
         return null;
       });
       expect(git(['rev-parse', 'HEAD:ejec.sh']), objetoAntes,
@@ -174,7 +184,7 @@ void main() {
       File('${raiz.path}/a.txt').deleteSync();
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(c.changedPaths, ['a.txt']);
-        final d = await c.commit();
+        final d = await aplicar(c);
         expect(d, isA<Committed>());
         expect(
             Process.runSync('git', ['cat-file', '-e', 'HEAD:a.txt'],
@@ -213,7 +223,7 @@ void main() {
         // Se aplica primero para que los objetos existan en el almacén real y
         // se puedan leer con el `git` del usuario; el workspace materializado
         // sigue en pie hasta el `dispose`.
-        expect(await c.commit(), isA<Committed>());
+        expect(await aplicar(c), isA<Committed>());
         for (final nombre in ['conmarca.txt', 'crlf.txt']) {
           final r = Process.runSync('git', ['cat-file', 'blob', 'HEAD:$nombre'],
               workingDirectory: raiz.path, stdoutEncoding: null);
@@ -239,7 +249,7 @@ void main() {
       escribir('conmarca.txt', 'otro SUCIO\n');
       await conCandidato(rebanada(['conmarca.txt']), (c) async {
         final esperado = c.identity.contentRevision;
-        await c.commit();
+        await aplicar(c);
         expect(git(['rev-parse', 'HEAD^{tree}']), esperado);
         expect(git(['cat-file', 'blob', 'HEAD:conmarca.txt']), 'otro LIMPIO',
             reason: 'el filtro corrió una sola vez, en la preparación');
@@ -256,7 +266,7 @@ void main() {
       escribir('a.txt', 'lo que se verificó\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         escribir('a.txt', 'lo que alguien escribió después\n');
-        final d = await c.commit() as Committed;
+        final d = await aplicar(c) as Committed;
         expect(git(['cat-file', 'blob', '${d.revision}:a.txt']),
             'lo que se verificó');
         return null;
@@ -275,7 +285,7 @@ void main() {
       escribir('ajeno.txt', 'no declarado\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(c.changedPaths, ['a.txt']);
-        await c.commit();
+        await aplicar(c);
         return null;
       });
       expect(
@@ -293,7 +303,7 @@ void main() {
       escribir('nuevo.txt', 'alta\n');
       await conCandidato(rebanada(['nuevo.txt']), (c) async {
         expect(c.changedPaths, ['nuevo.txt']);
-        await c.commit();
+        await aplicar(c);
         return null;
       });
       expect(git(['cat-file', 'blob', 'HEAD:nuevo.txt']), 'alta');
@@ -352,7 +362,34 @@ void main() {
         expect(
             c.noMaterializadas.map((n) => n.ruta).toSet(), {'afuera', 'escapa'},
             reason: 'una sola conducta: no se recrea, y no se calla');
-        expect(c.noMaterializadas.every((n) => n.modo == '120000'), isTrue);
+        expect(
+            c.noMaterializadas.every((n) =>
+                n.motivo == MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro),
+            isTrue);
+        return null;
+      });
+    });
+
+    test('un enlace cuyo DESTINO no es UTF-8 no se recrea', () async {
+      // El destino se decodificaba con reemplazo, así que un enlace con bytes
+      // inválidos se creaba apuntando a otro lado —con caracteres de
+      // reemplazo— y el candidato parecía materializado. Las rutas ya se
+      // decodificaban estricto; el destino no, y son el mismo problema.
+      final crudo = File('${raiz.path}/destino-crudo');
+      crudo.writeAsBytesSync([0xff, 0xfe, 0x2f, 0x61]);
+      final blob = git(['hash-object', '-w', crudo.path]);
+      crudo.deleteSync();
+      git(['update-index', '--add', '--cacheinfo', '120000,$blob,enlace-raro']);
+      git(['commit', '-m', 'enlace raro']);
+      escribir('a.txt', 'x\n');
+
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(
+            FileSystemEntity.typeSync('${c.root}/enlace-raro',
+                followLinks: false),
+            FileSystemEntityType.notFound,
+            reason: 'no se crea un enlace que no es el que el árbol dice');
+        expect(c.noMaterializadas.map((n) => n.ruta), contains('enlace-raro'));
         return null;
       });
     });
@@ -367,7 +404,8 @@ void main() {
       escribir('a.txt', 'x\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(c.noMaterializadas.map((n) => n.ruta).toList(), ['submod']);
-        expect(c.noMaterializadas.single.modo, '160000');
+        expect(c.noMaterializadas.single.motivo,
+            MotivoDeNoMaterializacion.referenciaAOtroRepositorio);
         expect(Directory('${c.root}/submod').existsSync(), isFalse);
         return null;
       });
@@ -395,9 +433,11 @@ void main() {
       escribir('a.txt', 'x\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(git(['ls-files', '-s', 'ejec.sh']), startsWith('100755'));
-        final modo = Process.runSync('stat', ['-f', '%Lp', '${c.root}/ejec.sh'])
-            .stdout as String;
-        expect(modo.trim(), '755');
+        // **Sin `stat`.** `stat -f %Lp` es sintaxis BSD: pasaba en esta
+        // máquina y habría fallado en el runner de CI, que es Ubuntu. El modo
+        // lo da la biblioteca estándar, sin depender de qué `stat` haya.
+        expect(File('${c.root}/ejec.sh').statSync().mode & 0x1FF, 0x1ED,
+            reason: '0o755');
         return null;
       });
     });
@@ -428,7 +468,7 @@ void main() {
       escribir('sub/hondo.txt', 'anidado v2\n');
       await conCandidato(rebanada(['sub/hondo.txt']), (c) async {
         final esperado = c.identity.contentRevision;
-        final d = await c.commit();
+        final d = await aplicar(c);
         expect(d, isA<Committed>());
         expect(git(['rev-parse', 'HEAD^{tree}']), esperado);
         expect(git(['cat-file', 'blob', 'HEAD:sub/hondo.txt']), 'anidado v2');
@@ -441,7 +481,7 @@ void main() {
       escribir('sub/hondo.txt', 'anidado v2\n');
       final c = await repo.prepareCandidate(rebanada(['sub/hondo.txt']));
       final contenido = c.identity.contentRevision;
-      await c.commit();
+      await aplicar(c);
       await c.dispose();
       // Sin `GIT_ALTERNATE_OBJECT_DIRECTORIES`, y con el temporal borrado.
       expect(git(['cat-file', '-t', contenido]), 'tree');
@@ -457,9 +497,11 @@ void main() {
         git(['commit', '-m', 'ajeno']);
         final movido = git(['rev-parse', 'HEAD']);
 
-        final d = await c.commit();
+        final d = await aplicar(c);
         expect(d, isA<NotApplied>());
         final na = d as NotApplied;
+        expect(na.causa, CausaDeNoAplicacion.baseMovida);
+        expect(na.ramaObservada, isNull);
         expect(na.baseEsperada, c.identity.baseRevision);
         expect(na.headObservado, movido);
         expect(git(['rev-parse', 'HEAD']), movido,
@@ -477,8 +519,16 @@ void main() {
       await conCandidato(rebanada(['a.txt']), (c) async {
         final antes = git(['rev-parse', 'refs/heads/main']);
         git(['switch', '--create', 'otra']);
-        final d = await c.commit();
+        final d = await aplicar(c);
         expect(d, isA<NotApplied>());
+        final na = d as NotApplied;
+        expect(na.causa, CausaDeNoAplicacion.ramaCambiada);
+        expect(na.ramaObservada, 'otra');
+        // **La revisión existe igual.** Se crea antes de mirar la rama, así
+        // que este desenlace nunca sale con una revisión en blanco — que es
+        // exactamente lo que pasaba antes.
+        expect(na.revision, isNotEmpty);
+        expect(git(['cat-file', '-t', na.revision]), 'commit');
         expect(git(['rev-parse', 'refs/heads/main']), antes,
             reason: 'no se mueve una rama que no está puesta');
         return null;
@@ -490,7 +540,7 @@ void main() {
       // `commit-tree` no toca el índice: no es `git commit`.
       escribir('a.txt', 'modificado\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
-        await c.commit();
+        await aplicar(c);
         return null;
       });
       expect(git(['status', '--porcelain', '--', 'a.txt']), isEmpty);
@@ -535,8 +585,174 @@ void main() {
       final c = await repo.prepareCandidate(rebanada(['a.txt']));
       final antes = git(['rev-parse', 'HEAD']);
       await c.dispose();
-      await expectLater(c.commit(), throwsA(isA<StateError>()));
+      await expectLater(c.createRevision(), throwsA(isA<StateError>()));
+      await expectLater(c.applyRevision(), throwsA(isA<StateError>()));
       expect(git(['rev-parse', 'HEAD']), antes);
+    });
+  });
+
+  group('el secreto corta el commit por LOS DOS caminos', () {
+    // **El hallazgo que este archivo no tenía.** `apply` bloqueaba secretos
+    // porque el escaneo está adentro; el candidato los dejaba pasar porque lo
+    // dejé para el llamador. Un puerto con dos caminos de escritura y dos
+    // garantías distintas es peor que un puerto sin el camino nuevo.
+    const clave = 'const k = "AKIAIOSFODNN7EXAMPLE";\n';
+
+    test('createRevision se niega, y no escribe NADA', () async {
+      escribir('a.txt', clave);
+      final antes = objetosDelRepo();
+      final cabeza = git(['rev-parse', 'HEAD']);
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        await expectLater(
+            c.createRevision(), throwsA(isA<SecretoEnLaRebanada>()));
+        return null;
+      });
+      expect(objetosDelRepo(), antes,
+          reason: 'se niega ANTES de promover: cero objetos nuevos');
+      expect(git(['rev-parse', 'HEAD']), cabeza);
+    });
+
+    test('el hallazgo viaja como dato, no como mensaje', () async {
+      // Quien tenga que ordenar una precedencia entre causas no puede estar
+      // obligado a parsear una frase.
+      escribir('a.txt', clave);
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        try {
+          await c.createRevision();
+          fail('tenía que negarse');
+        } on SecretoEnLaRebanada catch (e) {
+          expect(e.hallazgos, isNotEmpty);
+          expect(e.hallazgos.first.archivo, 'a.txt');
+          expect(e.hallazgos.first.linea, greaterThan(0));
+        }
+        return null;
+      });
+    });
+
+    test('apply da la MISMA causa tipada', () async {
+      escribir('b.txt', clave);
+      git(['add', 'b.txt']);
+      git(['commit', '-m', 'x']);
+      escribir('b.txt', clave.replaceFirst('EXAMPLE', 'EXAMPLF'));
+      expect(() => repo.apply(rebanada(['b.txt'])),
+          throwsA(isA<SecretoEnLaRebanada>()));
+    });
+  });
+
+  group('la revisión se puede persistir antes de mover la rama', () {
+    test('createRevision no mueve NINGUNA referencia', () async {
+      // La ventana que la separación cierra: entre crear el objeto y mover la
+      // rama hay que poder anotar la revisión. Si fueran una sola operación,
+      // un proceso que muriera en el medio dejaría una revisión que no quedó
+      // en ningún lado.
+      escribir('a.txt', 'modificado\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        final antes = git(['rev-parse', 'HEAD']);
+        final revision = await c.createRevision();
+        expect(git(['cat-file', '-t', revision]), 'commit',
+            reason: 'el objeto existe y se puede persistir');
+        expect(git(['rev-parse', 'HEAD']), antes,
+            reason: 'y la rama no se movió');
+        expect(await c.applyRevision(), isA<Committed>());
+        expect(git(['rev-parse', 'HEAD']), revision);
+        return null;
+      });
+    });
+
+    test('createRevision es idempotente: dos llamadas, una revisión', () async {
+      // Crearla dos veces daría dos objetos distintos por la fecha del
+      // committer, y el segundo no sería el que alguien persistió.
+      escribir('a.txt', 'modificado\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.createRevision(), await c.createRevision());
+        return null;
+      });
+    });
+
+    test('aplicar sin haber creado la revisión no escribe', () async {
+      escribir('a.txt', 'modificado\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        final antes = git(['rev-parse', 'HEAD']);
+        await expectLater(c.applyRevision(), throwsA(isA<StateError>()));
+        expect(git(['rev-parse', 'HEAD']), antes);
+        return null;
+      });
+    });
+  });
+
+  group('el índice que no se pudo sincronizar', () {
+    test('da LocalInconsistent, con el commit hecho y su revisión', () async {
+      // **No había ninguna prueba de este desenlace.** El commit existe y no
+      // se deshace; lo que quedó mal es el índice. Se fuerza con un `git` al
+      // que se le sacó una sola capacidad, que es como este repositorio prueba
+      // que un guardia sabe fallar.
+      final falso = '${raiz.path}/git-sin-reset';
+      File(falso).writeAsStringSync('#!/bin/sh\n'
+          'for a in "\$@"; do [ "\$a" = reset ] && exit 9; done\n'
+          'exec git "\$@"\n');
+      Process.runSync('chmod', ['700', falso]);
+
+      escribir('a.txt', 'modificado\n');
+      final r = RepositorioGit(
+          directorio: raiz.path,
+          politica: const _TodoEsFuente(),
+          programa: falso);
+      final c = await r.prepareCandidate(rebanada(['a.txt']));
+      try {
+        await c.createRevision();
+        final d = await c.applyRevision();
+        expect(d, isA<LocalInconsistent>());
+        final li = d as LocalInconsistent;
+        expect(li.revision, isNotEmpty);
+        expect(li.detalle, isNotEmpty);
+        expect(git(['rev-parse', 'HEAD']), li.revision,
+            reason: 'la rama SÍ avanzó: el commit no se deshace');
+      } finally {
+        await c.dispose();
+      }
+    });
+  });
+
+  group('el formato del identificador no se supone', () {
+    test('un repositorio sha256 se prepara y se aplica igual', () async {
+      // Fijar la longitud en 40 dejaba fuera todo repositorio creado con
+      // `--object-format=sha256`: el candidato se preparaba, no se promovía
+      // nada, y la identidad fallaba con un mensaje que no nombraba la causa.
+      final s256 = Directory.systemTemp.createTempSync('s256_');
+      addTearDown(() => s256.deleteSync(recursive: true));
+      void g(List<String> a) {
+        final r = Process.runSync('git', a, workingDirectory: s256.path);
+        if (r.exitCode != 0) {
+          throw StateError('git ${a.join(" ")}: ${r.stderr}');
+        }
+      }
+
+      g(['init', '--object-format=sha256', '--initial-branch=main', '.']);
+      g(['config', 'user.email', 'p@p']);
+      g(['config', 'user.name', 'p']);
+      File('${s256.path}/a.txt').writeAsStringSync('uno\n');
+      Directory('${s256.path}/sub').createSync();
+      File('${s256.path}/sub/hondo.txt').writeAsStringSync('anidado\n');
+      g(['add', '-A']);
+      g(['commit', '-m', 'base']);
+
+      final r = RepositorioGit(
+          directorio: s256.path, politica: const _TodoEsFuente());
+      File('${s256.path}/sub/hondo.txt').writeAsStringSync('anidado v2\n');
+      final c = await r.prepareCandidate(rebanada(['sub/hondo.txt']));
+      try {
+        expect(c.identity.contentRevision.length, 64,
+            reason: 'la premisa: acá los identificadores son de 64');
+        await c.createRevision();
+        expect(await c.applyRevision(), isA<Committed>());
+        expect(
+            (Process.runSync('git', ['cat-file', 'blob', 'HEAD:sub/hondo.txt'],
+                    workingDirectory: s256.path)
+                .stdout as String),
+            'anidado v2\n');
+      } finally {
+        await c.dispose();
+      }
     });
   });
 
@@ -559,7 +775,7 @@ void main() {
       try {
         expect(
             File('${c.root}/a.txt').readAsStringSync(), 'desde el worktree\n');
-        expect(await c.commit(), isA<Committed>());
+        expect(await aplicar(c), isA<Committed>());
       } finally {
         await c.dispose();
       }

@@ -24,6 +24,23 @@ class IndiceDesincronizado implements Exception {
   String toString() => 'IndiceDesincronizado($revision): $salida';
 }
 
+/// La rebanada trae un secreto, así que no se commitea.
+///
+/// **Es una [RebanadaNoAplicable]**, para que quien ya la atrapaba la siga
+/// atrapando; y lleva los hallazgos como dato, para que quien tenga que
+/// ordenar una precedencia entre causas no tenga que leer un mensaje.
+class SecretoEnLaRebanada extends RebanadaNoAplicable {
+  final List<Secreto> hallazgos;
+
+  SecretoEnLaRebanada(this.hallazgos)
+      : super(_razon(hallazgos), hallazgos.first.queHacer);
+
+  static String _razon(List<Secreto> h) => h.length == 1
+      ? 'hay ${h.first.queEs} en ${h.first.archivo}:${h.first.linea}.'
+      : 'hay ${h.length} secretos en ${h.first.archivo}, el primero '
+          '${h.first.queEs} en la línea ${h.first.linea}.';
+}
+
 /// Una entrada de `ls-tree -r -z`, ya partida.
 ///
 /// **Se parsea por bytes delimitados por NUL.** `ls-tree -z` no es consumible
@@ -61,6 +78,11 @@ class _CandidatoGit implements PreparedCandidate {
 
   bool _dispuesto = false;
   bool _promovido = false;
+
+  /// La revisión creada, si `createRevision` ya corrió. **Memoizada**: crearla
+  /// dos veces daría dos objetos distintos por la fecha del committer, y el
+  /// segundo no sería el que alguien persistió.
+  String? _revision;
 
   _CandidatoGit._({
     required RepositorioGit repo,
@@ -236,8 +258,8 @@ class _CandidatoGit implements PreparedCandidate {
       if (entrada.modo == '160000') {
         declaradas.add(RutaNoMaterializada(
             ruta: ruta,
-            modo: entrada.modo,
-            porQue: 'Es un submódulo. Esta rebanada no los materializa, así '
+            motivo: MotivoDeNoMaterializacion.referenciaAOtroRepositorio,
+            detalle: 'Es un submódulo. Esta rebanada no los materializa, así '
                 'que ningún control corrió sobre su contenido.'));
         continue;
       }
@@ -249,21 +271,37 @@ class _CandidatoGit implements PreparedCandidate {
           entorno: _entorno);
 
       if (entrada.modo == '120000') {
-        // El contenido del objeto ES el destino del enlace.
-        final apunta = utf8.decode(bytes, allowMalformed: true);
-        final escapa =
-            apunta.startsWith('/') || apunta.split('/').any((s) => s == '..');
-        if (escapa) {
-          // **Una sola conducta: no se recrea.** Recrearlo dejaría que una
-          // herramienta lo siguiera y leyera el repositorio real u otro lugar
-          // que ningún testigo cubre — y el candidato afirmaría sobre bytes
-          // que nunca se fijaron.
+        // El contenido del objeto ES el destino del enlace. **Se decodifica
+        // estricto, igual que la ruta**: con reemplazo, un destino con bytes
+        // que no son UTF-8 se convertía en otro destino, y se creaba un enlace
+        // que no es el que el árbol representa. Un error de esa clase produce
+        // un candidato que parece materializado y apunta a otro lado.
+        final String apunta;
+        try {
+          apunta = const Utf8Decoder(allowMalformed: false).convert(bytes);
+        } on FormatException {
           declaradas.add(RutaNoMaterializada(
               ruta: ruta,
-              modo: entrada.modo,
-              porQue: 'Es un enlace simbólico que apunta fuera del candidato '
-                  '(«$apunta»). Recrearlo dejaría que un control leyera algo '
-                  'que no se fijó.'));
+              motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
+              detalle: 'El destino del enlace no es UTF-8, así que no se puede '
+                  'nombrar sin transformarlo.'));
+          continue;
+        }
+        // **Una sola conducta: no se recrea.** Y el motivo dice lo que de
+        // verdad se comprobó —que el destino, tal como está escrito, no queda
+        // contenido en el candidato—, no que necesariamente escape: `sub/../a`
+        // se queda adentro y también se rechaza, porque averiguarlo exigiría
+        // reimplementar la resolución de enlaces del sistema.
+        if (apunta.startsWith('/') || apunta.split('/').any((s) => s == '..')) {
+          declaradas.add(RutaNoMaterializada(
+              ruta: ruta,
+              motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
+              detalle: apunta.startsWith('/')
+                  ? 'Es un enlace absoluto («$apunta»): apunta fuera del '
+                      'candidato. Recrearlo dejaría que un control leyera algo '
+                      'que no se fijó.'
+                  : 'El destino («$apunta») contiene `..`, así que tal como '
+                      'está escrito no queda contenido en el candidato.'));
           continue;
         }
         await Link(destino.path).create(apunta);
@@ -290,33 +328,26 @@ class _CandidatoGit implements PreparedCandidate {
   }
 
   @override
-  Future<CommitOutcome> commit() async {
+  Future<String> createRevision() async {
     if (_dispuesto) {
       throw StateError('El candidato ya se liberó: sus objetos no existen.');
     }
+    if (_revision != null) return _revision!;
+
+    // **Antes de escribir un solo objeto.** El puerto promete que una rebanada
+    // con secretos no se commitea, y esa promesa no puede depender de que el
+    // llamador se acuerde de preguntar: `apply` la cumple adentro, y este
+    // camino tiene que cumplirla igual o `ChangeSink` pasa a tener dos
+    // garantías distintas según por dónde se entre.
+    await _exigirSinSecretos();
 
     await _promover();
 
-    // **Antes del compare-and-swap, dónde estamos.** Si el usuario cambió de
-    // rama entre la preparación y ahora, mover la rama preparada dejaría un
-    // commit en una rama que no está puesta y un índice sincronizado contra
-    // otra cosa. No se aplica, y se dice cuál se encontró.
-    final ramaAhora = await _repo.ramaActual;
-    if (ramaAhora != _rama) {
-      return NotApplied(
-        revision: '',
-        baseEsperada: identity.baseRevision,
-        headObservado: ramaAhora.isEmpty
-            ? 'HEAD suelto'
-            : 'la rama «$ramaAhora», no «$_rama»',
-      );
-    }
-
     // **Crear un commit no mueve la rama.** Por eso puede ir antes de la
-    // condición: si el compare-and-swap se rechaza, este objeto queda
+    // condición: si el compare-and-swap se rechaza después, este objeto queda
     // inalcanzable y `git gc` lo recoge. No es daño, y a cambio la revisión ya
-    // existe cuando se persiste el estado.
-    final revision = await _repo._exigir([
+    // existe y se puede persistir antes de tocar ninguna referencia.
+    return _revision = await _repo._exigir([
       'commit-tree',
       identity.contentRevision,
       '-p',
@@ -324,6 +355,34 @@ class _CandidatoGit implements PreparedCandidate {
       '-m',
       _slice.intent,
     ]);
+  }
+
+  @override
+  Future<CommitOutcome> applyRevision() async {
+    if (_dispuesto) {
+      throw StateError('El candidato ya se liberó: sus objetos no existen.');
+    }
+    final revision = _revision;
+    if (revision == null) {
+      throw StateError(
+          'No hay revisión que aplicar: llamá primero a `createRevision`, y '
+          'persistila antes de aplicar. Esa secuencia es lo que permite '
+          'recuperarse de una muerte entre las dos.');
+    }
+
+    // **Dónde estamos ahora.** Si el usuario cambió de rama entre la
+    // preparación y ahora, mover la rama preparada dejaría un commit en una
+    // rama que no está puesta y un índice sincronizado contra otra cosa.
+    final ramaAhora = await _repo.ramaActual;
+    if (ramaAhora != _rama) {
+      return NotApplied(
+        revision: revision,
+        causa: CausaDeNoAplicacion.ramaCambiada,
+        baseEsperada: identity.baseRevision,
+        headObservado: await _repo._exigir(['rev-parse', 'HEAD']),
+        ramaObservada: ramaAhora,
+      );
+    }
 
     // `update-ref` de tres argumentos es un compare-and-swap real: falla
     // cerrado si la referencia no está donde se dice, y el trabajo ajeno
@@ -337,6 +396,7 @@ class _CandidatoGit implements PreparedCandidate {
     if (cas.exitCode != 0) {
       return NotApplied(
         revision: revision,
+        causa: CausaDeNoAplicacion.baseMovida,
         baseEsperada: identity.baseRevision,
         headObservado: await _repo._exigir(['rev-parse', 'HEAD']),
       );
@@ -368,6 +428,31 @@ class _CandidatoGit implements PreparedCandidate {
     return Committed(revision);
   }
 
+  /// **El mismo guardia que [RepositorioGit.apply], sobre el par de revisiones
+  /// del candidato.**
+  ///
+  /// El diff se deriva de `baseRevision` y `contentRevision` —un objeto, no dos
+  /// lecturas del árbol— así que acá no hay ventana entre lo que se inspecciona
+  /// y lo que se commitea. Lo que **no** cubre es el árbol entero: el detector
+  /// revisa las líneas agregadas de un diff, y lo que `git` declara binario
+  /// queda afuera por límite declarado.
+  Future<void> _exigirSinSecretos() async {
+    for (final ruta in _rutas) {
+      final diff = await _repo._exigir([
+        'diff',
+        '--unified=0',
+        '--no-textconv',
+        '--no-ext-diff',
+        identity.baseRevision,
+        identity.contentRevision,
+        '--',
+        ruta,
+      ], entorno: _entorno);
+      final hallazgos = _repo.detector.revisar(diff, archivo: ruta);
+      if (hallazgos.isNotEmpty) throw SecretoEnLaRebanada(hallazgos);
+    }
+  }
+
   /// Copia al repositorio real **todos** los objetos que el candidato creó.
   ///
   /// **Recursiva y preservando el tipo.** Promover solo los objetos de archivo
@@ -397,9 +482,14 @@ class _CandidatoGit implements PreparedCandidate {
         .where((f) => !f.path.contains('/pack/'))) {
       final partes = objeto.uri.pathSegments;
       final sha = '${partes[partes.length - 2]}${partes.last}';
-      if (sha.length != 40 || !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha)) {
-        continue;
-      }
+      // **No se fija la longitud del identificador.** Fijarla en 40 dejaba
+      // fuera todo repositorio creado con `--object-format=sha256`, donde el
+      // identificador tiene 64: el candidato se preparaba bien, no se promovía
+      // nada, y la comprobación de identidad fallaba con un mensaje que no
+      // nombraba la causa. La forma de un objeto suelto es la misma —dos
+      // caracteres de directorio y el resto de nombre— y quien decide si
+      // existe es `cat-file`, no una expresión nuestra.
+      if (!RegExp(r'^[0-9a-f]+$').hasMatch(sha)) continue;
 
       final tipo =
           await _repo._exigir(['cat-file', '-t', sha], entorno: _entorno);

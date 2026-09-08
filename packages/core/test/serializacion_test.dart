@@ -141,8 +141,8 @@ void main() {
 
   final noMaterializada = RutaNoMaterializada(
       ruta: 'enlace-que-escapa',
-      modo: '120000',
-      porQue: 'apunta fuera del candidato');
+      motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
+      detalle: 'el destino es absoluto');
 
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =

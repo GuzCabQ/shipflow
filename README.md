@@ -1052,11 +1052,28 @@ versión del diseño promovía solo los objetos de archivo; medido, con el
 temporal borrado `commit-tree` falla con *«is not a valid object»*, porque los
 árboles —incluidos los subárboles— también nacen ahí.
 
+### El secreto corta el commit por los dos caminos
+
+`apply` bloquea secretos porque el escaneo está adentro. El candidato, en su
+primera versión, no: se dejaba para el llamador y se declaraba como límite. Una
+revisión externa lo reprodujo commiteando una clave AWS, y tenía razón —
+**declarar un hueco en el README no vuelve seguro el puerto**. `ChangeSink`
+quedaba con dos caminos de escritura y dos garantías distintas según por cuál se
+entrara, que es peor que no tener el camino nuevo.
+
+Ahora `createRevision()` escanea el diff del par de revisiones **antes de
+promover un solo objeto**, y los dos caminos lanzan la misma causa tipada, con
+los hallazgos como dato y no como mensaje.
+
+Lo que el escaneo **no** cubre sigue igual y sigue escrito: el detector revisa
+las líneas agregadas de un diff, no el árbol, y lo que `git` declara binario
+queda afuera por límite declarado.
+
 ### La rama se mueve con un compare-and-swap
 
 ```
-NEW=$(git commit-tree $ARBOL -p $base -m "<intent>")
-git update-ref refs/heads/<rama> $NEW $base
+NEW=$(git commit-tree $ARBOL -p $base -m "<intent>")   ← createRevision()
+git update-ref refs/heads/<rama> $NEW $base            ← applyRevision()
 ```
 
 **No hay `git add` en el momento del commit.** Ahí muere el TOCTOU. Y
@@ -1064,10 +1081,24 @@ git update-ref refs/heads/<rama> $NEW $base
 proceso, el commit ajeno sobrevive y el nuestro queda inalcanzable —basura que
 `git gc` recoge, no daño—.
 
+**Son dos métodos y no uno, y la razón es la recuperación.** Entre crear el
+objeto y mover la referencia hay que poder **persistir la revisión**. Con una
+sola operación, un proceso que muriera en el medio dejaba una revisión que no
+quedó anotada en ningún lado, y quien intentara recuperar no tenía identidad que
+consultar. Como crear un commit no mueve nada, hacerlo antes no tiene efecto
+observable — y el coordinador tiene dónde escribir.
+
 El desenlace es un tipo sellado de tres variantes, no una excepción con dos
 casos felices: `Committed`, `NotApplied` y `LocalInconsistent`. Que la rama no
 se haya movido **no es un fallo de la herramienta**, y modelarlo como excepción
 deja que quien llama se olvide de atraparlo y reporte éxito.
+
+Y las tres **validan en el constructor**. `NotApplied` llegó a construirse con
+la revisión en blanco —cuando el usuario cambiaba de rama entre preparar y
+aplicar— y el tipo lo aceptaba sin decir nada: un desenlace que dice «no se
+aplicó esto» sin decir qué. La causa también se partió en dos, `baseMovida` y
+`ramaCambiada`, porque un solo campo que unas veces trae una revisión y otras una
+frase sobre la rama obliga a quien lo lee a adivinar cuál le tocó.
 
 ### Cinco sabotajes, y uno que no se puso rojo
 
@@ -1080,6 +1111,10 @@ Cada premisa medida tiene su prueba permanente, y cada prueba se vio en rojo:
 | Promover solo los objetos de archivo | 14 pruebas: `commit-tree` no encuentra el árbol |
 | `update-ref` sin el valor viejo | **una sola**: la del `HEAD` movido |
 | Preparar contra el almacén real | **una sola**: la de cero objetos |
+| Sacar el escaneo de secretos | las dos del secreto |
+| Volver a fijar el identificador en 40 | **una sola**: la del repositorio `sha256` |
+| Decodificar el destino del enlace con reemplazo | **una sola**: la del enlace no UTF-8 |
+| Ignorar el fallo al sincronizar el índice | **una sola**: la de `LocalInconsistent` |
 
 El sexto no está en la tabla porque **falló como sabotaje**: reintroducir un
 `git add` justo antes de commitear no puso nada en rojo. No es un hueco de las
@@ -1090,15 +1125,17 @@ pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
 ### Lo que esta rebanada NO hace
 
 - **No existe `ship`.** El candidato es un puerto; no hay comando que lo use,
-  ni preview, ni confirmación, ni compuerta por estado, ni PR.
-- **El detector de secretos no corre sobre el candidato.** Sigue en `apply`,
-  sobre el diff del índice aislado. Llevarlo al par de revisiones necesita que
-  `core` tenga un tipo de hallazgo que hoy no tiene, y se decide con la
-  rebanada que lo consuma, no antes.
+  ni preview, ni confirmación, ni compuerta por estado, ni PR. En particular,
+  **nadie persiste la revisión entre `createRevision` y `applyRevision`**: el
+  puerto deja el lugar, y el coordinador que lo va a ocupar todavía no existe.
 - **Los assets de ejecución no se preparan.** El candidato materializa el árbol
   y nada más: sin `pubspec.lock` resuelto ni `.dart_tool`, correr la cascada
   ahí adentro todavía no está construido.
 - **El entorno de los subprocesos no está saneado.** `git` hereda el del padre.
+- **Un destino de enlace con `..` se rechaza aunque se quede adentro.**
+  `sub/../a` no escapa y también se declara: resolverlo exigiría reimplementar
+  la resolución de enlaces del sistema. El motivo registrado lo dice así, y no
+  afirma que el destino escape.
 - **`ChangeSink` sigue con una sola implementación y ningún fake**, por el
   mismo motivo que ya estaba declarado: no hay etapa que lo consuma.
 

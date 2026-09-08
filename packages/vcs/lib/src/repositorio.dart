@@ -601,16 +601,12 @@ class RepositorioGit implements ChangeSink {
         '--',
         ruta,
       ], entorno: entorno);
+      // **La misma causa tipada que el candidato.** Antes acá salía una
+      // `RebanadaNoAplicable` genérica y allá otra: el mismo hecho —hay un
+      // secreto— llegaba al llamador de dos formas distintas según por qué
+      // camino de escritura hubiera entrado.
       final hallazgos = detector.revisar(diff, archivo: ruta);
-      if (hallazgos.isNotEmpty) {
-        final primero = hallazgos.first;
-        throw RebanadaNoAplicable(
-            hallazgos.length == 1
-                ? 'hay ${primero.queEs} en ${primero.archivo}:${primero.linea}.'
-                : 'hay ${hallazgos.length} secretos en ${primero.archivo}, el '
-                    'primero ${primero.queEs} en la línea ${primero.linea}.',
-            primero.queHacer);
-      }
+      if (hallazgos.isNotEmpty) throw SecretoEnLaRebanada(hallazgos);
     }
   }
 
