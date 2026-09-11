@@ -43,14 +43,22 @@ void main() {
     f.writeAsStringSync(contenido);
   }
 
-  /// Cuántos objetos sueltos tiene el almacén **real**.
-  int objetosDelRepo() {
+  /// Qué objetos tiene el almacén **real**, por ruta.
+  ///
+  /// **Un conjunto y no un conteo, y la diferencia la cobró CI.** La prueba se
+  /// llama «cero objetos NUEVOS» y afirmaba igualdad de cantidad: en un runner
+  /// desapareció un objeto suelto —git empaqueta y limpia por su cuenta— y se
+  /// puso roja sin que nada hubiera escrito nada. Contar mide una propiedad
+  /// más fuerte que la que se quiere: lo que importa es que no APAREZCA
+  /// ninguno, no que no desaparezca.
+  Set<String> objetosDelRepo() {
     final d = Directory('${raiz.path}/.git/objects');
     return d
         .listSync(recursive: true)
         .whereType<File>()
-        .where((f) => !f.path.contains('/info/'))
-        .length;
+        .map((f) => f.path)
+        .where((p) => !p.contains('/info/') && !p.contains('/pack/'))
+        .toSet();
   }
 
   setUp(() {
@@ -103,11 +111,11 @@ void main() {
       escribir('a.txt', 'modificado\n');
       final antes = objetosDelRepo();
       await conCandidato(rebanada(['a.txt']), (c) async {
-        expect(objetosDelRepo(), antes,
+        expect(objetosDelRepo().difference(antes), isEmpty,
             reason: 'preparar no puede escribir en el almacén del usuario');
         return null;
       });
-      expect(objetosDelRepo(), antes);
+      expect(objetosDelRepo().difference(antes), isEmpty);
     });
 
     test('dispose borra el workspace materializado', () async {
@@ -607,7 +615,7 @@ void main() {
             c.createRevision(), throwsA(isA<SecretoEnLaRebanada>()));
         return null;
       });
-      expect(objetosDelRepo(), antes,
+      expect(objetosDelRepo().difference(antes), isEmpty,
           reason: 'se niega ANTES de promover: cero objetos nuevos');
       expect(git(['rev-parse', 'HEAD']), cabeza);
     });
