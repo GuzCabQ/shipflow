@@ -385,3 +385,113 @@ class Broken extends StepOutcome {
     );
   }
 }
+
+/// El desenlace de aplicar un candidato: **tres variantes cerradas**, porque
+/// la transición tiene exactamente tres finales y ninguno es un caso de error
+/// genérico.
+///
+/// **Por qué no es una excepción con dos casos felices.** Que la rama se haya
+/// movido no es un fallo de la herramienta: es la respuesta correcta de un
+/// compare-and-swap, y el trabajo ajeno que lo provocó sobrevive intacto.
+/// Modelarlo como excepción deja que quien llama se olvide de atraparlo y
+/// reporte éxito. Con un tipo sellado el `switch` no compila si falta un caso.
+///
+/// **[LocalInconsistent] es un final, no una advertencia.** El commit existe y
+/// no se deshace; lo que no quedó es el índice del usuario al día. Devolver
+/// [Committed] ahí sería afirmar un estado que no se comprobó, y lanzar
+/// perdería la revisión que sí se creó.
+sealed class CommitOutcome {
+  CommitOutcome();
+}
+
+/// El candidato quedó en la rama, y el índice del usuario al día.
+final class Committed extends CommitOutcome {
+  final String revision;
+  Committed(this.revision) {
+    if (revision.trim().isEmpty) {
+      throw ArgumentError.value(revision, 'revision',
+          'Un commit aplicado sin revisión no nombra lo que se aplicó.');
+    }
+  }
+}
+
+/// Por qué no se aplicó. **Son dos hechos distintos y se nombran distinto.**
+///
+/// Antes los dos viajaban en un `headObservado` que unas veces traía una
+/// revisión y otras una frase sobre la rama. Un campo que cambia de tipo de
+/// contenido según el caso obliga a quien lo lee a adivinar cuál tiene.
+enum CausaDeNoAplicacion {
+  /// La base se movió: el compare-and-swap fue rechazado.
+  baseMovida,
+
+  /// La rama puesta ya no es aquella sobre la que se preparó. No se intentó
+  /// mover ninguna referencia.
+  ramaCambiada,
+}
+
+/// No se aplicó: **la rama no se movió**.
+///
+/// El objeto commit existe y queda inalcanzable; eso no es daño, es basura que
+/// `git gc` recoge. [revision] siempre nombra ese objeto — se crea antes de
+/// cualquier intento de mover una referencia, así que no hay ningún camino por
+/// el que este desenlace se produzca sin ella.
+final class NotApplied extends CommitOutcome {
+  /// La revisión que se creó y **no** se aplicó. Inalcanzable desde toda rama.
+  final String revision;
+
+  final CausaDeNoAplicacion causa;
+
+  /// Sobre qué base se preparó el candidato.
+  final String baseEsperada;
+
+  /// Dónde está `HEAD` ahora. **Siempre una revisión**, nunca una descripción.
+  final String headObservado;
+
+  /// Qué rama se encontró puesta, cuando la causa es [CausaDeNoAplicacion
+  /// .ramaCambiada]. Vacía si `HEAD` está suelto; nula si la causa es otra.
+  final String? ramaObservada;
+
+  NotApplied({
+    required this.revision,
+    required this.causa,
+    required this.baseEsperada,
+    required this.headObservado,
+    this.ramaObservada,
+  }) {
+    if (revision.trim().isEmpty) {
+      throw ArgumentError.value(revision, 'revision',
+          'Sin revisión no se puede decir qué fue lo que no se aplicó.');
+    }
+    if (baseEsperada.trim().isEmpty || headObservado.trim().isEmpty) {
+      throw ArgumentError(
+          'La base esperada y el HEAD observado nombran revisiones: ninguna '
+          'puede ir en blanco, porque juntas son la explicación del rechazo.');
+    }
+    if ((causa == CausaDeNoAplicacion.ramaCambiada) !=
+        (ramaObservada != null)) {
+      throw ArgumentError(
+          'La rama observada acompaña a `ramaCambiada`, y solo a ella.');
+    }
+  }
+}
+
+/// La rama avanzó y el índice del usuario **no** quedó al día.
+///
+/// El cambio está commiteado —[revision] es real y alcanzable— pero el estado
+/// local quedó a medias y `git status` va a mentir hasta que alguien lo
+/// resuelva. Se nombra entero en vez de elegir una de las dos mitades.
+final class LocalInconsistent extends CommitOutcome {
+  final String revision;
+  final String detalle;
+
+  LocalInconsistent({required this.revision, required this.detalle}) {
+    if (revision.trim().isEmpty) {
+      throw ArgumentError.value(revision, 'revision',
+          'El commit existe: sin su revisión nadie puede repararlo.');
+    }
+    if (detalle.trim().isEmpty) {
+      throw ArgumentError.value(detalle, 'detalle',
+          'Un estado a medias sin detalle no dice qué hay que reparar.');
+    }
+  }
+}

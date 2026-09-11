@@ -25,6 +25,8 @@ import 'package:core/core.dart';
 
 import 'secretos.dart';
 
+part 'candidato.dart';
+
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///
 /// **Lleva el comando y lo que dijo.** Un fallo de repositorio sin la salida
@@ -99,10 +101,20 @@ class RepositorioGit implements ChangeSink {
   /// ausencia se nota**, igual que [programa].
   final DetectorDeSecretos detector;
 
+  /// Con qué se pone el bit ejecutable al materializar el candidato.
+  ///
+  /// **La biblioteca estándar no tiene manera de cambiar permisos**, así que
+  /// hace falta un
+  /// segundo programa externo. Es inyectable por el mismo motivo que
+  /// [programa]: un modo que no se aplica y no se nota es un candidato que
+  /// difiere del árbol que dice representar.
+  final String programaChmod;
+
   const RepositorioGit({
     required this.directorio,
     required this.politica,
     this.programa = 'git',
+    this.programaChmod = 'chmod',
     this.detector = const DetectorDeSecretos(),
   });
 
@@ -154,6 +166,63 @@ class RepositorioGit implements ChangeSink {
           r.exitCode, '${r.stdout}${r.stderr}'.trim());
     }
     return r.stdout as String;
+  }
+
+  /// Igual que [_exigir], pero devuelve **bytes**.
+  ///
+  /// `cat-file blob` y `ls-tree -z` no son texto: el primero puede ser una
+  /// imagen y el segundo lleva rutas que no tienen por qué ser UTF-8.
+  /// Decodificarlos para volver a codificarlos los corrompe en silencio, que
+  /// es exactamente la clase de transformación que el candidato existe para
+  /// impedir.
+  Future<List<int>> _exigirBytes(List<String> args,
+      {Map<String, String> entorno = const {}}) async {
+    final completos = ['--literal-pathspecs', ...args];
+    final ProcessResult r;
+    try {
+      r = await Process.run(programa, completos,
+          workingDirectory: directorio,
+          environment: entorno,
+          stdoutEncoding: null,
+          stderrEncoding: utf8);
+    } on ProcessException catch (e) {
+      throw GitFallo('$programa ${completos.join(" ")}', -1,
+          '${e.message} (${e.executable})');
+    }
+    if (r.exitCode != 0) {
+      throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}',
+          r.exitCode, (r.stderr as String).trim());
+    }
+    return r.stdout as List<int>;
+  }
+
+  /// Corre `git` **escribiéndole bytes por la entrada estándar**.
+  ///
+  /// `Process.run` no acepta entrada, y la promoción de objetos la necesita:
+  /// `hash-object --stdin` es la única forma de escribir un objeto sin que
+  /// `git` vuelva a leer un archivo del disco y le aplique los atributos otra
+  /// vez.
+  Future<String> _exigirConEntrada(List<String> args, List<int> entrada,
+      {Map<String, String> entorno = const {}}) async {
+    final completos = ['--literal-pathspecs', ...args];
+    final Process p;
+    try {
+      p = await Process.start(programa, completos,
+          workingDirectory: directorio, environment: entorno);
+    } on ProcessException catch (e) {
+      throw GitFallo('$programa ${completos.join(" ")}', -1,
+          '${e.message} (${e.executable})');
+    }
+    p.stdin.add(entrada);
+    await p.stdin.close();
+    final salida = await utf8.decoder.bind(p.stdout).join();
+    final error = await utf8.decoder.bind(p.stderr).join();
+    final codigo = await p.exitCode;
+    if (codigo != 0) {
+      throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}', codigo,
+          '$salida$error'.trim());
+    }
+    return salida.trim();
   }
 
   @override
@@ -371,8 +440,13 @@ class RepositorioGit implements ChangeSink {
     }
   }
 
-  @override
-  Future<String> apply(PullRequestSlice slice) async {
+  /// Las rutas de la rebanada, validadas y en la forma en que `git` las nombra.
+  ///
+  /// **Es la misma puerta para [apply] y para [prepareCandidate].** Que el
+  /// candidato aceptara una rebanada que el commit rechaza —o al revés— haría
+  /// que el contenido verificado y el commiteado pudieran diferir por la vía
+  /// más tonta: dos validaciones que se separan con el tiempo.
+  Future<List<String>> _rutasDeLaRebanada(PullRequestSlice slice) async {
     if (slice.files.isEmpty) {
       throw const RebanadaNoAplicable(
           'La rebanada no nombra ningún archivo.',
@@ -397,6 +471,16 @@ class RepositorioGit implements ChangeSink {
       }
       rutas.add(ruta);
     }
+    return rutas;
+  }
+
+  @override
+  Future<PreparedCandidate> prepareCandidate(PullRequestSlice slice) =>
+      _CandidatoGit.preparar(this, slice);
+
+  @override
+  Future<String> apply(PullRequestSlice slice) async {
+    final rutas = await _rutasDeLaRebanada(slice);
 
     await _exigirSinConflictos();
 
@@ -517,16 +601,12 @@ class RepositorioGit implements ChangeSink {
         '--',
         ruta,
       ], entorno: entorno);
+      // **La misma causa tipada que el candidato.** Antes acá salía una
+      // `RebanadaNoAplicable` genérica y allá otra: el mismo hecho —hay un
+      // secreto— llegaba al llamador de dos formas distintas según por qué
+      // camino de escritura hubiera entrado.
       final hallazgos = detector.revisar(diff, archivo: ruta);
-      if (hallazgos.isNotEmpty) {
-        final primero = hallazgos.first;
-        throw RebanadaNoAplicable(
-            hallazgos.length == 1
-                ? 'hay ${primero.queEs} en ${primero.archivo}:${primero.linea}.'
-                : 'hay ${hallazgos.length} secretos en ${primero.archivo}, el '
-                    'primero ${primero.queEs} en la línea ${primero.linea}.',
-            primero.queHacer);
-      }
+      if (hallazgos.isNotEmpty) throw SecretoEnLaRebanada(hallazgos);
     }
   }
 

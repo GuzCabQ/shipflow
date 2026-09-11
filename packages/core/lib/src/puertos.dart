@@ -324,15 +324,93 @@ abstract interface class ContextProjector {
 ///    construirlo y quedó registrada.
 abstract interface class ChangeSink {
   /// La rama donde va el trabajo. La crea si no existe.
+  ///
+  /// **Enmienda:** el comentario anterior decia que la orquestacion la pide al
+  /// empezar. Eso vale para `start`, que crea o cambia la rama **antes** de
+  /// construir. `ship` no la llama: afirma la rama actual y falla en preflight
+  /// si no coincide. Cambiar de rama despues de verificar invalidaria el
+  /// candidato, porque el contenido expuesto a los controles dejaria de ser el
+  /// que se va a commitear.
   Future<void> useBranch(String name);
 
+  /// Prepara el **candidato**: fija qué contenido exacto se va a verificar, y
+  /// lo materializa aparte para que los controles corran sobre eso.
+  ///
+  /// **Sin esto el artefacto no puede contestar su pregunta.** Entre que la
+  /// cascada mira los archivos y [apply] los stagea, el contenido puede
+  /// cambiar —el usuario, el IDE, un watcher, un generador, otro proceso— y
+  /// [apply] commitea lo que exista en ese momento. La ventana es real y no
+  /// depende de concurrencia exótica.
+  ///
+  /// **No deja efectos persistentes.** La preparación es reversible por
+  /// completo hasta que alguien autorice: lo que produce vive en almacenes
+  /// temporales, y [PreparedCandidate.dispose] los borra. Recién
+  /// [PreparedCandidate.commit] escribe en el repositorio.
+  Future<PreparedCandidate> prepareCandidate(PullRequestSlice slice);
+
   /// Deja la rebanada commiteada y devuelve la revisión resultante.
+  ///
+  /// **Stagea en el momento del commit**, así que entre lo que un control mire
+  /// y lo que se commitee puede haber cambiado el contenido. Quien necesite
+  /// que sean el mismo objeto usa [prepareCandidate]; los dos caminos escriben,
+  /// y los dos rechazan una rebanada con secretos.
   ///
   /// **Recibe [PullRequestSlice] y no [Plan]** porque el caso «solo PR» de
   /// `docs/04` entra sin `WorkItem`, y `Plan.workItemId` es obligatorio. La
   /// rebanada lleva lo único que hace falta para commitear: qué archivos y por
   /// qué — su `intent`, que es lo que ADR-014 llama intención.
   Future<String> apply(PullRequestSlice slice);
+}
+
+/// Un candidato ya fijado: **el contenido está decidido y todavía no se
+/// commiteó**.
+///
+/// Es un recurso con ciclo de vida. Quien lo abrió es quien lo cierra: hay que
+/// llamar a [dispose] en **todo** camino —éxito, fallo, rechazo del usuario,
+/// interrupción— porque hasta entonces hay directorios y objetos temporales en
+/// disco.
+abstract interface class PreparedCandidate {
+  /// Qué contenido se expuso a los controles, y sobre qué base.
+  CandidateIdentity get identity;
+
+  /// La raíz donde el candidato quedó materializado. **Los controles corren
+  /// acá**, no sobre el árbol de trabajo del usuario.
+  String get root;
+
+  /// Qué rutas cambian entre la base y el contenido. La cláusula del puerto es
+  /// igualdad literal con los archivos de la rebanada, en los dos sentidos:
+  /// ni una de más ni una de menos.
+  List<String> get changedPaths;
+
+  /// Rutas que el candidato **contiene y no materializó**, cada una con su
+  /// motivo. Nunca se omiten en silencio.
+  List<RutaNoMaterializada> get noMaterializadas;
+
+  /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**
+  ///
+  /// Es el primer paso que escribe en el repositorio, y está separado de
+  /// [applyRevision] por una razón de recuperación, no de estilo: entre crear
+  /// el objeto y mover la referencia hay que poder **persistir la revisión**.
+  /// Si las dos cosas fueran una, un proceso que muriera en el medio dejaría
+  /// una revisión que no quedó anotada en ningún lado, y quien intentara
+  /// recuperar no tendría identidad que consultar. Como crear un commit no
+  /// mueve nada, hacerlo antes no tiene efecto observable.
+  ///
+  /// **Se niega si la rebanada trae un secreto**, antes de escribir nada.
+  ///
+  /// Idempotente: llamarla dos veces devuelve la misma revisión.
+  Future<String> createRevision();
+
+  /// Mueve la rama a la revisión ya creada, **condicionado a que la base no se
+  /// haya movido**.
+  ///
+  /// Exige que [createRevision] haya corrido: aplicar sin haber podido
+  /// persistir la revisión es exactamente la ventana que la separación cierra.
+  Future<CommitOutcome> applyRevision();
+
+  /// Borra todo lo temporal. **Idempotente**: se puede llamar dos veces, y hay
+  /// que poder llamarla desde un manejador de señal.
+  Future<void> dispose();
 }
 
 /// Por donde sale un Pull Request a la forja.

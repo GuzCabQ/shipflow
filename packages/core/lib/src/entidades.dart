@@ -273,3 +273,108 @@ class Plan {
         ],
       );
 }
+
+/// Qué contenido exacto se expuso a la cascada, y sobre qué base.
+///
+/// **Es una identidad opaca para el dominio.** En el adapter de git
+/// [contentRevision] es el OID de un `tree` y [baseRevision] el de un commit,
+/// pero `core` no lo sabe ni puede saberlo: un doble puede usar cualquier otra
+/// representación mientras sostenga la única cláusula que importa —dos
+/// preparaciones del mismo contenido dan la misma [contentRevision], y una
+/// distinta da otra—.
+///
+/// **Por qué el contenido es un árbol y no un digest por ruta.** Está medido:
+/// con `text eol=lf`, con un filtro `clean` o con `core.autocrlf`, los bytes
+/// que git guarda **no** son los del archivo de trabajo; con un filtro no
+/// determinista el mismo archivo sin tocar da dos objetos distintos en dos
+/// stagings; un cambio de bit ejecutable **conserva** el objeto del archivo y
+/// cambia el commit; y un borrado no tiene ningún objeto resultante, así que
+/// un digest obligatorio por ruta es un tipo mal formado. Un árbol cubre
+/// contenido, modo, altas, modificaciones y bajas con un solo identificador.
+///
+/// Lo que esto garantiza es **identidad del objeto**, nunca cobertura: que el
+/// contenido expuesto a los controles sea el mismo que se commitea no dice que
+/// ningún control lo haya mirado entero. Eso lo acota cada afirmación, y solo
+/// hasta los sujetos de su propio testigo.
+class CandidateIdentity {
+  /// Qué contenido se expuso a la cascada.
+  final String contentRevision;
+
+  /// Sobre qué base se construyó. Es la condición del commit: si la rama se
+  /// movió, el cambio no se aplica.
+  final String baseRevision;
+
+  CandidateIdentity({
+    required this.contentRevision,
+    required this.baseRevision,
+  }) {
+    if (contentRevision.trim().isEmpty || baseRevision.trim().isEmpty) {
+      throw ArgumentError(
+          'Una identidad de candidato en blanco no identifica nada.');
+    }
+  }
+
+  Map<String, Object?> toJson() =>
+      {'contentRevision': contentRevision, 'baseRevision': baseRevision};
+
+  factory CandidateIdentity.fromJson(Map<String, Object?> json) =>
+      CandidateIdentity(
+        contentRevision: json['contentRevision']! as String,
+        baseRevision: json['baseRevision']! as String,
+      );
+}
+
+/// Por qué una ruta del candidato no se pudo materializar.
+///
+/// **Es vocabulario del dominio, no del sistema de versiones.** Antes esto era
+/// el modo del árbol —`120000`, `160000`— y contradecía a [CandidateIdentity],
+/// que declara opaca la representación del VCS. Un motivo cerrado dice lo que
+/// el llamador necesita decidir sin obligarlo a saber cómo lo codifica `git`.
+enum MotivoDeNoMaterializacion {
+  /// Un enlace que no se puede reproducir dentro del candidato. Recrearlo
+  /// dejaría que una herramienta lo siguiera y leyera algo que ningún testigo
+  /// cubre.
+  enlaceQueNoQuedaAdentro,
+
+  /// Una referencia a otro repositorio. No es contenido de este árbol.
+  referenciaAOtroRepositorio,
+}
+
+/// Una ruta que el candidato **contiene y no materializó**, con su motivo.
+///
+/// **No se recorta en silencio.** Quitarla de la lista convertiría una fuga o
+/// un hueco en un dato con aspecto correcto.
+class RutaNoMaterializada {
+  final String ruta;
+  final MotivoDeNoMaterializacion motivo;
+
+  /// Qué se encontró, en concreto. Nunca en blanco: el motivo dice la
+  /// categoría, y esto dice el caso.
+  final String detalle;
+
+  RutaNoMaterializada({
+    required this.ruta,
+    required this.motivo,
+    required this.detalle,
+  }) {
+    if (ruta.trim().isEmpty) {
+      throw ArgumentError.value(
+          ruta, 'ruta', 'Una ruta en blanco no nombra nada.');
+    }
+    if (detalle.trim().isEmpty) {
+      throw ArgumentError.value(detalle, 'detalle',
+          'Una ruta declarada sin detalle no declara nada.');
+    }
+  }
+
+  Map<String, Object?> toJson() =>
+      {'ruta': ruta, 'motivo': motivo.name, 'detalle': detalle};
+
+  factory RutaNoMaterializada.fromJson(Map<String, Object?> json) =>
+      RutaNoMaterializada(
+        ruta: json['ruta']! as String,
+        motivo:
+            MotivoDeNoMaterializacion.values.byName(json['motivo']! as String),
+        detalle: json['detalle']! as String,
+      );
+}
