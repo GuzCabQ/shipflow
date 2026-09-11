@@ -131,6 +131,77 @@ Corre en CI junto a los checks, no una vez a mano: **un check que nunca falló n
 está probado**, y un guardia que existe y nunca se disparó es indistinguible de
 uno roto.
 
+### El verificador no obedecía la regla que hace cumplir
+
+`_check_readme` encadenaba seis `return`. Un fallo cualquiera —el presupuesto
+que cambió de forma, la lista de pasos que no se pudo leer— abortaba la función
+entera y apagaba **en silencio** los controles que venían después: la cantidad
+de puertos, la prohibición de cifras sueltas, los nombres retirados. Tres
+controles no relacionados, apagados por una causa ajena.
+
+Reproducido:
+
+| | exit | ¿reporta el defecto tardío? |
+|---|---|---|
+| Solo un defecto tardío | `1` | **sí** |
+| El mismo, más un fallo temprano y ajeno | `1` | **no** |
+
+**No era un falso verde** —el código de salida seguía en 1, porque cada `return`
+reporta antes de salir—. Era enmascaramiento: un problema esconde a los demás y
+aparecen de a uno, corrida por corrida.
+
+Y había un borde peor. `capas.py` leía la lista de pasos de la cascada con un
+`.index("Cascada([")` **sin guardia**. Con un cambio realista —ponerle el tipo
+explícito al literal— el proceso moría con `ValueError: substring not found`, y
+como `_paso` no atrapaba nada, los cuatro pasos quedaban sin imprimir ni una
+línea. Diez controles saltados y un traceback en lugar de un diagnóstico. Es la
+misma clase de ancla que `probar_reglas.py` documenta como rota **veinticuatro
+commits** sin que nadie lo notara: la lección estaba escrita en un archivo y no
+aplicada en el de al lado.
+
+**La cascada del producto ya tenía esto resuelto**: un paso que se rompe no
+aborta la corrida — es `Broken`, se reporta, y los demás siguen. Ahora cada
+sección del README se verifica aislada, y una excepción se convierte en
+hallazgo en vez de en corte.
+
+### Los anclajes, con el fallo a la vista
+
+El otro archivo se acusaba solo: cinco bloques marcados «FRÁGIL, SIN GUARDIA»
+por su propio autor. El patrón era siempre el mismo —buscar un texto literal en
+el workflow o el README y reemplazarlo— y la mitad no tenía nada que lo
+respaldara. Los dos modos de fallo son distintos, y el silencioso es el peor:
+
+| | Qué pasa si el ancla se pierde |
+|---|---|
+| `.index` sin guardia | revienta sin decir qué buscaba ni para qué |
+| `.replace` sin guardia | **no revienta**: devuelve el texto intacto, el sabotaje no sabotea, y el arnés lo reporta como «la regla quedó sin efecto» — acusando al control equivocado |
+
+`tool/checks/_comun.py` los cierra con tres funciones: `exige_unica` para los
+anclajes que solo localizan, `ancla` para los que reemplazan exigiendo una
+ocurrencia, y `ancla_multiple` para los que se repiten por diseño —donde
+exigir unicidad sería exigir lo contrario de lo que el formato garantiza—.
+
+Es un tercero neutral a propósito: `probar_reglas.py` invoca a `capas.py` **como
+subproceso** para que un sabotaje no pueda romper el arnés que lo aplica, así
+que importarse entre ellos deshacía esa separación.
+
+**Instalarlo encontró dos suposiciones falsas de inmediato.** Dos anclajes que
+el código trataba como únicos no lo eran: `` `tool/analisis` `` aparece cinco
+veces en el README y `presupuesto: presupuesto` dos veces en la cascada. Los dos
+funcionaban por el `, 1` del `.replace`, no porque alguien lo hubiera
+comprobado.
+
+### Y dos sabotajes nuevos
+
+| Sabotaje | Qué exige |
+|---|---|
+| Dos defectos independientes a la vez | que el informe nombre **los dos** |
+| El ancla de la cascada, perdida | que se reporte **y** que el último paso igual corra |
+
+El segundo pide las dos cosas a propósito: que el diagnóstico nombre lo que
+buscaba, y que `capas.py` haya llegado al final. Sin lo segundo, un caso que
+solo mirara el código de salida daría verde con el proceso reventado.
+
 ### Tres propiedades que hacen verificable el registro
 
 - **Cada regla tiene un `id` estable y una violación canónica.**
@@ -969,7 +1040,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 105 sabotajes.**
+y su caso ciego. **El arnés aplica 107 sabotajes.**
 
 ---
 

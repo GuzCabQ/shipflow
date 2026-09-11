@@ -48,6 +48,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from _comun import ancla, ancla_multiple, exige_unica, literal_de_lista  # noqa: E402
+
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
 ANALISIS = RAIZ / "tool" / "analisis"
@@ -274,18 +277,16 @@ def casos() -> list[dict]:
     # commiteado retocado a mano. Son distintos: uno es olvidarse de
     # regenerar, el otro es editar lo que se deriva.
     #
-    # **Frágil en la misma forma que las de arriba, pero de menor riesgo
-    # práctico:** depende de que ALGÚN nodo de `grafo.jsonl` tenga
-    # `"saltos":0` literal. Es un campo de todo nodo derivado —no una frase de
-    # prosa que alguien reescriba con otras palabras—, así que el día que deje
-    # de aparecer es más probable que sea porque cambió el ESQUEMA del grafo
-    # (y entonces `check.dart`/`grafo.dart` ya estarían rojos por su cuenta)
-    # que porque el contenido derivó solo. Sin guardia igual: si pasa, es un
-    # `.replace` mudo, no un crash.
+    # El ancla se repite por diseño: `saltos` es un campo de TODO nodo derivado,
+    # así que exigir unicidad sería exigir lo contrario de lo que el formato
+    # garantiza. Lo que sí se prohíbe es cero — antes no: un `.replace` mudo
+    # dejaba el caso probando el archivo sin tocar, y el arnés lo reportaba
+    # como «la regla quedó sin efecto», acusando al control equivocado.
     c.append({
         "nombre": "grafo · grafo commiteado editado a mano",
-        "archivos": {"grafo.jsonl": (RAIZ / "grafo.jsonl").read_text(encoding="utf-8")
-                     .replace('"saltos":0', '"saltos":9', 1)},
+        "archivos": {"grafo.jsonl": ancla_multiple(
+            (RAIZ / "grafo.jsonl").read_text(encoding="utf-8"),
+            '"saltos":0', '"saltos":9', que="un nodo del grafo derivado")},
         "menciona": "grafo",
         "probar_grafo": True,
     })
@@ -382,28 +383,28 @@ def casos() -> list[dict]:
     # distintos: uno borra el paso, otro lo deja corriendo sin que detenga
     # nada, y el tercero se lleva el workflow entero.
     #
-    # **FRÁGIL, SIN GUARDIA.** Auditoría posterior al caso `Cascada([...])`
-    # que estuvo roto 24 commits sin que nadie lo notara: estos dos `.index`
-    # son la misma clase de anclaje literal, y si un nombre de step cambia acá
-    # abajo, esto revienta con un `ValueError` tan opaco como aquel — hoy
-    # (verificado al escribir esta nota) los dos nombres siguen existiendo tal
-    # cual. No se le agregó `assert` porque el `ValueError` de `.index` ya
-    # señala la línea; lo que faltaba y falta seguir es que ESTE archivo se
-    # corra, no un guardia extra.
+    # Los dos anclajes del recorte pasan por `ancla`, que exige UNA ocurrencia
+    # y dice qué buscaba. Antes eran `.index` pelados: la misma clase de
+    # anclaje que estuvo roto 24 commits en el caso `Cascada([...])`, y cuyo
+    # `ValueError` no decía ni qué se buscaba ni para qué.
     ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
-    i = ci.index("      - name: los checks saben fallar")
-    j = ci.index("      - name: pruebas de core")
+    _i = exige_unica(ci, "      - name: los checks saben fallar",
+                     que="el step que se borra del workflow")
+    _j = exige_unica(ci, "      - name: pruebas de core",
+                     que="el step siguiente, que marca el corte")
     c.append({
         "nombre": "ci · un paso obligatorio borrado del workflow",
-        "archivos": {CI_REL: ci[:i] + ci[j:]},
+        "archivos": {CI_REL: ci[:_i] + ci[_j:]},
         "menciona": "ya no ejecuta",
     })
     c.append({
         "nombre": "ci · un paso obligatorio con continue-on-error",
-        "archivos": {CI_REL: ci.replace(
+        "archivos": {CI_REL: ancla(
+            ci,
             "        run: python3 tool/checks/probar_reglas.py",
             "        run: python3 tool/checks/probar_reglas.py\n"
-            "        continue-on-error: true")},
+            "        continue-on-error: true",
+            que="el step al que se le agrega continue-on-error")},
         "menciona": "continue-on-error",
     })
     c.append({
@@ -444,10 +445,9 @@ def casos() -> list[dict]:
          "        run: dart run bin/check.dart",
          "exactamente"),
     ]:
-        assert ci.count(viejo) == 1, f"ancla del caso «{etiqueta}» no encontrada"
         c.append({
             "nombre": f"ci · un paso obligatorio {etiqueta}",
-            "archivos": {CI_REL: ci.replace(viejo, nuevo)},
+            "archivos": {CI_REL: ancla(ci, viejo, nuevo, que=etiqueta)},
             "menciona": menciona,
         })
 
@@ -459,19 +459,20 @@ def casos() -> list[dict]:
     assert len(filas) == 1, f"filas de la tabla encontradas: {len(filas)}"
     c.append({
         "nombre": "readme · una regla que gobierna y no está en la tabla",
-        "archivos": {"README.md": readme.replace(filas[0] + "\n", "")},
+        "archivos": {"README.md": ancla(readme, filas[0] + "\n", "",
+                                        que="la fila de `grafo-derivado`")},
         "menciona": "no está en la tabla",
     })
-    # **FRÁGIL, SIN GUARDIA — y más silenciosa que un `.index`.** Si
-    # `` `tool/analisis` `` deja de aparecer en el README, `.replace` no
-    # lanza: devuelve el texto sin cambios, el "sabotaje" no sabotea nada, y
-    # `evaluar()` lo reporta como «la regla quedó sin efecto» — un diagnóstico
-    # que apunta al control equivocado. Hoy (verificado al escribir esta
-    # nota) la cadena sigue estando.
+    # `ancla_multiple`: el README nombra `tool/analisis` cinco veces, y eso es
+    # correcto —es el directorio de los verificadores—. Alcanza con volver
+    # muerta UNA, porque el check junta el conjunto de rutas nombradas. Lo
+    # descubrió la guardia al instalarla: el `.replace(…, 1)` de antes suponía
+    # unicidad sin decirlo, y nadie lo había comprobado.
     c.append({
         "nombre": "readme · una ruta del repositorio que ya no existe",
-        "archivos": {"README.md": readme.replace("`tool/analisis`",
-                                                 "`tool/serializacion`", 1)},
+        "archivos": {"README.md": ancla_multiple(
+            readme, "`tool/analisis`", "`tool/serializacion`",
+            que="una de las menciones al directorio de verificadores")},
         "menciona": "no existe en el",
     })
     # La toolchain: dos formas de que el verde deje de significar lo que dice.
@@ -480,28 +481,23 @@ def casos() -> list[dict]:
                     "        uses: subosito/flutter-action@"
                     "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
                     "        with:\n          flutter-version: 3.44.0")
-    assert ci.count(flutter_paso) == 1, "ancla del paso de flutter no encontrada"
-    # **FRÁGIL, SIN GUARDIA propia**, igual que el bloque de arriba: el ancla
-    # `"      - name: analyze\n        run: dart analyze --fatal-infos"` no
-    # tiene `assert` que la respalde. Hoy sigue apareciendo tal cual.
+    _analyze = "      - name: analyze\n        run: dart analyze --fatal-infos"
     c.append({
         "nombre": "ci · dos toolchains de Dart en el mismo job",
-        "archivos": {CI_REL: ci.replace(
-            "      - name: analyze\n        run: dart analyze --fatal-infos",
-            flutter_paso + "\n\n      - name: analyze\n"
-            "        run: dart analyze --fatal-infos", 1)},
+        "archivos": {CI_REL: ancla(
+            ci, _analyze, flutter_paso + "\n\n" + _analyze,
+            que="el step de analyze, antes del cual se inyecta Flutter")},
         "menciona": "instala Dart Y Flutter",
     })
-    # `"          flutter-version: 3.44.0"` está protegida DE REBOTE por el
-    # `assert ci.count(flutter_paso) == 1` de más arriba —`flutter_paso` la
-    # contiene como substring—, pero es indirecto y no obvio releyendo solo
-    # este caso. Si algún día `flutter_paso` deja de incluirla textualmente
-    # (por ejemplo, si cambia de formato sin cambiar la versión), esta
-    # protección se pierde sin que nada lo anuncie acá.
+    # Antes esta ancla estaba protegida DE REBOTE, porque `flutter_paso` la
+    # contiene como substring. Era indirecto y no obvio releyendo el caso: si
+    # `flutter_paso` cambiaba de formato sin cambiar la versión, la protección
+    # se perdía sin que nada lo anunciara. Ahora tiene la suya.
+    _version = "          flutter-version: 3.44.0"
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
-        "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
-                                        "          channel: stable", 1)},
+        "archivos": {CI_REL: ancla(ci, _version, "          channel: stable",
+                                   que="la versión fijada de Flutter")},
         "menciona": "no es una versión exacta",
     })
     # El control negativo de la exención de canario se retiró CON la exención.
@@ -511,22 +507,21 @@ def casos() -> list[dict]:
     # hipotético. Un control negativo que defiende una exención que ya no está
     # es peor que no tenerlo: la haría parecer viva.
     #
-    # **El segundo `.replace` de este caso —«el fixture se verifica a sí
-    # mismo» / `runs-on: ubuntu-latest»— NO tiene ninguna guardia, ni directa
-    # ni indirecta.** Si ese nombre de job o esa línea de `runs-on` cambian,
-    # este `.replace` no aplica y el caso queda testeando el archivo sin
-    # tocar — silencioso, no un crash. Hoy (verificado al escribir esta nota)
-    # el texto sigue igual.
+    # El segundo anclaje de este caso —el job del fixture— no tenía ninguna
+    # guardia, ni directa ni indirecta: si ese nombre de job o esa línea de
+    # `runs-on` cambiaban, el `.replace` no aplicaba y el caso quedaba probando
+    # el archivo sin tocar. Silencioso, no un crash, que es el modo de fallo
+    # peor de los dos.
+    _job_fixture = ("    name: el fixture se verifica a sí mismo\n"
+                    "    runs-on: ubuntu-latest")
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
-        "archivos": {CI_REL: ci
-                     .replace("          flutter-version: 3.44.0",
-                              "          flutter-version: stable", 1)
-                     .replace("    name: el fixture se verifica a sí mismo\n"
-                              "    runs-on: ubuntu-latest",
-                              "    name: el fixture se verifica a sí mismo\n"
-                              "    runs-on: ubuntu-latest\n"
-                              "    continue-on-error: ${{ matrix.canario }}", 1)},
+        "archivos": {CI_REL: ancla(
+            ancla(ci, _version, "          flutter-version: stable",
+                  que="la versión de Flutter, vuelta flotante"),
+            _job_fixture,
+            _job_fixture + "\n    continue-on-error: ${{ matrix.canario }}",
+            que="el job del fixture, al que se le da pinta de canario")},
         "menciona": "no es una versión exacta",
     })
     # El número se DERIVA del README, no se cablea: cablearlo hacía que este
@@ -618,30 +613,21 @@ def casos() -> list[dict]:
     # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
     verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
         encoding="utf-8")
-    _d = verify_prop.index("Cascada([")
-    _apertura = _d + len("Cascada(")
-    _profundidad = 0
-    _cierre = None
-    for _i in range(_apertura, len(verify_prop)):
-        if verify_prop[_i] == "[":
-            _profundidad += 1
-        elif verify_prop[_i] == "]":
-            _profundidad -= 1
-            if _profundidad == 0:
-                _cierre = _i
-                break
-    assert _cierre is not None, (
-        "la lista de pasos de `Cascada([...])` no cierra en verify.dart: no "
-        "encontré el `]` que hace juego con `Cascada([`.")
-    _lit = verify_prop[_d:_cierre + 1]
+    _d, _cierre = literal_de_lista(verify_prop, "Cascada([",
+                                   que="los pasos de `cascadaPorDefecto`")
+    _lit = verify_prop[_d:_cierre]
     _uno = re.search(r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
                      _lit, re.M)
     assert _uno, "no encontré la propagación del presupuesto en verify.dart"
     c.append({
         "nombre": "cascada · un paso con un presupuesto distinto del resto",
-        "archivos": {"packages/cli/lib/src/verify.dart": verify_prop.replace(
-            _lit, _lit.replace(_uno.group(1), "presupuesto: presupuesto * 2", 1),
-            1)},
+        "archivos": {"packages/cli/lib/src/verify.dart": ancla(
+            verify_prop, _lit,
+            # Múltiple por diseño: hay una por paso, y el sabotaje quiere que
+            # UNO difiera del resto. Que sean varias es la premisa del caso.
+            ancla_multiple(_lit, _uno.group(1), "presupuesto: presupuesto * 2",
+                           que="la propagación del presupuesto a un paso"),
+            que="la lista de pasos de `cascadaPorDefecto`")},
         "menciona": "como presupuesto y no el parámetro",
     })
 
@@ -661,13 +647,13 @@ def casos() -> list[dict]:
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     #
-    # **FRÁGIL, SIN GUARDIA, y silenciosa como la de `tool/analisis` más
-    # arriba:** si ese árbol de ejemplo del README deja de tener una línea
-    # `  analisis/` (con exactamente esa indentación), `.replace` no aplica y
-    # el caso no sabotea nada, sin avisar. Hoy sigue estando.
+    # Era frágil y silenciosa: si el árbol de ejemplo del README dejaba de tener
+    # una línea `  analisis/` con esa indentación exacta, el `.replace` no
+    # aplicaba y el caso no saboteaba nada, sin avisar. Ahora el ancla lo dice.
     c.append({
         "nombre": "readme · un nombre retirado, sin forma de ruta",
-        "archivos": {"README.md": readme.replace("  analisis/", "  serializacion/", 1)},
+        "archivos": {"README.md": ancla(readme, "  analisis/", "  serializacion/",
+                                        que="el árbol de estructura del README")},
         "menciona": "nombre retirado",
     })
 
@@ -712,6 +698,50 @@ def casos() -> list[dict]:
         # cuidar. Lo que desaparece al revertir es este texto, y por eso la
         # atribución se sostiene. Medido las dos veces, con y sin el arreglo.
         "menciona": "base de una jerarquía sellada",
+    })
+
+    # **El enmascaramiento, que ningún sabotaje cubría.** El arnés inyecta un
+    # defecto por vez, así que la combinación donde uno tapa a otro no se
+    # ejercitaba nunca. Y pasaba: `_check_readme` encadenaba seis `return`, y
+    # un fallo cualquiera apagaba en silencio a los que venían después.
+    #
+    # Este caso inyecta DOS defectos independientes —uno que corta temprano y
+    # otro que se comprueba al final— y exige que aparezcan LOS DOS. Con las
+    # secciones encadenadas, el segundo desaparecía del informe mientras el
+    # código de salida seguía en 1: no un falso verde, pero sí un problema
+    # escondido detrás de otro, que es la ceguera de ADR-011 adentro del propio
+    # verificador.
+    c.append({
+        "nombre": "capas · un fallo no puede apagar a los que vienen después",
+        "archivos": {
+            "README.md": ancla(
+                readme, "## Qué corre",
+                "## Qué corre\n\nEl detalle vive en serializacion/ por ahora.",
+                que="un encabezado del README donde inyectar un nombre retirado"),
+            verify_rel: ancla(
+                verify, "Duration presupuesto = const Duration(",
+                "Duration presupuesto = const  Duration(",
+                que="la forma del presupuesto, que se rompe para cortar temprano"),
+        },
+        "menciona": ["no encontré el presupuesto", "nombre retirado"],
+    })
+
+    # **Y que un ancla perdida se REPORTE en vez de reventar.** El `.index` que
+    # leía la lista de pasos no tenía guardia: con un cambio realista —agregarle
+    # el tipo explícito al literal— `capas.py` moría con un `ValueError` y los
+    # cuatro pasos quedaban sin imprimir ni una línea. No era un falso verde,
+    # pero sí un diagnóstico inservible y diez controles saltados por un ancla.
+    #
+    # El `menciona` pide dos cosas: que el diagnóstico nombre lo que buscaba, y
+    # que el ÚLTIMO paso de `capas.py` igual haya corrido. Lo segundo es lo que
+    # distingue «se reportó» de «se murió»: sin eso, un caso que solo mirara el
+    # código de salida daría verde con el proceso reventado.
+    c.append({
+        "nombre": "capas · un ancla perdida se reporta y no se lleva al resto",
+        "archivos": {verify_rel: ancla(
+            verify, "Cascada([", "Cascada(<Verifier>[",
+            que="el literal de la cascada, al que se le pone el tipo explícito")},
+        "menciona": ["no encontré «Cascada([»", "cadenas acotadas a su adapter"],
     })
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
@@ -839,8 +869,16 @@ def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
                     "inutilizado. No miró nada y lo llamó aprobación — es la "
                     "clase 1 exacta, y ADR-011 dice que eso es fallo.")
         return "el check pasó en verde. La regla quedó sin efecto y nadie se enteró."
-    if espera_falla and caso.get("menciona") and caso["menciona"] not in salida:
-        return f"falló, pero no por esto — no menciona «{caso['menciona']}»."
+    menciona = caso.get("menciona")
+    if espera_falla and menciona:
+        # **Puede ser una lista, y ahí se exigen TODAS.** Un caso que inyecta
+        # dos defectos para probar que los dos se reportan no se puede evaluar
+        # con una sola cadena: bastaría que apareciera uno.
+        faltan = [m for m in ([menciona] if isinstance(menciona, str) else menciona)
+                  if m not in salida]
+        if faltan:
+            return ("falló, pero no por esto — no menciona "
+                    + ", ".join(f"«{m}»" for m in faltan) + ".")
     if not espera_falla and codigo != 0:
         return "el check falló, pero esto debería estar EXCLUIDO por declaración."
     return None
