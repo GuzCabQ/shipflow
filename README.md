@@ -2219,5 +2219,12 @@ tool/
   analisis/      lo que necesita el árbol sintáctico · fuera del workspace
 ```
 
-Todas las flechas de dependencia apuntan hacia `core`. `cli` es el único que
-puede ver a `plugin_dart` y a `agents`.
+Todas las flechas de dependencia apuntan hacia `core`, y `cli` es el único al
+que la arquitectura le permite ver los plugins y los adapters.
+
+**Permitido no es declarado.** `arquitectura.json` le permite ver también `vcs`,
+`rules` y `agents`; su `pubspec.yaml` declara solo lo que hoy se importa. Las dos
+frases que nombraban a `agents` de ejemplo —esta y la del barril de `cli`—
+quedaron falsas el mismo día que se quitó esa dependencia. Un ejemplo elegido de
+lo permitido envejece con cualquier limpieza de lo usado, y eso no lo cubre
+ningún check de los que hay.
