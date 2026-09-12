@@ -14,7 +14,7 @@ class TopologiaFalsa implements ProjectTopology {
   final Duration retraso;
 
   TopologiaFalsa(List<Package> paquetes, {this.retraso = Duration.zero})
-      : _paquetes = List.unmodifiable(paquetes);
+    : _paquetes = List.unmodifiable(paquetes);
 
   @override
   Future<List<Package>> packages() async {

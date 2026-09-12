@@ -13,14 +13,13 @@ import 'package:plugin_fake/plugin_fake.dart';
 Witness testigo({
   List<String> sujetos = const ['.'],
   List<Omission> omite = const [],
-}) =>
-    Witness(
-      invocation: 'herramienta --sobre ${sujetos.join(" ")}',
-      subjects: sujetos,
-      omitted: omite,
-      exitCode: 0,
-      finishedAt: DateTime.utc(2026),
-    );
+}) => Witness(
+  invocation: 'herramienta --sobre ${sujetos.join(" ")}',
+  subjects: sujetos,
+  omitted: omite,
+  exitCode: 0,
+  finishedAt: DateTime.utc(2026),
+);
 
 /// Un paso de doble propósito: sus fábricas cubren `subjects` tal como
 /// llegan, así que sirven con cualquier alcance que la corrida les dé, no
@@ -46,28 +45,37 @@ class Paso implements Verifier {
   /// Un paso que empezó y no llegó a terminar. El alcance que recibe no
   /// importa para el desenlace —el `Attempt` no lo declara sano ni ajeno—,
   /// así que sirve igual con un alcance enteramente del stack.
-  factory Paso.abortado(String id,
-          {String nota = 'la herramienta no llegó a producir un resultado'}) =>
-      Paso(id, nota: nota);
+  factory Paso.abortado(
+    String id, {
+    String nota = 'la herramienta no llegó a producir un resultado',
+  }) => Paso(id, nota: nota);
 
-  factory Paso.rojo(String id) => Paso(id, diagnosticos: [
-        Diagnostic(
-            file: 'lib/a.txt',
-            line: 3,
-            severity: Severity.bloquea,
-            ruleId: 'regla-x',
-            message: const QuotedText('el mensaje', source: 'test')),
-      ]);
+  factory Paso.rojo(String id) => Paso(
+    id,
+    diagnosticos: [
+      Diagnostic(
+        file: 'lib/a.txt',
+        line: 3,
+        severity: Severity.bloquea,
+        ruleId: 'regla-x',
+        message: const QuotedText('el mensaje', source: 'test'),
+      ),
+    ],
+  );
 
   /// Un paso con las tres severidades a la vez.
-  factory Paso.mixto(String id) => Paso(id, diagnosticos: [
-        for (final s in Severity.values)
-          Diagnostic(
-              file: 'lib/${s.name}.txt',
-              severity: s,
-              ruleId: 'r-${s.name}',
-              message: QuotedText('mensaje-${s.name}', source: 'test')),
-      ]);
+  factory Paso.mixto(String id) => Paso(
+    id,
+    diagnosticos: [
+      for (final s in Severity.values)
+        Diagnostic(
+          file: 'lib/${s.name}.txt',
+          severity: s,
+          ruleId: 'r-${s.name}',
+          message: QuotedText('mensaje-${s.name}', source: 'test'),
+        ),
+    ],
+  );
 
   /// Un paso cuya herramienta no informa qué miró: testigo sin sujetos,
   /// noConcluyente por construcción.
@@ -94,9 +102,7 @@ class Paso implements Verifier {
         witness: Witness(
           invocation: 'herramienta --sobre ${subjects.join(" ")}',
           subjects: const [],
-          omitted: [
-            Omission(reason: 'algo que no se miró'),
-          ],
+          omitted: [Omission(reason: 'algo que no se miró')],
           exitCode: 0,
           finishedAt: DateTime.utc(2026),
         ),
@@ -123,24 +129,26 @@ class PasoQueCubre implements Verifier {
 
   @override
   Future<VerificationOutcome> run(VerificationScope alcance) async => Executed(
-        witness: Witness(
-          invocation: 'herramienta ${cubre.join(" ")}',
-          subjects: cubre,
-          omitted: omite,
-          exitCode: 0,
-          finishedAt: DateTime.utc(2026),
-        ),
-        diagnostics: const [],
-      );
+    witness: Witness(
+      invocation: 'herramienta ${cubre.join(" ")}',
+      subjects: cubre,
+      omitted: omite,
+      exitCode: 0,
+      finishedAt: DateTime.utc(2026),
+    ),
+    diagnostics: const [],
+  );
 }
 
 /// Un observador falso que declara del stack, con un archivo cada uno, los
 /// sujetos dados.
 ObservadorDeAlcanceFalso _observadorPara(List<String> sujetos) =>
-    ObservadorDeAlcanceFalso(observados: {
-      for (final s in sujetos)
-        s: ObservedSubject(subject: s, ofStack: true, files: 1),
-    });
+    ObservadorDeAlcanceFalso(
+      observados: {
+        for (final s in sujetos)
+          s: ObservedSubject(subject: s, ofStack: true, files: 1),
+      },
+    );
 
 /// Los sujetos que le tocan a `verify` a partir de sus argumentos: los que no
 /// empiezan con `-`, o `.` si no hay ninguno. Es la misma regla que
@@ -157,10 +165,15 @@ List<String> _sujetosDe(List<String> args) {
 /// los sujetos dados. Sin esto, cada prueba del CLI tendría que tocar el
 /// disco.
 Future<(int, String)> correrConAlcance(
-    List<String> sujetos, List<Verifier> pasos) {
+  List<String> sujetos,
+  List<Verifier> pasos,
+) {
   final obs = _observadorPara(sujetos);
-  return correr(sujetos, pasos,
-      construir: (_) => Cascada(pasos, observador: obs));
+  return correr(
+    sujetos,
+    pasos,
+    construir: (_) => Cascada(pasos, observador: obs),
+  );
 }
 
 /// Una salida que se rompe **al escribir el terminal de un paso**.
@@ -210,7 +223,7 @@ Future<(int, String)> invocarConTerminalRoto() async {
     error: StringBuffer(),
     construirCascada: (_) => Cascada([
       PasoQueCubre('A', const ['lib']),
-      PasoQueCubre('B', const ['lib'])
+      PasoQueCubre('B', const ['lib']),
     ], observador: obs),
   );
   return (c, out.entregado.toString());
@@ -230,7 +243,7 @@ Future<(int, String)> invocarConFalloDespuesDelTerminal() async {
     error: StringBuffer(),
     construirCascada: (_) => Cascada([
       PasoQueCubre('A', const ['lib']),
-      PasoQueCubre('B', const ['lib'])
+      PasoQueCubre('B', const ['lib']),
     ], observador: obs),
     alTerminarDeProgreso: (_, __) {
       if (primero) {
@@ -249,8 +262,11 @@ Future<(int, String)> invocarConFalloDespuesDelTerminal() async {
 /// con un archivo cada uno, exactamente los sujetos que esta invocación va a
 /// pedir — el mismo cálculo que hace `opcionesDe`. Así, cualquier prueba que
 /// no le importe el alcance puede ignorarlo del todo.
-Future<(int, String, String)> invocar(List<String> args, List<Verifier> pasos,
-    {Cascada Function(String)? construir}) async {
+Future<(int, String, String)> invocar(
+  List<String> args,
+  List<Verifier> pasos, {
+  Cascada Function(String)? construir,
+}) async {
   final out = StringBuffer();
   final err = StringBuffer();
   final c = await ejecutar(
@@ -258,21 +274,28 @@ Future<(int, String, String)> invocar(List<String> args, List<Verifier> pasos,
     directorio: '.',
     salida: out,
     error: err,
-    construirCascada: construir ??
+    construirCascada:
+        construir ??
         (_) => Cascada(pasos, observador: _observadorPara(_sujetosDe(args))),
   );
   return (c, out.toString(), err.toString());
 }
 
 /// Lo mismo, para los casos donde solo importan código y salida.
-Future<(int, String)> correr(List<String> args, List<Verifier> pasos,
-    {Cascada Function(String)? construir}) async {
-  final (c, out, _) =
-      await invocar(['verify', ...args], pasos, construir: construir);
+Future<(int, String)> correr(
+  List<String> args,
+  List<Verifier> pasos, {
+  Cascada Function(String)? construir,
+}) async {
+  final (c, out, _) = await invocar(
+    ['verify', ...args],
+    pasos,
+    construir: construir,
+  );
   return (c, out);
 }
 
 List<Map<String, Object?>> lineas(String salida) => [
-      for (final l in salida.trim().split('\n'))
-        jsonDecode(l) as Map<String, Object?>,
-    ];
+  for (final l in salida.trim().split('\n'))
+    jsonDecode(l) as Map<String, Object?>,
+];

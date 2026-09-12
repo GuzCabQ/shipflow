@@ -24,10 +24,11 @@ void main() {
 
   group('NotApplied', () {
     NotApplied porBase({String revision = rev}) => NotApplied(
-        revision: revision,
-        causa: CausaDeNoAplicacion.baseMovida,
-        baseEsperada: base,
-        headObservado: otra);
+      revision: revision,
+      causa: CausaDeNoAplicacion.baseMovida,
+      baseEsperada: base,
+      headObservado: otra,
+    );
 
     test('se construye con las dos revisiones y la causa', () {
       final d = porBase();
@@ -42,19 +43,23 @@ void main() {
 
     test('sin base o sin HEAD observado no se construye', () {
       expect(
-          () => NotApplied(
-              revision: rev,
-              causa: CausaDeNoAplicacion.baseMovida,
-              baseEsperada: '',
-              headObservado: otra),
-          throwsA(isA<ArgumentError>()));
+        () => NotApplied(
+          revision: rev,
+          causa: CausaDeNoAplicacion.baseMovida,
+          baseEsperada: '',
+          headObservado: otra,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
       expect(
-          () => NotApplied(
-              revision: rev,
-              causa: CausaDeNoAplicacion.baseMovida,
-              baseEsperada: base,
-              headObservado: '  '),
-          throwsA(isA<ArgumentError>()));
+        () => NotApplied(
+          revision: rev,
+          causa: CausaDeNoAplicacion.baseMovida,
+          baseEsperada: base,
+          headObservado: '  ',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('la rama observada acompaña a `ramaCambiada`, y solo a ella', () {
@@ -62,57 +67,71 @@ void main() {
       // una revisión y otras una frase sobre la rama, así que quien lo leía
       // tenía que adivinar cuál de las dos le había tocado.
       expect(
-          () => NotApplied(
-              revision: rev,
-              causa: CausaDeNoAplicacion.baseMovida,
-              baseEsperada: base,
-              headObservado: otra,
-              ramaObservada: 'main'),
-          throwsA(isA<ArgumentError>()),
-          reason: 'la base movida no habla de ninguna rama observada');
+        () => NotApplied(
+          revision: rev,
+          causa: CausaDeNoAplicacion.baseMovida,
+          baseEsperada: base,
+          headObservado: otra,
+          ramaObservada: 'main',
+        ),
+        throwsA(isA<ArgumentError>()),
+        reason: 'la base movida no habla de ninguna rama observada',
+      );
       expect(
-          () => NotApplied(
-              revision: rev,
-              causa: CausaDeNoAplicacion.ramaCambiada,
-              baseEsperada: base,
-              headObservado: otra),
-          throwsA(isA<ArgumentError>()),
-          reason: 'y decir que la rama cambió sin decir a cuál no informa');
+        () => NotApplied(
+          revision: rev,
+          causa: CausaDeNoAplicacion.ramaCambiada,
+          baseEsperada: base,
+          headObservado: otra,
+        ),
+        throwsA(isA<ArgumentError>()),
+        reason: 'y decir que la rama cambió sin decir a cuál no informa',
+      );
       expect(
-          NotApplied(
-                  revision: rev,
-                  causa: CausaDeNoAplicacion.ramaCambiada,
-                  baseEsperada: base,
-                  headObservado: otra,
-                  ramaObservada: '')
-              .ramaObservada,
-          '',
-          reason: 'vacía SÍ vale: es HEAD suelto, que es un estado y no un '
-              'campo que falta');
+        NotApplied(
+          revision: rev,
+          causa: CausaDeNoAplicacion.ramaCambiada,
+          baseEsperada: base,
+          headObservado: otra,
+          ramaObservada: '',
+        ).ramaObservada,
+        '',
+        reason:
+            'vacía SÍ vale: es HEAD suelto, que es un estado y no un '
+            'campo que falta',
+      );
     });
   });
 
   group('LocalInconsistent', () {
-    test('sin revisión no se construye: el commit existe y hay que repararlo',
-        () {
-      expect(() => LocalInconsistent(revision: '', detalle: 'x'),
-          throwsA(isA<ArgumentError>()));
-    });
+    test(
+      'sin revisión no se construye: el commit existe y hay que repararlo',
+      () {
+        expect(
+          () => LocalInconsistent(revision: '', detalle: 'x'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
 
     test('sin detalle no se construye: no diría qué reparar', () {
-      expect(() => LocalInconsistent(revision: rev, detalle: ' '),
-          throwsA(isA<ArgumentError>()));
+      expect(
+        () => LocalInconsistent(revision: rev, detalle: ' '),
+        throwsA(isA<ArgumentError>()),
+      );
     });
   });
 
   group('RutaNoMaterializada', () {
     test('sin detalle no se construye', () {
       expect(
-          () => RutaNoMaterializada(
-              ruta: 'x',
-              motivo: MotivoDeNoMaterializacion.referenciaAOtroRepositorio,
-              detalle: ''),
-          throwsA(isA<ArgumentError>()));
+        () => RutaNoMaterializada(
+          ruta: 'x',
+          motivo: MotivoDeNoMaterializacion.referenciaAOtroRepositorio,
+          detalle: '',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('el motivo es del dominio, no el modo de git', () {
@@ -124,8 +143,10 @@ void main() {
 
   group('CandidateIdentity', () {
     test('en blanco no identifica nada', () {
-      expect(() => CandidateIdentity(contentRevision: '', baseRevision: base),
-          throwsA(isA<ArgumentError>()));
+      expect(
+        () => CandidateIdentity(contentRevision: '', baseRevision: base),
+        throwsA(isA<ArgumentError>()),
+      );
     });
   });
 }

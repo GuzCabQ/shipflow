@@ -45,15 +45,16 @@ class NormalizadorDeAnalisis implements DiagnosticNormalizer {
   /// seria degradar en silencio algo que quiza detenia: la herramienta agrego
   /// una categoria y nosotros la estariamos leyendo como la mas suave.
   static Severity _severidad(String cruda, String fuente) => switch (cruda) {
-        'ERROR' => Severity.bloquea,
-        'WARNING' => Severity.bloquea,
-        'INFO' => Severity.reporta,
-        _ => throw UnreadableToolOutput(
-            fuente,
-            'Severidad desconocida: «$cruda». Mapeala en el normalizador; '
-            'adivinar la mas suave degradaria en silencio algo que quiza '
-            'detiene.'),
-      };
+    'ERROR' => Severity.bloquea,
+    'WARNING' => Severity.bloquea,
+    'INFO' => Severity.reporta,
+    _ => throw UnreadableToolOutput(
+      fuente,
+      'Severidad desconocida: «$cruda». Mapeala en el normalizador; '
+      'adivinar la mas suave degradaria en silencio algo que quiza '
+      'detiene.',
+    ),
+  };
 
   @override
   List<Diagnostic> normalize(QuotedText rawOutput) {
@@ -64,10 +65,11 @@ class NormalizadorDeAnalisis implements DiagnosticNormalizer {
     // control que depende del efecto colateral de otro no esta instalado.
     if (rawOutput.content.trim().isEmpty) {
       throw UnreadableToolOutput(
-          fuente,
-          'Salida vacia. No es «no encontro nada»: es indistinguible de que '
-          'la herramienta no llego a correr. Verificalo con el testigo del '
-          'paso, no con esta lista.');
+        fuente,
+        'Salida vacia. No es «no encontro nada»: es indistinguible de que '
+        'la herramienta no llego a correr. Verificalo con el testigo del '
+        'paso, no con esta lista.',
+      );
     }
 
     final Object? crudo;
@@ -75,28 +77,35 @@ class NormalizadorDeAnalisis implements DiagnosticNormalizer {
       crudo = jsonDecode(rawOutput.content);
     } on FormatException catch (e) {
       throw UnreadableToolOutput(
-          fuente, 'La salida no es JSON valido: ${e.message}');
+        fuente,
+        'La salida no es JSON valido: ${e.message}',
+      );
     }
 
     if (crudo is! Map<String, Object?>) {
-      throw UnreadableToolOutput(fuente,
-          'Se esperaba un objeto JSON en la raiz, llego ${crudo.runtimeType}.');
+      throw UnreadableToolOutput(
+        fuente,
+        'Se esperaba un objeto JSON en la raiz, llego ${crudo.runtimeType}.',
+      );
     }
 
     final version = crudo['version'];
     if (version != versionSoportada) {
       throw UnreadableToolOutput(
-          fuente,
-          'Esquema version «$version»; este normalizador solo sabe leer la '
-          '$versionSoportada. Actualizalo antes de confiar en lo que lea: '
-          'leer un esquema nuevo con reglas viejas devuelve menos '
-          'hallazgos, no un error.');
+        fuente,
+        'Esquema version «$version»; este normalizador solo sabe leer la '
+        '$versionSoportada. Actualizalo antes de confiar en lo que lea: '
+        'leer un esquema nuevo con reglas viejas devuelve menos '
+        'hallazgos, no un error.',
+      );
     }
 
     final lista = crudo['diagnostics'];
     if (lista is! List) {
       throw UnreadableToolOutput(
-          fuente, '«diagnostics» no es una lista: ${lista.runtimeType}.');
+        fuente,
+        '«diagnostics» no es una lista: ${lista.runtimeType}.',
+      );
     }
 
     return List.unmodifiable([
@@ -107,7 +116,9 @@ class NormalizadorDeAnalisis implements DiagnosticNormalizer {
   Diagnostic _uno(Object? entrada, String fuente) {
     if (entrada is! Map<String, Object?>) {
       throw UnreadableToolOutput(
-          fuente, 'Un diagnostico no es un objeto: ${entrada.runtimeType}.');
+        fuente,
+        'Un diagnostico no es un objeto: ${entrada.runtimeType}.',
+      );
     }
 
     final codigo = entrada['code'];
@@ -115,20 +126,25 @@ class NormalizadorDeAnalisis implements DiagnosticNormalizer {
     final mensaje = entrada['problemMessage'];
     if (codigo is! String || severidad is! String || mensaje is! String) {
       throw UnreadableToolOutput(
-          fuente,
-          'Un diagnostico sin «code», «severity» o «problemMessage» legibles. '
-          'Descartarlo dejaria un hallazgo real fuera de la cuenta.');
+        fuente,
+        'Un diagnostico sin «code», «severity» o «problemMessage» legibles. '
+        'Descartarlo dejaria un hallazgo real fuera de la cuenta.',
+      );
     }
 
     final ubicacion = entrada['location'];
     if (ubicacion is! Map<String, Object?>) {
       throw UnreadableToolOutput(
-          fuente, 'Un diagnostico sin «location» legible: no se sabe donde.');
+        fuente,
+        'Un diagnostico sin «location» legible: no se sabe donde.',
+      );
     }
     final archivo = ubicacion['file'];
     if (archivo is! String) {
       throw UnreadableToolOutput(
-          fuente, 'Un diagnostico sin «location.file» legible.');
+        fuente,
+        'Un diagnostico sin «location.file» legible.',
+      );
     }
 
     // La linea SI puede faltar: hay diagnosticos de archivo entero. Que falte
@@ -184,18 +200,22 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
   /// CAMBIO — y ese ultimo tiene que coincidir con la cantidad de hallazgos
   /// que se leyeron mas abajo.
   static final _resumen = RegExp(
-      r'^Formatted (?:(no) files|(\d+) files?(?: \((\d+) changed\))?) in ',
-      multiLine: true);
+    r'^Formatted (?:(no) files|(\d+) files?(?: \((\d+) changed\))?) in ',
+    multiLine: true,
+  );
 
   static final _cambiado = RegExp(r'^Changed (.+)$', multiLine: true);
 
   /// `line 2, column 1 of ruta: Expected to find '}'.`
-  static final _noParsea =
-      RegExp(r'^line (\d+), column \d+ of (.+?): (.+)$', multiLine: true);
+  static final _noParsea = RegExp(
+    r'^line (\d+), column \d+ of (.+?): (.+)$',
+    multiLine: true,
+  );
 
   static final _encabezadoNoParsea = RegExp(
-      r'^Could not format because the source could not be parsed:$',
-      multiLine: true);
+    r'^Could not format because the source could not be parsed:$',
+    multiLine: true,
+  );
 
   /// Cuantos archivos declara el resumen que CAMBIO.
   ///
@@ -207,20 +227,25 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
 
     if (int.tryParse(m.group(2) ?? '') == null) {
       throw UnreadableToolOutput(
-          fuente, 'El resumen no dice cuantos archivos miro: «${m.group(0)}».');
+        fuente,
+        'El resumen no dice cuantos archivos miro: «${m.group(0)}».',
+      );
     }
     final cambiados = m.group(3);
     if (cambiados == null) {
       throw UnreadableToolOutput(
-          fuente,
-          'El resumen dice cuantos archivos miro pero no cuantos cambio: '
-          '«${m.group(0)}». Sin ese numero no hay contra que reconciliar los '
-          'hallazgos, y suponerlo en cero seria inventarlo.');
+        fuente,
+        'El resumen dice cuantos archivos miro pero no cuantos cambio: '
+        '«${m.group(0)}». Sin ese numero no hay contra que reconciliar los '
+        'hallazgos, y suponerlo en cero seria inventarlo.',
+      );
     }
     final n = int.tryParse(cambiados);
     if (n == null) {
       throw UnreadableToolOutput(
-          fuente, 'Cuenta de cambiados que no se puede leer: «$cambiados».');
+        fuente,
+        'Cuenta de cambiados que no se puede leer: «$cambiados».',
+      );
     }
     return n;
   }
@@ -239,8 +264,10 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
     if (m.group(1) != null) return 0;
     final total = int.tryParse(m.group(2) ?? '');
     if (total == null) {
-      throw UnreadableToolOutput(rawOutput.source,
-          'El resumen no dice cuantos archivos miro: «${m.group(0)}».');
+      throw UnreadableToolOutput(
+        rawOutput.source,
+        'El resumen no dice cuantos archivos miro: «${m.group(0)}».',
+      );
     }
     return total;
   }
@@ -251,8 +278,8 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
   /// reconcilie cuántos archivos había con cuántos miró necesita este número,
   /// o va a concluir que faltó mirar algo que en realidad se reportó.
   Set<String> archivosQueNoParsean(QuotedText rawOutput) => {
-        for (final m in _noParsea.allMatches(rawOutput.content)) m.group(2)!,
-      };
+    for (final m in _noParsea.allMatches(rawOutput.content)) m.group(2)!,
+  };
 
   /// El resumen, comprobando que haya exactamente uno.
   RegExpMatch _unicoResumen(QuotedText rawOutput) {
@@ -261,25 +288,28 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
 
     if (texto.trim().isEmpty) {
       throw UnreadableToolOutput(
-          fuente,
-          'Salida vacia. Esta herramienta siempre escribe su resumen, asi que '
-          'el vacio significa que no llego a correr.');
+        fuente,
+        'Salida vacia. Esta herramienta siempre escribe su resumen, asi que '
+        'el vacio significa que no llego a correr.',
+      );
     }
 
     final resumenes = _resumen.allMatches(texto).toList();
     if (resumenes.isEmpty) {
       throw UnreadableToolOutput(
-          fuente,
-          'Falta la linea de resumen «Formatted ... in ...». Es el denominador: '
-          'sin ella, cero hallazgos no distingue «todo formateado» de «no miro '
-          'ningun archivo», y esta herramienta sale con codigo 0 en el segundo '
-          'caso.');
+        fuente,
+        'Falta la linea de resumen «Formatted ... in ...». Es el denominador: '
+        'sin ella, cero hallazgos no distingue «todo formateado» de «no miro '
+        'ningun archivo», y esta herramienta sale con codigo 0 en el segundo '
+        'caso.',
+      );
     }
     if (resumenes.length > 1) {
       throw UnreadableToolOutput(
-          fuente,
-          'Hay ${resumenes.length} lineas de resumen y el denominador tiene que '
-          'ser uno solo. Elegir una seria elegir contra que reconciliar.');
+        fuente,
+        'Hay ${resumenes.length} lineas de resumen y el denominador tiene que '
+        'ser uno solo. Elegir una seria elegir contra que reconciliar.',
+      );
     }
     return resumenes.single;
   }
@@ -295,20 +325,22 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
 
     for (final m in _cambiado.allMatches(texto)) {
       final ruta = m.group(1)!;
-      salida.add(Diagnostic(
-        file: ruta,
-        // La herramienta no emite codigo propio para esto: no hay ninguno que
-        // preservar, asi que se acuña uno. Donde SI hay codigo —el analizador—
-        // se usa el suyo.
-        ruleId: 'formato/sin-formatear',
-        // Se detiene porque puede decir QUE HACER, que es la condicion de
-        // INV-8. La alternativa va en la escotilla, no en el mensaje.
-        severity: Severity.bloquea,
-        message: QuotedText(m.group(0)!, source: fuente),
-        sourceMetadata: const {
-          'alternativa': 'Corre el formateador del stack.'
-        },
-      ));
+      salida.add(
+        Diagnostic(
+          file: ruta,
+          // La herramienta no emite codigo propio para esto: no hay ninguno que
+          // preservar, asi que se acuña uno. Donde SI hay codigo —el analizador—
+          // se usa el suyo.
+          ruleId: 'formato/sin-formatear',
+          // Se detiene porque puede decir QUE HACER, que es la condicion de
+          // INV-8. La alternativa va en la escotilla, no en el mensaje.
+          severity: Severity.bloquea,
+          message: QuotedText(m.group(0)!, source: fuente),
+          sourceMetadata: const {
+            'alternativa': 'Corre el formateador del stack.',
+          },
+        ),
+      );
     }
 
     // **El resumen es el testigo que la herramienta da de si misma**, y por eso
@@ -326,14 +358,15 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
     // puertos sin implementacion: de mas y de menos son fallas distintas.
     if (salida.length != declarados) {
       throw UnreadableToolOutput(
-          fuente,
-          salida.length < declarados
-              ? 'El resumen declara $declarados archivo(s) cambiado(s) y solo se '
+        fuente,
+        salida.length < declarados
+            ? 'El resumen declara $declarados archivo(s) cambiado(s) y solo se '
                   'pudieron leer ${salida.length}. Devolver los que se leyeron '
                   'perderia el resto en silencio.'
-              : 'Se leyeron ${salida.length} archivo(s) cambiado(s) y el resumen '
+            : 'Se leyeron ${salida.length} archivo(s) cambiado(s) y el resumen '
                   'declara $declarados. Alguna de las dos lecturas esta mal y no '
-                  'se puede saber cual.');
+                  'se puede saber cual.',
+      );
     }
 
     final fallosDeParseo = _noParsea.allMatches(texto).toList();
@@ -346,15 +379,19 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
       final linea = int.tryParse(m.group(1)!);
       if (linea == null) {
         throw UnreadableToolOutput(
-            fuente, 'Numero de linea que no se puede leer: «${m.group(1)}».');
+          fuente,
+          'Numero de linea que no se puede leer: «${m.group(1)}».',
+        );
       }
-      salida.add(Diagnostic(
-        file: m.group(2)!,
-        line: linea,
-        ruleId: 'formato/no-parsea',
-        severity: Severity.bloquea,
-        message: QuotedText(m.group(0)!, source: fuente),
-      ));
+      salida.add(
+        Diagnostic(
+          file: m.group(2)!,
+          line: linea,
+          ruleId: 'formato/no-parsea',
+          severity: Severity.bloquea,
+          message: QuotedText(m.group(0)!, source: fuente),
+        ),
+      );
     }
 
     // S4. Si la herramienta dijo que algo no parsea y de ese bloque no salio
@@ -362,10 +399,11 @@ class NormalizadorDeFormato implements DiagnosticNormalizer {
     // literalmente el salto silencioso que el sabotaje busca.
     if (_encabezadoNoParsea.hasMatch(texto) && fallosDeParseo.isEmpty) {
       throw UnreadableToolOutput(
-          fuente,
-          'La herramienta reporto codigo que no parsea y ninguna de sus lineas '
-          'pudo leerse. Devolver la lista sin esos hallazgos convertiria un '
-          'archivo corrupto en un salto silencioso.');
+        fuente,
+        'La herramienta reporto codigo que no parsea y ninguna de sus lineas '
+        'pudo leerse. Devolver la lista sin esos hallazgos convertiria un '
+        'archivo corrupto en un salto silencioso.',
+      );
     }
 
     return List.unmodifiable(salida);

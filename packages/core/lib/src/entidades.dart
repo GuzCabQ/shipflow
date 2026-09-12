@@ -29,24 +29,26 @@ class AcceptanceCriterion {
     // irrepresentable, no para que el getter lo compense.
     if (assertionForm != null && assertionForm!.trim().isEmpty) {
       throw ArgumentError.value(
-          assertionForm,
-          'assertionForm',
-          'Una forma de aserción vacía no es una forma. Dejalo en `null` si el '
-              'criterio todavía no se mapeó: `null` es un estado legítimo y visible.');
+        assertionForm,
+        'assertionForm',
+        'Una forma de aserción vacía no es una forma. Dejalo en `null` si el '
+            'criterio todavía no se mapeó: `null` es un estado legítimo y visible.',
+      );
     }
   }
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'statement': statement.toJson(),
-        'assertionForm': assertionForm,
-      };
+    'id': id,
+    'statement': statement.toJson(),
+    'assertionForm': assertionForm,
+  };
 
   factory AcceptanceCriterion.fromJson(Map<String, Object?> json) =>
       AcceptanceCriterion(
         id: json['id']! as String,
         statement: QuotedText.fromJson(
-            Map<String, Object?>.from(json['statement']! as Map)),
+          Map<String, Object?>.from(json['statement']! as Map),
+        ),
         assertionForm: json['assertionForm'] as String?,
       );
 }
@@ -81,8 +83,8 @@ class WorkItem {
     required this.description,
     required List<AcceptanceCriterion> criteria,
     Map<String, Object?> sourceMetadata = const {},
-  })  : criteria = List.unmodifiable(criteria),
-        sourceMetadata = Map.unmodifiable(sourceMetadata);
+  }) : criteria = List.unmodifiable(criteria),
+       sourceMetadata = Map.unmodifiable(sourceMetadata);
 
   /// INV-1: no entra si algún criterio no se mapeó a una forma del catálogo.
   ///
@@ -94,26 +96,27 @@ class WorkItem {
       criteria.every((c) => (c.assertionForm ?? '').trim().isNotEmpty);
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'title': title.toJson(),
-        'description': description.toJson(),
-        'criteria': [for (final c in criteria) c.toJson()],
-        'sourceMetadata': sourceMetadata,
-      };
+    'id': id,
+    'title': title.toJson(),
+    'description': description.toJson(),
+    'criteria': [for (final c in criteria) c.toJson()],
+    'sourceMetadata': sourceMetadata,
+  };
 
   factory WorkItem.fromJson(Map<String, Object?> json) => WorkItem(
-        id: json['id']! as String,
-        title: QuotedText.fromJson(
-            Map<String, Object?>.from(json['title']! as Map)),
-        description: QuotedText.fromJson(
-            Map<String, Object?>.from(json['description']! as Map)),
-        criteria: [
-          for (final c in json['criteria']! as List<Object?>)
-            AcceptanceCriterion.fromJson(Map<String, Object?>.from(c! as Map)),
-        ],
-        sourceMetadata:
-            Map<String, Object?>.from(json['sourceMetadata']! as Map),
-      );
+    id: json['id']! as String,
+    title: QuotedText.fromJson(
+      Map<String, Object?>.from(json['title']! as Map),
+    ),
+    description: QuotedText.fromJson(
+      Map<String, Object?>.from(json['description']! as Map),
+    ),
+    criteria: [
+      for (final c in json['criteria']! as List<Object?>)
+        AcceptanceCriterion.fromJson(Map<String, Object?>.from(c! as Map)),
+    ],
+    sourceMetadata: Map<String, Object?>.from(json['sourceMetadata']! as Map),
+  );
 }
 
 /// Clase de cambio. **Identificador opaco** (docs/03 §4).
@@ -171,24 +174,24 @@ class Diagnostic {
   }) : sourceMetadata = Map.unmodifiable(sourceMetadata);
 
   Map<String, Object?> toJson() => {
-        'file': file,
-        'line': line,
-        'severity': severity.name,
-        'ruleId': ruleId,
-        'message': message.toJson(),
-        'sourceMetadata': sourceMetadata,
-      };
+    'file': file,
+    'line': line,
+    'severity': severity.name,
+    'ruleId': ruleId,
+    'message': message.toJson(),
+    'sourceMetadata': sourceMetadata,
+  };
 
   factory Diagnostic.fromJson(Map<String, Object?> json) => Diagnostic(
-        file: json['file']! as String,
-        line: json['line'] as int?,
-        severity: Severity.values.byName(json['severity']! as String),
-        ruleId: json['ruleId']! as String,
-        message: QuotedText.fromJson(
-            Map<String, Object?>.from(json['message']! as Map)),
-        sourceMetadata:
-            Map<String, Object?>.from(json['sourceMetadata']! as Map),
-      );
+    file: json['file']! as String,
+    line: json['line'] as int?,
+    severity: Severity.values.byName(json['severity']! as String),
+    ruleId: json['ruleId']! as String,
+    message: QuotedText.fromJson(
+      Map<String, Object?>.from(json['message']! as Map),
+    ),
+    sourceMetadata: Map<String, Object?>.from(json['sourceMetadata']! as Map),
+  );
 }
 
 /// Unidad de topología del proyecto que se está trabajando.
@@ -205,14 +208,17 @@ class Package {
     required List<String> dependsOn,
   }) : dependsOn = List.unmodifiable(dependsOn);
 
-  Map<String, Object?> toJson() =>
-      {'name': name, 'path': path, 'dependsOn': dependsOn};
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'path': path,
+    'dependsOn': dependsOn,
+  };
 
   factory Package.fromJson(Map<String, Object?> json) => Package(
-        name: json['name']! as String,
-        path: json['path']! as String,
-        dependsOn: List<String>.from(json['dependsOn']! as List<Object?>),
-      );
+    name: json['name']! as String,
+    path: json['path']! as String,
+    dependsOn: List<String>.from(json['dependsOn']! as List<Object?>),
+  );
 }
 
 /// Una rebanada del trabajo que se propone como un PR.
@@ -252,26 +258,26 @@ class Plan {
     required List<String> files,
     required List<String> tests,
     required List<PullRequestSlice> slices,
-  })  : files = List.unmodifiable(files),
-        tests = List.unmodifiable(tests),
-        slices = List.unmodifiable(slices);
+  }) : files = List.unmodifiable(files),
+       tests = List.unmodifiable(tests),
+       slices = List.unmodifiable(slices);
 
   Map<String, Object?> toJson() => {
-        'workItemId': workItemId,
-        'files': files,
-        'tests': tests,
-        'slices': [for (final s in slices) s.toJson()],
-      };
+    'workItemId': workItemId,
+    'files': files,
+    'tests': tests,
+    'slices': [for (final s in slices) s.toJson()],
+  };
 
   factory Plan.fromJson(Map<String, Object?> json) => Plan(
-        workItemId: json['workItemId']! as String,
-        files: List<String>.from(json['files']! as List<Object?>),
-        tests: List<String>.from(json['tests']! as List<Object?>),
-        slices: [
-          for (final s in json['slices']! as List<Object?>)
-            PullRequestSlice.fromJson(Map<String, Object?>.from(s! as Map)),
-        ],
-      );
+    workItemId: json['workItemId']! as String,
+    files: List<String>.from(json['files']! as List<Object?>),
+    tests: List<String>.from(json['tests']! as List<Object?>),
+    slices: [
+      for (final s in json['slices']! as List<Object?>)
+        PullRequestSlice.fromJson(Map<String, Object?>.from(s! as Map)),
+    ],
+  );
 }
 
 /// Qué contenido exacto se expuso a la cascada, y sobre qué base.
@@ -310,12 +316,15 @@ class CandidateIdentity {
   }) {
     if (contentRevision.trim().isEmpty || baseRevision.trim().isEmpty) {
       throw ArgumentError(
-          'Una identidad de candidato en blanco no identifica nada.');
+        'Una identidad de candidato en blanco no identifica nada.',
+      );
     }
   }
 
-  Map<String, Object?> toJson() =>
-      {'contentRevision': contentRevision, 'baseRevision': baseRevision};
+  Map<String, Object?> toJson() => {
+    'contentRevision': contentRevision,
+    'baseRevision': baseRevision,
+  };
 
   factory CandidateIdentity.fromJson(Map<String, Object?> json) =>
       CandidateIdentity(
@@ -359,22 +368,32 @@ class RutaNoMaterializada {
   }) {
     if (ruta.trim().isEmpty) {
       throw ArgumentError.value(
-          ruta, 'ruta', 'Una ruta en blanco no nombra nada.');
+        ruta,
+        'ruta',
+        'Una ruta en blanco no nombra nada.',
+      );
     }
     if (detalle.trim().isEmpty) {
-      throw ArgumentError.value(detalle, 'detalle',
-          'Una ruta declarada sin detalle no declara nada.');
+      throw ArgumentError.value(
+        detalle,
+        'detalle',
+        'Una ruta declarada sin detalle no declara nada.',
+      );
     }
   }
 
-  Map<String, Object?> toJson() =>
-      {'ruta': ruta, 'motivo': motivo.name, 'detalle': detalle};
+  Map<String, Object?> toJson() => {
+    'ruta': ruta,
+    'motivo': motivo.name,
+    'detalle': detalle,
+  };
 
   factory RutaNoMaterializada.fromJson(Map<String, Object?> json) =>
       RutaNoMaterializada(
         ruta: json['ruta']! as String,
-        motivo:
-            MotivoDeNoMaterializacion.values.byName(json['motivo']! as String),
+        motivo: MotivoDeNoMaterializacion.values.byName(
+          json['motivo']! as String,
+        ),
         detalle: json['detalle']! as String,
       );
 }

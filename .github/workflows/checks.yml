@@ -137,8 +137,45 @@ jobs:
       - name: analyze
         run: dart analyze --fatal-infos
 
+
+  # EL FORMATO, EN SU PROPIO JOB. TAMPOCO ES PROLIJIDAD.
+  #
+  # El estilo del formateador **cambia entre versiones menores de Dart**: con
+  # el árbol formateado por 3.12, la pata `stable` —3.13— reformateaba cinco
+  # archivos y el canario quedaba rojo por construcción. Un canario que no
+  # puede ponerse verde deja de mirarse.
+  #
+  # El primer intento fue fijar el estilo con `--language-version=3.6`. Estaba
+  # mal, y lo encontró un review: esa opción no fija solo el estilo, fija la
+  # GRAMÁTICA. Con ella, sintaxis válida en 3.11 —`dot-shorthands`— falla al
+  # formatear mientras `dart analyze` la acepta. Era un techo sintáctico en 3.6
+  # instalado en silencio, que es peor que el canario rojo.
+  #
+  # Entonces se formatea con la versión que el pubspec declara, y el estilo lo
+  # decide **un solo SDK, el bloqueante**. La pata `stable` sigue comprobando
+  # análisis y pruebas; el estilo no lo decide.
+  #
+  # ACOPLE DECLARADO: este `sdk` tiene que ser el mismo que la pata NO canario
+  # de la matriz de arriba. Son dos lugares y se mueven juntos.
+  #
+  # No hace falta `dart pub get`: `dart format` lee la versión de lenguaje del
+  # pubspec más cercano, medido sobre este árbol sin resolver.
+  formato:
+    name: el formato, con el SDK que decide el estilo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: "3.12.0"
+
       - name: format
-        run: dart format --language-version=3.6 --set-exit-if-changed packages tool
+        run: dart format --set-exit-if-changed packages tool
 
   # EL FIXTURE, EN SU PROPIO JOB. NO ES PROLIJIDAD.
   #

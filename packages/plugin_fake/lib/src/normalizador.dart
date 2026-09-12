@@ -36,13 +36,17 @@ class NormalizadorFalso implements DiagnosticNormalizer {
 
     if (texto.trim().isEmpty) {
       throw UnreadableToolOutput(
-          fuente, 'Salida vacia: indistinguible de no haber corrido.');
+        fuente,
+        'Salida vacia: indistinguible de no haber corrido.',
+      );
     }
 
     final lineas = texto.trimRight().split('\n');
     if (lineas.first != encabezado) {
       throw UnreadableToolOutput(
-          fuente, 'La primera linea no es «$encabezado».');
+        fuente,
+        'La primera linea no es «$encabezado».',
+      );
     }
 
     final salida = <Diagnostic>[];
@@ -52,14 +56,18 @@ class NormalizadorFalso implements DiagnosticNormalizer {
       final campos = linea.split('|');
       if (campos.length != 5) {
         throw UnreadableToolOutput(
-            fuente, 'Linea con ${campos.length} campos y no 5: «$linea».');
+          fuente,
+          'Linea con ${campos.length} campos y no 5: «$linea».',
+        );
       }
       final Severity severidad;
       try {
         severidad = Severity.values.byName(campos[0]);
       } on ArgumentError {
         throw UnreadableToolOutput(
-            fuente, 'Severidad desconocida: «${campos[0]}».');
+          fuente,
+          'Severidad desconocida: «${campos[0]}».',
+        );
       }
       // `tryParse` y no `parse`: el puerto promete UN tipo de excepcion para
       // lo que no se puede interpretar, y `FormatException` no es ese. Quien
@@ -74,17 +82,21 @@ class NormalizadorFalso implements DiagnosticNormalizer {
         numero = int.tryParse(campos[2]);
         if (numero == null) {
           throw UnreadableToolOutput(
-              fuente, 'Numero de linea que no se puede leer: «${campos[2]}».');
+            fuente,
+            'Numero de linea que no se puede leer: «${campos[2]}».',
+          );
         }
       }
-      salida.add(Diagnostic(
-        file: campos[1],
-        line: numero,
-        severity: severidad,
-        ruleId: campos[3],
-        // El mensaje viaja tal cual (clausula 4).
-        message: QuotedText(campos[4], source: fuente),
-      ));
+      salida.add(
+        Diagnostic(
+          file: campos[1],
+          line: numero,
+          severity: severidad,
+          ruleId: campos[3],
+          // El mensaje viaja tal cual (clausula 4).
+          message: QuotedText(campos[4], source: fuente),
+        ),
+      );
     }
     return List.unmodifiable(salida);
   }

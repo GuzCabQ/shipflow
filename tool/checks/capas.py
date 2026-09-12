@@ -139,19 +139,18 @@ PASOS_OBLIGATORIOS = {
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
     # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
     #
-    # **Y con el estilo FIJADO.** Sin `--language-version`, el formateador toma
-    # el estilo de la versión de lenguaje del paquete, y el estilo nuevo todavía
-    # cambia entre versiones menores de Dart: al subir el piso a `^3.11.0` el
-    # árbol quedó formateado por 3.12 y la pata `stable` —3.13— reformateaba
-    # cinco archivos. El canario habría quedado rojo para siempre, que es peor
-    # que no tenerlo.
+    # **Y el estilo lo decide UN SOLO SDK.** El formateador cambia de estilo
+    # entre versiones menores, así que con el árbol formateado por 3.12 la pata
+    # `stable` reformateaba cinco archivos y el canario quedaba rojo por
+    # construcción. El primer arreglo fue fijar el estilo con
+    # `--language-version=3.6`, y estaba mal: esa opción fija también la
+    # GRAMÁTICA, así que sintaxis válida en 3.11 fallaba al formatear mientras
+    # `dart analyze` la aceptaba. Un techo sintáctico en silencio es peor que un
+    # canario rojo.
     #
-    # El piso es una afirmación de compatibilidad; el estilo es una decisión
-    # estética. Dart los acopla y acá se desacoplan: `3.6` selecciona el estilo
-    # anterior, que está congelado. `[S]` — la estabilidad de ese estilo en
-    # versiones futuras es política declarada de Dart, no algo medido acá; si
-    # dejara de valer, el canario lo va a decir, que es para lo que está.
-    "el formato": ("dart format --language-version=3.6 --set-exit-if-changed packages tool", None),
+    # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
+    # `stable` no decide el estilo. El comando es el real, sin banderas.
+    "el formato": ("dart format --set-exit-if-changed packages tool", None),
     # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
     # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
     "el fixture · dominio": ("dart pub get && dart analyze && dart test",

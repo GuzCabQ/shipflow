@@ -66,7 +66,7 @@ dart test packages/vcs                        # la rama y el commit, contra git 
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
 dart analyze --fatal-infos
-dart format --language-version=3.6 --set-exit-if-changed packages tool
+dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
@@ -395,12 +395,12 @@ frases falsas —el barril de `cli` y este README— que nombraban a `agents` de
 ejemplo, y esta regla no las habría visto. Son dos controles distintos, y solo
 uno está claro cómo se automatiza sin producir ruido.
 
-### El piso del SDK y el estilo del formato son dos cosas, y Dart las acopla
+### El piso del SDK, y quién decide el estilo del formato
 
-Los diez pubspec declaraban `sdk: ^3.6.0` mientras el lock exige `>=3.11.0`:
-seis versiones menores de soporte prometido que nadie podía cumplir. No era un
-hueco de verificación —el workflow ya declaraba que la matriz no prueba el
-mínimo— sino **una afirmación falsa**, y el fixture se había corregido por esto
+Los diez pubspec declaraban `sdk: ^3.6.0` mientras el lock del workspace exige
+`>=3.11.0`: seis versiones menores de soporte prometido que nadie podía cumplir.
+No era un hueco de verificación —el workflow ya declaraba que la matriz no prueba
+el mínimo— sino **una afirmación falsa**, y el fixture se había corregido por esto
 mismo sin propagarse.
 
 Alinearlo cuesta diez líneas y **arrastra 49 archivos**: el formateador toma su
@@ -411,19 +411,29 @@ con sdk: ^3.6.0     →  dart format:  0 archivos cambiados
 con sdk: ^3.11.0    →  dart format: 49 archivos cambiados
 ```
 
-Peor: el estilo nuevo **todavía se mueve entre versiones menores de Dart**. Con
-el árbol formateado por 3.12, la pata `stable` —3.13.3— reformateaba cinco
-archivos. El canario habría quedado rojo para siempre, y un canario rojo por
-construcción deja de mirarse.
+Y el estilo nuevo **todavía se mueve entre versiones menores**. Con el árbol
+formateado por 3.12, la pata `stable` —3.13.3— reformateaba cinco archivos: el
+canario quedaba rojo por construcción, y un canario que no puede ponerse verde
+deja de mirarse.
 
-**El piso es una afirmación de compatibilidad; el estilo es una decisión
-estética.** Dart los acopla y acá se desacoplan: el piso queda en `^3.11.0`,
-honesto, y el formato se fija con `--language-version=3.6`, que selecciona el
-estilo anterior — congelado.
+**El primer arreglo estaba mal, y lo encontró un review.** Fue fijar el estilo
+con `--language-version=3.6`, creyendo que esa opción elige estética. Elige
+también **gramática**: con ella, sintaxis válida en 3.11 —`dot-shorthands`— falla
+al formatear mientras `dart analyze` la acepta. Era un techo sintáctico en 3.6
+instalado en silencio, que es peor que el canario rojo.
 
-`[S]` La estabilidad de ese estilo en versiones futuras es política declarada de
-Dart, no algo medido acá. Si dejara de valer, el canario lo va a decir, que es
-para lo que está.
+Lo que quedó: el piso en `^3.11.0`, el formato con la versión que el pubspec
+declara, y **el estilo lo decide un solo SDK** — el bloqueante, en un job propio.
+La pata `stable` sigue comprobando análisis y pruebas; el estilo no lo decide.
+
+**Acople declarado:** el `sdk` de ese job tiene que ser el mismo que la pata no
+canario de la matriz. Son dos lugares y se mueven juntos; nada lo verifica
+todavía.
+
+Y `tool/analisis` sube a `^3.11.0` **por uniformidad, no por necesidad**: su
+lockfile exigía `>=3.9.0`. El piso falso era el del workspace. Queda dicho porque
+el comentario que se escribió primero afirmaba que su lock ya pedía 3.11, y no
+era cierto.
 
 ### Tres propiedades que hacen verificable el registro
 

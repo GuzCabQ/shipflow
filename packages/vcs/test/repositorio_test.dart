@@ -26,8 +26,10 @@ import 'package:vcs/vcs.dart';
 class _PoliticaDeclarada implements ArtifactPolicy {
   final Set<String> generados;
   final Set<String> deBuild;
-  const _PoliticaDeclarada(
-      {this.generados = const {}, this.deBuild = const {}});
+  const _PoliticaDeclarada({
+    this.generados = const {},
+    this.deBuild = const {},
+  });
 
   @override
   bool isGenerated(String path) => generados.contains(path);
@@ -39,15 +41,23 @@ class _PoliticaDeclarada implements ArtifactPolicy {
 
 void main() {
   const politica = _PoliticaDeclarada(
-      generados: {'generado.gen'}, deBuild: {'build/salida.txt'});
+    generados: {'generado.gen'},
+    deBuild: {'build/salida.txt'},
+  );
 
   test('el doble respeta las cláusulas del puerto que dice implementar', () {
     // Un doble que no cumple el contrato hace pasar la suite contra un
     // comportamiento que la implementación real nunca produce.
-    expect(politica.isEditable('generado.gen'), isFalse,
-        reason: 'cláusula 1: lo generado nunca es editable');
-    expect(politica.isEditable('   '), isFalse,
-        reason: 'cláusula 2: una ruta vacía no es editable');
+    expect(
+      politica.isEditable('generado.gen'),
+      isFalse,
+      reason: 'cláusula 1: lo generado nunca es editable',
+    );
+    expect(
+      politica.isEditable('   '),
+      isFalse,
+      reason: 'cláusula 2: una ruta vacía no es editable',
+    );
     expect(politica.isEditable('a.txt'), isTrue);
   });
 
@@ -93,9 +103,10 @@ void main() {
 
   tearDown(() => raiz.deleteSync(recursive: true));
 
-  PullRequestSlice rebanada(List<String> files,
-          {String intent = 'porque sí'}) =>
-      PullRequestSlice(id: 'r1', intent: intent, files: files);
+  PullRequestSlice rebanada(
+    List<String> files, {
+    String intent = 'porque sí',
+  }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
 
   group('la rama', () {
     test('se crea si no existe', () async {
@@ -125,9 +136,11 @@ void main() {
       git(['tag', 'release']);
       await repo.useBranch('release');
       expect(await repo.ramaActual, 'release');
-      expect(correr('git', ['rev-parse', '--verify', 'refs/tags/release']),
-          isNotEmpty,
-          reason: 'la etiqueta sigue ahí: no la pisamos');
+      expect(
+        correr('git', ['rev-parse', '--verify', 'refs/tags/release']),
+        isNotEmpty,
+        reason: 'la etiqueta sigue ahí: no la pisamos',
+      );
     });
 
     test('un SHA homónimo tampoco', () async {
@@ -139,8 +152,10 @@ void main() {
       // EXACTAMENTE como el SHA abreviado.
       final sha = correr('git', ['rev-parse', '--short', 'HEAD']);
       expect(
-          correr('git', ['rev-parse', '--verify', '--quiet', sha]), isNotEmpty,
-          reason: 'la premisa: ese nombre YA resuelve a una revisión');
+        correr('git', ['rev-parse', '--verify', '--quiet', sha]),
+        isNotEmpty,
+        reason: 'la premisa: ese nombre YA resuelve a una revisión',
+      );
       await repo.useBranch(sha);
       expect(await repo.ramaActual, sha);
     });
@@ -154,9 +169,15 @@ void main() {
     ]) {
       test('«$nombre» se rechaza diciendo qué hacer — $por', () {
         expect(
-            () => repo.useBranch(nombre),
-            throwsA(isA<RebanadaNoAplicable>()
-                .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
+          () => repo.useBranch(nombre),
+          throwsA(
+            isA<RebanadaNoAplicable>().having(
+              (e) => e.queHacer,
+              'qué hacer',
+              isNotEmpty,
+            ),
+          ),
+        );
       });
     }
 
@@ -167,11 +188,15 @@ void main() {
       // entrada y no solo el código.
       await repo.useBranch('shipflow/previa');
       git(['switch', 'main']);
-      expect(correr('git', ['check-ref-format', '--branch', '@{-1}']),
-          'shipflow/previa',
-          reason: 'la premisa: git expande, no rechaza');
       expect(
-          () => repo.useBranch('@{-1}'), throwsA(isA<RebanadaNoAplicable>()));
+        correr('git', ['check-ref-format', '--branch', '@{-1}']),
+        'shipflow/previa',
+        reason: 'la premisa: git expande, no rechaza',
+      );
+      expect(
+        () => repo.useBranch('@{-1}'),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
 
     test('si git deja HEAD suelto, la promesa se rompe fuerte', () async {
@@ -182,11 +207,20 @@ if [ "$2" = "switch" ]; then exec git "$1" switch --detach HEAD; fi
 exec git "$@"
 ''');
       final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
+        directorio: raiz.path,
+        politica: politica,
+        programa: falso,
+      );
       await expectLater(
-          torcido.useBranch('shipflow/x'),
-          throwsA(isA<PromesaIncumplida>()
-              .having((e) => e.quedo, 'quedó', contains('suelto'))));
+        torcido.useBranch('shipflow/x'),
+        throwsA(
+          isA<PromesaIncumplida>().having(
+            (e) => e.quedo,
+            'quedó',
+            contains('suelto'),
+          ),
+        ),
+      );
     });
   });
 
@@ -212,10 +246,14 @@ exec git "$@"
       await repo.apply(rebanada(['a.txt']));
 
       expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'a.txt');
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'a.txt',
+      );
       expect(
-          correr('git', ['status', '--porcelain', 'b.txt']), contains('b.txt'),
-          reason: 'lo que no estaba en la rebanada sigue sin commitear');
+        correr('git', ['status', '--porcelain', 'b.txt']),
+        contains('b.txt'),
+        reason: 'lo que no estaba en la rebanada sigue sin commitear',
+      );
     });
 
     test('un archivo nuevo entra igual', () async {
@@ -223,7 +261,9 @@ exec git "$@"
       escribir('c.txt', 'nuevo\n');
       await repo.apply(rebanada(['c.txt']));
       expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'c.txt');
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'c.txt',
+      );
     });
 
     test('un BORRADO es un cambio, y entra', () async {
@@ -233,21 +273,27 @@ exec git "$@"
       File('${raiz.path}/b.txt').deleteSync();
       await repo.apply(rebanada(['b.txt']));
       expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'b.txt');
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'b.txt',
+      );
       expect(correr('git', ['ls-files', 'b.txt']), isEmpty);
     });
 
     test('una rebanada SIN archivos no se commitea', () {
       // Un commit vacío afirma un cambio que no existe.
-      expect(() => repo.apply(rebanada(const [])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      expect(
+        () => repo.apply(rebanada(const [])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
 
     test('una rebanada sin intención tampoco', () {
       // El `intent` es el mensaje del commit: sin él nadie puede revisar por
       // qué se hizo.
-      expect(() => repo.apply(rebanada(['a.txt'], intent: '   ')),
-          throwsA(isA<RebanadaNoAplicable>()));
+      expect(
+        () => repo.apply(rebanada(['a.txt'], intent: '   ')),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
 
     test('un archivo declarado que NO cambió rechaza la rebanada', () async {
@@ -258,45 +304,67 @@ exec git "$@"
       escribir('a.txt', 'cambio A\n');
       final antes = correr('git', ['rev-parse', 'HEAD']);
       await expectLater(
-          repo.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()
-              .having((e) => e.reason, 'razón', contains('b.txt'))));
+        repo.apply(rebanada(['a.txt', 'b.txt'])),
+        throwsA(
+          isA<RebanadaNoAplicable>().having(
+            (e) => e.reason,
+            'razón',
+            contains('b.txt'),
+          ),
+        ),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason: 'el índice queda como estaba');
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'el índice queda como estaba',
+      );
     });
 
-    test('un archivo con acento se commitea, y no da falso incumplimiento',
-        () async {
-      // `git show --name-only` CITA lo que no es ASCII: `á.txt` salía como
-      // `"\\303\\241.txt"` y la comparación fallaba contra un archivo
-      // perfectamente válido. La salida de una herramienta no es el dato.
-      await repo.useBranch('shipflow/x');
-      escribir('á.txt', 'con acento\n');
-      await repo.apply(rebanada(['á.txt']));
-      expect(
-          correr('git', ['show', '--name-only', '--format=', '-z', 'HEAD'])
-              .split('\u0000')
-              .where((s) => s.isNotEmpty),
-          ['á.txt']);
-    });
+    test(
+      'un archivo con acento se commitea, y no da falso incumplimiento',
+      () async {
+        // `git show --name-only` CITA lo que no es ASCII: `á.txt` salía como
+        // `"\\303\\241.txt"` y la comparación fallaba contra un archivo
+        // perfectamente válido. La salida de una herramienta no es el dato.
+        await repo.useBranch('shipflow/x');
+        escribir('á.txt', 'con acento\n');
+        await repo.apply(rebanada(['á.txt']));
+        expect(
+          correr('git', [
+            'show',
+            '--name-only',
+            '--format=',
+            '-z',
+            'HEAD',
+          ]).split('\u0000').where((s) => s.isNotEmpty),
+          ['á.txt'],
+        );
+      },
+    );
 
-    test('un archivo con espacios y otro con salto de línea, también',
-        () async {
-      // El nombre prometía un salto de línea y el test solo hacía espacios.
-      // Un caso que se anuncia y no se ejerce es peor que uno que falta: se
-      // lee como cubierto. Lo encontró un review.
-      await repo.useBranch('shipflow/x');
-      escribir('con espacio.txt', 'x\n');
-      escribir('con\nsalto.txt', 'y\n');
-      await repo.apply(rebanada(['con espacio.txt', 'con\nsalto.txt']));
-      expect(
-          correr('git', ['show', '--name-only', '--format=', '-z', 'HEAD'])
-              .split('\u0000')
-              .where((s) => s.isNotEmpty)
-              .toSet(),
-          {'con espacio.txt', 'con\nsalto.txt'});
-    });
+    test(
+      'un archivo con espacios y otro con salto de línea, también',
+      () async {
+        // El nombre prometía un salto de línea y el test solo hacía espacios.
+        // Un caso que se anuncia y no se ejerce es peor que uno que falta: se
+        // lee como cubierto. Lo encontró un review.
+        await repo.useBranch('shipflow/x');
+        escribir('con espacio.txt', 'x\n');
+        escribir('con\nsalto.txt', 'y\n');
+        await repo.apply(rebanada(['con espacio.txt', 'con\nsalto.txt']));
+        expect(
+          correr('git', [
+            'show',
+            '--name-only',
+            '--format=',
+            '-z',
+            'HEAD',
+          ]).split('\u0000').where((s) => s.isNotEmpty).toSet(),
+          {'con espacio.txt', 'con\nsalto.txt'},
+        );
+      },
+    );
 
     test('un DIRECTORIO borrado del disco no se cuela como borrado', () async {
       // `ls-files --error-unmatch -- dir` coincide por PREFIJO: con el
@@ -313,7 +381,9 @@ exec git "$@"
 
       final antes = correr('git', ['rev-parse', 'HEAD']);
       await expectLater(
-          repo.apply(rebanada(['dir'])), throwsA(isA<RebanadaNoAplicable>()));
+        repo.apply(rebanada(['dir'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
@@ -331,8 +401,10 @@ exec git "$@"
       // rechaza el adapter y dice qué hacer: la ruta no nombra nada y git
       // tampoco la tenía, así que ni siquiera puede ser un borrado.
       await repo.useBranch('shipflow/x');
-      expect(() => repo.apply(rebanada(['no/existe.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      expect(
+        () => repo.apply(rebanada(['no/existe.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
   });
 
@@ -361,11 +433,20 @@ exec git "$@"
         Directory('${raiz.path}/sub').createSync();
         escribir('sub/x.txt', 'x\n');
         await expectLater(
-            repo.apply(rebanada([entrada])),
-            throwsA(isA<RebanadaNoAplicable>()
-                .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
-        expect(correr('git', ['log', '-1', '--format=%s']), 'base',
-            reason: 'no commiteó nada');
+          repo.apply(rebanada([entrada])),
+          throwsA(
+            isA<RebanadaNoAplicable>().having(
+              (e) => e.queHacer,
+              'qué hacer',
+              isNotEmpty,
+            ),
+          ),
+        );
+        expect(
+          correr('git', ['log', '-1', '--format=%s']),
+          'base',
+          reason: 'no commiteó nada',
+        );
       });
     }
 
@@ -375,9 +456,15 @@ exec git "$@"
       // rechazo genérico de forma no canónica — verde, y sin la guardia. Lo
       // encontró una mutación, no un test.
       await expectLater(
-          repo.apply(rebanada(['${raiz.path}/a.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()
-              .having((e) => e.reason, 'razón', contains('absoluta'))));
+        repo.apply(rebanada(['${raiz.path}/a.txt'])),
+        throwsA(
+          isA<RebanadaNoAplicable>().having(
+            (e) => e.reason,
+            'razón',
+            contains('absoluta'),
+          ),
+        ),
+      );
     });
 
     test('un archivo NO RASTREADO en el árbol no cuenta como de más', () async {
@@ -387,26 +474,36 @@ exec git "$@"
       escribir('suelto.txt', 'nadie lo pidió\n');
       await repo.apply(rebanada(['a.txt']));
       expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'a.txt');
-      expect(correr('git', ['status', '--porcelain', 'suelto.txt']),
-          contains('suelto.txt'));
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'a.txt',
+      );
+      expect(
+        correr('git', ['status', '--porcelain', 'suelto.txt']),
+        contains('suelto.txt'),
+      );
     });
 
     test('el mismo archivo dos veces se rechaza', () async {
-      await expectLater(repo.apply(rebanada(['a.txt', 'a.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['a.txt', 'a.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
 
-    test('CONTROL NEGATIVO: un archivo que se llama «*.txt» SÍ se commitea',
-        () async {
-      // La corrección no puede volverse «prohibido lo que parezca un patrón».
-      // Con pathspecs literales el nombre raro es un nombre y nada más — y
-      // antes de la corrección este caso era imposible.
-      escribir('*.txt', 'raro\n');
-      await repo.apply(rebanada(['*.txt']));
-      expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), '*.txt');
-    });
+    test(
+      'CONTROL NEGATIVO: un archivo que se llama «*.txt» SÍ se commitea',
+      () async {
+        // La corrección no puede volverse «prohibido lo que parezca un patrón».
+        // Con pathspecs literales el nombre raro es un nombre y nada más — y
+        // antes de la corrección este caso era imposible.
+        escribir('*.txt', 'raro\n');
+        await repo.apply(rebanada(['*.txt']));
+        expect(
+          correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+          '*.txt',
+        );
+      },
+    );
 
     test('si igual fuera a entrar algo de más, NO se commitea', () async {
       // El control que cubre el caso que nadie enumeró. El envoltorio le hace
@@ -425,15 +522,30 @@ exec git "$@"
 ''');
       final antes = correr('git', ['rev-parse', 'HEAD']);
       final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
+        directorio: raiz.path,
+        politica: politica,
+        programa: falso,
+      );
       await expectLater(
-          torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
-          throwsA(isA<PromesaIncumplida>()
-              .having((e) => e.quedo, 'quedó', contains('intruso.txt'))));
-      expect(correr('git', ['rev-parse', 'HEAD']), antes,
-          reason: 'no puede quedar el commit que se acaba de declarar mal');
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason: 'ni el índice preparado para que alguien lo commitee a mano');
+        torcido.apply(rebanada(['a.txt'], intent: 'sabotaje')),
+        throwsA(
+          isA<PromesaIncumplida>().having(
+            (e) => e.quedo,
+            'quedó',
+            contains('intruso.txt'),
+          ),
+        ),
+      );
+      expect(
+        correr('git', ['rev-parse', 'HEAD']),
+        antes,
+        reason: 'no puede quedar el commit que se acaba de declarar mal',
+      );
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'ni el índice preparado para que alguien lo commitee a mano',
+      );
     });
   });
 
@@ -448,10 +560,13 @@ exec git "$@"
       escribir('generado.gen', 'lo hizo la toolchain\n');
       final antes = correr('git', ['rev-parse', 'HEAD']);
       await expectLater(
-          repo.apply(rebanada(['generado.gen'])),
-          throwsA(isA<RebanadaNoAplicable>()
+        repo.apply(rebanada(['generado.gen'])),
+        throwsA(
+          isA<RebanadaNoAplicable>()
               .having((e) => e.reason, 'razón', contains('no es fuente'))
-              .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
+              .having((e) => e.queHacer, 'qué hacer', isNotEmpty),
+        ),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
@@ -460,8 +575,10 @@ exec git "$@"
       // versiona. Preguntar por lo generado dejaba pasar la mitad de `N1-03`.
       Directory('${raiz.path}/build').createSync();
       escribir('build/salida.txt', 'x\n');
-      await expectLater(repo.apply(rebanada(['build/salida.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['build/salida.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
     });
 
     test('pero BORRAR un generado ya versionado sí se puede', () async {
@@ -483,7 +600,9 @@ exec git "$@"
       escribir('a.txt', 'cambio\n');
       await repo.apply(rebanada(['a.txt']));
       expect(
-          correr('git', ['show', '--name-only', '--format=', 'HEAD']), 'a.txt');
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'a.txt',
+      );
     });
 
     test('se le pregunta al puerto, no a una lista de acá', () async {
@@ -495,10 +614,14 @@ exec git "$@"
       escribir('a.txt', 'cambio\n');
       escribir('generado.gen', 'x\n');
       await expectLater(
-          otro.apply(rebanada(['a.txt'])), throwsA(isA<RebanadaNoAplicable>()));
+        otro.apply(rebanada(['a.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       await otro.apply(rebanada(['generado.gen']));
-      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
-          'generado.gen');
+      expect(
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'generado.gen',
+      );
     });
   });
 
@@ -530,14 +653,23 @@ exec git "$@"
         escribir('ajustes.conf', 'final x = 1;\n${muestras[nombre]}\n');
         final antes = correr('git', ['rev-parse', 'HEAD']);
         await expectLater(
-            repo.apply(rebanada(['ajustes.conf'])),
-            throwsA(isA<RebanadaNoAplicable>()
+          repo.apply(rebanada(['ajustes.conf'])),
+          throwsA(
+            isA<RebanadaNoAplicable>()
                 .having((e) => e.reason, 'razón', contains(nombre))
-                .having((e) => e.queHacer, 'qué hacer', isNotEmpty)));
-        expect(correr('git', ['rev-parse', 'HEAD']), antes,
-            reason: 'un secreto commiteado no se des-commitea');
-        expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-            reason: 'ni queda preparado para que alguien lo commitee a mano');
+                .having((e) => e.queHacer, 'qué hacer', isNotEmpty),
+          ),
+        );
+        expect(
+          correr('git', ['rev-parse', 'HEAD']),
+          antes,
+          reason: 'un secreto commiteado no se des-commitea',
+        );
+        expect(
+          correr('git', ['diff', '--cached', '--name-only']),
+          isEmpty,
+          reason: 'ni queda preparado para que alguien lo commitee a mano',
+        );
       });
     }
 
@@ -550,10 +682,15 @@ exec git "$@"
         await repo.apply(rebanada(['ajustes.conf']));
         fail('tenía que rechazar');
       } on RebanadaNoAplicable catch (e) {
-        expect([e.reason, e.queHacer, e.toString()].join(' '),
-            isNot(contains(secreto)));
-        expect(e.reason, contains('ajustes.conf'),
-            reason: 'sí dice dónde, que es lo accionable');
+        expect(
+          [e.reason, e.queHacer, e.toString()].join(' '),
+          isNot(contains(secreto)),
+        );
+        expect(
+          e.reason,
+          contains('ajustes.conf'),
+          reason: 'sí dice dónde, que es lo accionable',
+        );
       }
     });
 
@@ -572,24 +709,28 @@ exec git "$@"
       // El patrón que mira el NOMBRE es el que más falsos positivos puede dar,
       // y bloquea: un falso positivo acá cuesta caro.
       escribir(
-          'ajustes.conf',
-          'const apiKey = "YOUR_API_KEY_HERE";\n'
-              'const password = "xxxxxxxxxxxxxxxx";\n'
-              'const token = String.fromEnvironment("TOKEN");\n'
-              // Y un valor CORTO: cuatro caracteres no son una credencial, y sin
-              // el umbral el patrón que mira el nombre marcaría cualquier
-              // asignación. Lo encontró una mutación, no un test.
-              'const apiKey = "ab12";\n');
+        'ajustes.conf',
+        'const apiKey = "YOUR_API_KEY_HERE";\n'
+            'const password = "xxxxxxxxxxxxxxxx";\n'
+            'const token = String.fromEnvironment("TOKEN");\n'
+            // Y un valor CORTO: cuatro caracteres no son una credencial, y sin
+            // el umbral el patrón que mira el nombre marcaría cualquier
+            // asignación. Lo encontró una mutación, no un test.
+            'const apiKey = "ab12";\n',
+      );
       await repo.apply(rebanada(['ajustes.conf']));
-      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
-          'ajustes.conf');
+      expect(
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'ajustes.conf',
+      );
     });
 
     test('un BINARIO no bloquea, y es un límite declarado', () async {
       // Buscar una forma de texto dentro de bytes que no son texto no responde
       // nada. Queda como límite del detector, escrito y no disimulado.
-      File('${raiz.path}/imagen.bin')
-          .writeAsBytesSync([0, 1, 2, 255, 254, 0, 3]);
+      File(
+        '${raiz.path}/imagen.bin',
+      ).writeAsBytesSync([0, 1, 2, 255, 254, 0, 3]);
       // La premisa, comprobada y no asumida: git no emite NINGUNA línea de
       // contenido para un binario, así que no hay nada que saltar. Había una
       // rama que lo saltaba y una mutación la encontró muerta.
@@ -599,38 +740,51 @@ exec git "$@"
       expect(diff.split('\n').where((l) => l.startsWith('+')), isEmpty);
 
       await repo.apply(rebanada(['imagen.bin']));
-      expect(correr('git', ['show', '--name-only', '--format=', 'HEAD']),
-          'imagen.bin');
+      expect(
+        correr('git', ['show', '--name-only', '--format=', 'HEAD']),
+        'imagen.bin',
+      );
     });
   });
 
   group('aplicar dos veces la misma rebanada', () {
     setUp(() async => repo.useBranch('shipflow/x'));
 
-    test('NO hace un segundo commit, y lo dice sin culpar a la rebanada',
-        () async {
-      // Es lo que vería una reanudación tras morir entre el commit y el PR.
-      //
-      // **La protección existía y era accidental.** La cierra la cláusula «ni
-      // uno menos», que entró por un review y por otra razón: un plan que
-      // declara un archivo y no lo toca. Nadie la diseñó para esto, y una
-      // guardia que protege algo que su autor no sabía que protegía se puede
-      // quitar en la próxima refactorización sin que nada lo note — porque su
-      // test habla de otro escenario. Este test es el que faltaba.
-      escribir('a.txt', 'cambio\n');
-      final rebanadaFija = rebanada(['a.txt']);
-      final primera = await repo.apply(rebanadaFija);
-      final commitsAntes = correr('git', ['rev-list', '--count', 'HEAD']);
+    test(
+      'NO hace un segundo commit, y lo dice sin culpar a la rebanada',
+      () async {
+        // Es lo que vería una reanudación tras morir entre el commit y el PR.
+        //
+        // **La protección existía y era accidental.** La cierra la cláusula «ni
+        // uno menos», que entró por un review y por otra razón: un plan que
+        // declara un archivo y no lo toca. Nadie la diseñó para esto, y una
+        // guardia que protege algo que su autor no sabía que protegía se puede
+        // quitar en la próxima refactorización sin que nada lo note — porque su
+        // test habla de otro escenario. Este test es el que faltaba.
+        escribir('a.txt', 'cambio\n');
+        final rebanadaFija = rebanada(['a.txt']);
+        final primera = await repo.apply(rebanadaFija);
+        final commitsAntes = correr('git', ['rev-list', '--count', 'HEAD']);
 
-      await expectLater(
+        await expectLater(
           repo.apply(rebanadaFija),
-          throwsA(isA<RebanadaNoAplicable>().having((e) => e.queHacer,
-              'nombra la reanudación', contains('YA se haya aplicado'))));
+          throwsA(
+            isA<RebanadaNoAplicable>().having(
+              (e) => e.queHacer,
+              'nombra la reanudación',
+              contains('YA se haya aplicado'),
+            ),
+          ),
+        );
 
-      expect(correr('git', ['rev-list', '--count', 'HEAD']), commitsAntes,
-          reason: 'ningún segundo commit');
-      expect(correr('git', ['rev-parse', 'HEAD']), primera);
-    });
+        expect(
+          correr('git', ['rev-list', '--count', 'HEAD']),
+          commitsAntes,
+          reason: 'ningún segundo commit',
+        );
+        expect(correr('git', ['rev-parse', 'HEAD']), primera);
+      },
+    );
   });
 
   group('las tres formas de colar un secreto que encontró un review', () {
@@ -641,14 +795,18 @@ exec git "$@"
       // encabezado tiene esa forma. Un contenido `++ AKIA…` la tiene también.
       escribir('ajustes.conf', '++ AKIAIOSFODNN7EXAMPLE\n');
       git(['add', '--', 'ajustes.conf']);
-      expect(correr('git', ['diff', '--cached', '--unified=0']),
-          contains('+++ AKIAIOSFODNN7EXAMPLE'),
-          reason: 'la premisa, con git de verdad');
+      expect(
+        correr('git', ['diff', '--cached', '--unified=0']),
+        contains('+++ AKIAIOSFODNN7EXAMPLE'),
+        reason: 'la premisa, con git de verdad',
+      );
       git(['reset', '--quiet']);
 
       final antes = correr('git', ['rev-parse', 'HEAD']);
-      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['ajustes.conf'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
@@ -661,14 +819,18 @@ exec git "$@"
       escribir('.gitattributes', '*.conf diff=oculto\n');
       escribir('ajustes.conf', 'const k = "AKIAIOSFODNN7EXAMPLE";\n');
       git(['add', '--', 'ajustes.conf']);
-      expect(correr('git', ['diff', '--cached', '--unified=0']),
-          isNot(contains('AKIA')),
-          reason: 'la premisa: con textconv, el secreto no se ve');
+      expect(
+        correr('git', ['diff', '--cached', '--unified=0']),
+        isNot(contains('AKIA')),
+        reason: 'la premisa: con textconv, el secreto no se ve',
+      );
       git(['reset', '--quiet']);
 
       final antes = correr('git', ['rev-parse', 'HEAD']);
-      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['ajustes.conf'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
@@ -682,51 +844,74 @@ exec git "$@"
       escribir('.gitattributes', '*.conf diff=mudo\n');
       escribir('ajustes.conf', 'const k = "AKIAIOSFODNN7EXAMPLE";\n');
       git(['add', '--', 'ajustes.conf']);
-      expect(correr('git', ['diff', '--cached', '--unified=0']),
-          isNot(contains('AKIA')),
-          reason: 'la premisa: el driver externo lo oculta');
       expect(
-          correr('git', ['diff', '--cached', '--unified=0', '--no-textconv']),
-          isNot(contains('AKIA')),
-          reason: 'y --no-textconv NO alcanza: son dos agujeros distintos');
+        correr('git', ['diff', '--cached', '--unified=0']),
+        isNot(contains('AKIA')),
+        reason: 'la premisa: el driver externo lo oculta',
+      );
+      expect(
+        correr('git', ['diff', '--cached', '--unified=0', '--no-textconv']),
+        isNot(contains('AKIA')),
+        reason: 'y --no-textconv NO alcanza: son dos agujeros distintos',
+      );
       git(['reset', '--quiet']);
 
       final antes = correr('git', ['rev-parse', 'HEAD']);
-      await expectLater(repo.apply(rebanada(['ajustes.conf'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['ajustes.conf'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       expect(correr('git', ['rev-parse', 'HEAD']), antes);
     });
 
-    test('NINGÚN gancho del usuario corre, ni los que `--no-verify` deja pasar',
-        () async {
-      // `--no-verify` frena `pre-commit` y `commit-msg`, y nada más. Un review
-      // lo midió: `prepare-commit-msg` reescribía el archivo en el ÁRBOL y
-      // `apply` devolvía éxito dejando el repositorio con la clave. El objeto
-      // commiteado seguía siendo el inspeccionado —el índice aislado aguantó—
-      // pero el costo declarado era falso.
-      final hooks = Directory('${raiz.path}/.git/hooks')
-        ..createSync(recursive: true);
-      for (final gancho in ['pre-commit', 'prepare-commit-msg', 'commit-msg']) {
-        File('${hooks.path}/$gancho').writeAsStringSync('#!/bin/sh\n'
+    test(
+      'NINGÚN gancho del usuario corre, ni los que `--no-verify` deja pasar',
+      () async {
+        // `--no-verify` frena `pre-commit` y `commit-msg`, y nada más. Un review
+        // lo midió: `prepare-commit-msg` reescribía el archivo en el ÁRBOL y
+        // `apply` devolvía éxito dejando el repositorio con la clave. El objeto
+        // commiteado seguía siendo el inspeccionado —el índice aislado aguantó—
+        // pero el costo declarado era falso.
+        final hooks = Directory('${raiz.path}/.git/hooks')
+          ..createSync(recursive: true);
+        for (final gancho in [
+          'pre-commit',
+          'prepare-commit-msg',
+          'commit-msg',
+        ]) {
+          File('${hooks.path}/$gancho').writeAsStringSync(
+            '#!/bin/sh\n'
             'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
             'git add -- ajustes.conf\n'
-            'exit 0\n');
-        Process.runSync('chmod', ['700', '${hooks.path}/$gancho']);
-      }
-      File('${hooks.path}/post-commit').writeAsStringSync(
-          '#!/bin/sh\n: > .git/corrio-post-commit\nexit 0\n');
-      Process.runSync('chmod', ['700', '${hooks.path}/post-commit']);
+            'exit 0\n',
+          );
+          Process.runSync('chmod', ['700', '${hooks.path}/$gancho']);
+        }
+        File(
+          '${hooks.path}/post-commit',
+        ).writeAsStringSync('#!/bin/sh\n: > .git/corrio-post-commit\nexit 0\n');
+        Process.runSync('chmod', ['700', '${hooks.path}/post-commit']);
 
-      escribir('ajustes.conf', 'inocente\n');
-      await repo.apply(rebanada(['ajustes.conf']));
+        escribir('ajustes.conf', 'inocente\n');
+        await repo.apply(rebanada(['ajustes.conf']));
 
-      expect(correr('git', ['show', 'HEAD:ajustes.conf']), 'inocente',
-          reason: 'se commitea el objeto que se escaneó, no otro');
-      expect(File('${raiz.path}/ajustes.conf').readAsStringSync(), 'inocente\n',
-          reason: 'y el árbol tampoco queda con la clave');
-      expect(File('${raiz.path}/.git/corrio-post-commit').existsSync(), isFalse,
-          reason: 'post-commit tampoco: el costo declarado dice NINGUNO');
-    });
+        expect(
+          correr('git', ['show', 'HEAD:ajustes.conf']),
+          'inocente',
+          reason: 'se commitea el objeto que se escaneó, no otro',
+        );
+        expect(
+          File('${raiz.path}/ajustes.conf').readAsStringSync(),
+          'inocente\n',
+          reason: 'y el árbol tampoco queda con la clave',
+        );
+        expect(
+          File('${raiz.path}/.git/corrio-post-commit').existsSync(),
+          isFalse,
+          reason: 'post-commit tampoco: el costo declarado dice NINGUNO',
+        );
+      },
+    );
 
     test('ni un gancho dejado en NUESTRO directorio de ganchos', () async {
       // `core.hooksPath` apunta a un directorio nuestro que se recrea vacío en
@@ -735,16 +920,20 @@ exec git "$@"
       // que abrimos nosotros.
       final nuestro = Directory('${raiz.path}/.git/index.shipflow.sin-ganchos')
         ..createSync(recursive: true);
-      File('${nuestro.path}/pre-commit').writeAsStringSync('#!/bin/sh\n'
-          'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
-          'git add -- ajustes.conf\n'
-          'exit 0\n');
+      File('${nuestro.path}/pre-commit').writeAsStringSync(
+        '#!/bin/sh\n'
+        'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
+        'git add -- ajustes.conf\n'
+        'exit 0\n',
+      );
       Process.runSync('chmod', ['700', '${nuestro.path}/pre-commit']);
 
       escribir('ajustes.conf', 'inocente\n');
       await repo.apply(rebanada(['ajustes.conf']));
       expect(
-          File('${raiz.path}/ajustes.conf').readAsStringSync(), 'inocente\n');
+        File('${raiz.path}/ajustes.conf').readAsStringSync(),
+        'inocente\n',
+      );
     });
 
     test('un gancho `pre-commit` que cambia el contenido DESPUÉS', () async {
@@ -753,16 +942,21 @@ exec git "$@"
       // commit se llevaba la clave.
       final hooks = Directory('${raiz.path}/.git/hooks')
         ..createSync(recursive: true);
-      File('${hooks.path}/pre-commit').writeAsStringSync('#!/bin/sh\n'
-          'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
-          'git add -- ajustes.conf\n'
-          'exit 0\n');
+      File('${hooks.path}/pre-commit').writeAsStringSync(
+        '#!/bin/sh\n'
+        'printf \'const k = "AKIAIOSFODNN7EXAMPLE";\\n\' > ajustes.conf\n'
+        'git add -- ajustes.conf\n'
+        'exit 0\n',
+      );
       Process.runSync('chmod', ['700', '${hooks.path}/pre-commit']);
 
       escribir('ajustes.conf', 'inocente\n');
       await repo.apply(rebanada(['ajustes.conf']));
-      expect(correr('git', ['show', 'HEAD:ajustes.conf']), 'inocente',
-          reason: 'se commitea el objeto que se escaneó, no otro');
+      expect(
+        correr('git', ['show', 'HEAD:ajustes.conf']),
+        'inocente',
+        reason: 'se commitea el objeto que se escaneó, no otro',
+      );
     });
   });
 
@@ -779,15 +973,27 @@ exec git "$@"
 ''');
       escribir('a.txt', 'cambio\n');
       final torcido = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: falso);
+        directorio: raiz.path,
+        politica: politica,
+        programa: falso,
+      );
       await expectLater(
-          torcido.apply(rebanada(['a.txt'])),
-          throwsA(isA<PromesaIncumplida>()
+        torcido.apply(rebanada(['a.txt'])),
+        throwsA(
+          isA<PromesaIncumplida>()
               .having((e) => e.quedo, 'nombra la revisión', contains('creada'))
-              .having((e) => e.quedo, 'y qué quedó sin hacer',
-                  contains('sin sincronizar'))));
-      expect(correr('git', ['log', '-1', '--format=%s']), 'porque sí',
-          reason: 'el commit se hizo, y no se deshace: eso salió bien');
+              .having(
+                (e) => e.quedo,
+                'y qué quedó sin hacer',
+                contains('sin sincronizar'),
+              ),
+        ),
+      );
+      expect(
+        correr('git', ['log', '-1', '--format=%s']),
+        'porque sí',
+        reason: 'el commit se hizo, y no se deshace: eso salió bien',
+      );
     });
 
     test('un archivo cuyo nombre empieza con espacio no se corrompe', () async {
@@ -797,10 +1003,15 @@ exec git "$@"
       escribir(' a.txt', 'con espacio adelante\n');
       await repo.apply(rebanada([' a.txt']));
       expect(
-          correrCrudo('git', ['show', '--name-only', '--format=', '-z', 'HEAD'])
-              .split('\u0000')
-              .where((s) => s.isNotEmpty),
-          [' a.txt']);
+        correrCrudo('git', [
+          'show',
+          '--name-only',
+          '--format=',
+          '-z',
+          'HEAD',
+        ]).split('\u0000').where((s) => s.isNotEmpty),
+        [' a.txt'],
+      );
     });
   });
 
@@ -813,12 +1024,13 @@ exec git "$@"
 
     test('dice el archivo y la LÍNEA', () {
       final h = detector.revisar(
-          'diff --git a/x.txt b/x.txt\n'
-          '--- a/x.txt\n+++ b/x.txt\n'
-          '@@ -0,0 +12,2 @@\n'
-          '+inocente\n'
-          '+AKIAIOSFODNN7EXAMPLE\n',
-          archivo: 'x.txt');
+        'diff --git a/x.txt b/x.txt\n'
+        '--- a/x.txt\n+++ b/x.txt\n'
+        '@@ -0,0 +12,2 @@\n'
+        '+inocente\n'
+        '+AKIAIOSFODNN7EXAMPLE\n',
+        archivo: 'x.txt',
+      );
       expect(h, hasLength(1));
       expect(h.single.archivo, 'x.txt');
       expect(h.single.linea, 13);
@@ -828,12 +1040,14 @@ exec git "$@"
       // «No encontré nada» y «no pude mirar» no se pueden confundir. Devolver
       // cero acá diría que el archivo está limpio sin haberlo leído.
       expect(
-          () => detector.revisar(
-              'diff --git a/x.txt b/x.txt\n'
-              '@@ esto no es un encabezado @@\n'
-              '+AKIAIOSFODNN7EXAMPLE\n',
-              archivo: 'x.txt'),
-          throwsA(isA<DiffIlegible>()));
+        () => detector.revisar(
+          'diff --git a/x.txt b/x.txt\n'
+          '@@ esto no es un encabezado @@\n'
+          '+AKIAIOSFODNN7EXAMPLE\n',
+          archivo: 'x.txt',
+        ),
+        throwsA(isA<DiffIlegible>()),
+      );
     });
 
     test('una línea que encaja en DOS patrones es UN hallazgo', () {
@@ -843,10 +1057,11 @@ exec git "$@"
       // Lo encontró una mutación: cambiar el `break` por `continue` no ponía
       // nada en rojo.
       final h = detector.revisar(
-          'diff --git a/x.txt b/x.txt\n'
-          '@@ -0,0 +1 @@\n'
-          '+const apiKey = "AKIAZZZZ111122223333";\n',
-          archivo: 'x.txt');
+        'diff --git a/x.txt b/x.txt\n'
+        '@@ -0,0 +1 @@\n'
+        '+const apiKey = "AKIAZZZZ111122223333";\n',
+        archivo: 'x.txt',
+      );
       expect(h, hasLength(1));
     });
 
@@ -854,13 +1069,15 @@ exec git "$@"
       // Lo que distingue el encabezado no es su forma: es que está ANTES del
       // primer `@@`.
       expect(
-          detector.revisar(
-              'diff --git a/x b/x\n'
-              '+++ b/AKIAIOSFODNN7EXAMPLE\n'
-              '@@ -0,0 +1 @@\n'
-              '+limpio\n',
-              archivo: 'x.txt'),
-          isEmpty);
+        detector.revisar(
+          'diff --git a/x b/x\n'
+          '+++ b/AKIAIOSFODNN7EXAMPLE\n'
+          '@@ -0,0 +1 @@\n'
+          '+limpio\n',
+          archivo: 'x.txt',
+        ),
+        isEmpty,
+      );
     });
 
     test('pero una línea de CONTENIDO que empieza con ++ sí se mira', () {
@@ -868,9 +1085,10 @@ exec git "$@"
       // representa como `+++ AKIA…`, y descartarlo por su forma lo dejaba
       // pasar. Está medido con git de verdad.
       final h = detector.revisar(
-          '@@ -0,0 +1 @@\n'
-          '+++ AKIAIOSFODNN7EXAMPLE\n',
-          archivo: 'x.txt');
+        '@@ -0,0 +1 @@\n'
+        '+++ AKIAIOSFODNN7EXAMPLE\n',
+        archivo: 'x.txt',
+      );
       expect(h, hasLength(1));
       expect(h.single.linea, 1);
     });
@@ -888,31 +1106,49 @@ exec git "$@"
 
     setUp(() async => repo.useBranch('shipflow/x'));
 
-    test('una versión preparada distinta de HEAD sobrevive al rechazo',
-        () async {
-      escribir('a.txt', 'LA QUE PREPARÓ EL USUARIO\n');
-      git(['add', '--', 'a.txt']);
-      escribir('a.txt', 'la que hay en el árbol\n');
-      final preparada = correr('git', ['show', ':a.txt']);
-      expect(preparada, contains('PREPARÓ'), reason: 'la premisa');
+    test(
+      'una versión preparada distinta de HEAD sobrevive al rechazo',
+      () async {
+        escribir('a.txt', 'LA QUE PREPARÓ EL USUARIO\n');
+        git(['add', '--', 'a.txt']);
+        escribir('a.txt', 'la que hay en el árbol\n');
+        final preparada = correr('git', ['show', ':a.txt']);
+        expect(preparada, contains('PREPARÓ'), reason: 'la premisa');
 
-      // b.txt no tiene cambios: la rebanada se rechaza por «ni uno menos».
-      await expectLater(repo.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+        // b.txt no tiene cambios: la rebanada se rechaza por «ni uno menos».
+        await expectLater(
+          repo.apply(rebanada(['a.txt', 'b.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()),
+        );
 
-      expect(correr('git', ['show', ':a.txt']), preparada,
-          reason: 'el índice del usuario no es nuestro para pisarlo');
-      expect(correr('git', ['status', '--porcelain', '--', 'b.txt']), isEmpty);
-    });
+        expect(
+          correr('git', ['show', ':a.txt']),
+          preparada,
+          reason: 'el índice del usuario no es nuestro para pisarlo',
+        );
+        expect(
+          correr('git', ['status', '--porcelain', '--', 'b.txt']),
+          isEmpty,
+        );
+      },
+    );
 
     test('una ruta que NO estaba preparada no queda preparada', () async {
       escribir('nueva.txt', 'nueva\n');
-      await expectLater(repo.apply(rebanada(['nueva.txt', 'b.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason: 'el add la había preparado; el rechazo la saca');
-      expect(File('${raiz.path}/nueva.txt').existsSync(), isTrue,
-          reason: 'sin tocar el árbol');
+      await expectLater(
+        repo.apply(rebanada(['nueva.txt', 'b.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'el add la había preparado; el rechazo la saca',
+      );
+      expect(
+        File('${raiz.path}/nueva.txt').existsSync(),
+        isTrue,
+        reason: 'sin tocar el árbol',
+      );
     });
 
     test('un `add` que falla A MEDIAS tampoco deja rastro', () async {
@@ -925,10 +1161,15 @@ exec git "$@"
       escribir('a.txt', 'cambio\n');
       escribir('ignorado.txt', 'x\n');
 
-      await expectLater(repo.apply(rebanada(['a.txt', 'ignorado.txt'])),
-          throwsA(isA<GitFallo>()));
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason: 'a.txt no puede quedar preparado por un add que falló');
+      await expectLater(
+        repo.apply(rebanada(['a.txt', 'ignorado.txt'])),
+        throwsA(isA<GitFallo>()),
+      );
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'a.txt no puede quedar preparado por un add que falló',
+      );
     });
 
     test('un merge sin resolver aborta antes de tocar nada', () async {
@@ -941,14 +1182,22 @@ exec git "$@"
       escribir('a.txt', 'de esta rama\n');
       git(['commit', '-am', 'esta']);
       git(['merge', 'otra']);
-      expect(correr('git', ['ls-files', '--stage', '--', 'a.txt']),
-          contains(' 1	'),
-          reason: 'la premisa: hay conflicto');
+      expect(
+        correr('git', ['ls-files', '--stage', '--', 'a.txt']),
+        contains(' 1	'),
+        reason: 'la premisa: hay conflicto',
+      );
 
       await expectLater(
-          repo.apply(rebanada(['a.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()
-              .having((e) => e.reason, 'razón', contains('merge'))));
+        repo.apply(rebanada(['a.txt'])),
+        throwsA(
+          isA<RebanadaNoAplicable>().having(
+            (e) => e.reason,
+            'razón',
+            contains('merge'),
+          ),
+        ),
+      );
     });
 
     test('una entrada `intent-to-add` sigue siendo intent-to-add', () async {
@@ -965,16 +1214,23 @@ exec git "$@"
       // cómo lo pinta `status` —`correr` recorta el espacio inicial de ` A`—
       // sino que NO hay contenido preparado. Esa es la premisa que importa.
       expect(antes, contains('A nueva.txt'), reason: 'la premisa: git la ve');
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason: 'la premisa: intent-to-add NO es contenido preparado');
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'la premisa: intent-to-add NO es contenido preparado',
+      );
 
-      await expectLater(repo.apply(rebanada(['a.txt', 'b.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['a.txt', 'b.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
 
       expect(correr('git', ['status', '--porcelain']), antes);
-      expect(correr('git', ['diff', '--cached', '--name-only']), isEmpty,
-          reason:
-              'no puede quedar preparado un archivo vacío que nadie preparó');
+      expect(
+        correr('git', ['diff', '--cached', '--name-only']),
+        isEmpty,
+        reason: 'no puede quedar preparado un archivo vacío que nadie preparó',
+      );
     });
 
     test('un `skip-worktree` tampoco se pierde', () async {
@@ -985,8 +1241,10 @@ exec git "$@"
       expect(antes, startsWith('S'), reason: 'la premisa: S = skip-worktree');
 
       escribir('a.txt', 'cambio\n');
-      await expectLater(repo.apply(rebanada(['a.txt', 'nada.txt'])),
-          throwsA(isA<RebanadaNoAplicable>()));
+      await expectLater(
+        repo.apply(rebanada(['a.txt', 'nada.txt'])),
+        throwsA(isA<RebanadaNoAplicable>()),
+      );
       expect(correr('git', ['ls-files', '-v', '--', 'b.txt']), antes);
     });
   });
@@ -996,11 +1254,19 @@ exec git "$@"
       // Una herramienta que no está no puede leerse como que no había nada que
       // hacer. Es la misma exigencia que ADR-011 le hace a un verificador.
       final sinGit = RepositorioGit(
-          directorio: raiz.path, politica: politica, programa: 'no-existe-git');
+        directorio: raiz.path,
+        politica: politica,
+        programa: 'no-existe-git',
+      );
       await expectLater(
         sinGit.useBranch('x'),
-        throwsA(isA<GitFallo>().having(
-            (e) => e.invocacion, 'invocación', contains('no-existe-git'))),
+        throwsA(
+          isA<GitFallo>().having(
+            (e) => e.invocacion,
+            'invocación',
+            contains('no-existe-git'),
+          ),
+        ),
       );
     });
   });
