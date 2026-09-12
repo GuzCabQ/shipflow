@@ -196,11 +196,45 @@ comprobado.
 | Sabotaje | Qué exige |
 |---|---|
 | Dos defectos independientes a la vez | que el informe nombre **los dos** |
-| El ancla de la cascada, perdida | que se reporte **y** que el último paso igual corra |
+| Un control que revienta | que se reporte **y** que un control posterior igual corra |
 
-El segundo pide las dos cosas a propósito: que el diagnóstico nombre lo que
-buscaba, y que `capas.py` haya llegado al final. Sin lo segundo, un caso que
-solo mirara el código de salida daría verde con el proceso reventado.
+**Los dos empezaron probando menos de lo que decían.** El primero rompía la
+forma del presupuesto con un espacio de más, y dejó de sabotear el día que la
+derivación se mudó al árbol sintáctico. El segundo exigía que apareciera el
+nombre de un paso que estaba *fuera* del grupo fusionado, así que pasaba con los
+controles otra vez juntos. Los dos están reapuntados, y los dos se vieron en
+rojo sobre su propio caso.
+
+### El parser que contaba corchetes se fue, no se arregló
+
+`capas.py` encontraba la lista de pasos de la cascada contando `[` y `]` sobre
+el texto. Una revisión lo reprodujo: con `// ]` antes del segundo paso, el
+recorte veía **uno donde hay dos** y ningún guardia disparaba —el README podía
+afirmar un paso y el check quedaba verde—. El comentario de aquel parser decía
+que el llamador lo cazaría.
+
+Contar caracteres para leer sintaxis no se arregla contando mejor. La derivación
+vive ahora en `tool/analisis/bin/check.dart`, sobre el árbol sintáctico, que es
+quien sabe qué es un comentario y qué es un corchete — el mismo criterio por el
+que el grafo se le pide a pub y el workflow a un parser de YAML.
+
+**Y escribirla produjo un falso rojo antes de commitear:** sin resolución,
+`Cascada([...])` llega como `MethodInvocation`, no como
+`InstanceCreationExpression`. La primera versión buscaba solo la segunda forma y
+reportaba «no encontré la lista» sobre un árbol sano.
+
+### Cada control es un paso, no cada grupo
+
+`check_meta` corría diez controles adentro de una sola llamada, así que una
+excepción en el segundo —un campo del registro con la forma estructural
+equivocada— dejaba sin ejecutar al de CI y al del README. El resultado global
+quedaba rojo y los defectos aparecían de a uno por corrida: el problema que el
+aislamiento vino a cerrar, a mitad de camino. Y `grafo()` corría fuera de
+`_paso`, así que un fallo suyo se llevaba el proceso antes de llegar a las
+cadenas.
+
+Ahora son **catorce pasos independientes**. Con el campo roto, el que revienta
+se reporta y los trece restantes corren.
 
 ### Tres propiedades que hacen verificable el registro
 

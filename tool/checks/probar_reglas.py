@@ -49,7 +49,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _comun import ancla, ancla_multiple, exige_unica, literal_de_lista  # noqa: E402
+from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
@@ -611,23 +611,22 @@ def casos() -> list[dict]:
     # indentado tampoco se cablea (`\s+`, no seis espacios fijos): un
     # `dart format` que cambia la indentación de `verify.dart` no tiene por
     # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
+    # La propagación por paso, que el sabotaje del default no cubría: un review
+    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    #
+    # **Ya no hace falta localizar el literal de la lista.** Se hacía contando
+    # corchetes, y eso admitía un falso verde con un `]` dentro de un
+    # comentario; la derivación se mudó al analizador y el sabotaje puede
+    # atacar el texto directo. `ancla_multiple` porque hay una propagación por
+    # paso y alcanza con romper una.
     verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
         encoding="utf-8")
-    _d, _cierre = literal_de_lista(verify_prop, "Cascada([",
-                                   que="los pasos de `cascadaPorDefecto`")
-    _lit = verify_prop[_d:_cierre]
-    _uno = re.search(r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
-                     _lit, re.M)
-    assert _uno, "no encontré la propagación del presupuesto en verify.dart"
     c.append({
         "nombre": "cascada · un paso con un presupuesto distinto del resto",
-        "archivos": {"packages/cli/lib/src/verify.dart": ancla(
-            verify_prop, _lit,
-            # Múltiple por diseño: hay una por paso, y el sabotaje quiere que
-            # UNO difiera del resto. Que sean varias es la premisa del caso.
-            ancla_multiple(_lit, _uno.group(1), "presupuesto: presupuesto * 2",
-                           que="la propagación del presupuesto a un paso"),
-            que="la lista de pasos de `cascadaPorDefecto`")},
+        "archivos": {"packages/cli/lib/src/verify.dart": ancla_multiple(
+            verify_prop, "presupuesto: presupuesto",
+            "presupuesto: presupuesto * 2",
+            que="la propagación del presupuesto a un paso")},
         "menciona": "como presupuesto y no el parámetro",
     })
 
@@ -702,47 +701,66 @@ def casos() -> list[dict]:
 
     # **El enmascaramiento, que ningún sabotaje cubría.** El arnés inyecta un
     # defecto por vez, así que la combinación donde uno tapa a otro no se
-    # ejercitaba nunca. Y pasaba: `_check_readme` encadenaba seis `return`, y
-    # un fallo cualquiera apagaba en silencio a los que venían después.
+    # ejercitaba nunca. Y pasaba: `_check_readme` encadenaba seis `return`, y un
+    # fallo cualquiera apagaba en silencio a los que venían después.
     #
-    # Este caso inyecta DOS defectos independientes —uno que corta temprano y
-    # otro que se comprueba al final— y exige que aparezcan LOS DOS. Con las
-    # secciones encadenadas, el segundo desaparecía del informe mientras el
-    # código de salida seguía en 1: no un falso verde, pero sí un problema
-    # escondido detrás de otro, que es la ceguera de ADR-011 adentro del propio
-    # verificador.
+    # Dos defectos independientes —uno en la PRIMERA sección y otro en la
+    # ÚLTIMA— y se exige que aparezcan los dos. Con las secciones encadenadas,
+    # el segundo desaparecía del informe mientras el código de salida seguía en
+    # 1: no un falso verde, pero sí un problema escondido detrás de otro.
+    #
+    # **La versión anterior de este caso rompía la forma del presupuesto con un
+    # espacio de más, y dejó de sabotear** cuando la derivación se mudó al árbol
+    # sintáctico, donde los espacios no significan nada. Reapuntado a un defecto
+    # que la primera sección sí ve.
     c.append({
         "nombre": "capas · un fallo no puede apagar a los que vienen después",
         "archivos": {
-            "README.md": ancla(
-                readme, "## Qué corre",
-                "## Qué corre\n\nEl detalle vive en serializacion/ por ahora.",
-                que="un encabezado del README donde inyectar un nombre retirado"),
-            verify_rel: ancla(
-                verify, "Duration presupuesto = const Duration(",
-                "Duration presupuesto = const  Duration(",
-                que="la forma del presupuesto, que se rompe para cortar temprano"),
+            "README.md": ancla_multiple(
+                ancla(readme, filas[0] + "\n", "",
+                      que="la fila de la tabla, que rompe la PRIMERA sección"),
+                "  analisis/", "  serializacion/",
+                que="el nombre retirado, que solo ve la ÚLTIMA sección"),
         },
-        "menciona": ["no encontré el presupuesto", "nombre retirado"],
+        "menciona": ["no está en la tabla", "nombre retirado"],
     })
 
-    # **Y que un ancla perdida se REPORTE en vez de reventar.** El `.index` que
-    # leía la lista de pasos no tenía guardia: con un cambio realista —agregarle
-    # el tipo explícito al literal— `capas.py` moría con un `ValueError` y los
-    # cuatro pasos quedaban sin imprimir ni una línea. No era un falso verde,
-    # pero sí un diagnóstico inservible y diez controles saltados por un ancla.
+    # **Y que un control que revienta se reporte, en vez de llevarse a los
+    # demás.** `check_meta` corría diez controles adentro de una sola llamada,
+    # así que una excepción en el segundo dejaba sin ejecutar al de CI y al del
+    # README: el resultado quedaba rojo y los defectos aparecían de a uno por
+    # corrida. Lo encontró una revisión, con este mismo sabotaje — un campo del
+    # registro con la forma estructural equivocada.
     #
-    # El `menciona` pide dos cosas: que el diagnóstico nombre lo que buscaba, y
-    # que el ÚLTIMO paso de `capas.py` igual haya corrido. Lo segundo es lo que
-    # distingue «se reportó» de «se murió»: sin eso, un caso que solo mirara el
-    # código de salida daría verde con el proceso reventado.
+    # **Hacen falta DOS defectos, y la primera versión de este caso tenía uno.**
+    # Pedía que el diagnóstico dijera «la comprobación se rompió» y que
+    # apareciera «cadenas acotadas a su adapter» — pero eso último es el nombre
+    # de un paso que está FUERA del grupo que el sabotaje fusiona, así que
+    # seguía apareciendo con los controles otra vez juntos y el caso pasaba.
+    # Probaba menos de lo que decía probar, que es el defecto que este archivo
+    # existe para no tener.
+    #
+    # Ahora el segundo defecto lo ve un control POSTERIOR al que revienta: si el
+    # grupo se vuelve a fusionar, la excepción lo deja sin ejecutar y su
+    # diagnóstico desaparece.
     c.append({
-        "nombre": "capas · un ancla perdida se reporta y no se lleva al resto",
-        "archivos": {verify_rel: ancla(
-            verify, "Cascada([", "Cascada(<Verifier>[",
-            que="el literal de la cascada, al que se le pone el tipo explícito")},
-        "menciona": ["no encontré «Cascada([»", "cadenas acotadas a su adapter"],
+        "nombre": "capas · un control que revienta no apaga a los que siguen",
+        "archivos": {
+            ARQ_REL: arq_con(
+                lambda r: r["lenguaje-en-plugin-dart"]["alcance"].update(
+                    no_cuenta="esto no es una lista")),
+            "README.md": ancla_multiple(
+                readme, "  analisis/", "  serializacion/",
+                que="el nombre retirado, que ve un control POSTERIOR"),
+        },
+        "regenerar_huella": True,
+        "menciona": ["la comprobación se rompió", "nombre retirado"],
     })
+
+    # **Acá vivía el caso del ancla perdida, y se fue con su sujeto.** Protegía
+    # un `.index("Cascada([")` que ya no existe: la derivación se mudó al árbol
+    # sintáctico, donde un tipo explícito en el literal no cambia nada. Un caso
+    # que no puede sabotear nada es peor que ninguno — se lee como protección.
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
     c += casos_ciegos()

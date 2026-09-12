@@ -25,7 +25,6 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from _comun import AnclaPerdida, literal_de_lista  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
@@ -215,8 +214,8 @@ def grafo() -> tuple[dict[str, dict], str]:
 
 # --- meta · el registro sigue siendo aplicable --------------------------
 
-def check_meta() -> None:
-    existentes = paquetes()
+def check_registro() -> None:
+    """Las reglas obligatorias siguen declaradas, con los campos que las aplican."""
     for rid, campos in OBLIGATORIAS.items():
         regla = REGLAS.get(rid)
         if regla is None:
@@ -246,6 +245,11 @@ def check_meta() -> None:
             if actual != esperado:
                 fallos.append(f"arquitectura.json: «{rid}.alcance.{campo}» = {actual}; "
                               f"el valor fijado es {esperado}. Vaciarlo neutraliza la regla.")
+
+
+def _check_exclusiones() -> None:
+    """Una exclusión acota QUÉ ARCHIVOS se miran; no exime paquetes enteros."""
+    existentes = paquetes()
     for rid, regla in REGLAS.items():
         alcance = regla.get("alcance")
         if not isinstance(alcance, dict):
@@ -258,13 +262,11 @@ def check_meta() -> None:
                 fallos.append(f"arquitectura.json: la exclusión «{rid}.{nombre}» nombra "
                               f"paquetes enteros {invasores}. Una exclusión acota QUÉ ARCHIVOS "
                               f"se miran, no exime paquetes: para eso está `solo_en`.")
-    _check_no_cuenta()
-    _check_casos_ciegos()
-    _check_ci_ejecuta()
-    _check_readme()
-    _check_nada_fuera_de_alcance()
-    _check_huella()
-    _check_delegadas()
+
+
+def _check_paquetes_nombrados() -> None:
+    """Ninguna regla nombra un paquete que no existe."""
+    existentes = paquetes()
     for rid, regla in REGLAS.items():
         for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
             if pkg not in existentes:
@@ -369,8 +371,6 @@ def _aislado(que: str, fn, *args) -> None:
     """
     try:
         fn(*args)
-    except AnclaPerdida as e:
-        fallos.append(f"{que}: {e}")
     except Exception:  # noqa: BLE001 — cualquier fallo es un hallazgo, no un corte
         ultima = traceback.format_exc().strip().splitlines()[-3:]
         fallos.append(f"{que}: la comprobación se rompió y NO se pudo hacer. "
@@ -402,7 +402,6 @@ def _check_readme() -> None:
         ("README · la tabla de reglas", _readme_tabla),
         ("README · las rutas que nombra", _readme_rutas),
         ("README · los pasos obligatorios", _readme_pasos),
-        ("README · el presupuesto de la cascada", _readme_presupuesto),
         ("README · el inventario de puertos", _readme_puertos),
         ("README · los nombres retirados", _readme_nombres),
     ):
@@ -467,73 +466,18 @@ def _readme_pasos(texto: str) -> None:
                           f"cantidad en prosa que nada deriva envejece sola.")
 
 
-def _readme_presupuesto(texto: str) -> None:
-    """El presupuesto por paso y el peor caso de una corrida, derivados.
-
-    Es la cuarta cifra que este README afirma sobre sí mismo, y las tres
-    anteriores envejecieron solas. Sale de `verify.dart`, que es donde de verdad
-    está, y de cuántos pasos compone la cascada.
-    """
-    fuente = RAIZ / "packages" / "cli" / "lib" / "src" / "verify.dart"
-    if not fuente.exists():
-        fallos.append("no encontré packages/cli/lib/src/verify.dart, así que no "
-                      "puedo derivar el presupuesto por paso. No mirar no es lo "
-                      "mismo que no encontrar nada.")
-        return
-    fuente_texto = fuente.read_text(encoding="utf-8")
-    m_pres = re.search(r"Duration presupuesto = const Duration\(minutes: (\d+)\)",
-                       fuente_texto)
-    if not m_pres:
-        fallos.append("no encontré el presupuesto por defecto en verify.dart. "
-                      "Si cambió de forma, esta derivación dejó de mirar algo y "
-                      "hay que arreglarla, no borrarla.")
-        return
-    minutos = int(m_pres.group(1))
-
-    # Los pasos de la cascada por defecto: las entradas de la lista literal.
-    # **Acotado al literal, no al resto del archivo.** Sin el corte, el `switch`
-    # que imprime los desenlaces —`PasoEjecutado(`, `PasoRoto(`— caía en el
-    # mismo patrón y la cuenta pasó de 2 a 5 sin que nadie tocara la cascada.
-    desde, hasta = literal_de_lista(fuente_texto, "Cascada([",
-                                    que="los pasos de `cascadaPorDefecto`")
-    cuerpo = fuente_texto[desde:hasta]
-    n_pasos = len(re.findall(r"^\s+Paso[A-Za-z]+\(", cuerpo, re.M))
-    if n_pasos == 0:
-        fallos.append("conté cero pasos en `cascadaPorDefecto`. Cero se lee "
-                      "igual que «no miré».")
-        return
-
-    # **Y que cada paso reciba EXACTAMENTE ese presupuesto.** La derivación
-    # contaba los constructores y multiplicaba, sin mirar qué se les pasa:
-    # cambiar un solo paso a `presupuesto * 2` dejaba el check en verde y la
-    # cifra del README mintiendo. Lo reprodujo un review.
-    distintos = [v.strip() for v in re.findall(
-        r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?presupuesto:\s*([^,)]+)", cuerpo, re.M)]
-    if len(distintos) != n_pasos:
-        fallos.append(f"conté {n_pasos} pasos en `cascadaPorDefecto` y solo "
-                      f"{len(distintos)} le pasan un presupuesto. Un paso sin "
-                      f"presupuesto explícito no está cubierto por esta cuenta.")
-    for valor in set(distintos):
-        if valor != "presupuesto":
-            fallos.append(f"un paso de `cascadaPorDefecto` recibe "
-                          f"«{valor}» como presupuesto y no el parámetro. La "
-                          f"cifra del README multiplica UN valor por la "
-                          f"cantidad de pasos: con presupuestos distintos deja "
-                          f"de significar lo que dice.")
-
-    for patron, esperado, que in [
-        (r"un default de \*\*(\d+) minutos\*\*", minutos, "el presupuesto por paso"),
-        (r"Con los (\d+) pasos de hoy", n_pasos, "los pasos de la cascada"),
-        (r"una corrida puede tardar\s+(\d+) minutos", minutos * n_pasos,
-         "el peor caso de una corrida"),
-    ]:
-        m = re.search(patron, texto)
-        if not m:
-            fallos.append(f"README.md ya no afirma {que} en la forma que esta "
-                          f"derivación reconoce. Un patrón que no encuentra nada "
-                          f"no comprueba nada, y se lee igual que uno que sí.")
-        elif int(m.group(1)) != esperado:
-            fallos.append(f"README.md dice «{m.group(0)}»; {que} da {esperado}.")
+# **La derivación del presupuesto de la cascada se fue a `tool/analisis`.**
+#
+# Contaba corchetes sobre el texto para encontrar la lista de pasos, y una
+# revisión lo reprodujo: un `]` dentro de un comentario —`// ]`— hacía que el
+# recorte cerrara ahí, y con el recorte incluyendo UN paso ningún guardia
+# disparaba. El README podía afirmar un paso donde había dos y el check quedaba
+# verde. El comentario de aquel parser decía que el llamador lo cazaría.
+#
+# No se arregla contando mejor. Quien sabe qué es un comentario y qué es un
+# corchete es el analizador, y `tool/analisis` ya lo tiene — igual que el grafo
+# se le pide a pub y el workflow a un parser de YAML. Ver `_cifrasDeLaCascada`
+# en `tool/analisis/bin/check.dart`.
 
 
 def _readme_puertos(texto: str) -> None:
@@ -986,13 +930,43 @@ def main() -> int:
         HUELLA.write_text(huella_actual() + "\n", encoding="utf-8")
         print(f"huella escrita: {huella_actual()}")
         return 0
-    _paso("registro aplicable", check_meta)
-    g, raiz_ws = grafo()
+    # **Cada control es su propio paso, y ninguno puede apagar a otro.**
+    #
+    # Antes `check_meta` corría siete controles adentro de una sola llamada, así
+    # que una excepción en el primero —un campo del registro con la forma
+    # equivocada, por ejemplo— dejaba sin ejecutar al de CI y al del README. El
+    # resultado global quedaba rojo y los defectos aparecían de a uno por
+    # corrida, que es el problema que el aislamiento vino a cerrar y que quedó
+    # a mitad de camino. Lo encontró una revisión.
+    for nombre, fn in (
+        ("registro aplicable", check_registro),
+        ("exenciones de token", _check_no_cuenta),
+        ("casos ciegos declarados", _check_casos_ciegos),
+        ("exclusiones que no eximen paquetes", _check_exclusiones),
+        ("paquetes que las reglas nombran", _check_paquetes_nombrados),
+        ("CI ejecuta lo que dice", _check_ci_ejecuta),
+        ("el README describe lo que gobierna", _check_readme),
+        ("nada fuera del alcance del formateo", _check_nada_fuera_de_alcance),
+        ("la huella de la política", _check_huella),
+        ("reglas delegadas a otro motor", _check_delegadas),
+    ):
+        _paso(nombre, fn)
+
+    # **El grafo también va aislado.** Corría fuera de `_paso`, así que un fallo
+    # suyo se llevaba puesto el proceso antes de llegar a las cadenas.
+    g: dict[str, dict] = {}
+    raiz_ws = ""
+
+    def _pedir_grafo() -> None:
+        nonlocal g, raiz_ws
+        g, raiz_ws = grafo()
+
+    _paso("grafo de dependencias", _pedir_grafo)
     if g:
         _paso("flechas entre paquetes internos", check_flechas, g, raiz_ws)
         _paso("núcleo sin dependencias externas", check_origenes, g)
     else:
-        print(f"  {'grafo de dependencias':<38} NO DISPONIBLE")
+        print(f"  {'flechas y orígenes':<38} NO DISPONIBLE")
     _paso("cadenas acotadas a su adapter", check_cadenas)
 
     if fallos:

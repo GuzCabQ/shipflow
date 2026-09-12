@@ -68,36 +68,14 @@ def ancla(texto: str, viejo: str, nuevo: str, *, que: str) -> str:
     return texto.replace(viejo, nuevo, 1)
 
 
-def literal_de_lista(texto: str, apertura: str, *, que: str) -> tuple[int, int]:
-    """Los índices del literal de lista que abre en [apertura], `[` y `]` incluidos.
-
-    **El cierre se busca por profundidad de corchetes, no por un literal.** La
-    llamada que esto lee ganó un segundo argumento —`Cascada([...], observador:
-    obs)`— así que ya no cierra con `]);`, y los dos archivos que la leían
-    quedaron apuntando a una forma que no existe. Contar profundidad encuentra
-    el `]` que hace juego sea cual sea lo que venga después.
-
-    **No entiende Dart**: cuenta caracteres. Un `[` o un `]` dentro de una
-    cadena o un comentario, antes del cierre real, la confunde igual que a
-    cualquier expresión regular. No es silencioso —el llamador comprueba que lo
-    que quedó adentro tenga sentido— pero tampoco es correcto con cualquier
-    entrada, y va escrito.
-    """
-    desde = texto.find(apertura)
-    if desde < 0:
-        raise AnclaPerdida(
-            f"no encontré «{apertura}» para leer {que}. El ancla se perdió: "
-            f"reapuntala a la forma nueva. Un ancla que no encuentra nada no "
-            f"comprueba nada, y se lee igual que una que comprobó y salió bien.")
-    profundidad, i = 0, desde + apertura.index("[")
-    while i < len(texto):
-        if texto[i] == "[":
-            profundidad += 1
-        elif texto[i] == "]":
-            profundidad -= 1
-            if profundidad == 0:
-                return desde, i + 1
-        i += 1
-    raise AnclaPerdida(
-        f"el literal de lista de {que} no cierra: no encontré el `]` que hace "
-        f"juego con «{apertura}».")
+# **Acá vivía `literal_de_lista`, y se fue porque estaba mal.**
+#
+# Encontraba el `]` que hace juego con un `[` contando profundidad sobre el
+# texto, comentarios y cadenas incluidos. Su propio comentario admitía que no
+# entendía Dart y afirmaba que el llamador comprobaría que el recorte tuviera
+# sentido. Una revisión lo reprodujo: con `// ]` antes del segundo paso, el
+# recorte veía UNO donde había dos y ningún guardia disparaba.
+#
+# No se le agregó una guardia más: contar caracteres para leer sintaxis es la
+# idea equivocada, y se pide al analizador, que es quien sabe. La derivación
+# vive en `tool/analisis/bin/check.dart`, sobre el árbol sintáctico.
