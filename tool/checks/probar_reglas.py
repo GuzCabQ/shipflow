@@ -104,6 +104,17 @@ def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
     - **adentro**, que los sabotajes no dejen residuo, y ahí `.dart_tool` NO
       puede contar, porque `package_config.json` lleva una fecha de generación y
       los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+    **Cada entrada va con su tipo, su modo y las longitudes por delante.** La
+    primera versión concatenaba ruta y contenido con un `\0` en medio, y eso no
+    es una representación inequívoca: un árbol con `a=«b»` y `c=«d»` entregaba al
+    hash exactamente los mismos bytes que uno con `a=«bc\0d»`. No era una
+    colisión de SHA-256 — eran dos árboles distintos con la misma entrada. Lo
+    encontró una revisión, y `huella_ambigua` lo comprueba en cada corrida.
+
+    El modo tampoco viajaba, así que cambiar el bit ejecutable de un archivo no
+    movía la huella. Un arnés que promete «el original no cambió en absoluto»
+    tiene que ver eso.
     """
     h = hashlib.sha256()
     ignorados = {".git", "build"} | (set() if con_generados else {".dart_tool"})
@@ -111,12 +122,60 @@ def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
         rel = ruta.relative_to(raiz)
         if set(rel.parts) & ignorados or rel.suffix == ".dill":
             continue
-        h.update(str(rel).encode("utf-8"))
         if ruta.is_symlink():
-            h.update(b"\0enlace\0" + os.readlink(ruta).encode("utf-8"))
-        elif ruta.is_file():
-            h.update(b"\0" + ruta.read_bytes())
+            tipo, carga, modo = b"L", os.readlink(ruta).encode("utf-8"), 0
+        elif ruta.is_dir():
+            tipo, carga, modo = b"D", b"", 0
+        else:
+            tipo, carga = b"F", ruta.read_bytes()
+            modo = ruta.stat().st_mode & 0o777
+        nombre = str(rel).encode("utf-8")
+        h.update(tipo + b"\0")
+        h.update(f"{modo:o}".encode("ascii") + b"\0")
+        h.update(f"{len(nombre)}".encode("ascii") + b"\0" + nombre)
+        h.update(f"{len(carga)}".encode("ascii") + b"\0" + carga)
     return h.hexdigest()
+
+
+def huella_ambigua() -> list[str]:
+    """Que la huella distinga lo que dice distinguir. **Se comprueba siempre.**
+
+    No hay dónde poner una prueba unitaria de este archivo, y dejar la propiedad
+    sin comprobar sería la misma clase de confianza que el arnés persigue: la
+    huella es lo único que sostiene la afirmación de que el checkout compartido
+    no cambió. Si deja de distinguir, esa afirmación pasa a ser una frase.
+
+    Los dos casos son los que fallaron: la separación entre registros, y el modo.
+    """
+    problemas: list[str] = []
+    base = Path(tempfile.mkdtemp(prefix="arnes-huella-"))
+    try:
+        a, b = base / "a", base / "b"
+        a.mkdir()
+        b.mkdir()
+        (a / "a").write_bytes(b"b")
+        (a / "c").write_bytes(b"d")
+        (b / "a").write_bytes(b"bc\0d")
+        if huella_del_arbol(a, con_generados=True) == huella_del_arbol(
+                b, con_generados=True):
+            problemas.append(
+                "la huella no separa los registros: un árbol con dos archivos "
+                "y otro con uno solo dan la misma.\n      Sin longitudes por "
+                "delante, «no cambió en absoluto» no es una afirmación "
+                "comprobable.")
+        c = base / "c"
+        c.mkdir()
+        archivo = c / "x"
+        archivo.write_bytes(b"1")
+        antes = huella_del_arbol(c, con_generados=True)
+        archivo.chmod(0o755)
+        if huella_del_arbol(c, con_generados=True) == antes:
+            problemas.append(
+                "la huella no ve el modo: cambiar el bit ejecutable de un "
+                "archivo no la mueve.")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    return problemas
 
 
 def en_copia_privada(argumentos: list[str]) -> int:
@@ -852,6 +911,50 @@ def casos() -> list[dict]:
         "menciona": ["la comprobación se rompió", "nombre retirado"],
     })
 
+    # **Las formas de elemento que la derivación no sabe contar.**
+    #
+    # `whereType<Expression>()` descartaba en silencio los `CollectionElement`
+    # que no son expresiones. Una revisión lo reprodujo metiendo los pasos por
+    # un spread: la cascada corría dos, el README declaraba uno, y el
+    # verificador salía con cero. Las tres formas tienen su caso porque las tres
+    # pueden aportar cualquier cantidad de pasos, y ninguna se puede contar sin
+    # resolver — así que la derivación tiene que fallar cerrada, no saltearlas.
+    _abre = "  return Cascada([\n    PasoDeFormato("
+    _paso_extra = ("PasoDeFormato(\n        ejecutor: ejecutor, "
+                   "directorio: directorio, presupuesto: presupuesto)")
+    for _forma, _inyectado in (
+        ("un spread", "    ...const [],\n"),
+        ("un `if`", f"    if (false) {_paso_extra},\n"),
+        ("un `for`", f"    for (final _ in const <int>[]) {_paso_extra},\n"),
+    ):
+        c.append({
+            "nombre": f"cascada · la lista de pasos con {_forma}",
+            "archivos": {verify_rel: ancla(
+                verify, _abre,
+                "  return Cascada([\n" + _inyectado + "    PasoDeFormato(",
+                que=f"la apertura de la lista de pasos, donde entra {_forma}")},
+            "menciona": "no sabe contar",
+        })
+
+    # Y que la cascada que se lee sea **la retornada**, no la primera que
+    # aparezca. Reproducido: una rama condicional antes del `return` construye
+    # una cascada de un paso, la retornada sigue teniendo dos, y todo queda
+    # verde. Una llamada auxiliar o un closure pueden volverse la fuente
+    # documental por accidente.
+    c.append({
+        "nombre": "cascada · una cascada auxiliar antes de la retornada",
+        "archivos": {verify_rel: ancla(
+            verify, "  return Cascada([",
+            "  if (presupuesto.inMinutes == 0) {\n"
+            "    return Cascada([\n"
+            "      " + _paso_extra.replace("\n        ", "\n          ") + ",\n"
+            "    ], observador: obs);\n"
+            "  }\n"
+            "  return Cascada([",
+            que="el `return` de cascadaPorDefecto, antes del cual se inyecta otra")},
+        "menciona": "hace falta uno solo",
+    })
+
     # **Acá vivía el caso del ancla perdida, y se fue con su sujeto.** Protegía
     # un `.index("Cascada([")` que ya no existe: la derivación se mudó al árbol
     # sintáctico, donde un tipo explícito en el literal no cambia nada. Un caso
@@ -1128,6 +1231,15 @@ def main() -> int:
         print("El inventario de sabotajes está incompleto:\n")
         for f in faltantes:
             print(f"  {f}")
+        return 1
+
+    # La huella sostiene la afirmación de que el árbol no cambió, así que se
+    # comprueba a sí misma antes de que nadie se apoye en ella.
+    ambiguas = huella_ambigua()
+    if ambiguas:
+        print("La huella del árbol no distingue lo que dice distinguir:\n")
+        for a in ambiguas:
+            print(f"  {a}")
         return 1
 
     # **Residuo por CONTENIDO, no por `git status`.** La copia no tiene `.git`,

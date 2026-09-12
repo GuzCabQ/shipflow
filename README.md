@@ -295,6 +295,47 @@ compartido tras una corrida muerta— ya no aplica, porque ese checkout no se
 toca. Retirarlos es un cambio coordinado aparte: son un paso obligatorio de CI y
 una cifra derivada de este README.
 
+### La derivación falla cerrada, o no deriva nada
+
+Mover la cuenta al árbol sintáctico cerró el falso verde del parser de texto y
+dejó dos abiertos. Los encontró una revisión, y los dos tienen la misma forma:
+**el árbol se leía a medias y lo no reconocido se omitía.**
+
+| Qué se omitía | Qué pasaba |
+|---|---|
+| `whereType<Expression>()` descarta `...spread`, `if` y `for` | Los pasos entran por un spread: la cascada corre dos, el README declara uno, y el verificador sale con **cero** |
+| El visitante se quedaba con la **primera** `Cascada(` del cuerpo | Una rama condicional antes del `return` construye una de un paso y se vuelve la fuente documental |
+
+Ahora **todo elemento tiene que tener una forma que la derivación sepa leer**, y
+lo que se lee es la cascada que la función **retorna** — el `return`, uno solo;
+más de uno es ambiguo y ambiguo falla. Contar los `return` de closures anidados
+de más es deliberado: si hay uno, esta derivación no puede saber cuál es el de
+la función, y prefiere declararse ambigua a elegir.
+
+```
+la lista de pasos tiene un elemento de forma `SpreadElementImpl`,
+que esta derivación no sabe contar.
+
+no pude derivar la cascada: tiene 2 `return`, y hace falta uno solo
+para saber cuál cascada es la que se usa.
+```
+
+Las tres formas de elemento y la cascada auxiliar tienen su sabotaje permanente.
+
+### La huella distingue lo que dice distinguir
+
+La que sostiene «el checkout compartido no cambió» concatenaba ruta y contenido
+con un `\0` en medio, y eso no es una representación inequívoca: un árbol con
+`a=«b»` y `c=«d»` entregaba al hash **exactamente los mismos bytes** que uno con
+`a=«bc\0d»`. No era una colisión de SHA-256 — eran dos árboles distintos con la
+misma entrada. Y el modo no viajaba, así que cambiar el bit ejecutable de un
+archivo no la movía.
+
+Ahora cada entrada lleva tipo, modo y las longitudes por delante. **Y la huella
+se comprueba a sí misma en cada corrida**, antes de que nadie se apoye en ella:
+no hay dónde poner una prueba unitaria de ese archivo, y dejar la propiedad sin
+comprobar sería la misma confianza que el arnés persigue.
+
 ### Tres propiedades que hacen verificable el registro
 
 - **Cada regla tiene un `id` estable y una violación canónica.**
@@ -1133,7 +1174,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 107 sabotajes.**
+y su caso ciego. **El arnés aplica 111 sabotajes.**
 
 ---
 

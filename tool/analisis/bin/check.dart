@@ -298,13 +298,46 @@ void _cifrasDeLaCascada(Directory raiz, String readme) {
 
   final buscador = _CascadaPorDefecto();
   r.unit.accept(buscador);
+  if (buscador.ambiguedad != null) {
+    fallos.add('no pude derivar la cascada de `cascadaPorDefecto`: '
+        '${buscador.ambiguedad}. Esta derivación falla cerrada a propósito — '
+        'una forma que no sabe leer no se saltea, porque saltearla deja la '
+        'cifra del README sin nadie que la contradiga.');
+    return;
+  }
   if (buscador.lista == null) {
     fallos.add('no encontré la lista de pasos de `cascadaPorDefecto` en '
         'verify.dart. Si cambió de forma hay que reapuntar esta derivación, no '
         'borrarla: un patrón que no encuentra nada no comprueba nada.');
     return;
   }
-  final pasos = buscador.lista!.elements.whereType<Expression>().toList();
+
+  // **Todo elemento tiene que tener una forma que esta derivación sepa leer.**
+  //
+  // Antes se filtraba con `whereType<Expression>()`, y eso descartaba en
+  // silencio los `CollectionElement` que no son expresiones: `...spread`, `if`
+  // y `for`. Una revisión lo reprodujo metiendo los pasos por un spread — la
+  // cascada corría dos, el README declaraba uno, y el verificador salía con
+  // cero. Interpretar el árbol a medias y omitir lo no reconocido es
+  // exactamente lo que ADR-011 llama no poder medir y llamarlo aprobación.
+  final pasos = <Expression>[];
+  for (final elemento in buscador.lista!.elements) {
+    if (elemento is InstanceCreationExpression) {
+      pasos.add(elemento);
+      continue;
+    }
+    if (elemento is MethodInvocation) {
+      pasos.add(elemento);
+      continue;
+    }
+    fallos.add('la lista de pasos de `cascadaPorDefecto` tiene un elemento de '
+        'forma `${elemento.runtimeType}`, que esta derivación no sabe contar. '
+        'Un `...spread`, un `if` o un `for` pueden aportar cualquier cantidad '
+        'de pasos, y saltearlos deja la cifra del README sin quien la '
+        'contradiga. Escribilos como elementos literales, o enseñale a leer esa '
+        'forma — no la omitas.');
+  }
+  if (fallos.isNotEmpty) return;
   if (pasos.isEmpty) {
     fallos.add('conté cero pasos en `cascadaPorDefecto`. Cero se lee igual que '
         '«no miré».');
@@ -374,17 +407,27 @@ void _cifrasDeLaCascada(Directory raiz, String readme) {
   }
 }
 
-/// Encuentra la lista de pasos de `cascadaPorDefecto` y su presupuesto por
-/// defecto. **Solo dentro de esa función**: sin el corte, cualquier otra
-/// `Cascada(` o cualquier `Duration(minutes:)` del archivo entraría en la
-/// cuenta, y una versión anterior de esta derivación contó pasos que no existen.
+/// Encuentra la lista de pasos **de la cascada que `cascadaPorDefecto`
+/// retorna**, y su presupuesto por defecto.
+///
+/// **La primera `Cascada(` que aparezca no sirve.** Una versión anterior
+/// recorría el cuerpo y se quedaba con la primera: una revisión lo reprodujo
+/// agregando, antes del `return`, una rama condicional que construye una
+/// cascada de un paso. La retornada seguía teniendo dos, el README declaraba
+/// uno, y todo quedaba verde. Una llamada auxiliar, una rama futura o un
+/// closure pueden volverse la fuente documental por accidente.
+///
+/// Así que se busca el `return` —uno solo— y se deriva **su** expresión. Más de
+/// uno es ambiguo, y ambiguo falla: elegir cuál mirar sería adivinar.
 class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
   ListLiteral? lista;
   int? minutos;
+  String? ambiguedad;
 
   @override
   void visitFunctionDeclaration(FunctionDeclaration node) {
     if (node.name.lexeme != 'cascadaPorDefecto') return;
+
     for (final p in node.functionExpression.parameters?.parameters ??
         const <FormalParameter>[]) {
       if (p.name?.lexeme != 'presupuesto') continue;
@@ -398,39 +441,74 @@ class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
         if (v is IntegerLiteral) minutos = v.value;
       }
     }
-    node.functionExpression.body.accept(_PrimeraCascada(this));
+
+    final cuerpo = node.functionExpression.body;
+    Expression? retornada;
+    if (cuerpo is ExpressionFunctionBody) {
+      retornada = cuerpo.expression;
+    } else {
+      final retornos = <ReturnStatement>[];
+      cuerpo.accept(_Retornos(retornos));
+      if (retornos.length != 1) {
+        ambiguedad = 'tiene ${retornos.length} `return`, y hace falta uno solo '
+            'para saber cuál cascada es la que se usa';
+        return;
+      }
+      retornada = retornos.single.expression;
+    }
+    if (retornada == null) {
+      ambiguedad = 'su `return` no lleva expresión';
+      return;
+    }
+
+    final args = _argumentosDe(retornada, 'Cascada');
+    if (args == null) {
+      ambiguedad = 'lo que retorna no es una llamada a `Cascada`, sino '
+          '`${retornada.runtimeType}`';
+      return;
+    }
+    final primero = args.arguments.firstOrNull;
+    if (primero is! ListLiteral) {
+      ambiguedad = 'el primer argumento de `Cascada` no es una lista literal';
+      return;
+    }
+    lista = primero;
   }
 }
 
-/// **Sin resolución, `Cascada([...])` es un `MethodInvocation`.**
+/// Todos los `return` del cuerpo, **incluidos los de closures anidados**.
 ///
-/// El analizador sin resolver no puede distinguir un constructor de una función:
-/// solo `new Cascada(...)` o `const Cascada(...)` llegan como
-/// `InstanceCreationExpression`. Buscar solo esa forma era buscar una que el
-/// código no tiene — y la primera versión de esta derivación reportó «no
-/// encontré la lista» sobre un árbol perfectamente sano, que es la clase de
-/// falso rojo que este archivo existe para no producir.
-class _PrimeraCascada extends RecursiveAstVisitor<void> {
-  _PrimeraCascada(this.dueno);
-  final _CascadaPorDefecto dueno;
-
-  void _mirar(String nombre, ArgumentList args) {
-    if (nombre != 'Cascada' || dueno.lista != null) return;
-    final primero = args.arguments.firstOrNull;
-    if (primero is ListLiteral) dueno.lista = primero;
-  }
+/// Contarlos de más es deliberado: con un closure que retorna adentro, esta
+/// derivación no puede saber cuál es el de la función, y prefiere declararse
+/// ambigua a elegir.
+class _Retornos extends RecursiveAstVisitor<void> {
+  _Retornos(this.encontrados);
+  final List<ReturnStatement> encontrados;
 
   @override
-  void visitMethodInvocation(MethodInvocation node) {
-    _mirar(node.methodName.name, node.argumentList);
-    super.visitMethodInvocation(node);
+  void visitReturnStatement(ReturnStatement node) {
+    encontrados.add(node);
+    super.visitReturnStatement(node);
   }
+}
 
-  @override
-  void visitInstanceCreationExpression(InstanceCreationExpression node) {
-    _mirar(node.constructorName.type.name.lexeme, node.argumentList);
-    super.visitInstanceCreationExpression(node);
+/// Los argumentos de una llamada a [nombre], venga como constructor o como
+/// invocación.
+///
+/// **Sin resolución, `Cascada([...])` es un `MethodInvocation`.** El analizador
+/// sin resolver no distingue un constructor de una función: solo `new` o
+/// `const` llegan como `InstanceCreationExpression`. Buscar solo esa forma era
+/// buscar una que el código no tiene, y la primera versión de esta derivación
+/// reportó «no encontré la lista» sobre un árbol sano.
+ArgumentList? _argumentosDe(Expression e, String nombre) {
+  if (e is MethodInvocation && e.methodName.name == nombre) {
+    return e.argumentList;
   }
+  if (e is InstanceCreationExpression &&
+      e.constructorName.type.name.lexeme == nombre) {
+    return e.argumentList;
+  }
+  return null;
 }
 
 void main(List<String> args) {
