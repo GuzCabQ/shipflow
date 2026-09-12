@@ -8,6 +8,6 @@ environment:
 
 resolution: workspace
 
-dependencies:
-  core:
-    path: ../core
+# Sin dependencias: este paquete todavía no tiene API —«la fase 0 instala los
+# controles, no el producto»— y no importa nada. `arquitectura.json` le permite
+# ver a `core`; la flecha vuelve en el mismo commit que la use.

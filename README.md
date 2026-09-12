@@ -84,6 +84,7 @@ la arquitectura y se revisa como tal.
 | `deps-hacia-core` | Que una flecha **interna** apunte a otro lado que no sea `core` | `capas.py` |
 | `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
 | `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
+| `dependencias-declaradas-se-usan` | Que un pubspec declare una flecha interna que ninguna línea importa | `capas.py` |
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
@@ -335,6 +336,31 @@ Ahora cada entrada lleva tipo, modo y las longitudes por delante. **Y la huella
 se comprueba a sí misma en cada corrida**, antes de que nadie se apoye en ella:
 no hay dónde poner una prueba unitaria de ese archivo, y dejar la propiedad sin
 comprobar sería la misma confianza que el arnés persigue.
+
+### Lo permitido y lo usado son dos cosas, y ahora hay una regla
+
+`deps-hacia-core` dice qué flechas **están permitidas**. Nada decía que las
+declaradas **se usaran**, y un review encontró tres en `cli` —`vcs`, `rules` y
+`agents`— con cero imports. Ninguna otra regla podía verlas: estaban permitidas,
+así que para `deps-hacia-core` no había nada mal.
+
+Una dependencia declarada y no importada afirma un uso que no existe. Leer
+`cli/pubspec.yaml` y encontrar `vcs` sugiere que el CLI hace cosas de
+repositorio, y no las hace — `ship` no existe todavía.
+
+**Escribir el check encontró dos más.** `rules` y `agents` declaraban `core` y no
+importan nada: son stubs de dos líneas que dicen «sin API todavía». Salieron con
+el mismo criterio, y `pubspec.lock` no se movió en ninguno de los dos casos.
+
+> **`dependencias-declaradas-se-usan`** — toda dependencia interna declarada en
+> un pubspec se importa en ese paquete. Su violación canónica es exactamente la
+> flecha que se acaba de quitar: `cli` declarando `vcs`.
+
+**Límite declarado, y hay que decirlo porque ya cobró.** Esto mira el pubspec
+contra los imports; **no mira la prosa**. Quitar las tres de `cli` dejó dos
+frases falsas —el barril de `cli` y este README— que nombraban a `agents` de
+ejemplo, y esta regla no las habría visto. Son dos controles distintos, y solo
+uno está claro cómo se automatiza sin producir ruido.
 
 ### Tres propiedades que hacen verificable el registro
 
@@ -1174,7 +1200,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 111 sabotajes.**
+y su caso ciego. **El arnés aplica 115 sabotajes.**
 
 ---
 

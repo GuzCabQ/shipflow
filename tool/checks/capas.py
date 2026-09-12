@@ -46,6 +46,8 @@ OBLIGATORIAS = {
                           "cadenas"),
     "nucleo-sin-entrada-salida": ("enunciado", "origen", "tipo", "alternativa",
                                   "alcance", "cadenas", "solo_en"),
+    "dependencias-declaradas-se-usan": ("enunciado", "origen", "tipo",
+                                        "alternativa", "alcance"),
 }
 
 # El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
@@ -56,6 +58,7 @@ TIPOS = {
     "lenguaje-en-plugin-dart": "cadenas_acotadas",
     "sin-api-de-modelo": "cadenas_acotadas",
     "nucleo-sin-entrada-salida": "cadenas_acotadas",
+    "dependencias-declaradas-se-usan": "flechas_usadas",
 }
 
 # Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
@@ -174,6 +177,7 @@ CIEGO_FIJO = {
     "puertos-sin-implementacion": "archivo_ilegible",
     "grafo-derivado": "archivo_ilegible",
     "colecciones-inmutables": "archivo_ilegible",
+    "dependencias-declaradas-se-usan": "grafo_indisponible",
 }
 
 NO_CUENTA_FIJO = {
@@ -838,6 +842,44 @@ def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str]
                 f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
 
 
+# --- las flechas declaradas se usan -------------------------------------
+
+def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
+    """Toda dependencia interna declarada se importa.
+
+    **`deps-hacia-core` dice qué flechas están PERMITIDAS; esta dice que las
+    declaradas se USAN.** Un review encontró tres en `cli` con cero imports, y
+    escribir este check encontró dos más en los stubs. Ninguna otra regla podía
+    verlas: estaban permitidas, así que para `deps-hacia-core` no había nada mal.
+
+    Se cuentan las externas afuera a propósito. Que `test` esté declarado y no se
+    use es ruido de desarrollo; que `cli` declare `vcs` es una afirmación sobre
+    la arquitectura del producto.
+    """
+    regla = REGLAS["dependencias-declaradas-se-usan"]
+    internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
+    for nombre in sorted(internos):
+        pkg = PAQUETES / nombre
+        if not pkg.exists():
+            continue
+        usados: set[str] = set()
+        for archivo in pkg.rglob("*.dart"):
+            if ".dart_tool" in str(archivo) or "/build/" in str(archivo):
+                continue
+            usados.update(re.findall(r"package:([a-z_0-9]+)/",
+                                     archivo.read_text(encoding="utf-8")))
+        for clave in ("directDependencies", "devDependencies"):
+            for dep in g[nombre].get(clave, []):
+                if dep not in internos or dep in usados:
+                    continue
+                que = ("dependencia" if clave == "directDependencies"
+                       else "dependencia de desarrollo")
+                fallos.append(
+                    f"packages/{nombre}: declara «{dep}» como {que} y no la "
+                    f"importa en ninguna línea. {regla['enunciado']}\n"
+                    f"      → {regla['alternativa']}")
+
+
 # --- origen de dependencias · independiente de la anterior --------------
 
 def check_origenes(g: dict[str, dict]) -> None:
@@ -965,6 +1007,8 @@ def main() -> int:
     if g:
         _paso("flechas entre paquetes internos", check_flechas, g, raiz_ws)
         _paso("núcleo sin dependencias externas", check_origenes, g)
+        _paso("las flechas declaradas se usan", check_dependencias_usadas, g,
+              raiz_ws)
     else:
         print(f"  {'flechas y orígenes':<38} NO DISPONIBLE")
     _paso("cadenas acotadas a su adapter", check_cadenas)

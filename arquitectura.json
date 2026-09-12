@@ -594,6 +594,50 @@
         "por_que_ciega": "Los tipos de campo y la forma del constructor salen del arbol sintactico. De un arbol parcial no sale ninguno, y una clase que no se pudo leer no tiene colecciones que revisar — que se lee igual que no tenerlas.",
         "debe_mencionar": "no parsea"
       }
+    },
+    "dependencias-declaradas-se-usan": {
+      "enunciado": "Toda dependencia interna declarada en un pubspec se importa en ese paquete.",
+      "origen": "Un review encontro tres dependencias de `cli` con cero imports, y dos mas en los stubs. `deps-hacia-core` dice que flechas estan PERMITIDAS; esta dice que las declaradas se USAN.",
+      "tipo": "flechas_usadas",
+      "alternativa": "Sacala del pubspec. `deps-hacia-core.permitidas` ya declara que la flecha esta permitida, asi que la arquitectura no cambia; la dependencia vuelve en el mismo commit que la importe.",
+      "por_que": [
+        "Una dependencia declarada y no importada afirma un uso que no existe. Leer",
+        "`cli/pubspec.yaml` y encontrar `vcs` sugiere que el CLI hace cosas de",
+        "repositorio, y no las hace: `ship` no existe todavia.",
+        "",
+        "Es la misma enfermedad que `puertos-sin-implementacion` trata del lado de",
+        "los tipos —una superficie completa se lee como un sistema con esas",
+        "capacidades— aplicada al grafo de paquetes. Y es la clase de deriva que",
+        "nada detectaba: `deps-hacia-core` verifica que ninguna flecha este de mas",
+        "SEGUN LA ARQUITECTURA, no que las declaradas tengan uso.",
+        "",
+        "LIMITE DECLARADO: esto mira el pubspec contra los imports. NO cubre la",
+        "PROSA que cite una dependencia. Quitar tres de `cli` dejo dos frases falsas",
+        "—el barril y el README— y esta regla no las habria visto. Son dos",
+        "controles distintos y solo uno esta claro como se automatiza sin ruido."
+      ],
+      "alcance": {
+        "_": "`directDependencies` y `devDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las externas no las gobierna: que `test` este declarado y no se use es ruido de desarrollo, no una afirmacion sobre la arquitectura.",
+        "raiz": "packages",
+        "extensiones": [
+          ".dart"
+        ],
+        "residuo_declarado": "Cuenta `package:<nombre>/` sobre el texto de los `.dart` del paquete, asi que ve `import`, `export` y `part of` por igual — que es lo que se quiere. Lo que NO ve es una dependencia usada solo desde un archivo generado que no este en el arbol."
+      },
+      "violacion_canonica": {
+        "_": "La flecha que se acaba de quitar: `cli` declarando `vcs`, que ninguna linea importa. Es PERMITIDA por `deps-hacia-core`, asi que ninguna otra regla la ve — es exactamente el hueco que esta regla cierra.",
+        "donde": "packages/cli/pubspec.yaml",
+        "contenido": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  plugin_fake:\n    path: ../plugin_fake\n  vcs:\n    path: ../vcs\n\ndev_dependencies:\n  test: ^1.25.0\n",
+        "debe_mencionar": "vcs",
+        "requiere_pub_get": true
+      },
+      "caso_ciego": {
+        "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR.",
+        "que": "El manifiesto de la raiz queda ilegible, asi que `dart pub deps --json` no puede responder y no hay flechas que contrastar.",
+        "como": "grafo_indisponible",
+        "por_que_ciega": "Las flechas se las pide a pub. Sin grafo no hay ninguna dependencia declarada que mirar, y cero dependencias se lee igual que «todas estan usadas».",
+        "debe_mencionar": "dart pub deps"
+      }
     }
   }
 }
