@@ -382,6 +382,13 @@ Las tres ramas —producción sin usar, desarrollo sin usar, y producción usada
 en pruebas— tienen su sabotaje. La segunda faltaba, y una revisión lo comprobó
 borrando esa rama del bucle: los sabotajes seguían todos verdes.
 
+**Quién controla qué, para no duplicar al analizador.** `capas.py` mira una
+dependencia de **producción** usada solo por pruebas; el caso simétrico —una
+dependencia de **desarrollo** usada desde `lib/` o `bin/`— ya lo detecta
+`dart analyze --fatal-infos` con `depend_on_referenced_packages`, verificado
+importando un dev-dep desde `lib/` y viéndolo fallar. Construirlo de nuevo sería
+un segundo control sobre el mismo hecho.
+
 **Límite declarado, y hay que decirlo porque ya cobró.** Esto mira el pubspec
 contra los imports; **no mira la prosa**. Quitar las tres de `cli` dejó dos
 frases falsas —el barril de `cli` y este README— que nombraban a `agents` de
@@ -1226,7 +1233,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 117 sabotajes.**
+y su caso ciego. **El arnés aplica 119 sabotajes.**
 
 ---
 

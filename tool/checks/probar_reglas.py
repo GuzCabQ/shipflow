@@ -245,6 +245,8 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
     "dependencias-declaradas-se-usan": {
         "una dependencia de desarrollo sin usar",
         "una dependencia de produccion que solo se usa en pruebas",
+        "una dependencia de produccion usada solo desde integration_test",
+        "un comentario que nombra el paquete no es evidencia de uso",
     },
     "puertos-sin-implementacion": {
         "implementado a traves de una base abstracta",
@@ -403,6 +405,14 @@ def casos() -> list[dict]:
                 "pub_get": extra.get("requiere_pub_get", False),
                 "menciona": extra["debe_mencionar"],
                 "probar_grafo": del_grafo,
+                # **Se lee del JSON.** La primera vez quedó sin copiar acá: la
+                # extra declaraba `regenerar_grafo` y el caso se montaba sin él,
+                # así que `capas.py` leía el grafo commiteado, no veía el import
+                # recién agregado, y el caso salía rojo por «no la importa en
+                # ninguna directiva» — el mensaje de otro control. Un caso que
+                # falla por la razón equivocada es un falso detectado, y el
+                # `menciona` fue lo único que lo delató.
+                "regenerar_grafo": extra.get("regenerar_grafo", False),
             }
             if declarar is not None:
                 # El sabotaje necesita que el registro AFIRME que el puerto no
@@ -1266,6 +1276,20 @@ def main() -> int:
                 subprocess.run([sys.executable, str(CHECK), "--huella"], capture_output=True)
             if caso.get("pub_get"):
                 pub_get()
+            if caso.get("regenerar_grafo"):
+                # Mismo motivo que la huella: sin esto, `capas.py` leería el
+                # grafo COMMITEADO y no vería el import que el sabotaje acaba de
+                # agregar — el caso saldría rojo por «no la importa en ninguna
+                # directiva», que es el mensaje de OTRO control. Un caso que
+                # falla por la razón equivocada es un falso detectado.
+                #
+                # **Va DESPUÉS de `pub get`, y el orden importa.** El grafo
+                # resuelve `package:x/` con la configuración que escribe pub;
+                # regenerarlo antes dejaba el import sin resolver y el caso salía
+                # rojo por el mensaje equivocado. Se vio así la primera vez.
+                anotar(previo, "grafo.jsonl")
+                subprocess.run(["dart", "run", "bin/grafo.dart", "--escribir"],
+                               cwd=ANALISIS, capture_output=True)
             codigo, salida = corre_check(con_grafo=bool(caso.get("probar_grafo")))
             problema = evaluar(caso, codigo, salida)
             if problema:

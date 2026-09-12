@@ -656,6 +656,27 @@
           },
           "debe_mencionar": "solo la importa desde",
           "requiere_pub_get": true
+        },
+        {
+          "nombre": "una dependencia de produccion usada solo desde integration_test",
+          "por_que": "`_ambito_de` preguntaba «es test/?» y el `else` volvia produccion a cualquier otro directorio. Un review lo reprodujo con `integration_test/`: la dependencia quedaba declarada como de produccion y ningun control lo veia. Enumerar que directorios son de prueba es la carrera de una lista negra; ahora produccion es un conjunto cerrado —`lib` y `bin`— y este caso fija que lo siga siendo.",
+          "archivos": {
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  rules:\n    path: ../rules\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
+            "packages/cli/integration_test/canario_test.dart": "import 'package:rules/rules.dart';\n\nvoid canario() {}\n"
+          },
+          "debe_mencionar": "solo la importa desde",
+          "requiere_pub_get": true,
+          "regenerar_grafo": true
+        },
+        {
+          "nombre": "un comentario que nombra el paquete no es evidencia de uso",
+          "por_que": "La primera version buscaba `package:<nombre>/` sobre el texto, asi que un comentario contaba como import. Se corrigio derivando del arbol sintactico, y ningun sabotaje lo fijaba: un review volvio a sumar coincidencias textuales y los 117 siguieron verdes. Este caso deja esa puerta cerrada.",
+          "archivos": {
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  rules:\n    path: ../rules\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
+            "packages/cli/lib/_canario_comentario.dart": "// package:rules/rules.dart\n// export 'package:rules/rules.dart';\nlibrary;\n"
+          },
+          "debe_mencionar": "no la importa en ninguna directiva",
+          "requiere_pub_get": true
         }
       ]
     }

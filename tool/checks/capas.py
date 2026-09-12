@@ -893,9 +893,22 @@ def _paquete_de(ruta: str) -> str | None:
 
 
 def _ambito_de(ruta: str) -> str:
-    """`test/` es prueba; `lib/` y `bin/` son producción."""
+    """Producción es `lib/` y `bin/`. **Todo lo demás, no.**
+
+    La primera versión preguntaba al revés —«¿es `test/`?»— y el `else` volvía
+    producción a cualquier otro directorio. Una revisión lo reprodujo con
+    `integration_test/`: una dependencia usada solo por pruebas de integración
+    quedaba declarada como de producción y ningún control lo veía.
+
+    Enumerar qué directorios son de prueba es la misma carrera que una lista
+    negra: `integration_test/`, `benchmark/`, `example/`, y el que alguien
+    invente mañana. Enumerar cuáles son de PRODUCCIÓN es un conjunto cerrado que
+    fija el propio layout de pub, y falla del lado seguro — un directorio que
+    esta función no conoce nunca vuelve producción a una dependencia.
+    """
     partes = ruta.split("/")
-    return "prueba" if len(partes) > 2 and partes[2] == "test" else "produccion"
+    return ("produccion" if len(partes) > 2 and partes[2] in ("lib", "bin")
+            else "prueba")
 
 
 def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
