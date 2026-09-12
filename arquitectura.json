@@ -299,7 +299,7 @@
       "origen": "ADR-002 y el criterio de salida de la fase 1 del plan",
       "tipo": "campos_derivados",
       "aplicada_por": "tool/analisis",
-      "alternativa": "Si un campo no debe viajar, hacelo privado o declara la clase en `credencial-opaca.opacos`. No lo omitas en silencio.",
+      "alternativa": "Si un campo no debe viajar, hacelo privado o declara la clase en `opacidad-declarada.opacos`. No lo omitas en silencio.",
       "por_que_derivado": [
         "Un test de ida y vuelta escrito a mano cubre los campos que su autor recordo.",
         "Se agrega un campo, nadie toca el test, y el test sigue VERDE mientras el",

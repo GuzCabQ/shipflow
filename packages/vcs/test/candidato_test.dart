@@ -43,23 +43,25 @@ void main() {
     f.writeAsStringSync(contenido);
   }
 
-  /// Qué objetos tiene el almacén **real**, por ruta.
+  /// Qué objetos tiene el almacén **real**, por identificador.
   ///
-  /// **Un conjunto y no un conteo, y la diferencia la cobró CI.** La prueba se
-  /// llama «cero objetos NUEVOS» y afirmaba igualdad de cantidad: en un runner
-  /// desapareció un objeto suelto —git empaqueta y limpia por su cuenta— y se
-  /// puso roja sin que nada hubiera escrito nada. Contar mide una propiedad
-  /// más fuerte que la que se quiere: lo que importa es que no APAREZCA
-  /// ninguno, no que no desaparezca.
-  Set<String> objetosDelRepo() {
-    final d = Directory('${raiz.path}/.git/objects');
-    return d
-        .listSync(recursive: true)
-        .whereType<File>()
-        .map((f) => f.path)
-        .where((p) => !p.contains('/info/') && !p.contains('/pack/'))
-        .toSet();
-  }
+  /// **Se le pregunta a git, no se mira el layout del directorio.** Esto empezó
+  /// contando archivos sueltos y CI lo puso rojo sin que nadie escribiera nada:
+  /// git empaqueta y limpia por su cuenta, así que la cantidad de sueltos no es
+  /// estable. Se cambió por un conjunto de rutas, y una revisión encontró que
+  /// eso trajo un hueco peor — medido: un objeto nuevo que termina empaquetado
+  /// da **cero archivos sueltos nuevos y tres OIDs nuevos**. La prueba se
+  /// llamaba «cero objetos nuevos» y habría pasado con el repositorio ganando
+  /// tres.
+  ///
+  /// `--batch-all-objects` enumera sueltos Y empaquetados, y un OID no cambia
+  /// cuando se empaqueta: el conjunto es estable bajo lo que git hace solo, y
+  /// exacto sobre lo que se quiere medir.
+  Set<String> objetosDelRepo() =>
+      git(['cat-file', '--batch-all-objects', '--batch-check=%(objectname)'])
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toSet();
 
   setUp(() {
     raiz = Directory.systemTemp.createTempSync('candidato_');
