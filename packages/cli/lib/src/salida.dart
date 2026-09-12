@@ -101,10 +101,17 @@ class ResultEnvelope {
   /// producir uno.
   ///
   /// **Hueco de la superficie, declarado.** La lista de veredictos cubre los
-  /// códigos `0`, `1`, `2`, `3` y `70`, pero no el `5`: un error de uso no
-  /// alcanzó el dominio, así que no tiene veredicto que dar. Inventarle uno
-  /// sería afirmar algo sobre un cambio que nadie miró. El código de salida
-  /// lleva ese dato, y va en el mismo documento.
+  /// códigos que hoy se producen —`0`, `1`, `2` y `70`— pero no el `5`: un error
+  /// de uso no alcanzó el dominio, así que no tiene veredicto que dar.
+  /// Inventarle uno sería afirmar algo sobre un cambio que nadie miró. El código
+  /// de salida lleva ese dato, y va en el mismo documento.
+  ///
+  /// **El `3` no está en esa lista y no es un olvido.** `docs/14` lo declara
+  /// —detención declarada: presupuesto agotado, circuit breaker o criterio no
+  /// verificable— y **todavía no tiene productor**: la etapa que lo produciría
+  /// no está construida. Este comentario decía que la lista lo cubría, lo que
+  /// describía la superficie documentada como si fuera la implementada. Son dos
+  /// cosas distintas y hay que decir cuál se está nombrando.
   final String? verdict;
 
   /// Qué hacer a continuación. Toda salida que no sea verde tiene que poder

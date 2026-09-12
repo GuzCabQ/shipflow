@@ -4,7 +4,7 @@ library;
 /// Una credencial. **Opaca por construcción** (INV-5).
 ///
 /// No tiene `toJson` ni `fromJson`, y eso no es un olvido: está declarado en
-/// `arquitectura.json` bajo la regla `credencial-opaca`, y un check falla si
+/// `arquitectura.json` bajo la regla `opacidad-declarada`, y un check falla si
 /// alguien se los agrega. Sin esa declaración, «no serializa» sería
 /// indistinguible de «nadie escribió todavía la serialización».
 ///

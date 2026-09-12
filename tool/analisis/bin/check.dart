@@ -261,6 +261,256 @@ List<File> fuentes(Directory d) => d
     .toList()
   ..sort((a, b) => a.path.compareTo(b.path));
 
+/// Las cifras que el README afirma de la cascada, **derivadas del árbol
+/// sintáctico**.
+///
+/// **Vivía en `capas.py` y contaba corchetes sobre el texto.** Una revisión lo
+/// reprodujo: un `]` dentro de un comentario —`// ]`— hacía que el recorte
+/// cerrara ahí, y con el recorte incluyendo UN paso ningún guardia disparaba.
+/// El README podía afirmar un paso donde había dos y el check quedaba verde.
+/// El propio comentario de aquel parser decía que el llamador lo cazaría; era
+/// falso.
+///
+/// Contar caracteres no se arregla contando mejor: se arregla preguntándole al
+/// analizador, que es quien sabe qué es un comentario y qué es un corchete. Es
+/// el mismo criterio con el que el grafo se le pide a pub y el workflow a un
+/// parser de YAML.
+void _cifrasDeLaCascada(Directory raiz, String readme) {
+  final fuente = File('${raiz.path}/packages/cli/lib/src/verify.dart');
+  if (!fuente.existsSync()) {
+    fallos.add('no encontré packages/cli/lib/src/verify.dart, así que no puedo '
+        'derivar el presupuesto por paso. No mirar no es lo mismo que no '
+        'encontrar nada.');
+    return;
+  }
+  final r = parseString(
+      content: fuente.readAsStringSync(),
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false);
+  // Mismo criterio que `clasesDe`: un archivo que no parsea devuelve un árbol
+  // PARCIAL, y de un árbol parcial no sale nada — que se lee igual que «no
+  // había nada que verificar».
+  for (final d in r.errors) {
+    fallos.add('packages/cli/lib/src/verify.dart:${d.offset}: no parsea, así '
+        'que no pude derivar la cascada. ${d.message}');
+  }
+  if (r.errors.isNotEmpty) return;
+
+  final buscador = _CascadaPorDefecto();
+  r.unit.accept(buscador);
+  if (buscador.ambiguedad != null) {
+    fallos.add('no pude derivar la cascada de `cascadaPorDefecto`: '
+        '${buscador.ambiguedad}. Esta derivación falla cerrada a propósito — '
+        'una forma que no sabe leer no se saltea, porque saltearla deja la '
+        'cifra del README sin nadie que la contradiga.');
+    return;
+  }
+  if (buscador.lista == null) {
+    fallos.add('no encontré la lista de pasos de `cascadaPorDefecto` en '
+        'verify.dart. Si cambió de forma hay que reapuntar esta derivación, no '
+        'borrarla: un patrón que no encuentra nada no comprueba nada.');
+    return;
+  }
+
+  // **Todo elemento tiene que tener una forma que esta derivación sepa leer.**
+  //
+  // Antes se filtraba con `whereType<Expression>()`, y eso descartaba en
+  // silencio los `CollectionElement` que no son expresiones: `...spread`, `if`
+  // y `for`. Una revisión lo reprodujo metiendo los pasos por un spread — la
+  // cascada corría dos, el README declaraba uno, y el verificador salía con
+  // cero. Interpretar el árbol a medias y omitir lo no reconocido es
+  // exactamente lo que ADR-011 llama no poder medir y llamarlo aprobación.
+  final pasos = <Expression>[];
+  for (final elemento in buscador.lista!.elements) {
+    if (elemento is InstanceCreationExpression) {
+      pasos.add(elemento);
+      continue;
+    }
+    if (elemento is MethodInvocation) {
+      pasos.add(elemento);
+      continue;
+    }
+    fallos.add('la lista de pasos de `cascadaPorDefecto` tiene un elemento de '
+        'forma `${elemento.runtimeType}`, que esta derivación no sabe contar. '
+        'Un `...spread`, un `if` o un `for` pueden aportar cualquier cantidad '
+        'de pasos, y saltearlos deja la cifra del README sin quien la '
+        'contradiga. Escribilos como elementos literales, o enseñale a leer esa '
+        'forma — no la omitas.');
+  }
+  if (fallos.isNotEmpty) return;
+  if (pasos.isEmpty) {
+    fallos.add('conté cero pasos en `cascadaPorDefecto`. Cero se lee igual que '
+        '«no miré».');
+    return;
+  }
+  if (buscador.minutos == null) {
+    fallos.add('no encontré el presupuesto por defecto en verify.dart. Si '
+        'cambió de forma, esta derivación dejó de mirar algo y hay que '
+        'arreglarla, no borrarla.');
+    return;
+  }
+  final minutos = buscador.minutos!;
+
+  // **Y que cada paso reciba EXACTAMENTE ese presupuesto.** Contar
+  // constructores sin leer sus argumentos dejaba pasar un paso con
+  // `presupuesto * 2`: la cifra del README multiplica UN valor por la cantidad
+  // de pasos, así que con presupuestos distintos deja de significar lo que dice.
+  for (final paso in pasos) {
+    final args = paso is InstanceCreationExpression
+        ? paso.argumentList.arguments
+        : paso is MethodInvocation
+            ? paso.argumentList.arguments
+            : const <Expression>[];
+    final dado = args
+        .whereType<NamedExpression>()
+        .where((a) => a.name.label.name == 'presupuesto')
+        .map((a) => a.expression)
+        .firstOrNull;
+    if (dado == null) {
+      fallos.add('un paso de `cascadaPorDefecto` no recibe presupuesto '
+          'explícito, así que no está cubierto por esta cuenta.');
+      continue;
+    }
+    if (!(dado is SimpleIdentifier && dado.name == 'presupuesto')) {
+      fallos.add('un paso de `cascadaPorDefecto` recibe «$dado» como '
+          'presupuesto y no el parámetro. La cifra del README multiplica UN '
+          'valor por la cantidad de pasos: con presupuestos distintos deja de '
+          'significar lo que dice.');
+    }
+  }
+
+  for (final (patron, esperado, que) in [
+    (
+      RegExp(r'un default de \*\*(\d+) minutos\*\*'),
+      minutos,
+      'el presupuesto por paso'
+    ),
+    (
+      RegExp(r'Con los (\d+) pasos de hoy'),
+      pasos.length,
+      'los pasos de la cascada'
+    ),
+    (
+      RegExp(r'una corrida puede tardar\s+(\d+) minutos'),
+      minutos * pasos.length,
+      'el peor caso de una corrida'
+    ),
+  ]) {
+    final m = patron.firstMatch(readme);
+    if (m == null) {
+      fallos.add('README.md ya no afirma $que en la forma que esta derivación '
+          'reconoce. Un patrón que no encuentra nada no comprueba nada, y se '
+          'lee igual que uno que sí.');
+    } else if (int.parse(m.group(1)!) != esperado) {
+      fallos.add('README.md dice «${m.group(0)}»; $que da $esperado.');
+    }
+  }
+}
+
+/// Encuentra la lista de pasos **de la cascada que `cascadaPorDefecto`
+/// retorna**, y su presupuesto por defecto.
+///
+/// **La primera `Cascada(` que aparezca no sirve.** Una versión anterior
+/// recorría el cuerpo y se quedaba con la primera: una revisión lo reprodujo
+/// agregando, antes del `return`, una rama condicional que construye una
+/// cascada de un paso. La retornada seguía teniendo dos, el README declaraba
+/// uno, y todo quedaba verde. Una llamada auxiliar, una rama futura o un
+/// closure pueden volverse la fuente documental por accidente.
+///
+/// Así que se busca el `return` —uno solo— y se deriva **su** expresión. Más de
+/// uno es ambiguo, y ambiguo falla: elegir cuál mirar sería adivinar.
+class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
+  ListLiteral? lista;
+  int? minutos;
+  String? ambiguedad;
+
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    if (node.name.lexeme != 'cascadaPorDefecto') return;
+
+    for (final p in node.functionExpression.parameters?.parameters ??
+        const <FormalParameter>[]) {
+      if (p.name?.lexeme != 'presupuesto') continue;
+      final d = p is DefaultFormalParameter ? p.defaultValue : null;
+      final args = d is InstanceCreationExpression
+          ? d.argumentList.arguments
+          : const <Expression>[];
+      for (final a in args.whereType<NamedExpression>()) {
+        if (a.name.label.name != 'minutes') continue;
+        final v = a.expression;
+        if (v is IntegerLiteral) minutos = v.value;
+      }
+    }
+
+    final cuerpo = node.functionExpression.body;
+    Expression? retornada;
+    if (cuerpo is ExpressionFunctionBody) {
+      retornada = cuerpo.expression;
+    } else {
+      final retornos = <ReturnStatement>[];
+      cuerpo.accept(_Retornos(retornos));
+      if (retornos.length != 1) {
+        ambiguedad = 'tiene ${retornos.length} `return`, y hace falta uno solo '
+            'para saber cuál cascada es la que se usa';
+        return;
+      }
+      retornada = retornos.single.expression;
+    }
+    if (retornada == null) {
+      ambiguedad = 'su `return` no lleva expresión';
+      return;
+    }
+
+    final args = _argumentosDe(retornada, 'Cascada');
+    if (args == null) {
+      ambiguedad = 'lo que retorna no es una llamada a `Cascada`, sino '
+          '`${retornada.runtimeType}`';
+      return;
+    }
+    final primero = args.arguments.firstOrNull;
+    if (primero is! ListLiteral) {
+      ambiguedad = 'el primer argumento de `Cascada` no es una lista literal';
+      return;
+    }
+    lista = primero;
+  }
+}
+
+/// Todos los `return` del cuerpo, **incluidos los de closures anidados**.
+///
+/// Contarlos de más es deliberado: con un closure que retorna adentro, esta
+/// derivación no puede saber cuál es el de la función, y prefiere declararse
+/// ambigua a elegir.
+class _Retornos extends RecursiveAstVisitor<void> {
+  _Retornos(this.encontrados);
+  final List<ReturnStatement> encontrados;
+
+  @override
+  void visitReturnStatement(ReturnStatement node) {
+    encontrados.add(node);
+    super.visitReturnStatement(node);
+  }
+}
+
+/// Los argumentos de una llamada a [nombre], venga como constructor o como
+/// invocación.
+///
+/// **Sin resolución, `Cascada([...])` es un `MethodInvocation`.** El analizador
+/// sin resolver no distingue un constructor de una función: solo `new` o
+/// `const` llegan como `InstanceCreationExpression`. Buscar solo esa forma era
+/// buscar una que el código no tiene, y la primera versión de esta derivación
+/// reportó «no encontré la lista» sobre un árbol sano.
+ArgumentList? _argumentosDe(Expression e, String nombre) {
+  if (e is MethodInvocation && e.methodName.name == nombre) {
+    return e.argumentList;
+  }
+  if (e is InstanceCreationExpression &&
+      e.constructorName.type.name.lexeme == nombre) {
+    return e.argumentList;
+  }
+  return null;
+}
+
 void main(List<String> args) {
   final raiz =
       Directory(File.fromUri(Platform.script).parent.parent.parent.parent.path);
@@ -271,6 +521,8 @@ void main(List<String> args) {
   }
   final reglas = (jsonDecode(registro.readAsStringSync())
       as Map<String, Object?>)['reglas'] as Map<String, Object?>;
+
+  _cifrasDeLaCascada(raiz, File('${raiz.path}/README.md').readAsStringSync());
 
   // --- meta · las reglas que este verificador aplica siguen ahí ---------
   const esperadas = {

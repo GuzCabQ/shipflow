@@ -131,6 +131,211 @@ Corre en CI junto a los checks, no una vez a mano: **un check que nunca falló n
 está probado**, y un guardia que existe y nunca se disparó es indistinguible de
 uno roto.
 
+### El verificador no obedecía la regla que hace cumplir
+
+`_check_readme` encadenaba seis `return`. Un fallo cualquiera —el presupuesto
+que cambió de forma, la lista de pasos que no se pudo leer— abortaba la función
+entera y apagaba **en silencio** los controles que venían después: la cantidad
+de puertos, la prohibición de cifras sueltas, los nombres retirados. Tres
+controles no relacionados, apagados por una causa ajena.
+
+Reproducido:
+
+| | exit | ¿reporta el defecto tardío? |
+|---|---|---|
+| Solo un defecto tardío | `1` | **sí** |
+| El mismo, más un fallo temprano y ajeno | `1` | **no** |
+
+**No era un falso verde** —el código de salida seguía en 1, porque cada `return`
+reporta antes de salir—. Era enmascaramiento: un problema esconde a los demás y
+aparecen de a uno, corrida por corrida.
+
+Y había un borde peor. `capas.py` leía la lista de pasos de la cascada con un
+`.index("Cascada([")` **sin guardia**. Con un cambio realista —ponerle el tipo
+explícito al literal— el proceso moría con `ValueError: substring not found`, y
+como `_paso` no atrapaba nada, los cuatro pasos quedaban sin imprimir ni una
+línea. Diez controles saltados y un traceback en lugar de un diagnóstico. Es la
+misma clase de ancla que `probar_reglas.py` documenta como rota **veinticuatro
+commits** sin que nadie lo notara: la lección estaba escrita en un archivo y no
+aplicada en el de al lado.
+
+**La cascada del producto ya tenía esto resuelto**: un paso que se rompe no
+aborta la corrida — es `Broken`, se reporta, y los demás siguen. Ahora cada
+sección del README se verifica aislada, y una excepción se convierte en
+hallazgo en vez de en corte.
+
+### Los anclajes, con el fallo a la vista
+
+El otro archivo se acusaba solo: cinco bloques marcados «FRÁGIL, SIN GUARDIA»
+por su propio autor. El patrón era siempre el mismo —buscar un texto literal en
+el workflow o el README y reemplazarlo— y la mitad no tenía nada que lo
+respaldara. Los dos modos de fallo son distintos, y el silencioso es el peor:
+
+| | Qué pasa si el ancla se pierde |
+|---|---|
+| `.index` sin guardia | revienta sin decir qué buscaba ni para qué |
+| `.replace` sin guardia | **no revienta**: devuelve el texto intacto, el sabotaje no sabotea, y el arnés lo reporta como «la regla quedó sin efecto» — acusando al control equivocado |
+
+`tool/checks/_comun.py` los cierra con tres funciones: `exige_unica` para los
+anclajes que solo localizan, `ancla` para los que reemplazan exigiendo una
+ocurrencia, y `ancla_multiple` para los que se repiten por diseño —donde
+exigir unicidad sería exigir lo contrario de lo que el formato garantiza—.
+
+Es un tercero neutral a propósito: `probar_reglas.py` invoca a `capas.py` **como
+subproceso** para que un sabotaje no pueda romper el arnés que lo aplica, así
+que importarse entre ellos deshacía esa separación.
+
+**Instalarlo encontró dos suposiciones falsas de inmediato.** Dos anclajes que
+el código trataba como únicos no lo eran: `` `tool/analisis` `` aparece cinco
+veces en el README y `presupuesto: presupuesto` dos veces en la cascada. Los dos
+funcionaban por el `, 1` del `.replace`, no porque alguien lo hubiera
+comprobado.
+
+### Y dos sabotajes nuevos
+
+| Sabotaje | Qué exige |
+|---|---|
+| Dos defectos independientes a la vez | que el informe nombre **los dos** |
+| Un control que revienta | que se reporte **y** que un control posterior igual corra |
+
+**Los dos empezaron probando menos de lo que decían.** El primero rompía la
+forma del presupuesto con un espacio de más, y dejó de sabotear el día que la
+derivación se mudó al árbol sintáctico. El segundo exigía que apareciera el
+nombre de un paso que estaba *fuera* del grupo fusionado, así que pasaba con los
+controles otra vez juntos. Los dos están reapuntados, y los dos se vieron en
+rojo sobre su propio caso.
+
+### El parser que contaba corchetes se fue, no se arregló
+
+`capas.py` encontraba la lista de pasos de la cascada contando `[` y `]` sobre
+el texto. Una revisión lo reprodujo: con `// ]` antes del segundo paso, el
+recorte veía **uno donde hay dos** y ningún guardia disparaba —el README podía
+afirmar un paso y el check quedaba verde—. El comentario de aquel parser decía
+que el llamador lo cazaría.
+
+Contar caracteres para leer sintaxis no se arregla contando mejor. La derivación
+vive ahora en `tool/analisis/bin/check.dart`, sobre el árbol sintáctico, que es
+quien sabe qué es un comentario y qué es un corchete — el mismo criterio por el
+que el grafo se le pide a pub y el workflow a un parser de YAML.
+
+**Y escribirla produjo un falso rojo antes de commitear:** sin resolución,
+`Cascada([...])` llega como `MethodInvocation`, no como
+`InstanceCreationExpression`. La primera versión buscaba solo la segunda forma y
+reportaba «no encontré la lista» sobre un árbol sano.
+
+### Cada control es un paso, no cada grupo
+
+`check_meta` corría diez controles adentro de una sola llamada, así que una
+excepción en el segundo —un campo del registro con la forma estructural
+equivocada— dejaba sin ejecutar al de CI y al del README. El resultado global
+quedaba rojo y los defectos aparecían de a uno por corrida: el problema que el
+aislamiento vino a cerrar, a mitad de camino. Y `grafo()` corría fuera de
+`_paso`, así que un fallo suyo se llevaba el proceso antes de llegar a las
+cadenas.
+
+Ahora son **catorce pasos independientes**. Con el campo roto, el que revienta
+se reporta y los trece restantes corren.
+
+### El arnés no toca el checkout compartido
+
+Escribía cada sabotaje sobre el árbol de trabajo y restauraba después. El diario
+cubría las interrupciones y **no cubría la concurrencia**: mientras una corrida
+tenía un sabotaje puesto, otro proceso commiteó. El commit se llevó el
+`aplicada_por` de una regla apuntado a un aplicador inexistente, un canario
+sintético versionado, y la huella del JSON saboteado — los tres estados internamente coherentes, así que nada
+local se puso rojo. **Un checkout limpio de ese commit fallaba `capas.py` con dos
+errores.**
+
+Y el motivo por el que ningún control lo vio es el que vale registrar: **todos
+miran el árbol de trabajo, y ninguno mira lo commiteado.**
+
+```
+probar_reglas.py                                   ← el árbol compartido
+  ├─ huella del original
+  ├─ copytree → /tmp/arnes-copia-XXXX/             0,11 s
+  ├─ los 107 sabotajes, adentro de la copia
+  ├─ borrar la copia
+  └─ la huella del original tiene que coincidir
+```
+
+**`.dart_tool` se copia, y por eso no hace falta `pub get`.** Sus rutas a los
+miembros del workspace son relativas, así que en la copia resuelven a la copia —
+el mismo hecho medido que hace funcionar el candidato. Copiar 84 MB cuesta una
+décima de segundo; resolver de nuevo costaría más y necesitaría el cache.
+
+**La detección de residuo dejó de preguntarle a git.** `estado_git` tenía dos
+límites: solo veía lo versionado —un canario en un directorio ignorado no
+aparecía— y necesitaba un `.git` que la copia no tiene. Ahora es una huella de
+contenido, y son dos preguntas distintas: **afuera**, que el original no cambió
+en absoluto, con lo generado incluido; **adentro**, que los sabotajes no dejaron
+residuo, con lo generado excluido, porque `package_config.json` lleva fecha de
+generación y los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+### Y el arnés se niega antes de escribir donde no debe
+
+Una revisión pidió una prueba de que el árbol compartido no cambia. La huella
+que se compara antes y después ya lo mide **en cada corrida** — pero tiene un
+hueco: si alguien saca el desvío a la copia, la comprobación se va con él.
+
+Una negativa cierra eso mejor que una prueba. El proceso externo le dice al
+interno de dónde salió la copia; si esa variable no está, o apunta al árbol
+donde el proceso está parado, **no sabotea nada**:
+
+```
+$ python3 tool/checks/probar_reglas.py --en-copia
+Me niego a sabotear este árbol.
+```
+
+Sacar el desvío no deja al arnés escribiendo sobre el checkout compartido: lo
+deja rojo.
+
+**Lo que queda declarado:** `--recuperar` y `probar_recuperacion.py` siguen
+existiendo y siguen pasando, pero su motivo original —recuperar el checkout
+compartido tras una corrida muerta— ya no aplica, porque ese checkout no se
+toca. Retirarlos es un cambio coordinado aparte: son un paso obligatorio de CI y
+una cifra derivada de este README.
+
+### La derivación falla cerrada, o no deriva nada
+
+Mover la cuenta al árbol sintáctico cerró el falso verde del parser de texto y
+dejó dos abiertos. Los encontró una revisión, y los dos tienen la misma forma:
+**el árbol se leía a medias y lo no reconocido se omitía.**
+
+| Qué se omitía | Qué pasaba |
+|---|---|
+| `whereType<Expression>()` descarta `...spread`, `if` y `for` | Los pasos entran por un spread: la cascada corre dos, el README declara uno, y el verificador sale con **cero** |
+| El visitante se quedaba con la **primera** `Cascada(` del cuerpo | Una rama condicional antes del `return` construye una de un paso y se vuelve la fuente documental |
+
+Ahora **todo elemento tiene que tener una forma que la derivación sepa leer**, y
+lo que se lee es la cascada que la función **retorna** — el `return`, uno solo;
+más de uno es ambiguo y ambiguo falla. Contar los `return` de closures anidados
+de más es deliberado: si hay uno, esta derivación no puede saber cuál es el de
+la función, y prefiere declararse ambigua a elegir.
+
+```
+la lista de pasos tiene un elemento de forma `SpreadElementImpl`,
+que esta derivación no sabe contar.
+
+no pude derivar la cascada: tiene 2 `return`, y hace falta uno solo
+para saber cuál cascada es la que se usa.
+```
+
+Las tres formas de elemento y la cascada auxiliar tienen su sabotaje permanente.
+
+### La huella distingue lo que dice distinguir
+
+La que sostiene «el checkout compartido no cambió» concatenaba ruta y contenido
+con un `\0` en medio, y eso no es una representación inequívoca: un árbol con
+`a=«b»` y `c=«d»` entregaba al hash **exactamente los mismos bytes** que uno con
+`a=«bc\0d»`. No era una colisión de SHA-256 — eran dos árboles distintos con la
+misma entrada. Y el modo no viajaba, así que cambiar el bit ejecutable de un
+archivo no la movía.
+
+Ahora cada entrada lleva tipo, modo y las longitudes por delante. **Y la huella
+se comprueba a sí misma en cada corrida**, antes de que nadie se apoye en ella:
+no hay dónde poner una prueba unitaria de ese archivo, y dejar la propiedad sin
+comprobar sería la misma confianza que el arnés persigue.
+
 ### Tres propiedades que hacen verificable el registro
 
 - **Cada regla tiene un `id` estable y una violación canónica.**
@@ -969,7 +1174,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 105 sabotajes.**
+y su caso ciego. **El arnés aplica 111 sabotajes.**
 
 ---
 
@@ -2014,5 +2219,12 @@ tool/
   analisis/      lo que necesita el árbol sintáctico · fuera del workspace
 ```
 
-Todas las flechas de dependencia apuntan hacia `core`. `cli` es el único que
-puede ver a `plugin_dart` y a `agents`.
+Todas las flechas de dependencia apuntan hacia `core`, y `cli` es el único al
+que la arquitectura le permite ver los plugins y los adapters.
+
+**Permitido no es declarado.** `arquitectura.json` le permite ver también `vcs`,
+`rules` y `agents`; su `pubspec.yaml` declara solo lo que hoy se importa. Las dos
+frases que nombraban a `agents` de ejemplo —esta y la del barril de `cli`—
+quedaron falsas el mismo día que se quitó esa dependencia. Un ejemplo elegido de
+lo permitido envejece con cualquier limpieza de lo usado, y eso no lo cubre
+ningún check de los que hay.

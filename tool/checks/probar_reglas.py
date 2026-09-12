@@ -41,12 +41,36 @@ exime de tener que poder ponerse roja.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
+
+# **Los sabotajes corren sobre una COPIA PRIVADA, nunca sobre el checkout
+# compartido.** Esta bandera la pone el proceso externo cuando ya hizo la copia;
+# sin ella, `main` copia y se rehace a sí mismo adentro.
+EN_COPIA = "--en-copia"
+
+# Por dónde el proceso externo le dice al interno de dónde salió la copia. No es
+# comodidad: es lo que le permite al interno NEGARSE a sabotear si resulta que
+# está parado sobre el original. Ver `main`.
+ORIGEN = "ARNES_ORIGEN"
+
+# Lo que NO se copia: el historial —que la copia no necesita y pesa—, los
+# artefactos de build y los snapshots, que se regeneran. `.dart_tool` SÍ se
+# copia: sus rutas a los miembros del workspace son relativas, así que en la
+# copia resuelven a la copia, y eso evita un `pub get` por corrida. Es el mismo
+# hecho medido que hace funcionar el candidato.
+SIN_COPIAR = (".git", "build", "*.dill")
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
@@ -66,6 +90,139 @@ CI_REL = ".github/workflows/checks.yml"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
 REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
+
+
+def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
+    """Huella del contenido de un árbol. **Bytes, no `git status`.**
+
+    `estado_git` preguntaba a git, así que solo veía lo versionado y necesitaba
+    un `.git` que la copia no tiene. Esto compara contenido, y sirve para las
+    dos preguntas distintas que hay que hacerse:
+
+    - **afuera**, que el checkout compartido no haya cambiado en absoluto, y ahí
+      `.dart_tool` SÍ cuenta: nada nuestro corre pub sobre el original;
+    - **adentro**, que los sabotajes no dejen residuo, y ahí `.dart_tool` NO
+      puede contar, porque `package_config.json` lleva una fecha de generación y
+      los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+    **Cada entrada va con su tipo, su modo y las longitudes por delante.** La
+    primera versión concatenaba ruta y contenido con un `\0` en medio, y eso no
+    es una representación inequívoca: un árbol con `a=«b»` y `c=«d»` entregaba al
+    hash exactamente los mismos bytes que uno con `a=«bc\0d»`. No era una
+    colisión de SHA-256 — eran dos árboles distintos con la misma entrada. Lo
+    encontró una revisión, y `huella_ambigua` lo comprueba en cada corrida.
+
+    El modo tampoco viajaba, así que cambiar el bit ejecutable de un archivo no
+    movía la huella. Un arnés que promete «el original no cambió en absoluto»
+    tiene que ver eso.
+    """
+    h = hashlib.sha256()
+    ignorados = {".git", "build"} | (set() if con_generados else {".dart_tool"})
+    for ruta in sorted(raiz.rglob("*")):
+        rel = ruta.relative_to(raiz)
+        if set(rel.parts) & ignorados or rel.suffix == ".dill":
+            continue
+        if ruta.is_symlink():
+            tipo, carga, modo = b"L", os.readlink(ruta).encode("utf-8"), 0
+        elif ruta.is_dir():
+            tipo, carga, modo = b"D", b"", 0
+        else:
+            tipo, carga = b"F", ruta.read_bytes()
+            modo = ruta.stat().st_mode & 0o777
+        nombre = str(rel).encode("utf-8")
+        h.update(tipo + b"\0")
+        h.update(f"{modo:o}".encode("ascii") + b"\0")
+        h.update(f"{len(nombre)}".encode("ascii") + b"\0" + nombre)
+        h.update(f"{len(carga)}".encode("ascii") + b"\0" + carga)
+    return h.hexdigest()
+
+
+def huella_ambigua() -> list[str]:
+    """Que la huella distinga lo que dice distinguir. **Se comprueba siempre.**
+
+    No hay dónde poner una prueba unitaria de este archivo, y dejar la propiedad
+    sin comprobar sería la misma clase de confianza que el arnés persigue: la
+    huella es lo único que sostiene la afirmación de que el checkout compartido
+    no cambió. Si deja de distinguir, esa afirmación pasa a ser una frase.
+
+    Los dos casos son los que fallaron: la separación entre registros, y el modo.
+    """
+    problemas: list[str] = []
+    base = Path(tempfile.mkdtemp(prefix="arnes-huella-"))
+    try:
+        a, b = base / "a", base / "b"
+        a.mkdir()
+        b.mkdir()
+        (a / "a").write_bytes(b"b")
+        (a / "c").write_bytes(b"d")
+        (b / "a").write_bytes(b"bc\0d")
+        if huella_del_arbol(a, con_generados=True) == huella_del_arbol(
+                b, con_generados=True):
+            problemas.append(
+                "la huella no separa los registros: un árbol con dos archivos "
+                "y otro con uno solo dan la misma.\n      Sin longitudes por "
+                "delante, «no cambió en absoluto» no es una afirmación "
+                "comprobable.")
+        c = base / "c"
+        c.mkdir()
+        archivo = c / "x"
+        archivo.write_bytes(b"1")
+        antes = huella_del_arbol(c, con_generados=True)
+        archivo.chmod(0o755)
+        if huella_del_arbol(c, con_generados=True) == antes:
+            problemas.append(
+                "la huella no ve el modo: cambiar el bit ejecutable de un "
+                "archivo no la mueve.")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    return problemas
+
+
+def en_copia_privada(argumentos: list[str]) -> int:
+    """Copia el árbol, corre el arnés adentro, y comprueba que el original no
+    cambió.
+
+    **El arnés escribía los sabotajes sobre el checkout compartido y restauraba
+    después.** El diario cubría las interrupciones y no cubría la concurrencia:
+    mientras una corrida tenía un sabotaje puesto, otro proceso commiteó — y el
+    commit se llevó `aplicada_por: tool/inexistente`, un canario sintético
+    versionado, y la huella del JSON saboteado. Un checkout limpio de ese commit
+    fallaba `capas.py` con dos errores. Ningún control lo vio, porque todos miran
+    el árbol de trabajo y ninguno mira lo commiteado.
+
+    Copiar cuesta una décima de segundo y vuelve el problema imposible en vez de
+    improbable: el original queda intocado por construcción, y además se
+    comprueba. Lo segundo no es redundante — es lo que convierte «no lo tocamos»
+    en un hecho medido.
+    """
+    antes = huella_del_arbol(RAIZ, con_generados=True)
+    temporal = Path(tempfile.mkdtemp(prefix="arnes-copia-"))
+    # `flush` porque el proceso interno escribe a la misma salida sin buffer:
+    # sin esto, el aviso de la copia aparecía DESPUÉS del veredicto, que es
+    # decir dónde corrió una vez que ya no importa.
+    print(f"  copia privada en {temporal}\n", flush=True)
+    try:
+        destino = temporal / RAIZ.name
+        shutil.copytree(RAIZ, destino,
+                        ignore=shutil.ignore_patterns(*SIN_COPIAR),
+                        symlinks=True)
+        adentro = subprocess.run(
+            [sys.executable,
+             str(destino / "tool" / "checks" / "probar_reglas.py"),
+             EN_COPIA, *argumentos],
+            env={**os.environ, ORIGEN: str(RAIZ)})
+        codigo = adentro.returncode
+    finally:
+        shutil.rmtree(temporal, ignore_errors=True)
+
+    if huella_del_arbol(RAIZ, con_generados=True) != antes:
+        print("\nprobar_reglas: FALLA\n")
+        print("  el checkout COMPARTIDO cambió durante la corrida. Los sabotajes "
+              "viven en una\n  copia privada, así que esto no puede venir del "
+              "arnés: o alguien más lo editó,\n  o hay un camino que se escapó de "
+              "la copia. Lo segundo es grave.")
+        return 1
+    return codigo
 
 
 def arq_con(mutar) -> str:
@@ -274,18 +431,16 @@ def casos() -> list[dict]:
     # commiteado retocado a mano. Son distintos: uno es olvidarse de
     # regenerar, el otro es editar lo que se deriva.
     #
-    # **Frágil en la misma forma que las de arriba, pero de menor riesgo
-    # práctico:** depende de que ALGÚN nodo de `grafo.jsonl` tenga
-    # `"saltos":0` literal. Es un campo de todo nodo derivado —no una frase de
-    # prosa que alguien reescriba con otras palabras—, así que el día que deje
-    # de aparecer es más probable que sea porque cambió el ESQUEMA del grafo
-    # (y entonces `check.dart`/`grafo.dart` ya estarían rojos por su cuenta)
-    # que porque el contenido derivó solo. Sin guardia igual: si pasa, es un
-    # `.replace` mudo, no un crash.
+    # El ancla se repite por diseño: `saltos` es un campo de TODO nodo derivado,
+    # así que exigir unicidad sería exigir lo contrario de lo que el formato
+    # garantiza. Lo que sí se prohíbe es cero — antes no: un `.replace` mudo
+    # dejaba el caso probando el archivo sin tocar, y el arnés lo reportaba
+    # como «la regla quedó sin efecto», acusando al control equivocado.
     c.append({
         "nombre": "grafo · grafo commiteado editado a mano",
-        "archivos": {"grafo.jsonl": (RAIZ / "grafo.jsonl").read_text(encoding="utf-8")
-                     .replace('"saltos":0', '"saltos":9', 1)},
+        "archivos": {"grafo.jsonl": ancla_multiple(
+            (RAIZ / "grafo.jsonl").read_text(encoding="utf-8"),
+            '"saltos":0', '"saltos":9', que="un nodo del grafo derivado")},
         "menciona": "grafo",
         "probar_grafo": True,
     })
@@ -382,28 +537,28 @@ def casos() -> list[dict]:
     # distintos: uno borra el paso, otro lo deja corriendo sin que detenga
     # nada, y el tercero se lleva el workflow entero.
     #
-    # **FRÁGIL, SIN GUARDIA.** Auditoría posterior al caso `Cascada([...])`
-    # que estuvo roto 24 commits sin que nadie lo notara: estos dos `.index`
-    # son la misma clase de anclaje literal, y si un nombre de step cambia acá
-    # abajo, esto revienta con un `ValueError` tan opaco como aquel — hoy
-    # (verificado al escribir esta nota) los dos nombres siguen existiendo tal
-    # cual. No se le agregó `assert` porque el `ValueError` de `.index` ya
-    # señala la línea; lo que faltaba y falta seguir es que ESTE archivo se
-    # corra, no un guardia extra.
+    # Los dos anclajes del recorte pasan por `ancla`, que exige UNA ocurrencia
+    # y dice qué buscaba. Antes eran `.index` pelados: la misma clase de
+    # anclaje que estuvo roto 24 commits en el caso `Cascada([...])`, y cuyo
+    # `ValueError` no decía ni qué se buscaba ni para qué.
     ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
-    i = ci.index("      - name: los checks saben fallar")
-    j = ci.index("      - name: pruebas de core")
+    _i = exige_unica(ci, "      - name: los checks saben fallar",
+                     que="el step que se borra del workflow")
+    _j = exige_unica(ci, "      - name: pruebas de core",
+                     que="el step siguiente, que marca el corte")
     c.append({
         "nombre": "ci · un paso obligatorio borrado del workflow",
-        "archivos": {CI_REL: ci[:i] + ci[j:]},
+        "archivos": {CI_REL: ci[:_i] + ci[_j:]},
         "menciona": "ya no ejecuta",
     })
     c.append({
         "nombre": "ci · un paso obligatorio con continue-on-error",
-        "archivos": {CI_REL: ci.replace(
+        "archivos": {CI_REL: ancla(
+            ci,
             "        run: python3 tool/checks/probar_reglas.py",
             "        run: python3 tool/checks/probar_reglas.py\n"
-            "        continue-on-error: true")},
+            "        continue-on-error: true",
+            que="el step al que se le agrega continue-on-error")},
         "menciona": "continue-on-error",
     })
     c.append({
@@ -444,10 +599,9 @@ def casos() -> list[dict]:
          "        run: dart run bin/check.dart",
          "exactamente"),
     ]:
-        assert ci.count(viejo) == 1, f"ancla del caso «{etiqueta}» no encontrada"
         c.append({
             "nombre": f"ci · un paso obligatorio {etiqueta}",
-            "archivos": {CI_REL: ci.replace(viejo, nuevo)},
+            "archivos": {CI_REL: ancla(ci, viejo, nuevo, que=etiqueta)},
             "menciona": menciona,
         })
 
@@ -459,19 +613,20 @@ def casos() -> list[dict]:
     assert len(filas) == 1, f"filas de la tabla encontradas: {len(filas)}"
     c.append({
         "nombre": "readme · una regla que gobierna y no está en la tabla",
-        "archivos": {"README.md": readme.replace(filas[0] + "\n", "")},
+        "archivos": {"README.md": ancla(readme, filas[0] + "\n", "",
+                                        que="la fila de `grafo-derivado`")},
         "menciona": "no está en la tabla",
     })
-    # **FRÁGIL, SIN GUARDIA — y más silenciosa que un `.index`.** Si
-    # `` `tool/analisis` `` deja de aparecer en el README, `.replace` no
-    # lanza: devuelve el texto sin cambios, el "sabotaje" no sabotea nada, y
-    # `evaluar()` lo reporta como «la regla quedó sin efecto» — un diagnóstico
-    # que apunta al control equivocado. Hoy (verificado al escribir esta
-    # nota) la cadena sigue estando.
+    # `ancla_multiple`: el README nombra `tool/analisis` cinco veces, y eso es
+    # correcto —es el directorio de los verificadores—. Alcanza con volver
+    # muerta UNA, porque el check junta el conjunto de rutas nombradas. Lo
+    # descubrió la guardia al instalarla: el `.replace(…, 1)` de antes suponía
+    # unicidad sin decirlo, y nadie lo había comprobado.
     c.append({
         "nombre": "readme · una ruta del repositorio que ya no existe",
-        "archivos": {"README.md": readme.replace("`tool/analisis`",
-                                                 "`tool/serializacion`", 1)},
+        "archivos": {"README.md": ancla_multiple(
+            readme, "`tool/analisis`", "`tool/serializacion`",
+            que="una de las menciones al directorio de verificadores")},
         "menciona": "no existe en el",
     })
     # La toolchain: dos formas de que el verde deje de significar lo que dice.
@@ -480,28 +635,23 @@ def casos() -> list[dict]:
                     "        uses: subosito/flutter-action@"
                     "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
                     "        with:\n          flutter-version: 3.44.0")
-    assert ci.count(flutter_paso) == 1, "ancla del paso de flutter no encontrada"
-    # **FRÁGIL, SIN GUARDIA propia**, igual que el bloque de arriba: el ancla
-    # `"      - name: analyze\n        run: dart analyze --fatal-infos"` no
-    # tiene `assert` que la respalde. Hoy sigue apareciendo tal cual.
+    _analyze = "      - name: analyze\n        run: dart analyze --fatal-infos"
     c.append({
         "nombre": "ci · dos toolchains de Dart en el mismo job",
-        "archivos": {CI_REL: ci.replace(
-            "      - name: analyze\n        run: dart analyze --fatal-infos",
-            flutter_paso + "\n\n      - name: analyze\n"
-            "        run: dart analyze --fatal-infos", 1)},
+        "archivos": {CI_REL: ancla(
+            ci, _analyze, flutter_paso + "\n\n" + _analyze,
+            que="el step de analyze, antes del cual se inyecta Flutter")},
         "menciona": "instala Dart Y Flutter",
     })
-    # `"          flutter-version: 3.44.0"` está protegida DE REBOTE por el
-    # `assert ci.count(flutter_paso) == 1` de más arriba —`flutter_paso` la
-    # contiene como substring—, pero es indirecto y no obvio releyendo solo
-    # este caso. Si algún día `flutter_paso` deja de incluirla textualmente
-    # (por ejemplo, si cambia de formato sin cambiar la versión), esta
-    # protección se pierde sin que nada lo anuncie acá.
+    # Antes esta ancla estaba protegida DE REBOTE, porque `flutter_paso` la
+    # contiene como substring. Era indirecto y no obvio releyendo el caso: si
+    # `flutter_paso` cambiaba de formato sin cambiar la versión, la protección
+    # se perdía sin que nada lo anunciara. Ahora tiene la suya.
+    _version = "          flutter-version: 3.44.0"
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
-        "archivos": {CI_REL: ci.replace("          flutter-version: 3.44.0",
-                                        "          channel: stable", 1)},
+        "archivos": {CI_REL: ancla(ci, _version, "          channel: stable",
+                                   que="la versión fijada de Flutter")},
         "menciona": "no es una versión exacta",
     })
     # El control negativo de la exención de canario se retiró CON la exención.
@@ -511,22 +661,21 @@ def casos() -> list[dict]:
     # hipotético. Un control negativo que defiende una exención que ya no está
     # es peor que no tenerlo: la haría parecer viva.
     #
-    # **El segundo `.replace` de este caso —«el fixture se verifica a sí
-    # mismo» / `runs-on: ubuntu-latest»— NO tiene ninguna guardia, ni directa
-    # ni indirecta.** Si ese nombre de job o esa línea de `runs-on` cambian,
-    # este `.replace` no aplica y el caso queda testeando el archivo sin
-    # tocar — silencioso, no un crash. Hoy (verificado al escribir esta nota)
-    # el texto sigue igual.
+    # El segundo anclaje de este caso —el job del fixture— no tenía ninguna
+    # guardia, ni directa ni indirecta: si ese nombre de job o esa línea de
+    # `runs-on` cambiaban, el `.replace` no aplicaba y el caso quedaba probando
+    # el archivo sin tocar. Silencioso, no un crash, que es el modo de fallo
+    # peor de los dos.
+    _job_fixture = ("    name: el fixture se verifica a sí mismo\n"
+                    "    runs-on: ubuntu-latest")
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
-        "archivos": {CI_REL: ci
-                     .replace("          flutter-version: 3.44.0",
-                              "          flutter-version: stable", 1)
-                     .replace("    name: el fixture se verifica a sí mismo\n"
-                              "    runs-on: ubuntu-latest",
-                              "    name: el fixture se verifica a sí mismo\n"
-                              "    runs-on: ubuntu-latest\n"
-                              "    continue-on-error: ${{ matrix.canario }}", 1)},
+        "archivos": {CI_REL: ancla(
+            ancla(ci, _version, "          flutter-version: stable",
+                  que="la versión de Flutter, vuelta flotante"),
+            _job_fixture,
+            _job_fixture + "\n    continue-on-error: ${{ matrix.canario }}",
+            que="el job del fixture, al que se le da pinta de canario")},
         "menciona": "no es una versión exacta",
     })
     # El número se DERIVA del README, no se cablea: cablearlo hacía que este
@@ -616,32 +765,22 @@ def casos() -> list[dict]:
     # indentado tampoco se cablea (`\s+`, no seis espacios fijos): un
     # `dart format` que cambia la indentación de `verify.dart` no tiene por
     # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
+    # La propagación por paso, que el sabotaje del default no cubría: un review
+    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    #
+    # **Ya no hace falta localizar el literal de la lista.** Se hacía contando
+    # corchetes, y eso admitía un falso verde con un `]` dentro de un
+    # comentario; la derivación se mudó al analizador y el sabotaje puede
+    # atacar el texto directo. `ancla_multiple` porque hay una propagación por
+    # paso y alcanza con romper una.
     verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
         encoding="utf-8")
-    _d = verify_prop.index("Cascada([")
-    _apertura = _d + len("Cascada(")
-    _profundidad = 0
-    _cierre = None
-    for _i in range(_apertura, len(verify_prop)):
-        if verify_prop[_i] == "[":
-            _profundidad += 1
-        elif verify_prop[_i] == "]":
-            _profundidad -= 1
-            if _profundidad == 0:
-                _cierre = _i
-                break
-    assert _cierre is not None, (
-        "la lista de pasos de `Cascada([...])` no cierra en verify.dart: no "
-        "encontré el `]` que hace juego con `Cascada([`.")
-    _lit = verify_prop[_d:_cierre + 1]
-    _uno = re.search(r"^\s+Paso[A-Za-z]+\(\s*\n?[^)]*?(presupuesto: presupuesto)",
-                     _lit, re.M)
-    assert _uno, "no encontré la propagación del presupuesto en verify.dart"
     c.append({
         "nombre": "cascada · un paso con un presupuesto distinto del resto",
-        "archivos": {"packages/cli/lib/src/verify.dart": verify_prop.replace(
-            _lit, _lit.replace(_uno.group(1), "presupuesto: presupuesto * 2", 1),
-            1)},
+        "archivos": {"packages/cli/lib/src/verify.dart": ancla_multiple(
+            verify_prop, "presupuesto: presupuesto",
+            "presupuesto: presupuesto * 2",
+            que="la propagación del presupuesto a un paso")},
         "menciona": "como presupuesto y no el parámetro",
     })
 
@@ -661,13 +800,13 @@ def casos() -> list[dict]:
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     #
-    # **FRÁGIL, SIN GUARDIA, y silenciosa como la de `tool/analisis` más
-    # arriba:** si ese árbol de ejemplo del README deja de tener una línea
-    # `  analisis/` (con exactamente esa indentación), `.replace` no aplica y
-    # el caso no sabotea nada, sin avisar. Hoy sigue estando.
+    # Era frágil y silenciosa: si el árbol de ejemplo del README dejaba de tener
+    # una línea `  analisis/` con esa indentación exacta, el `.replace` no
+    # aplicaba y el caso no saboteaba nada, sin avisar. Ahora el ancla lo dice.
     c.append({
         "nombre": "readme · un nombre retirado, sin forma de ruta",
-        "archivos": {"README.md": readme.replace("  analisis/", "  serializacion/", 1)},
+        "archivos": {"README.md": ancla(readme, "  analisis/", "  serializacion/",
+                                        que="el árbol de estructura del README")},
         "menciona": "nombre retirado",
     })
 
@@ -713,6 +852,113 @@ def casos() -> list[dict]:
         # atribución se sostiene. Medido las dos veces, con y sin el arreglo.
         "menciona": "base de una jerarquía sellada",
     })
+
+    # **El enmascaramiento, que ningún sabotaje cubría.** El arnés inyecta un
+    # defecto por vez, así que la combinación donde uno tapa a otro no se
+    # ejercitaba nunca. Y pasaba: `_check_readme` encadenaba seis `return`, y un
+    # fallo cualquiera apagaba en silencio a los que venían después.
+    #
+    # Dos defectos independientes —uno en la PRIMERA sección y otro en la
+    # ÚLTIMA— y se exige que aparezcan los dos. Con las secciones encadenadas,
+    # el segundo desaparecía del informe mientras el código de salida seguía en
+    # 1: no un falso verde, pero sí un problema escondido detrás de otro.
+    #
+    # **La versión anterior de este caso rompía la forma del presupuesto con un
+    # espacio de más, y dejó de sabotear** cuando la derivación se mudó al árbol
+    # sintáctico, donde los espacios no significan nada. Reapuntado a un defecto
+    # que la primera sección sí ve.
+    c.append({
+        "nombre": "capas · un fallo no puede apagar a los que vienen después",
+        "archivos": {
+            "README.md": ancla_multiple(
+                ancla(readme, filas[0] + "\n", "",
+                      que="la fila de la tabla, que rompe la PRIMERA sección"),
+                "  analisis/", "  serializacion/",
+                que="el nombre retirado, que solo ve la ÚLTIMA sección"),
+        },
+        "menciona": ["no está en la tabla", "nombre retirado"],
+    })
+
+    # **Y que un control que revienta se reporte, en vez de llevarse a los
+    # demás.** `check_meta` corría diez controles adentro de una sola llamada,
+    # así que una excepción en el segundo dejaba sin ejecutar al de CI y al del
+    # README: el resultado quedaba rojo y los defectos aparecían de a uno por
+    # corrida. Lo encontró una revisión, con este mismo sabotaje — un campo del
+    # registro con la forma estructural equivocada.
+    #
+    # **Hacen falta DOS defectos, y la primera versión de este caso tenía uno.**
+    # Pedía que el diagnóstico dijera «la comprobación se rompió» y que
+    # apareciera «cadenas acotadas a su adapter» — pero eso último es el nombre
+    # de un paso que está FUERA del grupo que el sabotaje fusiona, así que
+    # seguía apareciendo con los controles otra vez juntos y el caso pasaba.
+    # Probaba menos de lo que decía probar, que es el defecto que este archivo
+    # existe para no tener.
+    #
+    # Ahora el segundo defecto lo ve un control POSTERIOR al que revienta: si el
+    # grupo se vuelve a fusionar, la excepción lo deja sin ejecutar y su
+    # diagnóstico desaparece.
+    c.append({
+        "nombre": "capas · un control que revienta no apaga a los que siguen",
+        "archivos": {
+            ARQ_REL: arq_con(
+                lambda r: r["lenguaje-en-plugin-dart"]["alcance"].update(
+                    no_cuenta="esto no es una lista")),
+            "README.md": ancla_multiple(
+                readme, "  analisis/", "  serializacion/",
+                que="el nombre retirado, que ve un control POSTERIOR"),
+        },
+        "regenerar_huella": True,
+        "menciona": ["la comprobación se rompió", "nombre retirado"],
+    })
+
+    # **Las formas de elemento que la derivación no sabe contar.**
+    #
+    # `whereType<Expression>()` descartaba en silencio los `CollectionElement`
+    # que no son expresiones. Una revisión lo reprodujo metiendo los pasos por
+    # un spread: la cascada corría dos, el README declaraba uno, y el
+    # verificador salía con cero. Las tres formas tienen su caso porque las tres
+    # pueden aportar cualquier cantidad de pasos, y ninguna se puede contar sin
+    # resolver — así que la derivación tiene que fallar cerrada, no saltearlas.
+    _abre = "  return Cascada([\n    PasoDeFormato("
+    _paso_extra = ("PasoDeFormato(\n        ejecutor: ejecutor, "
+                   "directorio: directorio, presupuesto: presupuesto)")
+    for _forma, _inyectado in (
+        ("un spread", "    ...const [],\n"),
+        ("un `if`", f"    if (false) {_paso_extra},\n"),
+        ("un `for`", f"    for (final _ in const <int>[]) {_paso_extra},\n"),
+    ):
+        c.append({
+            "nombre": f"cascada · la lista de pasos con {_forma}",
+            "archivos": {verify_rel: ancla(
+                verify, _abre,
+                "  return Cascada([\n" + _inyectado + "    PasoDeFormato(",
+                que=f"la apertura de la lista de pasos, donde entra {_forma}")},
+            "menciona": "no sabe contar",
+        })
+
+    # Y que la cascada que se lee sea **la retornada**, no la primera que
+    # aparezca. Reproducido: una rama condicional antes del `return` construye
+    # una cascada de un paso, la retornada sigue teniendo dos, y todo queda
+    # verde. Una llamada auxiliar o un closure pueden volverse la fuente
+    # documental por accidente.
+    c.append({
+        "nombre": "cascada · una cascada auxiliar antes de la retornada",
+        "archivos": {verify_rel: ancla(
+            verify, "  return Cascada([",
+            "  if (presupuesto.inMinutes == 0) {\n"
+            "    return Cascada([\n"
+            "      " + _paso_extra.replace("\n        ", "\n          ") + ",\n"
+            "    ], observador: obs);\n"
+            "  }\n"
+            "  return Cascada([",
+            que="el `return` de cascadaPorDefecto, antes del cual se inyecta otra")},
+        "menciona": "hace falta uno solo",
+    })
+
+    # **Acá vivía el caso del ancla perdida, y se fue con su sujeto.** Protegía
+    # un `.index("Cascada([")` que ya no existe: la derivación se mudó al árbol
+    # sintáctico, donde un tipo explícito en el literal no cambia nada. Un caso
+    # que no puede sabotear nada es peor que ninguno — se lee como protección.
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
     c += casos_ciegos()
@@ -772,12 +1018,10 @@ def pub_get() -> None:
     subprocess.run(["dart", "pub", "get"], cwd=RAIZ, capture_output=True, timeout=180)
 
 
-def estado_git() -> str | None:
-    """Huella del árbol. No exige que esté LIMPIO —esto corre mientras se
-    desarrolla— sino que no CAMBIE: busca residuo, no pulcritud."""
-    r = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
-                       capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else None
+# **Acá vivía `estado_git`, y se fue con su motivo.** Detectaba residuo
+# preguntándole a `git status`, lo que traía dos límites: solo veía lo
+# versionado —un canario en un directorio ignorado no aparecía— y necesitaba un
+# `.git`, que la copia privada no tiene. `huella_del_arbol` compara contenido.
 
 
 def aplicar(archivos: dict[str, str]) -> dict[str, str | None]:
@@ -839,8 +1083,16 @@ def evaluar(caso: dict, codigo: int, salida: str) -> str | None:
                     "inutilizado. No miró nada y lo llamó aprobación — es la "
                     "clase 1 exacta, y ADR-011 dice que eso es fallo.")
         return "el check pasó en verde. La regla quedó sin efecto y nadie se enteró."
-    if espera_falla and caso.get("menciona") and caso["menciona"] not in salida:
-        return f"falló, pero no por esto — no menciona «{caso['menciona']}»."
+    menciona = caso.get("menciona")
+    if espera_falla and menciona:
+        # **Puede ser una lista, y ahí se exigen TODAS.** Un caso que inyecta
+        # dos defectos para probar que los dos se reportan no se puede evaluar
+        # con una sola cadena: bastaría que apareciera uno.
+        faltan = [m for m in ([menciona] if isinstance(menciona, str) else menciona)
+                  if m not in salida]
+        if faltan:
+            return ("falló, pero no por esto — no menciona "
+                    + ", ".join(f"«{m}»" for m in faltan) + ".")
     if not espera_falla and codigo != 0:
         return "el check falló, pero esto debería estar EXCLUIDO por declaración."
     return None
@@ -933,10 +1185,41 @@ def main() -> int:
     global ORDENES
     for s in (signal.SIGINT, signal.SIGTERM):
         signal.signal(s, _al_recibir_senal)
+    # **`--recuperar` opera sobre el árbol donde se lo invoca, no sobre una
+    # copia.** Existe para deshacer lo que dejó una corrida vieja —de antes de
+    # que los sabotajes vivieran en una copia—, y `probar_recuperacion.py` lo
+    # ejercita sobre el árbol real. Mandarlo a una copia lo volvería un no-op
+    # silencioso.
     if recuperar(reparar="--recuperar" in sys.argv):
         return 1
     if "--recuperar" in sys.argv:
         return 0
+
+    # Y si todavía no estamos adentro de la copia, se hace y nos rehacemos ahí.
+    if EN_COPIA not in sys.argv:
+        return en_copia_privada([a for a in sys.argv[1:] if a != EN_COPIA])
+
+    # **Y acá se NIEGA a sabotear el original.**
+    #
+    # Una revisión pidió una prueba que demostrara que el árbol compartido no
+    # cambia. La huella que compara `en_copia_privada` antes y después ya lo mide
+    # en cada corrida, pero tiene un hueco: si alguien saca el desvío a la copia,
+    # la comprobación se va con él y nada queda mirando.
+    #
+    # Una negativa cierra eso mejor que una prueba. El proceso externo dice de
+    # dónde salió la copia; si esa variable no está, o si apunta al árbol donde
+    # estamos parados, este proceso no sabotea nada. Sacar el desvío no deja al
+    # arnés escribiendo sobre el checkout compartido: lo deja **rojo**.
+    origen = os.environ.get(ORIGEN)
+    if origen is None or Path(origen).resolve() == RAIZ:
+        print("Me niego a sabotear este árbol.\n")
+        print(f"  Los sabotajes viven en una copia privada, y «{ORIGEN}» "
+              f"{'no está puesta' if origen is None else 'apunta acá mismo'}.\n"
+              f"  Si el desvío a la copia se sacó, esto es exactamente lo que "
+              f"tenía que pasar:\n  el arnés no escribe sobre el checkout "
+              f"compartido ni cuando se lo rompen.")
+        return 1
+
     ORDENES = compilar()
     codigo, salida = corre_check()
     if codigo != 0:
@@ -950,7 +1233,19 @@ def main() -> int:
             print(f"  {f}")
         return 1
 
-    git_antes = estado_git()
+    # La huella sostiene la afirmación de que el árbol no cambió, así que se
+    # comprueba a sí misma antes de que nadie se apoye en ella.
+    ambiguas = huella_ambigua()
+    if ambiguas:
+        print("La huella del árbol no distingue lo que dice distinguir:\n")
+        for a in ambiguas:
+            print(f"  {a}")
+        return 1
+
+    # **Residuo por CONTENIDO, no por `git status`.** La copia no tiene `.git`,
+    # y además preguntarle a git solo veía lo versionado: un canario sintético
+    # en un directorio ignorado no aparecía.
+    huella_antes = huella_del_arbol(RAIZ, con_generados=False)
     print("  árbol limpio\n")
 
     problemas: list[str] = []
@@ -982,12 +1277,11 @@ def main() -> int:
     codigo, _ = corre_check()
     if codigo != 0:
         problemas.append("el árbol quedó en rojo tras restaurar")
-    git_despues = estado_git()
-    if git_antes is None or git_despues is None:
-        print("\n  (sin git: no se pudo verificar que no quedara residuo)")
-    elif git_antes != git_despues:
-        nuevos = sorted(set(git_despues.splitlines()) - set(git_antes.splitlines()))
-        problemas.append("los sabotajes dejaron residuo:\n      " + "\n      ".join(nuevos))
+    if huella_del_arbol(RAIZ, con_generados=False) != huella_antes:
+        problemas.append(
+            "los sabotajes dejaron residuo: el contenido del árbol no volvió a "
+            "ser el de antes.\n      Alguno no restauró lo que tocó, y el "
+            "siguiente corrió sobre un árbol que no era el que dice.")
 
     if problemas:
         print("\nprobar_reglas: FALLA\n")
