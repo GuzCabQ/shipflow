@@ -8,17 +8,18 @@ environment:
 
 resolution: workspace
 
+# **Lo que se declara acá es lo que se USA, no lo que está permitido.**
+#
+# `arquitectura.json` permite que `cli` vea también `vcs`, `rules` y `agents`:
+# eso es la arquitectura, y no cambia. Pero ningún archivo de `lib/`, `bin/` ni
+# `test/` los importa —`rules` y `agents` son stubs de dos líneas, y `vcs` no
+# tiene consumidor porque `ship` no existe—, así que declararlos acá afirmaba un
+# uso que no hay. La flecha vuelve en el mismo commit que la use.
 dependencies:
   core:
     path: ../core
   orchestration:
     path: ../orchestration
-  vcs:
-    path: ../vcs
-  rules:
-    path: ../rules
-  agents:
-    path: ../agents
   plugin_dart:
     path: ../plugin_dart
   plugin_fake:
