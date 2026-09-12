@@ -6,7 +6,10 @@ publish_to: none
 environment:
   # El arnés soporta el canal estable vigente, no el último SDK publicado
   # (D-068). Los workspaces de pub necesitan 3.6.
-  sdk: ^3.6.0
+  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
+  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
+  # fixture se corrigió por esto mismo y no se propagó acá.
+  sdk: ^3.11.0
 
 # Solo para el análisis estático y las pruebas. Van en la RAÍZ del workspace,
 # no en cada paquete, y eso no es comodidad: `core` no puede declarar ni una

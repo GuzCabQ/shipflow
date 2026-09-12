@@ -128,28 +128,37 @@ class RepositorioGit implements ChangeSink {
   /// [entorno] se **suma** al del proceso, no lo reemplaza: es para
   /// `GIT_INDEX_FILE`, que es como se le dice a `git` que trabaje sobre un
   /// índice que no es el del usuario.
-  Future<ProcessResult> _git(List<String> args,
-      {Map<String, String> entorno = const {}}) async {
+  Future<ProcessResult> _git(
+    List<String> args, {
+    Map<String, String> entorno = const {},
+  }) async {
     final completos = ['--literal-pathspecs', ...args];
     final ProcessResult r;
     try {
-      r = await Process.run(programa, completos,
-          workingDirectory: directorio,
-          environment: entorno,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8);
+      r = await Process.run(
+        programa,
+        completos,
+        workingDirectory: directorio,
+        environment: entorno,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
     } on ProcessException catch (e) {
-      throw GitFallo('$programa ${completos.join(" ")}', -1,
-          '${e.message} (${e.executable})');
+      throw GitFallo(
+        '$programa ${completos.join(" ")}',
+        -1,
+        '${e.message} (${e.executable})',
+      );
     }
     return r;
   }
 
   /// Corre `git` y **exige que haya salido bien**. Un código distinto de cero
   /// que se ignora es un cambio que se cree hecho y no está.
-  Future<String> _exigir(List<String> args,
-          {Map<String, String> entorno = const {}}) async =>
-      (await _exigirCrudo(args, entorno: entorno)).trim();
+  Future<String> _exigir(
+    List<String> args, {
+    Map<String, String> entorno = const {},
+  }) async => (await _exigirCrudo(args, entorno: entorno)).trim();
 
   /// Igual, pero **sin recortar**.
   ///
@@ -158,12 +167,17 @@ class RepositorioGit implements ChangeSink {
   /// otro archivo. Un review lo encontró — la comparación decía que se pidió
   /// « a.txt» y que el índice además tocaba «a.txt», que es el mismo archivo
   /// escrito de dos maneras por culpa nuestra.
-  Future<String> _exigirCrudo(List<String> args,
-      {Map<String, String> entorno = const {}}) async {
+  Future<String> _exigirCrudo(
+    List<String> args, {
+    Map<String, String> entorno = const {},
+  }) async {
     final r = await _git(args, entorno: entorno);
     if (r.exitCode != 0) {
-      throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}',
-          r.exitCode, '${r.stdout}${r.stderr}'.trim());
+      throw GitFallo(
+        '$programa --literal-pathspecs ${args.join(" ")}',
+        r.exitCode,
+        '${r.stdout}${r.stderr}'.trim(),
+      );
     }
     return r.stdout as String;
   }
@@ -175,23 +189,34 @@ class RepositorioGit implements ChangeSink {
   /// Decodificarlos para volver a codificarlos los corrompe en silencio, que
   /// es exactamente la clase de transformación que el candidato existe para
   /// impedir.
-  Future<List<int>> _exigirBytes(List<String> args,
-      {Map<String, String> entorno = const {}}) async {
+  Future<List<int>> _exigirBytes(
+    List<String> args, {
+    Map<String, String> entorno = const {},
+  }) async {
     final completos = ['--literal-pathspecs', ...args];
     final ProcessResult r;
     try {
-      r = await Process.run(programa, completos,
-          workingDirectory: directorio,
-          environment: entorno,
-          stdoutEncoding: null,
-          stderrEncoding: utf8);
+      r = await Process.run(
+        programa,
+        completos,
+        workingDirectory: directorio,
+        environment: entorno,
+        stdoutEncoding: null,
+        stderrEncoding: utf8,
+      );
     } on ProcessException catch (e) {
-      throw GitFallo('$programa ${completos.join(" ")}', -1,
-          '${e.message} (${e.executable})');
+      throw GitFallo(
+        '$programa ${completos.join(" ")}',
+        -1,
+        '${e.message} (${e.executable})',
+      );
     }
     if (r.exitCode != 0) {
-      throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}',
-          r.exitCode, (r.stderr as String).trim());
+      throw GitFallo(
+        '$programa --literal-pathspecs ${args.join(" ")}',
+        r.exitCode,
+        (r.stderr as String).trim(),
+      );
     }
     return r.stdout as List<int>;
   }
@@ -202,16 +227,26 @@ class RepositorioGit implements ChangeSink {
   /// `hash-object --stdin` es la única forma de escribir un objeto sin que
   /// `git` vuelva a leer un archivo del disco y le aplique los atributos otra
   /// vez.
-  Future<String> _exigirConEntrada(List<String> args, List<int> entrada,
-      {Map<String, String> entorno = const {}}) async {
+  Future<String> _exigirConEntrada(
+    List<String> args,
+    List<int> entrada, {
+    Map<String, String> entorno = const {},
+  }) async {
     final completos = ['--literal-pathspecs', ...args];
     final Process p;
     try {
-      p = await Process.start(programa, completos,
-          workingDirectory: directorio, environment: entorno);
+      p = await Process.start(
+        programa,
+        completos,
+        workingDirectory: directorio,
+        environment: entorno,
+      );
     } on ProcessException catch (e) {
-      throw GitFallo('$programa ${completos.join(" ")}', -1,
-          '${e.message} (${e.executable})');
+      throw GitFallo(
+        '$programa ${completos.join(" ")}',
+        -1,
+        '${e.message} (${e.executable})',
+      );
     }
     p.stdin.add(entrada);
     await p.stdin.close();
@@ -219,8 +254,11 @@ class RepositorioGit implements ChangeSink {
     final error = await utf8.decoder.bind(p.stderr).join();
     final codigo = await p.exitCode;
     if (codigo != 0) {
-      throw GitFallo('$programa --literal-pathspecs ${args.join(" ")}', codigo,
-          '$salida$error'.trim());
+      throw GitFallo(
+        '$programa --literal-pathspecs ${args.join(" ")}',
+        codigo,
+        '$salida$error'.trim(),
+      );
     }
     return salida.trim();
   }
@@ -228,8 +266,10 @@ class RepositorioGit implements ChangeSink {
   @override
   Future<void> useBranch(String name) async {
     if (name.trim().isEmpty) {
-      throw const RebanadaNoAplicable('El nombre de rama está vacío.',
-          'Dale un nombre; una rama sin nombre no se puede retomar después.');
+      throw const RebanadaNoAplicable(
+        'El nombre de rama está vacío.',
+        'Dale un nombre; una rama sin nombre no se puede retomar después.',
+      );
     }
 
     // **Quien valida el nombre es `git`, no una expresión nuestra.** Sus
@@ -244,10 +284,11 @@ class RepositorioGit implements ChangeSink {
     if (formato.exitCode != 0 ||
         (formato.stdout as String).trim() != name.trim()) {
       throw RebanadaNoAplicable(
-          '«$name» no es un nombre de rama que git acepte literalmente.',
-          'Usá letras, números, guiones y barras: `shipflow/lo-que-sea`. Ni '
-              '`HEAD`, ni algo que empiece con guion, ni sintaxis de revisión '
-              'como `@{-1}`.');
+        '«$name» no es un nombre de rama que git acepte literalmente.',
+        'Usá letras, números, guiones y barras: `shipflow/lo-que-sea`. Ni '
+            '`HEAD`, ni algo que empiece con guion, ni sintaxis de revisión '
+            'como `@{-1}`.',
+      );
     }
 
     // **La pregunta es si existe la RAMA, no si el nombre resuelve a algo.**
@@ -255,23 +296,31 @@ class RepositorioGit implements ChangeSink {
     // homónima decía «ya existe» y `switch` fallaba con «a branch is expected,
     // got tag». Una reanudación legítima quedaba rota por un nombre que ni
     // siquiera era una rama.
-    final existe =
-        await _git(['show-ref', '--verify', '--quiet', 'refs/heads/$name']);
+    final existe = await _git([
+      'show-ref',
+      '--verify',
+      '--quiet',
+      'refs/heads/$name',
+    ]);
 
     // **Idempotente**: la orquestación la pide al empezar y `--resume` la
     // vuelve a pedir. Que la segunda vez falle rompería la reanudación que
     // ADR-014 exige.
-    await _exigir(existe.exitCode == 0
-        ? ['switch', '--', name]
-        : ['switch', '--create', name]);
+    await _exigir(
+      existe.exitCode == 0
+          ? ['switch', '--', name]
+          : ['switch', '--create', name],
+    );
 
     // Y **se comprueba dónde quedamos.** `git switch` tiene formas de salir
     // con cero sin dejarnos en la rama pedida —`--detach` es la evidente— y
     // el puerto promete la rama, no la invocación.
     final actual = await ramaActual;
     if (actual != name) {
-      throw PromesaIncumplida('quedar en la rama «$name»',
-          actual.isEmpty ? 'HEAD suelto, sin rama' : 'la rama «$actual»');
+      throw PromesaIncumplida(
+        'quedar en la rama «$name»',
+        actual.isEmpty ? 'HEAD suelto, sin rama' : 'la rama «$actual»',
+      );
     }
   }
 
@@ -288,17 +337,23 @@ class RepositorioGit implements ChangeSink {
         RebanadaNoAplicable('«$entrada»: $razon', queHacer);
 
     if (entrada.trim().isEmpty) {
-      throw no('está en blanco.',
-          'Una entrada vacía no nombra nada. Sacala de la rebanada.');
+      throw no(
+        'está en blanco.',
+        'Una entrada vacía no nombra nada. Sacala de la rebanada.',
+      );
     }
     if (entrada.startsWith('/')) {
-      throw no('es una ruta absoluta.',
-          'Nombrala relativa a la raíz del repositorio, como la nombra git.');
+      throw no(
+        'es una ruta absoluta.',
+        'Nombrala relativa a la raíz del repositorio, como la nombra git.',
+      );
     }
     final partes = entrada.split('/');
     if (partes.any((s) => s.isEmpty || s == '.' || s == '..')) {
-      throw no('no está en la forma en que git nombra un archivo.',
-          'Escribila sin `./`, sin `..` y sin barras repetidas ni al final.');
+      throw no(
+        'no está en la forma en que git nombra un archivo.',
+        'Escribila sin `./`, sin `..` y sin barras repetidas ni al final.',
+      );
     }
 
     // **Lo que no es fuente no se commitea, y no se quita en silencio.**
@@ -319,28 +374,32 @@ class RepositorioGit implements ChangeSink {
     // manera de limpiarlo. Lo señaló un review, y `D-094` se enmienda con esto.
     final existeEnDisco =
         FileSystemEntity.typeSync('$directorio/$entrada', followLinks: false) !=
-            FileSystemEntityType.notFound;
+        FileSystemEntityType.notFound;
     if (existeEnDisco && !politica.isEditable(entrada)) {
       throw no(
-          'no es fuente: el stack lo declara generado o artefacto de build.',
-          'Lo generado se regenera, así que versionarlo duplica la verdad y la '
-              'deja envejecer. Sacalo de la rebanada; si de verdad tiene que '
-              'viajar, lo que hay que cambiar es la política del stack, no '
-              'esta rebanada.');
+        'no es fuente: el stack lo declara generado o artefacto de build.',
+        'Lo generado se regenera, así que versionarlo duplica la verdad y la '
+            'deja envejecer. Sacalo de la rebanada; si de verdad tiene que '
+            'viajar, lo que hay que cambiar es la política del stack, no '
+            'esta rebanada.',
+      );
     }
 
     // Qué hay del otro lado. `followLinks: false` a propósito: `git` guarda un
     // enlace como enlace y no mira a dónde apunta, así que uno que apunte a un
     // directorio sigue siendo un archivo para esto.
-    final tipo =
-        FileSystemEntity.typeSync('$directorio/$entrada', followLinks: false);
+    final tipo = FileSystemEntity.typeSync(
+      '$directorio/$entrada',
+      followLinks: false,
+    );
     assert(existeEnDisco == (tipo != FileSystemEntityType.notFound));
     if (tipo == FileSystemEntityType.directory) {
       throw no(
-          'es un directorio.',
-          'La rebanada nombra archivos, no carpetas: un directorio arrastra '
-              'todo lo que tenga adentro, incluido lo que nadie planeó. '
-              'Nombrá los archivos uno por uno.');
+        'es un directorio.',
+        'La rebanada nombra archivos, no carpetas: un directorio arrastra '
+            'todo lo que tenga adentro, incluido lo que nadie planeó. '
+            'Nombrá los archivos uno por uno.',
+      );
     }
     if (tipo == FileSystemEntityType.notFound) {
       // Puede ser un borrado, que es un cambio legítimo. Lo es solo si git ya
@@ -359,13 +418,14 @@ class RepositorioGit implements ChangeSink {
           .toList();
       if (tiene.length != 1 || tiene.single != entrada) {
         throw no(
-            tiene.isEmpty
-                ? 'no existe en el árbol y git tampoco lo tiene.'
-                : 'no existe en el árbol y para git no es un archivo sino '
+          tiene.isEmpty
+              ? 'no existe en el árbol y git tampoco lo tiene.'
+              : 'no existe en el árbol y para git no es un archivo sino '
                     '${tiene.length}.',
-            'Si era un borrado, tiene que ser el de UN archivo que estaba '
-            'commiteado. Un directorio, aunque haya desaparecido, sigue '
-            'arrastrando todo lo que tenía adentro.');
+          'Si era un borrado, tiene que ser el de UN archivo que estaba '
+          'commiteado. Un directorio, aunque haya desaparecido, sigue '
+          'arrastrando todo lo que tenía adentro.',
+        );
       }
     }
     return entrada;
@@ -390,7 +450,8 @@ class RepositorioGit implements ChangeSink {
   /// sincroniza, porque es lo que hace `git commit -- <ruta>` y este adapter
   /// se comporta como `git`.
   Future<T> _conIndiceAislado<T>(
-      Future<T> Function(Map<String, String>, String) usar) async {
+    Future<T> Function(Map<String, String>, String) usar,
+  ) async {
     final ruta = '${await _rutaDeGit('index')}.shipflow';
     final entorno = {'GIT_INDEX_FILE': ruta};
     final archivo = File(ruta);
@@ -434,9 +495,10 @@ class RepositorioGit implements ChangeSink {
   Future<void> _exigirSinConflictos() async {
     if ((await _exigir(['ls-files', '--unmerged', '-z'])).isNotEmpty) {
       throw const RebanadaNoAplicable(
-          'hay un merge sin resolver.',
-          'Resolvé el merge y volvé a intentar: git no hace un commit parcial '
-              'con conflictos abiertos, y una rebanada es siempre parcial.');
+        'hay un merge sin resolver.',
+        'Resolvé el merge y volvé a intentar: git no hace un commit parcial '
+            'con conflictos abiertos, y una rebanada es siempre parcial.',
+      );
     }
   }
 
@@ -449,15 +511,17 @@ class RepositorioGit implements ChangeSink {
   Future<List<String>> _rutasDeLaRebanada(PullRequestSlice slice) async {
     if (slice.files.isEmpty) {
       throw const RebanadaNoAplicable(
-          'La rebanada no nombra ningún archivo.',
-          'Un commit vacío afirma un cambio que no existe. Poné los archivos '
-              'en la rebanada, o no la apliques.');
+        'La rebanada no nombra ningún archivo.',
+        'Un commit vacío afirma un cambio que no existe. Poné los archivos '
+            'en la rebanada, o no la apliques.',
+      );
     }
     if (slice.intent.trim().isEmpty) {
       throw const RebanadaNoAplicable(
-          'La rebanada no dice por qué existe.',
-          'El `intent` es lo que ADR-014 llama intención, y es el mensaje del '
-              'commit: sin él nadie puede revisar por qué se hizo.');
+        'La rebanada no dice por qué existe.',
+        'El `intent` es lo que ADR-014 llama intención, y es el mensaje del '
+            'commit: sin él nadie puede revisar por qué se hizo.',
+      );
     }
 
     final rutas = <String>[];
@@ -465,9 +529,10 @@ class RepositorioGit implements ChangeSink {
       final ruta = await _rutaDeArchivo(entrada);
       if (rutas.contains(ruta)) {
         throw RebanadaNoAplicable(
-            '«$entrada» está dos veces en la rebanada.',
-            'La rebanada declara un conjunto de archivos. Repetir uno no '
-                'commitea nada distinto y vuelve ambiguo el alcance.');
+          '«$entrada» está dos veces en la rebanada.',
+          'La rebanada declara un conjunto de archivos. Repetir uno no '
+              'commitea nada distinto y vuelve ambiguo el alcance.',
+        );
       }
       rutas.add(ruta);
     }
@@ -491,18 +556,22 @@ class RepositorioGit implements ChangeSink {
       // que preguntarle a `commit --dry-run` qué haría: el índice ES el
       // contenido del commit. `-z` porque `git` cita las rutas que no son
       // ASCII y comparar la cita contra la ruta falla sobre archivos válidos.
-      final entra = (await _exigirCrudo(
-              ['diff', '--cached', '--name-only', '-z', '--', ...rutas],
-              entorno: entorno))
-          .split('\u0000')
-          .where((s) => s.isNotEmpty)
-          .toSet();
+      final entra = (await _exigirCrudo([
+        'diff',
+        '--cached',
+        '--name-only',
+        '-z',
+        '--',
+        ...rutas,
+      ], entorno: entorno)).split('\u0000').where((s) => s.isNotEmpty).toSet();
       final pedidas = rutas.toSet();
       final demas = entra.difference(pedidas).toList()..sort();
       final faltan = pedidas.difference(entra).toList()..sort();
       if (demas.isNotEmpty) {
-        throw PromesaIncumplida('commitear exactamente ${rutas.join(", ")}',
-            'un índice que además tocaría ${demas.join(", ")}');
+        throw PromesaIncumplida(
+          'commitear exactamente ${rutas.join(", ")}',
+          'un índice que además tocaría ${demas.join(", ")}',
+        );
       }
       if (faltan.isNotEmpty) {
         // **Dos lecturas, y desde acá son indistinguibles.**
@@ -519,13 +588,14 @@ class RepositorioGit implements ChangeSink {
         // pertenece a la política de reanudación que el corpus declara
         // faltante (`D-032`). Hasta entonces se dicen las dos.
         throw RebanadaNoAplicable(
-            'la rebanada declara ${faltan.join(", ")} y no hay nada que '
-                'commitear ahí.',
-            'Puede ser que el plan haya declarado algo que no tocó —la '
-                'cláusula dice EXACTAMENTE, y eso vale en los dos sentidos— o '
-                'que esta rebanada YA se haya aplicado, que es lo que se ve al '
-                'reintentarla. Mirá `git log` antes de tocar la rebanada: si '
-                'el cambio ya está commiteado, no hay nada que arreglar.');
+          'la rebanada declara ${faltan.join(", ")} y no hay nada que '
+              'commitear ahí.',
+          'Puede ser que el plan haya declarado algo que no tocó —la '
+              'cláusula dice EXACTAMENTE, y eso vale en los dos sentidos— o '
+              'que esta rebanada YA se haya aplicado, que es lo que se ve al '
+              'reintentarla. Mirá `git log` antes de tocar la rebanada: si '
+              'el cambio ya está commiteado, no hay nada que arreglar.',
+        );
       }
 
       await _exigirSinSecretos(rutas, entorno);
@@ -567,10 +637,11 @@ class RepositorioGit implements ChangeSink {
     final sincronizado = await _git(['reset', '--quiet', '--', ...rutas]);
     if (sincronizado.exitCode != 0) {
       throw PromesaIncumplida(
-          'dejar el índice al día con el commit $revision',
-          'la revisión $revision creada y el índice sin sincronizar en '
-              '${rutas.join(", ")}: '
-              '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}');
+        'dejar el índice al día con el commit $revision',
+        'la revisión $revision creada y el índice sin sincronizar en '
+            '${rutas.join(", ")}: '
+            '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
+      );
     }
     return revision;
   }
@@ -590,7 +661,9 @@ class RepositorioGit implements ChangeSink {
   /// seguridad no puede leer una **representación** configurable por el propio
   /// repositorio que está inspeccionando.
   Future<void> _exigirSinSecretos(
-      List<String> rutas, Map<String, String> entorno) async {
+    List<String> rutas,
+    Map<String, String> entorno,
+  ) async {
     for (final ruta in rutas) {
       final diff = await _exigir([
         'diff',

@@ -62,7 +62,7 @@ class RegisteredStep {
   final List<String> expectedScope;
 
   RegisteredStep({required this.id, required List<String> expectedScope})
-      : expectedScope = List.unmodifiable(expectedScope) {
+    : expectedScope = List.unmodifiable(expectedScope) {
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'Un paso sin id no es registrable');
     }
@@ -105,8 +105,8 @@ class ResultadoDeCascada {
     required List<RegisteredStep> registrados,
     required this.alcance,
     required Map<String, StepOutcome> desenlaces,
-  })  : registrados = List.unmodifiable(registrados),
-        desenlaces = Map.unmodifiable(desenlaces) {
+  }) : registrados = List.unmodifiable(registrados),
+       desenlaces = Map.unmodifiable(desenlaces) {
     // **El id es una CLAVE, y dos registros con la misma clave no son un
     // registro.** `Cascada` ya rechaza ids duplicados al construirse, pero
     // eso es un invariante del PRODUCTOR y este tipo es público y exportado:
@@ -125,12 +125,13 @@ class ResultadoDeCascada {
     }
     if (repetidos.isNotEmpty) {
       throw ArgumentError.value(
-          repetidos.toList(),
-          'registrados',
-          'Estos ids están registrados más de una vez. Se comparan '
-              'registrados contra desenlaces por id, así que un desenlace '
-              'saldaría a los dos y un paso podría no haber corrido sin que '
-              'nadie se entere');
+        repetidos.toList(),
+        'registrados',
+        'Estos ids están registrados más de una vez. Se comparan '
+            'registrados contra desenlaces por id, así que un desenlace '
+            'saldaría a los dos y un paso podría no haber corrido sin que '
+            'nadie se entere',
+      );
     }
     final ids = unaVez;
     // **`sinEjecutar` desaparece porque no puede existir.** Antes era una
@@ -139,15 +140,19 @@ class ResultadoDeCascada {
     final faltan = ids.where((id) => !this.desenlaces.containsKey(id));
     if (faltan.isNotEmpty) {
       throw ArgumentError.value(
-          faltan.toList(),
-          'desenlaces',
-          'Estos pasos están registrados y no tienen desenlace. Un `started` '
-              'sin cerrar deja esperando a quien consuma el protocolo');
+        faltan.toList(),
+        'desenlaces',
+        'Estos pasos están registrados y no tienen desenlace. Un `started` '
+            'sin cerrar deja esperando a quien consuma el protocolo',
+      );
     }
     final sobran = this.desenlaces.keys.where((id) => !ids.contains(id));
     if (sobran.isNotEmpty) {
-      throw ArgumentError.value(sobran.toList(), 'desenlaces',
-          'Hay desenlaces de pasos que no están registrados');
+      throw ArgumentError.value(
+        sobran.toList(),
+        'desenlaces',
+        'Hay desenlaces de pasos que no están registrados',
+      );
     }
 
     // **El alcance esperado deja de ser gratis.** Antes el denominador del
@@ -173,35 +178,38 @@ class ResultadoDeCascada {
     //   propio DECLARADO — no uno que se coló por no validarse.
     final utilizable = alcance.usable().toSet();
     for (final registro in this.registrados) {
-      final enBlanco =
-          registro.expectedScope.where((s) => s.trim().isEmpty).toList();
+      final enBlanco = registro.expectedScope
+          .where((s) => s.trim().isEmpty)
+          .toList();
       if (enBlanco.isNotEmpty) {
         throw ArgumentError.value(
-            registro.expectedScope,
-            'registrados',
-            'El paso «${registro.id}» espera un sujeto en blanco. Un sujeto '
-                'en blanco no nombra nada, y el libro de obligaciones no le '
-                'puede pedir cuenta de él a nadie.');
+          registro.expectedScope,
+          'registrados',
+          'El paso «${registro.id}» espera un sujeto en blanco. Un sujeto '
+              'en blanco no nombra nada, y el libro de obligaciones no le '
+              'puede pedir cuenta de él a nadie.',
+        );
       }
       final esperado = registro.expectedScope.toSet();
       final excedentes = esperado.difference(utilizable);
       final faltantes = utilizable.difference(esperado);
       if (excedentes.isNotEmpty || faltantes.isNotEmpty) {
         throw ArgumentError.value(
-            registro.expectedScope,
-            'registrados',
-            'El alcance esperado del paso «${registro.id}» no coincide con '
-                'lo utilizable de esta corrida (${utilizable.join(", ")}).'
-                '${excedentes.isEmpty ? '' : ' Espera sujetos que la '
-                    'observación no dio como utilizables: '
-                    '${excedentes.join(", ")}.'}'
-                '${faltantes.isEmpty ? '' : ' No incluye sujetos utilizables '
-                    'que esta corrida sí observó: ${faltantes.join(", ")}.'}'
-                ' Sin aplicabilidad por paso todavía, el alcance esperado de '
-                'todo paso registrado tiene que ser exactamente el '
-                'utilizable: uno más chico deja obligaciones sin nombrar, y '
-                'uno más grande fabrica obligaciones sobre algo que nadie '
-                'observó.');
+          registro.expectedScope,
+          'registrados',
+          'El alcance esperado del paso «${registro.id}» no coincide con '
+              'lo utilizable de esta corrida (${utilizable.join(", ")}).'
+              '${excedentes.isEmpty ? '' : ' Espera sujetos que la '
+                        'observación no dio como utilizables: '
+                        '${excedentes.join(", ")}.'}'
+              '${faltantes.isEmpty ? '' : ' No incluye sujetos utilizables '
+                        'que esta corrida sí observó: ${faltantes.join(", ")}.'}'
+              ' Sin aplicabilidad por paso todavía, el alcance esperado de '
+              'todo paso registrado tiene que ser exactamente el '
+              'utilizable: uno más chico deja obligaciones sin nombrar, y '
+              'uno más grande fabrica obligaciones sobre algo que nadie '
+              'observó.',
+        );
       }
     }
 
@@ -229,27 +237,29 @@ class ResultadoDeCascada {
       final deMas = certificados.difference(propios);
       if (deMas.isNotEmpty) {
         throw ArgumentError.value(
-            deMas.toList(),
-            'desenlaces',
-            'El testigo del paso «${registro.id}» certifica sujetos que no '
-                'están en su alcance esperado (${propios.join(", ")}). '
-                'Certificar de más es afirmar sobre algo que la observación '
-                'no dio como nuestro, y el libro de obligaciones —que solo '
-                'mira lo que falta— lo dejaba pasar en verde');
+          deMas.toList(),
+          'desenlaces',
+          'El testigo del paso «${registro.id}» certifica sujetos que no '
+              'están en su alcance esperado (${propios.join(", ")}). '
+              'Certificar de más es afirmar sobre algo que la observación '
+              'no dio como nuestro, y el libro de obligaciones —que solo '
+              'mira lo que falta— lo dejaba pasar en verde',
+        );
       }
       final omitidos = {
         for (final o in desenlace.witness.omitted)
-          if (o.subject != null) o.subject!
+          if (o.subject != null) o.subject!,
       };
       final omitidosDeMas = omitidos.difference(propios);
       if (omitidosDeMas.isNotEmpty) {
         throw ArgumentError.value(
-            omitidosDeMas.toList(),
-            'desenlaces',
-            'El testigo del paso «${registro.id}» omite sujetos que no están '
-                'en su alcance esperado (${propios.join(", ")}). Una omisión '
-                'con sujeto salda la obligación de ese par paso-sujeto: una '
-                'que nombra algo ajeno al alcance no salda nada');
+          omitidosDeMas.toList(),
+          'desenlaces',
+          'El testigo del paso «${registro.id}» omite sujetos que no están '
+              'en su alcance esperado (${propios.join(", ")}). Una omisión '
+              'con sujeto salda la obligación de ese par paso-sujeto: una '
+              'que nombra algo ajeno al alcance no salda nada',
+        );
       }
     }
 
@@ -285,13 +295,14 @@ class ResultadoDeCascada {
               ? '(ninguno)'
               : ajenosDeLaObservacion.join(", ");
           throw ArgumentError.value(
-              inventados,
-              'desenlaces',
-              'El paso «${entrada.key}» se saltó declarando ajenos a '
-                  '${inventados.join(", ")}, pero la observación de esta '
-                  'corrida no los tiene como ajenos al stack (los ajenos '
-                  'reales son: $reales). Un salto no puede nombrar un sujeto '
-                  'que esta corrida no observó como ajeno.');
+            inventados,
+            'desenlaces',
+            'El paso «${entrada.key}» se saltó declarando ajenos a '
+                '${inventados.join(", ")}, pero la observación de esta '
+                'corrida no los tiene como ajenos al stack (los ajenos '
+                'reales son: $reales). Un salto no puede nombrar un sujeto '
+                'que esta corrida no observó como ajeno.',
+          );
         }
       } else if (d is Unobservable) {
         final inventados = d.causes
@@ -303,14 +314,15 @@ class ResultadoDeCascada {
               ? '(ninguno)'
               : noObservadosDeLaObservacion.join(", ");
           throw ArgumentError.value(
-              inventados,
-              'desenlaces',
-              'El paso «${entrada.key}» declara no observable a '
-                  '${inventados.join(", ")}, pero la observación de esta '
-                  'corrida no los tiene como no observados (los no '
-                  'observados reales son: $reales). Un desenlace no '
-                  'observable no puede nombrar un sujeto que esta corrida sí '
-                  'pudo observar.');
+            inventados,
+            'desenlaces',
+            'El paso «${entrada.key}» declara no observable a '
+                '${inventados.join(", ")}, pero la observación de esta '
+                'corrida no los tiene como no observados (los no '
+                'observados reales son: $reales). Un desenlace no '
+                'observable no puede nombrar un sujeto que esta corrida sí '
+                'pudo observar.',
+          );
         }
       }
     }
@@ -318,15 +330,15 @@ class ResultadoDeCascada {
 
   /// Qué pasos ejecutaron de verdad, es decir, corrieron hasta el final.
   List<String> get ejecutados => List.unmodifiable([
-        for (final e in desenlaces.entries)
-          if (e.value is Executed) e.key
-      ]);
+    for (final e in desenlaces.entries)
+      if (e.value is Executed) e.key,
+  ]);
 
   /// Todos los diagnósticos, en el orden en que los pasos los produjeron.
   List<Diagnostic> get diagnosticos => List.unmodifiable([
-        for (final d in desenlaces.values)
-          if (d is Executed) ...d.diagnostics,
-      ]);
+    for (final d in desenlaces.values)
+      if (d is Executed) ...d.diagnostics,
+  ]);
 
   /// **El libro.** Para cada paso registrado, cada sujeto de su alcance
   /// esperado tiene que estar cubierto por su testigo o nombrado por una de
@@ -428,8 +440,9 @@ class ResultadoDeCascada {
     if (desenlaces.values.any((d) => d is Aborted)) {
       c.add(CausaNoConcluyente.pasoAbortado);
     }
-    if (desenlaces.values
-        .any((d) => d is Executed && d.verdict == Verdict.noConcluyente)) {
+    if (desenlaces.values.any(
+      (d) => d is Executed && d.verdict == Verdict.noConcluyente,
+    )) {
       c.add(CausaNoConcluyente.pasoNoConcluyente);
     }
     if (obligacionesSinSaldar.isNotEmpty) {
@@ -445,8 +458,9 @@ class ResultadoDeCascada {
       return EstadoDeCorrida.errorInterno;
     }
     if (causas.isNotEmpty) return EstadoDeCorrida.noConcluyente;
-    if (desenlaces.values
-        .any((d) => d is Executed && d.verdict == Verdict.rojo)) {
+    if (desenlaces.values.any(
+      (d) => d is Executed && d.verdict == Verdict.rojo,
+    )) {
       return EstadoDeCorrida.rojo;
     }
     return EstadoDeCorrida.verde;
@@ -471,7 +485,7 @@ class Cascada {
   final ScopeObserver observador;
 
   Cascada(List<Verifier> pasos, {required this.observador})
-      : pasos = List.unmodifiable(pasos) {
+    : pasos = List.unmodifiable(pasos) {
     // **El id de un paso es una CLAVE**, no una etiqueta: es con lo que se
     // arma el libro de obligaciones y se comparan registrados contra
     // ejecutados. Dos pasos con el mismo id dejarían esa cuenta ciega —uno
@@ -484,14 +498,16 @@ class Cascada {
     for (final p in this.pasos) {
       if (p.id.trim().isEmpty) {
         throw const CascadaNoRegistrable(
-            'Hay un paso sin id. El id es con lo que se comprueba que el paso '
-            'corrió: sin él no se puede saber si faltó.');
+          'Hay un paso sin id. El id es con lo que se comprueba que el paso '
+          'corrió: sin él no se puede saber si faltó.',
+        );
       }
       if (!vistos.add(p.id)) {
         throw CascadaNoRegistrable(
-            'El id «${p.id}» está registrado más de una vez. Se comparan '
-            'registrados contra ejecutados por id, así que uno taparía al otro '
-            'y un paso podría no correr sin que nadie se entere.');
+          'El id «${p.id}» está registrado más de una vez. Se comparan '
+          'registrados contra ejecutados por id, así que uno taparía al otro '
+          'y un paso podría no correr sin que nadie se entere.',
+        );
       }
     }
   }
@@ -530,11 +546,12 @@ class Cascada {
     // que decida nada.
     if (sujetos.isEmpty) {
       throw ArgumentError.value(
-          sujetos,
-          'sujetos',
-          'No hay ningún sujeto para verificar. Correr una cascada sobre una '
-              'lista de sujetos vacía no es un desenlace de nadie: es una '
-              'precondición violada de quien llama.');
+        sujetos,
+        'sujetos',
+        'No hay ningún sujeto para verificar. Correr una cascada sobre una '
+            'lista de sujetos vacía no es un desenlace de nadie: es una '
+            'precondición violada de quien llama.',
+      );
     }
 
     // **Se congela al entrar.** La lista es del llamador, que puede mutarla
@@ -557,7 +574,7 @@ class Cascada {
     final utilizables = observacion.usable();
     final ajenos = [
       for (final o in observacion.observed)
-        if (!o.ofStack) o
+        if (!o.ofStack) o,
     ];
 
     // **Se arma acá, no al componer el registro.** Recién ahora hay una
@@ -596,9 +613,10 @@ class Cascada {
           // que se rompe es un error del arnés, no un veredicto sobre el
           // cambio.
           desenlace = Broken(
-              component: paso.id,
-              error: '$e',
-              context: 'alcance: $utilizables');
+            component: paso.id,
+            error: '$e',
+            context: 'alcance: $utilizables',
+          );
         }
       }
       desenlaces[paso.id] = desenlace;

@@ -33,9 +33,15 @@ Cascada cascadaPorDefecto({
   final obs = observador ?? ObservadorDeAlcanceDart(directorio: directorio);
   return Cascada([
     PasoDeFormato(
-        ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
+      ejecutor: ejecutor,
+      directorio: directorio,
+      presupuesto: presupuesto,
+    ),
     PasoDeAnalisis(
-        ejecutor: ejecutor, directorio: directorio, presupuesto: presupuesto),
+      ejecutor: ejecutor,
+      directorio: directorio,
+      presupuesto: presupuesto,
+    ),
   ], observador: obs);
 }
 
@@ -80,8 +86,10 @@ Sin rutas, el alcance es el directorio actual.''';
 OpcionesDeVerify opcionesDe(Globales g) {
   final sobrante = g.restantes.where((a) => a.startsWith('-')).toList();
   if (sobrante.isNotEmpty) {
-    throw UsoInvalido('bandera desconocida: «${sobrante.first}»',
-        'Corré `shipflow verify --help` para ver las que hay.');
+    throw UsoInvalido(
+      'bandera desconocida: «${sobrante.first}»',
+      'Corré `shipflow verify --help` para ver las que hay.',
+    );
   }
   final sujetos = g.restantes.where((a) => !a.startsWith('-')).toList();
 
@@ -133,7 +141,10 @@ Future<int> correrVerify(
     // emitió — cerrar la otra dejaba el resultado emitido en una y la cuenta
     // en cero en la otra, que es justamente lo que el guardia detecta.
     final sinSilencio = Impresora(
-        salida: impresora.salida, error: impresora.error, json: o.json);
+      salida: impresora.salida,
+      error: impresora.error,
+      json: o.json,
+    );
     sinSilencio.resultado(
       ResultEnvelope(
         command: nombreDelComando,
@@ -149,8 +160,9 @@ Future<int> correrVerify(
 
   final imp = impresora;
 
-  final cascada =
-      (construirCascada ?? (d) => cascadaPorDefecto(directorio: d))(directorio);
+  final cascada = (construirCascada ?? (d) => cascadaPorDefecto(directorio: d))(
+    directorio,
+  );
 
   // **Identifica esta corrida.** Nulo hasta acá: ni el error de uso ni la
   // ayuda llegaron a componer una cascada, así que no había nada que
@@ -228,14 +240,16 @@ Future<int> correrVerify(
           Executed(:final diagnostics) => diagnostics,
           _ => const <Diagnostic>[],
         };
-        for (final d in diagnosticos
-            .where((d) => seMuestra(d, silencioso: o.silencioso))) {
+        for (final d in diagnosticos.where(
+          (d) => seMuestra(d, silencioso: o.silencioso),
+        )) {
           imp.evento(
             EventEnvelope(
-                command: nombreDelComando,
-                type: 'diagnostic',
-                runId: runId,
-                data: d.toJson()),
+              command: nombreDelComando,
+              type: 'diagnostic',
+              runId: runId,
+              data: d.toJson(),
+            ),
             '  ${d.severity.name} ${d.file}${d.line == null ? '' : ':${d.line}'} '
             '· ${d.ruleId} · ${d.message.content}',
           );
@@ -252,22 +266,23 @@ Future<int> correrVerify(
   final huboFalloDeEmision =
       huboFalloDeEntrega || falloDespuesDelTerminal.isNotEmpty;
   final estado = r.estado;
-  final exitCode =
-      huboFalloDeEmision ? Codigo.errorInterno : Codigo.deCorrida(estado);
+  final exitCode = huboFalloDeEmision
+      ? Codigo.errorInterno
+      : Codigo.deCorrida(estado);
   final verdict = huboFalloDeEmision
       ? veredictoDe(EstadoDeCorrida.errorInterno)
       : veredictoDe(estado);
   final accion = huboFalloDeEntrega
       ? 'El canal de progreso se rompió antes de entregar el desenlace final '
-          'de estos pasos: ${sinTerminalEntregado.join(", ")}. La cascada sí '
-          'terminó de correr: `outcomes`, en este mismo documento, tiene lo '
-          'que cada uno produjo.'
+            'de estos pasos: ${sinTerminalEntregado.join(", ")}. La cascada sí '
+            'terminó de correr: `outcomes`, en este mismo documento, tiene lo '
+            'que cada uno produjo.'
       : falloDespuesDelTerminal.isNotEmpty
-          ? 'El desenlace de estos pasos SÍ se entregó y la emisión se rompió '
-              'después: ${falloDespuesDelTerminal.join(", ")}. Puede faltar '
-              'algún diagnóstico en el flujo de eventos; `outcomes`, en este '
-              'mismo documento, los tiene completos.'
-          : _queHacer(r);
+      ? 'El desenlace de estos pasos SÍ se entregó y la emisión se rompió '
+            'después: ${falloDespuesDelTerminal.join(", ")}. Puede faltar '
+            'algún diagnóstico en el flujo de eventos; `outcomes`, en este '
+            'mismo documento, los tiene completos.'
+      : _queHacer(r);
 
   imp.resultado(
     ResultEnvelope(
@@ -291,8 +306,9 @@ Future<int> correrVerify(
         // es la CANTIDAD que cita `nextAction`, y para eso alcanza con los
         // dos números.
         'diagnostics': r.diagnosticos.length,
-        'blockingDiagnostics':
-            r.diagnosticos.where((d) => d.severity == Severity.bloquea).length,
+        'blockingDiagnostics': r.diagnosticos
+            .where((d) => d.severity == Severity.bloquea)
+            .length,
         // **La causa estructurada, no solo su texto.** Es lo que permite que
         // `nextAction` nombre evidencia y que quien lo consuma no tenga que
         // volver a correr nada para confirmarla.
@@ -339,12 +355,12 @@ bool seMuestra(Diagnostic d, {required bool silencioso}) =>
 /// desenlaces. **El `switch` es exhaustivo**: un sexto desenlace no compila
 /// hasta que alguien le decida su etapa acá.
 String _etapaDe(StepOutcome d) => switch (d) {
-      Executed() => 'executed',
-      Aborted() => 'aborted',
-      Skipped() => 'skipped',
-      Unobservable() => 'unobservable',
-      Broken() => 'internalError',
-    };
+  Executed() => 'executed',
+  Aborted() => 'aborted',
+  Skipped() => 'skipped',
+  Unobservable() => 'unobservable',
+  Broken() => 'internalError',
+};
 
 /// El desenlace de un paso, en texto. **Los cinco se dicen distinto**: un
 /// salto que se imprimiera como un veredicto sería exactamente la confusión
@@ -353,24 +369,24 @@ String _desenlaceEnTexto(String id, StepOutcome d, {required bool detallado}) =>
     switch (d) {
       Executed() => _ejecutadoEnTexto(id, d, detallado: detallado),
       Aborted(:final attempt) => [
-          '  ABORTADO $id',
-          if (detallado) '            ${attempt.note}',
-        ].join('\n'),
+        '  ABORTADO $id',
+        if (detallado) '            ${attempt.note}',
+      ].join('\n'),
       Skipped(:final notOfStack) => [
-          '  SALTADO   $id',
-          if (detallado)
-            for (final o in notOfStack)
-              '            ajeno: ${o.subject} (${o.reason})',
-        ].join('\n'),
+        '  SALTADO   $id',
+        if (detallado)
+          for (final o in notOfStack)
+            '            ajeno: ${o.subject} (${o.reason})',
+      ].join('\n'),
       Unobservable(:final causes) => [
-          '  NO OBS.   $id',
-          if (detallado)
-            for (final c in causes) '            ${c.subject}: ${c.cause}',
-        ].join('\n'),
+        '  NO OBS.   $id',
+        if (detallado)
+          for (final c in causes) '            ${c.subject}: ${c.cause}',
+      ].join('\n'),
       Broken(:final component, :final error) => [
-          '  ROTO      $id',
-          '            $component: $error',
-        ].join('\n'),
+        '  ROTO      $id',
+        '            $component: $error',
+      ].join('\n'),
     };
 
 String _ejecutadoEnTexto(String id, Executed e, {required bool detallado}) {
@@ -420,9 +436,10 @@ String? _queHacer(ResultadoDeCascada r) {
   // presente.
   final causa = r.causas.isEmpty ? null : r.causas.first;
   return switch (causa) {
-    null => 'Hay '
-        '${r.diagnosticos.where((d) => d.severity == Severity.bloquea).length} '
-        'diagnóstico(s) bloqueante(s). Arreglalos y volvé a correr `verify`.',
+    null =>
+      'Hay '
+          '${r.diagnosticos.where((d) => d.severity == Severity.bloquea).length} '
+          'diagnóstico(s) bloqueante(s). Arreglalos y volvé a correr `verify`.',
     CausaNoConcluyente.sinVerificadores =>
       'No hay ningún verificador registrado, así que no se miró nada. Los '
           'pasos se registran en el composition root: `cli`.',
@@ -439,10 +456,10 @@ String? _queHacer(ResultadoDeCascada r) {
     CausaNoConcluyente.pasoAbortado => _accionDeAborto(r),
     CausaNoConcluyente.pasoNoConcluyente => _accionDeNoConcluyente(r),
     CausaNoConcluyente.obligacionSinSaldar => () {
-        final ob = r.obligacionesSinSaldar.first;
-        return '${ob.paso} no cubrió ${ob.sujeto} y no dijo por qué. Un '
-            'sujeto que nadie miró no puede quedar en verde.';
-      }(),
+      final ob = r.obligacionesSinSaldar.first;
+      return '${ob.paso} no cubrió ${ob.sujeto} y no dijo por qué. Un '
+          'sujeto que nadie miró no puede quedar en verde.';
+    }(),
   };
 }
 
@@ -463,9 +480,11 @@ String _accionDeAborto(ResultadoDeCascada r) {
 
 /// Nombra el paso no concluyente y **el primer motivo de su propio testigo**.
 String _accionDeNoConcluyente(ResultadoDeCascada r) {
-  final entrada = r.desenlaces.entries.firstWhere((e) =>
-      e.value is Executed &&
-      (e.value as Executed).verdict == Verdict.noConcluyente);
+  final entrada = r.desenlaces.entries.firstWhere(
+    (e) =>
+        e.value is Executed &&
+        (e.value as Executed).verdict == Verdict.noConcluyente,
+  );
   final ejecutado = entrada.value as Executed;
   final motivo = ejecutado.witness.omitted.first.reason;
   return '${entrada.key} no pudo concluir: $motivo Revisá eso antes de '
@@ -474,7 +493,8 @@ String _accionDeNoConcluyente(ResultadoDeCascada r) {
 
 String _resumenEnTexto(ResultadoDeCascada r, String? accion) {
   final estado = r.estado;
-  final cabeza = 'verify: ${veredictoDe(estado)} — '
+  final cabeza =
+      'verify: ${veredictoDe(estado)} — '
       '${r.ejecutados.length} de ${r.registrados.length} pasos ejecutados, '
       '${r.diagnosticos.length} diagnóstico(s).';
   return accion == null ? cabeza : '$cabeza\n  → $accion';
