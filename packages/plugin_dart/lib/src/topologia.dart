@@ -111,18 +111,24 @@ class TopologiaDart implements ProjectTopology {
       if (seccion == null) continue; // `dependencies:` sin nada: idem
       if (seccion is! YamlMap) {
         throw TopologiaIlegible(
-            manifiesto,
-            FormatException('`$clave` no es un mapa sino '
-                '${seccion.runtimeType}. No se puede saber qué dependencias '
-                'declara, y suponer que ninguna sería inventar.'));
+          manifiesto,
+          FormatException(
+            '`$clave` no es un mapa sino '
+            '${seccion.runtimeType}. No se puede saber qué dependencias '
+            'declara, y suponer que ninguna sería inventar.',
+          ),
+        );
       }
       for (final entrada in seccion.entries) {
         final nombreDep = entrada.key;
         if (nombreDep is! String || nombreDep.isEmpty) {
           throw TopologiaIlegible(
-              manifiesto,
-              FormatException('`$clave` tiene una dependencia cuyo nombre no '
-                  'es una cadena: ${nombreDep.runtimeType}.'));
+            manifiesto,
+            FormatException(
+              '`$clave` tiene una dependencia cuyo nombre no '
+              'es una cadena: ${nombreDep.runtimeType}.',
+            ),
+          );
         }
         final valor = entrada.value;
         // Formas LEGÍTIMAS de declarar algo que no es una dependencia local:
@@ -133,19 +139,25 @@ class TopologiaDart implements ProjectTopology {
         if (valor == null || valor is String) continue;
         if (valor is! YamlMap) {
           throw TopologiaIlegible(
-              manifiesto,
-              FormatException('la dependencia «$nombreDep» no es ni una '
-                  'restricción de versión ni un mapa: ${valor.runtimeType}'));
+            manifiesto,
+            FormatException(
+              'la dependencia «$nombreDep» no es ni una '
+              'restricción de versión ni un mapa: ${valor.runtimeType}',
+            ),
+          );
         }
         if (!valor.containsKey('path')) continue;
         final destino = valor['path'];
         if (destino is! String || destino.isEmpty) {
           // No poder INTERPRETAR una arista es distinto de que no HAYA arista.
           throw TopologiaIlegible(
-              manifiesto,
-              FormatException('la dependencia «$nombreDep» declara `path` con '
-                  'algo que no es una ruta: '
-                  '${destino == null ? "vacío" : destino.runtimeType}'));
+            manifiesto,
+            FormatException(
+              'la dependencia «$nombreDep» declara `path` con '
+              'algo que no es una ruta: '
+              '${destino == null ? "vacío" : destino.runtimeType}',
+            ),
+          );
         }
         final absoluto = rutas.canonicalize(rutas.join(directorio, destino));
         // El nombre lo da el manifiesto del DESTINO, no la clave de la

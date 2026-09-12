@@ -110,24 +110,40 @@ class DetectorDeSecretos {
       'Una clave privada no va al repositorio. Rotala: si estuvo en un '
           'archivo que se commiteó, hay que darla por comprometida.',
     ),
-    _Patron('una clave de acceso de AWS', RegExp(r'\bAKIA[0-9A-Z]{16}\b'),
-        _leeDeEnv),
-    _Patron('un token de GitHub', RegExp(r'\bgh[pousr]_[A-Za-z0-9]{36,}\b'),
-        _leeDeEnv),
-    _Patron('un token de Slack', RegExp(r'\bxox[baprs]-[A-Za-z0-9-]{10,}\b'),
-        _leeDeEnv),
-    _Patron('una clave de API de Google', RegExp(r'\bAIza[0-9A-Za-z_\-]{35}\b'),
-        _leeDeEnv),
-    _Patron('una clave secreta de Stripe',
-        RegExp(r'\bsk_live_[A-Za-z0-9]{16,}\b'), _leeDeEnv),
+    _Patron(
+      'una clave de acceso de AWS',
+      RegExp(r'\bAKIA[0-9A-Z]{16}\b'),
+      _leeDeEnv,
+    ),
+    _Patron(
+      'un token de GitHub',
+      RegExp(r'\bgh[pousr]_[A-Za-z0-9]{36,}\b'),
+      _leeDeEnv,
+    ),
+    _Patron(
+      'un token de Slack',
+      RegExp(r'\bxox[baprs]-[A-Za-z0-9-]{10,}\b'),
+      _leeDeEnv,
+    ),
+    _Patron(
+      'una clave de API de Google',
+      RegExp(r'\bAIza[0-9A-Za-z_\-]{35}\b'),
+      _leeDeEnv,
+    ),
+    _Patron(
+      'una clave secreta de Stripe',
+      RegExp(r'\bsk_live_[A-Za-z0-9]{16,}\b'),
+      _leeDeEnv,
+    ),
     // El único patrón que mira el NOMBRE en vez de la forma del valor. Es el
     // que más falsos positivos puede dar, así que exige un literal largo y
     // descarta los marcadores de posición, que son la mitad de los casos.
     _Patron(
       'una credencial asignada en el código',
       RegExp(
-          r'''\b(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret)\b\s*[:=]\s*(['"])(?![^'"]*(?:\$|\{\{|<|\.\.\.|YOUR|your|EXAMPLE|example|CHANGE|change|dummy|placeholder|xxxx|XXXX|TODO))[^'"]{12,}\1''',
-          caseSensitive: false),
+        r'''\b(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret)\b\s*[:=]\s*(['"])(?![^'"]*(?:\$|\{\{|<|\.\.\.|YOUR|your|EXAMPLE|example|CHANGE|change|dummy|placeholder|xxxx|XXXX|TODO))[^'"]{12,}\1''',
+        caseSensitive: false,
+      ),
       _leeDeEnv,
     ),
   ];
@@ -177,11 +193,14 @@ class DetectorDeSecretos {
       final contenido = l.substring(1);
       for (final p in _patrones) {
         if (p.expresion.hasMatch(contenido)) {
-          hallazgos.add(Secreto(
+          hallazgos.add(
+            Secreto(
               archivo: archivo,
               linea: linea,
               queEs: p.nombre,
-              queHacer: p.queHacer));
+              queHacer: p.queHacer,
+            ),
+          );
           break; // Un hallazgo por línea: nombrar dos veces la misma línea no
           // agrega información y multiplica el ruido.
         }
@@ -201,8 +220,9 @@ class DetectorDeSecretos {
     final m = RegExp(r'^@@ -\S+ \+(\d+)').firstMatch(l);
     if (m == null) {
       throw DiffIlegible(
-          'no entiendo el encabezado de hunk «$l» en «$archivo», así que no '
-          'puedo decir en qué línea está lo que encuentre');
+        'no entiendo el encabezado de hunk «$l» en «$archivo», así que no '
+        'puedo decir en qué línea está lo que encuentre',
+      );
     }
     return int.parse(m.group(1)!);
   }

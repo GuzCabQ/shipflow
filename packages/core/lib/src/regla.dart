@@ -84,46 +84,53 @@ class Rule {
     // Una lista con elementos en blanco no declara ninguna evasión utilizable.
     // Es el mismo agujero que ya se había cerrado para `alternative`: la
     // comprobación era de PRESENCIA y tenía que ser de CONTENIDO.
-    final evasionesUtiles =
-        this.knownEvasions.where((e) => e.trim().isNotEmpty).toList();
+    final evasionesUtiles = this.knownEvasions
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
 
     if (prohibitive && !tieneAlternativa) {
       throw const RuleNotInstallable(
-          'INV-11',
-          'Una regla prohibitiva sin alternativa no se instala. '
-              'Escribí el «hacé esto» que acompaña al «no hagas aquello».');
+        'INV-11',
+        'Una regla prohibitiva sin alternativa no se instala. '
+            'Escribí el «hacé esto» que acompaña al «no hagas aquello».',
+      );
     }
     if (severity == Severity.bloquea && !tieneAlternativa) {
       throw const RuleNotInstallable(
-          'INV-8',
-          'Se bloquea solo si se puede decir QUÉ HACER. '
-              'Una regla que bloquea sin alternativa deja a quien la choca sin salida.');
+        'INV-8',
+        'Se bloquea solo si se puede decir QUÉ HACER. '
+            'Una regla que bloquea sin alternativa deja a quien la choca sin salida.',
+      );
     }
     if (signalType == SignalType.inferencial && severity == Severity.bloquea) {
       throw const RuleNotInstallable(
-          'INV-4',
-          'Un control inferencial nunca detiene (ADR-006). '
-              'Bajá la severidad a `reporta`, o convertí el control en determinista.');
+        'INV-4',
+        'Un control inferencial nunca detiene (ADR-006). '
+            'Bajá la severidad a `reporta`, o convertí el control en determinista.',
+      );
     }
     if (this.knownEvasions.length != evasionesUtiles.length) {
       throw const RuleNotInstallable(
-          'INV-3',
-          'Hay evasiones declaradas en blanco. Una cadena vacía ocupa lugar en '
-              'la lista y no dice por dónde se esquiva el control: sacala, o '
-              'escribí la evasión.');
+        'INV-3',
+        'Hay evasiones declaradas en blanco. Una cadena vacía ocupa lugar en '
+            'la lista y no dice por dónde se esquiva el control: sacala, o '
+            'escribí la evasión.',
+      );
     }
     if (layer == ControlLayer.ganchos && evasionesUtiles.isEmpty) {
       throw const RuleNotInstallable(
-          'INV-3',
-          'Ningún gancho se instala sin sus evasiones declaradas. '
-              'Enumerá por dónde se lo esquiva, aunque la lista sea incómoda.');
+        'INV-3',
+        'Ningún gancho se instala sin sus evasiones declaradas. '
+            'Enumerá por dónde se lo esquiva, aunque la lista sea incómoda.',
+      );
     }
     if (layer == ControlLayer.ganchos && severity == Severity.bloquea) {
       throw const RuleNotInstallable(
-          'INV-10',
-          'Si bloquea, su ausencia es inaceptable, y lo inaceptable no se funda '
-              'en la capa de ganchos: se desactiva con una bandera (ADR-018). '
-              'Movelo a la cascada o a integración continua.');
+        'INV-10',
+        'Si bloquea, su ausencia es inaceptable, y lo inaceptable no se funda '
+            'en la capa de ganchos: se desactiva con una bandera (ADR-018). '
+            'Movelo a la cascada o a integración continua.',
+      );
     }
   }
 
@@ -144,46 +151,44 @@ class Rule {
     List<String> knownEvasions = const [],
     String? alternative,
     bool prohibitive = false,
-  }) =>
-      Rule(
-        id: id,
-        statement: statement,
-        origin: origin,
-        loadLevel: loadLevel,
-        signalType: signalType,
-        severity: signalType == SignalType.instrumento
-            ? Severity.bloquea
-            : Severity.reporta,
-        layer: layer,
-        knownEvasions: knownEvasions,
-        alternative: alternative,
-        prohibitive: prohibitive,
-      );
+  }) => Rule(
+    id: id,
+    statement: statement,
+    origin: origin,
+    loadLevel: loadLevel,
+    signalType: signalType,
+    severity: signalType == SignalType.instrumento
+        ? Severity.bloquea
+        : Severity.reporta,
+    layer: layer,
+    knownEvasions: knownEvasions,
+    alternative: alternative,
+    prohibitive: prohibitive,
+  );
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'statement': statement,
-        'origin': origin.name,
-        'loadLevel': loadLevel.name,
-        'signalType': signalType.name,
-        'severity': severity.name,
-        'knownEvasions': knownEvasions,
-        'alternative': alternative,
-        'layer': layer.name,
-        'prohibitive': prohibitive,
-      };
+    'id': id,
+    'statement': statement,
+    'origin': origin.name,
+    'loadLevel': loadLevel.name,
+    'signalType': signalType.name,
+    'severity': severity.name,
+    'knownEvasions': knownEvasions,
+    'alternative': alternative,
+    'layer': layer.name,
+    'prohibitive': prohibitive,
+  };
 
   factory Rule.fromJson(Map<String, Object?> json) => Rule(
-        id: json['id']! as String,
-        statement: json['statement']! as String,
-        origin: RuleOrigin.values.byName(json['origin']! as String),
-        loadLevel: LoadLevel.values.byName(json['loadLevel']! as String),
-        signalType: SignalType.values.byName(json['signalType']! as String),
-        severity: Severity.values.byName(json['severity']! as String),
-        knownEvasions:
-            List<String>.from(json['knownEvasions']! as List<Object?>),
-        alternative: json['alternative'] as String?,
-        layer: ControlLayer.values.byName(json['layer']! as String),
-        prohibitive: json['prohibitive']! as bool,
-      );
+    id: json['id']! as String,
+    statement: json['statement']! as String,
+    origin: RuleOrigin.values.byName(json['origin']! as String),
+    loadLevel: LoadLevel.values.byName(json['loadLevel']! as String),
+    signalType: SignalType.values.byName(json['signalType']! as String),
+    severity: Severity.values.byName(json['severity']! as String),
+    knownEvasions: List<String>.from(json['knownEvasions']! as List<Object?>),
+    alternative: json['alternative'] as String?,
+    layer: ControlLayer.values.byName(json['layer']! as String),
+    prohibitive: json['prohibitive']! as bool,
+  );
 }

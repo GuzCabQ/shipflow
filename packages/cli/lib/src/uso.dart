@@ -96,13 +96,17 @@ Globales interpretarGlobales(List<String> args) {
   }
 
   if (silencioso && detallado) {
-    throw const UsoInvalido('`--quiet` y `--verbose` se contradicen',
-        'Elegí una: `--quiet` para solo errores, `--verbose` para los testigos.');
+    throw const UsoInvalido(
+      '`--quiet` y `--verbose` se contradicen',
+      'Elegí una: `--quiet` para solo errores, `--verbose` para los testigos.',
+    );
   }
 
   if (comando == null && desconocidas.isNotEmpty) {
-    throw UsoInvalido('bandera desconocida: «${desconocidas.first}»',
-        'Corré `shipflow --help` para ver las que hay.');
+    throw UsoInvalido(
+      'bandera desconocida: «${desconocidas.first}»',
+      'Corré `shipflow --help` para ver las que hay.',
+    );
   }
 
   return Globales(

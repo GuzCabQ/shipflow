@@ -6,7 +6,12 @@ publish_to: none
 version: 0.1.0
 
 environment:
-  sdk: ^3.6.0
+  # Alineado por UNIFORMIDAD con el workspace, no por necesidad propia: este
+  # lockfile exigía >=3.9.0, no >=3.11. El del workspace raíz sí exigía >=3.11
+  # contra un `^3.6.0` declarado, y ese era el piso falso. Acá se sube para que
+  # el repositorio tenga un solo piso, y queda dicho cuál es la razón — el
+  # comentario anterior afirmaba que el lock ya lo exigía, y no era cierto.
+  sdk: ^3.11.0
 
 # Deliberadamente FUERA del `workspace:` de la raíz. Es herramienta, no
 # producto: no debe aparecer en el grafo que gobierna las capas, y no debe

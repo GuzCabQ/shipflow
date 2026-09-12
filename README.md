@@ -84,6 +84,7 @@ la arquitectura y se revisa como tal.
 | `deps-hacia-core` | Que una flecha **interna** apunte a otro lado que no sea `core` | `capas.py` |
 | `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
 | `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
+| `dependencias-declaradas-se-usan` | Que un pubspec declare una flecha interna que ninguna línea importa | `capas.py` |
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
@@ -253,7 +254,7 @@ miran el árbol de trabajo, y ninguno mira lo commiteado.**
 probar_reglas.py                                   ← el árbol compartido
   ├─ huella del original
   ├─ copytree → /tmp/arnes-copia-XXXX/             0,11 s
-  ├─ los 107 sabotajes, adentro de la copia
+  ├─ los sabotajes, adentro de la copia
   ├─ borrar la copia
   └─ la huella del original tiene que coincidir
 ```
@@ -266,10 +267,15 @@ décima de segundo; resolver de nuevo costaría más y necesitaría el cache.
 **La detección de residuo dejó de preguntarle a git.** `estado_git` tenía dos
 límites: solo veía lo versionado —un canario en un directorio ignorado no
 aparecía— y necesitaba un `.git` que la copia no tiene. Ahora es una huella de
-contenido, y son dos preguntas distintas: **afuera**, que el original no cambió
-en absoluto, con lo generado incluido; **adentro**, que los sabotajes no dejaron
-residuo, con lo generado excluido, porque `package_config.json` lleva fecha de
-generación y los casos que corren `pub get` la cambian sin que eso sea residuo.
+contenido, y son dos preguntas distintas: **afuera**, que el original no cambió,
+con lo generado incluido; **adentro**, que los sabotajes no dejaron residuo, con
+lo generado excluido, porque `package_config.json` lleva fecha de generación y
+los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+**Con su alcance escrito, no «en absoluto».** Compara ruta, tipo, modo y
+contenido de cada archivo y enlace, con las longitudes por delante. Quedan
+afuera `.git`, `build/` y los snapshots `.dill` —que se regeneran— y el modo de
+los directorios. Decir «no cambió en absoluto» afirmaba más de lo que mide.
 
 ### Y el arnés se niega antes de escribir donde no debe
 
@@ -335,6 +341,99 @@ Ahora cada entrada lleva tipo, modo y las longitudes por delante. **Y la huella
 se comprueba a sí misma en cada corrida**, antes de que nadie se apoye en ella:
 no hay dónde poner una prueba unitaria de ese archivo, y dejar la propiedad sin
 comprobar sería la misma confianza que el arnés persigue.
+
+### Lo permitido y lo usado son dos cosas, y ahora hay una regla
+
+`deps-hacia-core` dice qué flechas **están permitidas**. Nada decía que las
+declaradas **se usaran**, y un review encontró tres en `cli` —`vcs`, `rules` y
+`agents`— con cero imports. Ninguna otra regla podía verlas: estaban permitidas,
+así que para `deps-hacia-core` no había nada mal.
+
+Una dependencia declarada y no importada afirma un uso que no existe. Leer
+`cli/pubspec.yaml` y encontrar `vcs` sugiere que el CLI hace cosas de
+repositorio, y no las hace — `ship` no existe todavía.
+
+**Escribir el check encontró dos más.** `rules` y `agents` declaraban `core` y no
+importan nada: son stubs de dos líneas que dicen «sin API todavía». Salieron con
+el mismo criterio, y `pubspec.lock` no se movió en ninguno de los dos casos.
+
+> **`dependencias-declaradas-se-usan`** — toda dependencia interna declarada en
+> un pubspec se importa en ese paquete. Su violación canónica es exactamente la
+> flecha que se acaba de quitar: `cli` declarando `vcs`.
+
+**La evidencia sale del árbol sintáctico, no de un regex.** La primera versión
+buscaba `package:<nombre>/` en todo el texto del archivo, así que un comentario
+contaba como uso: una revisión lo reprodujo declarando `rules` en `cli`, sin
+ningún import, con una sola línea `// package:rules/rules.dart` — y `capas.py`
+salió con cero. Era el mismo error de leer sintaxis con una expresión regular que
+este arnés acababa de sacar de otra parte.
+
+Ahora la evidencia sale de `grafo.jsonl`, que `tool/analisis` deriva mirando
+`ImportDirective` y `ExportDirective`, y que `grafo-derivado` verifica contra el
+árbol en cada corrida. Un comentario no es una directiva.
+
+**Y la sección importa.** El grafo distingue `test/` de `lib/` y `bin/`, así que
+la regla contesta dos preguntas y no una: si la dependencia se importa, y si está
+declarada donde corresponde. Eso encontró que `plugin_fake` era dependencia de
+producción de `cli` con sus siete imports en `test/`, mientras `plugin_dart` ya
+usaba el patrón correcto.
+
+Las tres ramas —producción sin usar, desarrollo sin usar, y producción usada solo
+en pruebas— tienen su sabotaje. La segunda faltaba, y una revisión lo comprobó
+borrando esa rama del bucle: los sabotajes seguían todos verdes.
+
+**Quién controla qué, para no duplicar al analizador.** `capas.py` mira una
+dependencia de **producción** usada solo por pruebas; el caso simétrico —una
+dependencia de **desarrollo** usada desde `lib/` o `bin/`— ya lo detecta
+`dart analyze --fatal-infos` con `depend_on_referenced_packages`, verificado
+importando un dev-dep desde `lib/` y viéndolo fallar. Construirlo de nuevo sería
+un segundo control sobre el mismo hecho.
+
+**Límite declarado, y hay que decirlo porque ya cobró.** Esto mira el pubspec
+contra los imports; **no mira la prosa**. Quitar las tres de `cli` dejó dos
+frases falsas —el barril de `cli` y este README— que nombraban a `agents` de
+ejemplo, y esta regla no las habría visto. Son dos controles distintos, y solo
+uno está claro cómo se automatiza sin producir ruido.
+
+### El piso del SDK, y quién decide el estilo del formato
+
+Los diez pubspec declaraban `sdk: ^3.6.0` mientras el lock del workspace exige
+`>=3.11.0`: seis versiones menores de soporte prometido que nadie podía cumplir.
+No era un hueco de verificación —el workflow ya declaraba que la matriz no prueba
+el mínimo— sino **una afirmación falsa**, y el fixture se había corregido por esto
+mismo sin propagarse.
+
+Alinearlo cuesta diez líneas y **arrastra 49 archivos**: el formateador toma su
+estilo de la versión de lenguaje, y esa sale del pubspec.
+
+```
+con sdk: ^3.6.0     →  dart format:  0 archivos cambiados
+con sdk: ^3.11.0    →  dart format: 49 archivos cambiados
+```
+
+Y el estilo nuevo **todavía se mueve entre versiones menores**. Con el árbol
+formateado por 3.12, la pata `stable` —3.13.3— reformateaba cinco archivos: el
+canario quedaba rojo por construcción, y un canario que no puede ponerse verde
+deja de mirarse.
+
+**El primer arreglo estaba mal, y lo encontró un review.** Fue fijar el estilo
+con `--language-version=3.6`, creyendo que esa opción elige estética. Elige
+también **gramática**: con ella, sintaxis válida en 3.11 —`dot-shorthands`— falla
+al formatear mientras `dart analyze` la acepta. Era un techo sintáctico en 3.6
+instalado en silencio, que es peor que el canario rojo.
+
+Lo que quedó: el piso en `^3.11.0`, el formato con la versión que el pubspec
+declara, y **el estilo lo decide un solo SDK** — el bloqueante, en un job propio.
+La pata `stable` sigue comprobando análisis y pruebas; el estilo no lo decide.
+
+**Acople declarado:** el `sdk` de ese job tiene que ser el mismo que la pata no
+canario de la matriz. Son dos lugares y se mueven juntos; nada lo verifica
+todavía.
+
+Y `tool/analisis` sube a `^3.11.0` **por uniformidad, no por necesidad**: su
+lockfile exigía `>=3.9.0`. El piso falso era el del workspace. Queda dicho porque
+el comentario que se escribió primero afirmaba que su lock ya pedía 3.11, y no
+era cierto.
 
 ### Tres propiedades que hacen verificable el registro
 
@@ -1174,7 +1273,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 111 sabotajes.**
+y su caso ciego. **El arnés aplica 119 sabotajes.**
 
 ---
 

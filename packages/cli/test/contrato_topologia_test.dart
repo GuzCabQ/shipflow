@@ -38,17 +38,19 @@ Directory get raizDelRepo {
     if (d.parent.path == d.path) break;
     d = d.parent;
   }
-  throw StateError('no encontré la raíz del repositorio subiendo desde '
-      '${Directory.current.path}. Sin ella no hay sujeto que comparar.');
+  throw StateError(
+    'no encontré la raíz del repositorio subiendo desde '
+    '${Directory.current.path}. Sin ella no hay sujeto que comparar.',
+  );
 }
 
 Directory get fixture => Directory('${raizDelRepo.path}/fixtures/app-minima');
 
 /// Lo que el fixture ES. Las dos implementaciones tienen que decir esto.
 List<Package> get esperado => [
-      Package(name: 'app', path: 'app', dependsOn: const ['dominio']),
-      Package(name: 'dominio', path: 'dominio', dependsOn: const []),
-    ];
+  Package(name: 'app', path: 'app', dependsOn: const ['dominio']),
+  Package(name: 'dominio', path: 'dominio', dependsOn: const []),
+];
 
 /// Las dos implementaciones, con nombre. **Que sean dos no es un detalle: es
 /// la condición para que esta suite signifique algo.**
@@ -64,18 +66,25 @@ void main() {
     // Es el modo de fallo que `docs/08` §2 nombra, y no lo vería nadie.
     expect(implementaciones, hasLength(2));
     expect(
-        implementaciones.keys.where((k) => k.startsWith('real')), hasLength(1),
-        reason: 'sin la implementación real esto no es una suite de contrato');
+      implementaciones.keys.where((k) => k.startsWith('real')),
+      hasLength(1),
+      reason: 'sin la implementación real esto no es una suite de contrato',
+    );
     expect(
-        implementaciones.keys.where((k) => k.startsWith('falsa')), hasLength(1),
-        reason: 'sin el fake no hay segunda implementación que la contradiga');
+      implementaciones.keys.where((k) => k.startsWith('falsa')),
+      hasLength(1),
+      reason: 'sin el fake no hay segunda implementación que la contradiga',
+    );
   });
 
   test('el fixture existe donde la suite lo busca', () {
     // Si no estuviera, la real devolvería una lista vacía y las comparaciones
     // fallarían por la razón equivocada — o peor, coincidirían en vacío.
-    expect(fixture.existsSync(), isTrue,
-        reason: 'el sujeto de esta suite es ${fixture.path}');
+    expect(
+      fixture.existsSync(),
+      isTrue,
+      reason: 'el sujeto de esta suite es ${fixture.path}',
+    );
   });
 
   for (final entrada in implementaciones.entries) {
@@ -91,8 +100,11 @@ void main() {
       test('reporta la flecha entre paquetes locales', () async {
         final paquetes = await puerto.packages();
         final app = paquetes.firstWhere((p) => p.name == 'app');
-        expect(app.dependsOn, equals(['dominio']),
-            reason: 'una dependencia por ruta ES topología');
+        expect(
+          app.dependsOn,
+          equals(['dominio']),
+          reason: 'una dependencia por ruta ES topología',
+        );
       });
 
       test('NO reporta las externas como topología', () async {
@@ -101,9 +113,12 @@ void main() {
         final paquetes = await puerto.packages();
         for (final p in paquetes) {
           expect(
-              p.dependsOn.every((d) => ['app', 'dominio'].contains(d)), isTrue,
-              reason: '${p.name} reporta «${p.dependsOn}», que no son paquetes '
-                  'de este proyecto');
+            p.dependsOn.every((d) => ['app', 'dominio'].contains(d)),
+            isTrue,
+            reason:
+                '${p.name} reporta «${p.dependsOn}», que no son paquetes '
+                'de este proyecto',
+          );
         }
       });
 
@@ -120,18 +135,23 @@ void main() {
         expect(() => paquetes.first.dependsOn.add('x'), throwsUnsupportedError);
       });
 
-      test('«dependsOn» solo nombra paquetes que la misma llamada devuelve',
-          () async {
-        // Cláusula 2 del puerto. Una arista colgante apunta a algo que nadie
-        // puede resolver, y no se nota mirando un solo paquete.
-        final paquetes = await puerto.packages();
-        final nombres = paquetes.map((p) => p.name).toSet();
-        for (final p in paquetes) {
-          expect(nombres.containsAll(p.dependsOn), isTrue,
+      test(
+        '«dependsOn» solo nombra paquetes que la misma llamada devuelve',
+        () async {
+          // Cláusula 2 del puerto. Una arista colgante apunta a algo que nadie
+          // puede resolver, y no se nota mirando un solo paquete.
+          final paquetes = await puerto.packages();
+          final nombres = paquetes.map((p) => p.name).toSet();
+          for (final p in paquetes) {
+            expect(
+              nombres.containsAll(p.dependsOn),
+              isTrue,
               reason:
-                  '${p.name} apunta a ${p.dependsOn}, y solo existen $nombres');
-        }
-      });
+                  '${p.name} apunta a ${p.dependsOn}, y solo existen $nombres',
+            );
+          }
+        },
+      );
     });
   }
 }

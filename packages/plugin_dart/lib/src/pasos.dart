@@ -26,10 +26,7 @@ typedef Cobertura = ({List<String> cubierto, List<Omission> omitido});
 /// aborta la corrida antes de llegar acá: por el momento en que se
 /// construye este record, todo sujeto pedido YA es sano, así que un campo de
 /// motivos solo podría llegar vacío.
-typedef Alcance = ({
-  List<String> sanos,
-  int archivos,
-});
+typedef Alcance = ({List<String> sanos, int archivos});
 
 /// Un paso de la cascada que invoca una herramienta y normaliza su salida.
 abstract base class PasoDeCascada implements Verifier {
@@ -122,27 +119,32 @@ abstract base class PasoDeCascada implements Verifier {
     final args = List<String>.unmodifiable(argumentos(alcance.sanos));
     final invocacion = [prog, ...args].join(' ');
 
-    final r = await ejecutor.correr(prog, args,
-        directorio: directorio, presupuesto: presupuesto);
+    final r = await ejecutor.correr(
+      prog,
+      args,
+      directorio: directorio,
+      presupuesto: presupuesto,
+    );
 
     if (r.terminacion != Termination.completa) {
       // **No es un testigo: es un intento.** La herramienta no llegó a
       // producir un resultado, y representar eso con el mismo tipo que un
       // `Witness` es exactamente el hecho falso que ADR-011 vino a impedir.
       return Aborted(
-          attempt: Attempt(
-        invocation: invocacion,
-        subjects: alcance.sanos,
-        termination: r.terminacion,
-        exitCode: r.codigo,
-        note: [
-          'La herramienta no llegó a producir un resultado: ${r.salidaDeError}',
-          if (r.terminacion == Termination.tiempoAgotado)
-            'Los procesos descendientes no se rastrean: si la herramienta dejó '
-                'hijos, pueden seguir vivos.',
-        ].join(' '),
-        finishedAt: DateTime.now().toUtc(),
-      ));
+        attempt: Attempt(
+          invocation: invocacion,
+          subjects: alcance.sanos,
+          termination: r.terminacion,
+          exitCode: r.codigo,
+          note: [
+            'La herramienta no llegó a producir un resultado: ${r.salidaDeError}',
+            if (r.terminacion == Termination.tiempoAgotado)
+              'Los procesos descendientes no se rastrean: si la herramienta dejó '
+                  'hijos, pueden seguir vivos.',
+          ].join(' '),
+          finishedAt: DateTime.now().toUtc(),
+        ),
+      );
     }
 
     // **Desde acá la terminación es `completa` y no se reinterpreta.** Se
@@ -160,10 +162,12 @@ abstract base class PasoDeCascada implements Verifier {
           finishedAt: DateTime.now().toUtc(),
           omitted: [
             Omission(
-                reason: 'Código de salida ${r.codigo}, que no está entre los '
-                    'que significan que la herramienta corrió '
-                    '(${codigosDeCorrida.join(", ")}). Suponer que es '
-                    'benigno sería adivinar.'),
+              reason:
+                  'Código de salida ${r.codigo}, que no está entre los '
+                  'que significan que la herramienta corrió '
+                  '(${codigosDeCorrida.join(", ")}). Suponer que es '
+                  'benigno sería adivinar.',
+            ),
           ],
         ),
         diagnostics: const [],
@@ -227,8 +231,11 @@ final class PasoDeFormato extends PasoDeCascada {
   String get programa => 'dart';
 
   @override
-  List<String> argumentos(List<String> sujetos) =>
-      ['format', '--output=none', ...sujetos];
+  List<String> argumentos(List<String> sujetos) => [
+    'format',
+    '--output=none',
+    ...sujetos,
+  ];
 
   /// `0` corrió; `65` corrió y encontró código que no parsea. **No se usa
   /// `--set-exit-if-changed`**: el veredicto sale de los diagnósticos, no del
@@ -257,9 +264,11 @@ final class PasoDeFormato extends PasoDeCascada {
         cubierto: const <String>[],
         omitido: [
           Omission(
-              reason: 'La herramienta informó que no miró NINGÚN archivo. Su '
-                  'código de salida es 0 igual, así que esto no se puede '
-                  'leer del código: sale del resumen.'),
+            reason:
+                'La herramienta informó que no miró NINGÚN archivo. Su '
+                'código de salida es 0 igual, así que esto no se puede '
+                'leer del código: sale del resumen.',
+          ),
         ],
       );
     }
@@ -284,11 +293,13 @@ final class PasoDeFormato extends PasoDeCascada {
         cubierto: const <String>[],
         omitido: [
           Omission(
-              reason: 'El alcance tiene $archivos archivo(s) de fuente y la '
-                  'herramienta informó $mirados formateado(s) más '
-                  '$sinParsear que no parsean. No cierra, y el resumen es '
-                  'un total: no hay forma de saber a qué sujeto le faltó, '
-                  'así que no se certifica ninguno.'),
+            reason:
+                'El alcance tiene $archivos archivo(s) de fuente y la '
+                'herramienta informó $mirados formateado(s) más '
+                '$sinParsear que no parsean. No cierra, y el resumen es '
+                'un total: no hay forma de saber a qué sujeto le faltó, '
+                'así que no se certifica ninguno.',
+          ),
         ],
       );
     }
@@ -301,9 +312,11 @@ final class PasoDeFormato extends PasoDeCascada {
       omitido: [
         if (sinParsear > 0)
           Omission(
-              reason: '$sinParsear archivo(s) no parsean y quedaron sin '
-                  'formatear. Están reportados como diagnóstico, no '
-                  'omitidos en silencio.'),
+            reason:
+                '$sinParsear archivo(s) no parsean y quedaron sin '
+                'formatear. Están reportados como diagnóstico, no '
+                'omitidos en silencio.',
+          ),
       ],
     );
   }
@@ -338,8 +351,11 @@ final class PasoDeAnalisis extends PasoDeCascada {
   /// no encuentra nada, y cero bytes es lo mismo que deja una herramienta que
   /// no corrió. Ver [NormalizadorDeAnalisis].
   @override
-  List<String> argumentos(List<String> sujetos) =>
-      ['analyze', '--format=json', ...sujetos];
+  List<String> argumentos(List<String> sujetos) => [
+    'analyze',
+    '--format=json',
+    ...sujetos,
+  ];
 
   /// `0` sin hallazgos —incluidos los informativos, está medido—; `1`, `2` y
   /// `3` con hallazgos de distinta gravedad. Una ruta inexistente da `64`, que
@@ -363,11 +379,13 @@ final class PasoDeAnalisis extends PasoDeCascada {
     // dicha en el testigo con su número. Tampoco se puede atribuir a un
     // sujeto: es un residuo general del paso, no de ningún par paso-sujeto.
     final residuo = Omission(
-        reason: 'La herramienta no informa qué archivos leyó: sobre un '
-            'alcance vacío devuelve lo mismo que sobre uno limpio. La '
-            'cobertura se comprobó contando los $archivos archivo(s) del '
-            'alcance, no leyendo su reporte. Que los haya leído TODOS no lo '
-            'verifica este paso.');
+      reason:
+          'La herramienta no informa qué archivos leyó: sobre un '
+          'alcance vacío devuelve lo mismo que sobre uno limpio. La '
+          'cobertura se comprobó contando los $archivos archivo(s) del '
+          'alcance, no leyendo su reporte. Que los haya leído TODOS no lo '
+          'verifica este paso.',
+    );
     return (cubierto: sanos, omitido: [residuo]);
   }
 }

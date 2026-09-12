@@ -45,11 +45,11 @@ abstract final class Codigo {
   /// El código que le corresponde a un estado de corrida. Es una función
   /// total: un estado nuevo no compila hasta que alguien decida su código.
   static int deCorrida(EstadoDeCorrida estado) => switch (estado) {
-        EstadoDeCorrida.verde => exito,
-        EstadoDeCorrida.rojo => fallaDeVerificacion,
-        EstadoDeCorrida.noConcluyente => noConcluyente,
-        EstadoDeCorrida.errorInterno => errorInterno,
-      };
+    EstadoDeCorrida.verde => exito,
+    EstadoDeCorrida.rojo => fallaDeVerificacion,
+    EstadoDeCorrida.noConcluyente => noConcluyente,
+    EstadoDeCorrida.errorInterno => errorInterno,
+  };
 }
 
 /// El veredicto tal como lo lee un consumidor automático.
@@ -58,11 +58,11 @@ abstract final class Codigo {
 /// declara junto a los otros, y un consumidor tiene que poder distinguir «el
 /// arnés se rompió» de «no hay dato» sin mirar el código de salida.
 String veredictoDe(EstadoDeCorrida estado) => switch (estado) {
-      EstadoDeCorrida.verde => 'ok',
-      EstadoDeCorrida.rojo => 'failed',
-      EstadoDeCorrida.noConcluyente => 'inconclusive',
-      EstadoDeCorrida.errorInterno => 'internalError',
-    };
+  EstadoDeCorrida.verde => 'ok',
+  EstadoDeCorrida.rojo => 'failed',
+  EstadoDeCorrida.noConcluyente => 'inconclusive',
+  EstadoDeCorrida.errorInterno => 'internalError',
+};
 
 /// Un evento emitido durante la ejecución. Cero o más por comando.
 class EventEnvelope {
@@ -83,13 +83,13 @@ class EventEnvelope {
   }) : timestamp = (timestamp ?? DateTime.now()).toUtc();
 
   Map<String, Object?> toJson() => {
-        'schema': esquemaDeSalida,
-        'command': command,
-        'type': type,
-        'timestamp': timestamp.toIso8601String(),
-        'runId': runId,
-        'data': data,
-      };
+    'schema': esquemaDeSalida,
+    'command': command,
+    'type': type,
+    'timestamp': timestamp.toIso8601String(),
+    'runId': runId,
+    'data': data,
+  };
 }
 
 /// El resultado. **Exactamente uno por comando, y siempre el último.**
@@ -134,15 +134,15 @@ class ResultEnvelope {
   });
 
   Map<String, Object?> toJson() => {
-        'schema': esquemaDeSalida,
-        'command': command,
-        'type': 'result',
-        'exitCode': exitCode,
-        'verdict': verdict,
-        'nextAction': nextAction,
-        'runId': runId,
-        'data': data,
-      };
+    'schema': esquemaDeSalida,
+    'command': command,
+    'type': 'result',
+    'exitCode': exitCode,
+    'verdict': verdict,
+    'nextAction': nextAction,
+    'runId': runId,
+    'data': data,
+  };
 }
 
 /// Se lanza cuando el protocolo de salida se incumple. **No se degrada a un
@@ -196,8 +196,9 @@ class Impresora {
   void evento(EventEnvelope e, String humano) {
     if (_resultados > 0) {
       throw const ProtocoloRoto(
-          'Se emitió un evento DESPUÉS del resultado. El resultado es el '
-          'último, y un consumidor que ya cerró su lectura no vería esto.');
+        'Se emitió un evento DESPUÉS del resultado. El resultado es el '
+        'último, y un consumidor que ya cerró su lectura no vería esto.',
+      );
     }
     if (silencioso && e.type == 'progress') return;
     _paraEventos.writeln(json ? jsonEncode(e.toJson()) : humano);
@@ -207,8 +208,10 @@ class Impresora {
   void resultado(ResultEnvelope d, String humano) {
     _resultados++;
     if (_resultados > 1) {
-      throw ProtocoloRoto('Se emitió un segundo resultado para «${d.command}». '
-          'El protocolo promete exactamente uno.');
+      throw ProtocoloRoto(
+        'Se emitió un segundo resultado para «${d.command}». '
+        'El protocolo promete exactamente uno.',
+      );
     }
     if (json) {
       salida.writeln(jsonEncode(d.toJson()));
@@ -224,8 +227,9 @@ class Impresora {
   void cerrar() {
     if (_resultados == 0) {
       throw const ProtocoloRoto(
-          'El comando terminó sin emitir su resultado. El protocolo promete '
-          'exactamente uno.');
+        'El comando terminó sin emitir su resultado. El protocolo promete '
+        'exactamente uno.',
+      );
     }
   }
 

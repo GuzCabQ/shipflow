@@ -33,27 +33,28 @@ void main() {
 
   final implementaciones = <String, Escenario Function()>{
     'real · stack': () => (
-          observador: ObservadorDeAlcanceDart(directorio: raiz.path),
-          delStack: 'lib',
-          ajeno: 'LEEME.md',
-          inobservable: 'no/existe',
-        ),
+      observador: ObservadorDeAlcanceDart(directorio: raiz.path),
+      delStack: 'lib',
+      ajeno: 'LEEME.md',
+      inobservable: 'no/existe',
+    ),
     'falso · en memoria': () => (
-          observador: ObservadorDeAlcanceFalso(
-            observados: {
-              'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
-              'LEEME.md': ObservedSubject(
-                  subject: 'LEEME.md',
-                  ofStack: false,
-                  files: 0,
-                  reason: 'no es de este stack'),
-            },
-            noObservados: const {'no/existe': 'no existe en el árbol'},
+      observador: ObservadorDeAlcanceFalso(
+        observados: {
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+          'LEEME.md': ObservedSubject(
+            subject: 'LEEME.md',
+            ofStack: false,
+            files: 0,
+            reason: 'no es de este stack',
           ),
-          delStack: 'lib',
-          ajeno: 'LEEME.md',
-          inobservable: 'no/existe',
-        ),
+        },
+        noObservados: const {'no/existe': 'no existe en el árbol'},
+      ),
+      delStack: 'lib',
+      ajeno: 'LEEME.md',
+      inobservable: 'no/existe',
+    ),
   };
 
   test('la suite corre contra DOS implementaciones', () {
@@ -64,8 +65,11 @@ void main() {
     group(nombre, () {
       test('cláusula 1 · la observación particiona lo pedido', () async {
         final e = armar();
-        final o =
-            await e.observador.observe([e.delStack, e.ajeno, e.inobservable]);
+        final o = await e.observador.observe([
+          e.delStack,
+          e.ajeno,
+          e.inobservable,
+        ]);
         final clasificados = {
           ...o.observed.map((x) => x.subject),
           ...o.unobserved.map((x) => x.subject),
@@ -82,8 +86,11 @@ void main() {
       test('cláusula 3 · no pude mirar y no era mío son distintos', () async {
         final e = armar();
         final o = await e.observador.observe([e.ajeno, e.inobservable]);
-        expect(o.unobserved.single.subject, e.inobservable,
-            reason: 'lo que no se pudo mirar no puede presentarse como ajeno');
+        expect(
+          o.unobserved.single.subject,
+          e.inobservable,
+          reason: 'lo que no se pudo mirar no puede presentarse como ajeno',
+        );
         expect(o.observed.single.subject, e.ajeno);
         expect(o.observed.single.ofStack, isFalse);
         expect(o.observed.single.reason, isNotNull);

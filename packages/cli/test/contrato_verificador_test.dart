@@ -22,13 +22,12 @@ ResultadoDeProceso _salida({
   Termination terminacion = Termination.completa,
   int codigo = 0,
   String estandar = '',
-}) =>
-    ResultadoDeProceso(
-      terminacion: terminacion,
-      codigo: codigo,
-      salidaEstandar: estandar,
-      salidaDeError: '',
-    );
+}) => ResultadoDeProceso(
+  terminacion: terminacion,
+  codigo: codigo,
+  salidaEstandar: estandar,
+  salidaDeError: '',
+);
 
 /// Cada implementación con una salida SUYA que significa «corrí y todo bien».
 /// La suite no conoce ningún formato: cada caso trae el propio.
@@ -50,7 +49,8 @@ final implementaciones = <String, (Construir, String)>{
 /// la observación igual que lo hace quien compone la corrida.
 Future<VerificationScope> _alcance(String raiz, List<String> sujetos) async =>
     VerificationScope.de(
-        await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos));
+      await ObservadorDeAlcanceDart(directorio: raiz).observe(sujetos),
+    );
 
 void main() {
   // Un sujeto de verdad en disco. `StaticAnalysis` cuenta los archivos del
@@ -68,7 +68,9 @@ void main() {
   test('la suite corre contra DOS implementaciones, y las dos son reales', () {
     expect(implementaciones, hasLength(2));
     expect(
-        implementaciones.keys.where((k) => k.startsWith('real')), hasLength(2));
+      implementaciones.keys.where((k) => k.startsWith('real')),
+      hasLength(2),
+    );
   });
 
   for (final entrada in implementaciones.entries) {
@@ -77,23 +79,30 @@ void main() {
     group(entrada.key, () {
       Verifier paso(EjecutorDeProceso e) => construir(e, raiz.path);
 
-      test('cláusula 1 · devuelve Ejecutado o Abortado, nunca otra cosa',
-          () async {
-        final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(await _alcance(raiz.path, ['lib']));
-        expect(o, anyOf(isA<Executed>(), isA<Aborted>()));
-      });
+      test(
+        'cláusula 1 · devuelve Ejecutado o Abortado, nunca otra cosa',
+        () async {
+          final o = await paso(
+            EjecutorDeclarado(_salida(estandar: limpio)),
+          ).run(await _alcance(raiz.path, ['lib']));
+          expect(o, anyOf(isA<Executed>(), isA<Aborted>()));
+        },
+      );
 
-      test('cláusula 2 · un alcance sin sujetos utilizables NO SE CONSTRUYE',
-          () {
-        // La cláusula decía «se comprueba antes de invocar nada» y se
-        // comprobaba adentro de `run`, o sea después de entrar. Ahora es
-        // literal: el alcance vacío no llega a existir, así que ninguna
-        // implementación puede recibirlo ni tiene que acordarse de rechazarlo.
-        // Por eso esta prueba ya no toca `paso`.
-        expect(() => VerificationScope(subjects: const [], files: 0),
-            throwsArgumentError);
-      });
+      test(
+        'cláusula 2 · un alcance sin sujetos utilizables NO SE CONSTRUYE',
+        () {
+          // La cláusula decía «se comprueba antes de invocar nada» y se
+          // comprobaba adentro de `run`, o sea después de entrar. Ahora es
+          // literal: el alcance vacío no llega a existir, así que ninguna
+          // implementación puede recibirlo ni tiene que acordarse de rechazarlo.
+          // Por eso esta prueba ya no toca `paso`.
+          expect(
+            () => VerificationScope(subjects: const [], files: 0),
+            throwsArgumentError,
+          );
+        },
+      );
 
       test('cláusula 3 · una terminación incompleta es Abortado', () async {
         for (final t in [
@@ -101,45 +110,57 @@ void main() {
           Termination.tiempoAgotado,
           Termination.interrumpida,
         ]) {
-          final o =
-              await paso(EjecutorDeclarado(_salida(terminacion: t, codigo: -1)))
-                  .run(await _alcance(raiz.path, ['lib']));
+          final o = await paso(
+            EjecutorDeclarado(_salida(terminacion: t, codigo: -1)),
+          ).run(await _alcance(raiz.path, ['lib']));
           expect(o, isA<Aborted>(), reason: 'terminación $t');
           expect((o as Aborted).attempt.termination, t);
         }
       });
 
-      test('cláusula 4 · el testigo nombra la invocación que se hizo',
-          () async {
-        final ejecutor = EjecutorDeclarado(_salida(estandar: limpio));
-        final o = await paso(ejecutor).run(await _alcance(raiz.path, ['lib']))
-            as Executed;
-        expect(ejecutor.invocaciones, hasLength(1));
-        expect(o.witness.invocation, ejecutor.invocaciones.single);
-      });
+      test(
+        'cláusula 4 · el testigo nombra la invocación que se hizo',
+        () async {
+          final ejecutor = EjecutorDeclarado(_salida(estandar: limpio));
+          final o =
+              await paso(ejecutor).run(await _alcance(raiz.path, ['lib']))
+                  as Executed;
+          expect(ejecutor.invocaciones, hasLength(1));
+          expect(o.witness.invocation, ejecutor.invocaciones.single);
+        },
+      );
 
       test('cláusula 5 · un código desconocido no se supone benigno', () async {
-        final o = await paso(
-                EjecutorDeclarado(_salida(codigo: 111, estandar: limpio)))
-            .run(await _alcance(raiz.path, ['lib'])) as Executed;
+        final o =
+            await paso(
+                  EjecutorDeclarado(_salida(codigo: 111, estandar: limpio)),
+                ).run(await _alcance(raiz.path, ['lib']))
+                as Executed;
         expect(o.verdict, Verdict.noConcluyente);
         expect(o.witness.omitted.map((x) => x.reason).join(), contains('111'));
       });
 
-      test('cláusula 6 · el testigo no nombra sujetos que no recibió',
-          () async {
-        final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(await _alcance(raiz.path, ['lib'])) as Executed;
-        expect(o.witness.subjects.every((s) => s == 'lib'), isTrue);
-      });
-
       test(
-          'cláusula 7 · y SÍ da verde cuando de verdad corrió y no encontró '
+        'cláusula 6 · el testigo no nombra sujetos que no recibió',
+        () async {
+          final o =
+              await paso(
+                    EjecutorDeclarado(_salida(estandar: limpio)),
+                  ).run(await _alcance(raiz.path, ['lib']))
+                  as Executed;
+          expect(o.witness.subjects.every((s) => s == 'lib'), isTrue);
+        },
+      );
+
+      test('cláusula 7 · y SÍ da verde cuando de verdad corrió y no encontró '
           'nada', () async {
         // Sin esto, un paso que devolviera no concluyente siempre pasaría
         // todas las cláusulas de arriba, por la vía de no funcionar.
-        final o = await paso(EjecutorDeclarado(_salida(estandar: limpio)))
-            .run(await _alcance(raiz.path, ['lib'])) as Executed;
+        final o =
+            await paso(
+                  EjecutorDeclarado(_salida(estandar: limpio)),
+                ).run(await _alcance(raiz.path, ['lib']))
+                as Executed;
         expect(o.verdict, Verdict.verde);
         expect(o.witness.subjects, isNotEmpty);
       });

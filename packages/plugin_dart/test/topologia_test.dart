@@ -28,56 +28,70 @@ void main() {
     // sin comprobar que apuntara adentro, y dejaba una arista colgante hacia
     // un paquete que `packages()` nunca devuelve.
     paquete(
-        'proyecto/app',
-        'name: app\n'
-            'dependencies:\n  ajeno:\n    path: ../../afuera/ajeno\n');
+      'proyecto/app',
+      'name: app\n'
+          'dependencies:\n  ajeno:\n    path: ../../afuera/ajeno\n',
+    );
     paquete('afuera/ajeno', 'name: ajeno\n');
 
-    final ps =
-        await TopologiaDart(Directory('${raiz.path}/proyecto')).packages();
+    final ps = await TopologiaDart(
+      Directory('${raiz.path}/proyecto'),
+    ).packages();
     expect(ps.map((p) => p.name), equals(['app']));
-    expect(ps.single.dependsOn, isEmpty,
-        reason: 'la arista apuntaría a un paquete que packages() no devuelve');
+    expect(
+      ps.single.dependsOn,
+      isEmpty,
+      reason: 'la arista apuntaría a un paquete que packages() no devuelve',
+    );
   });
 
   test('una dependencia por ruta hacia adentro SÍ lo es', () async {
     paquete(
-        'app',
-        'name: app\n'
-            'dependencies:\n  dominio:\n    path: ../dominio\n');
+      'app',
+      'name: app\n'
+          'dependencies:\n  dominio:\n    path: ../dominio\n',
+    );
     paquete('dominio', 'name: dominio\n');
 
     final ps = await TopologiaDart(raiz).packages();
     expect(
-        ps.firstWhere((p) => p.name == 'app').dependsOn, equals(['dominio']));
+      ps.firstWhere((p) => p.name == 'app').dependsOn,
+      equals(['dominio']),
+    );
   });
 
   test('una ruta con «..» que vuelve adentro se resuelve', () async {
     // Sin canonicalizar, esta ruta no coincidiría con ningún directorio
     // descubierto y la flecha desaparecería en silencio.
     paquete(
-        'a/app',
-        'name: app\n'
-            'dependencies:\n  dominio:\n    path: ../../b/../b/dominio\n');
+      'a/app',
+      'name: app\n'
+          'dependencies:\n  dominio:\n    path: ../../b/../b/dominio\n',
+    );
     paquete('b/dominio', 'name: dominio\n');
 
     final ps = await TopologiaDart(raiz).packages();
     expect(
-        ps.firstWhere((p) => p.name == 'app').dependsOn, equals(['dominio']));
+      ps.firstWhere((p) => p.name == 'app').dependsOn,
+      equals(['dominio']),
+    );
   });
 
   test('el nombre lo da el manifiesto del destino, no la clave', () async {
     // Las dos pueden diferir, y la que manda es la del paquete real: si se
     // usara la clave, `dependsOn` nombraría algo que no existe.
     paquete(
-        'app',
-        'name: app\n'
-            'dependencies:\n  alias_cualquiera:\n    path: ../real\n');
+      'app',
+      'name: app\n'
+          'dependencies:\n  alias_cualquiera:\n    path: ../real\n',
+    );
     paquete('real', 'name: nombre_real\n');
 
     final ps = await TopologiaDart(raiz).packages();
-    expect(ps.firstWhere((p) => p.name == 'app').dependsOn,
-        equals(['nombre_real']));
+    expect(
+      ps.firstWhere((p) => p.name == 'app').dependsOn,
+      equals(['nombre_real']),
+    );
   });
 
   test('un manifiesto ilegible detiene la topología, no se saltea', () async {
@@ -85,15 +99,20 @@ void main() {
     paquete('roto', ':::esto no es yaml:::\n  - [\n');
 
     expect(
-        () => TopologiaDart(raiz).packages(), throwsA(isA<TopologiaIlegible>()),
-        reason: 'saltarlo haría la topología más chica, y eso se lee igual '
-            'que un proyecto con menos paquetes');
+      () => TopologiaDart(raiz).packages(),
+      throwsA(isA<TopologiaIlegible>()),
+      reason:
+          'saltarlo haría la topología más chica, y eso se lee igual '
+          'que un proyecto con menos paquetes',
+    );
   });
 
   test('un manifiesto sin `name` también', () async {
     paquete('sin_nombre', 'dependencies:\n  x: ^1.0.0\n');
-    expect(() => TopologiaDart(raiz).packages(),
-        throwsA(isA<TopologiaIlegible>()));
+    expect(
+      () => TopologiaDart(raiz).packages(),
+      throwsA(isA<TopologiaIlegible>()),
+    );
   });
 
   group('no poder INTERPRETAR una arista no es que no HAYA arista', () {
@@ -120,8 +139,10 @@ void main() {
     }.entries) {
       test(caso.key, () async {
         paquete('app', caso.value);
-        expect(() => TopologiaDart(raiz).packages(),
-            throwsA(isA<TopologiaIlegible>()));
+        expect(
+          () => TopologiaDart(raiz).packages(),
+          throwsA(isA<TopologiaIlegible>()),
+        );
       });
     }
   });
@@ -142,16 +163,20 @@ void main() {
     }
   });
 
-  test('una lectura que falla de verdad también es TopologiaIlegible',
-      () async {
-    // El test de «manifiesto ilegible» usa YAML sintácticamente inválido, así
-    // que no demuestra que un fallo de LECTURA —distinto de uno de parseo—
-    // termine normalizado. Bytes que no son UTF-8 lo ejercen de verdad.
-    final d = Directory('${raiz.path}/bytes')..createSync(recursive: true);
-    File('${d.path}/pubspec.yaml').writeAsBytesSync([0xC3, 0x28, 0xA0, 0xA1]);
-    expect(() => TopologiaDart(raiz).packages(),
-        throwsA(isA<TopologiaIlegible>()));
-  });
+  test(
+    'una lectura que falla de verdad también es TopologiaIlegible',
+    () async {
+      // El test de «manifiesto ilegible» usa YAML sintácticamente inválido, así
+      // que no demuestra que un fallo de LECTURA —distinto de uno de parseo—
+      // termine normalizado. Bytes que no son UTF-8 lo ejercen de verdad.
+      final d = Directory('${raiz.path}/bytes')..createSync(recursive: true);
+      File('${d.path}/pubspec.yaml').writeAsBytesSync([0xC3, 0x28, 0xA0, 0xA1]);
+      expect(
+        () => TopologiaDart(raiz).packages(),
+        throwsA(isA<TopologiaIlegible>()),
+      );
+    },
+  );
 
   test('un proyecto sin ningún paquete devuelve vacío, no falla', () async {
     // Es un resultado legítimo y distinto de «no pude mirar»: la diferencia la

@@ -46,6 +46,8 @@ OBLIGATORIAS = {
                           "cadenas"),
     "nucleo-sin-entrada-salida": ("enunciado", "origen", "tipo", "alternativa",
                                   "alcance", "cadenas", "solo_en"),
+    "dependencias-declaradas-se-usan": ("enunciado", "origen", "tipo",
+                                        "alternativa", "alcance"),
 }
 
 # El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
@@ -56,6 +58,7 @@ TIPOS = {
     "lenguaje-en-plugin-dart": "cadenas_acotadas",
     "sin-api-de-modelo": "cadenas_acotadas",
     "nucleo-sin-entrada-salida": "cadenas_acotadas",
+    "dependencias-declaradas-se-usan": "flechas_usadas",
 }
 
 # Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
@@ -135,6 +138,18 @@ PASOS_OBLIGATORIOS = {
     "el analizador estático": ("dart analyze --fatal-infos", None),
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
     # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
+    #
+    # **Y el estilo lo decide UN SOLO SDK.** El formateador cambia de estilo
+    # entre versiones menores, así que con el árbol formateado por 3.12 la pata
+    # `stable` reformateaba cinco archivos y el canario quedaba rojo por
+    # construcción. El primer arreglo fue fijar el estilo con
+    # `--language-version=3.6`, y estaba mal: esa opción fija también la
+    # GRAMÁTICA, así que sintaxis válida en 3.11 fallaba al formatear mientras
+    # `dart analyze` la aceptaba. Un techo sintáctico en silencio es peor que un
+    # canario rojo.
+    #
+    # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
+    # `stable` no decide el estilo. El comando es el real, sin banderas.
     "el formato": ("dart format --set-exit-if-changed packages tool", None),
     # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
     # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
@@ -174,6 +189,7 @@ CIEGO_FIJO = {
     "puertos-sin-implementacion": "archivo_ilegible",
     "grafo-derivado": "archivo_ilegible",
     "colecciones-inmutables": "archivo_ilegible",
+    "dependencias-declaradas-se-usan": "grafo_indisponible",
 }
 
 NO_CUENTA_FIJO = {
@@ -838,6 +854,126 @@ def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str]
                 f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
 
 
+# --- las flechas declaradas se usan -------------------------------------
+
+def _importado_por_paquete() -> dict[str, dict[str, set[str]]]:
+    """Qué paquetes internos importa cada paquete, y **desde qué ámbito**.
+
+    **Sale del grafo, no de un regex sobre el texto.** La primera versión
+    buscaba `package:<nombre>/` en todo el archivo, así que un comentario
+    contaba como uso: una revisión lo reprodujo declarando `rules` en `cli`,
+    sin ningún import, con una sola línea `// package:rules/rules.dart` — y
+    `capas.py` salió con cero. Era el mismo error de leer sintaxis con una
+    expresión regular que este arnés acababa de sacar de otra parte.
+
+    `grafo.jsonl` lo deriva `tool/analisis` del ÁRBOL SINTÁCTICO, mirando
+    `ImportDirective` y `ExportDirective`, y `grafo-derivado` lo verifica contra
+    el árbol en cada corrida. Un comentario no es una directiva, así que no
+    aparece.
+
+    **Si el grafo no está, esto no pasa en silencio:** sin aristas no hay uso
+    para nadie y toda dependencia declarada queda señalada. Falla cerrado.
+    """
+    por_paquete: dict[str, dict[str, set[str]]] = {}
+    archivo = RAIZ / "grafo.jsonl"
+    if not archivo.exists():
+        return por_paquete
+    for linea in archivo.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        try:
+            nodo = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        origen = _paquete_de(nodo.get("id", ""))
+        if origen is None:
+            continue
+        ambito = _ambito_de(nodo["id"])
+        caja = por_paquete.setdefault(origen, {"produccion": set(), "prueba": set()})
+        for arista in nodo.get("aristas", []):
+            if arista.get("tipo") != "importa":
+                continue
+            destino = _paquete_de(arista.get("a", ""))
+            if destino is not None and destino != origen:
+                caja[ambito].add(destino)
+    return por_paquete
+
+
+def _paquete_de(ruta: str) -> str | None:
+    partes = ruta.split("/")
+    return partes[1] if len(partes) > 2 and partes[0] == "packages" else None
+
+
+def _ambito_de(ruta: str) -> str:
+    """Producción es `lib/` y `bin/`. **Todo lo demás, no.**
+
+    La primera versión preguntaba al revés —«¿es `test/`?»— y el `else` volvía
+    producción a cualquier otro directorio. Una revisión lo reprodujo con
+    `integration_test/`: una dependencia usada solo por pruebas de integración
+    quedaba declarada como de producción y ningún control lo veía.
+
+    Enumerar qué directorios son de prueba es la misma carrera que una lista
+    negra: `integration_test/`, `benchmark/`, `example/`, y el que alguien
+    invente mañana. Enumerar cuáles son de PRODUCCIÓN es un conjunto cerrado que
+    fija el propio layout de pub, y falla del lado seguro — un directorio que
+    esta función no conoce nunca vuelve producción a una dependencia.
+    """
+    partes = ruta.split("/")
+    return ("produccion" if len(partes) > 2 and partes[2] in ("lib", "bin")
+            else "prueba")
+
+
+def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
+    """Toda dependencia interna declarada se importa, **y desde el ámbito que
+    su sección promete**.
+
+    `deps-hacia-core` dice qué flechas están PERMITIDAS; esta dice que las
+    declaradas se USAN. Un review encontró tres en `cli` con cero imports, y
+    escribir el check encontró dos más en los stubs. Ninguna otra regla podía
+    verlas: estaban permitidas, así que para `deps-hacia-core` no había nada mal.
+
+    **Y la sección importa.** Una dependencia de producción que solo se importa
+    desde `test/` está declarada en el lugar equivocado: `plugin_fake` estaba así
+    en `cli` —siete archivos, todos de prueba— mientras `plugin_dart` ya usaba el
+    patrón correcto. Confundir «¿se importa en algún lado?» con «¿está en la
+    sección correcta?» deja pasar la mitad de la pregunta.
+
+    Las externas quedan afuera a propósito: que `test` esté declarado y no se use
+    es ruido de desarrollo; que `cli` declare `vcs` es una afirmación sobre la
+    arquitectura del producto.
+    """
+    regla = REGLAS["dependencias-declaradas-se-usan"]
+    importa = _importado_por_paquete()
+    internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
+    for nombre in sorted(internos):
+        if not (PAQUETES / nombre).exists():
+            continue
+        caja = importa.get(nombre, {"produccion": set(), "prueba": set()})
+        for dep in g[nombre].get("directDependencies", []):
+            if dep not in internos or dep in caja["produccion"]:
+                continue
+            if dep in caja["prueba"]:
+                fallos.append(
+                    f"packages/{nombre}: declara «{dep}» como dependencia de "
+                    f"producción y solo la importa desde `test/`.\n"
+                    f"      → Movela a `dev_dependencies`, que es donde una "
+                    f"dependencia de prueba dice lo que es.")
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia y no la "
+                f"importa en ninguna directiva. {regla['enunciado']}\n"
+                f"      → {regla['alternativa']}")
+        for dep in g[nombre].get("devDependencies", []):
+            if dep not in internos:
+                continue
+            if dep in caja["produccion"] or dep in caja["prueba"]:
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia de "
+                f"desarrollo y no la importa en ninguna directiva. "
+                f"{regla['enunciado']}\n      → {regla['alternativa']}")
+
+
 # --- origen de dependencias · independiente de la anterior --------------
 
 def check_origenes(g: dict[str, dict]) -> None:
@@ -965,6 +1101,8 @@ def main() -> int:
     if g:
         _paso("flechas entre paquetes internos", check_flechas, g, raiz_ws)
         _paso("núcleo sin dependencias externas", check_origenes, g)
+        _paso("las flechas declaradas se usan", check_dependencias_usadas, g,
+              raiz_ws)
     else:
         print(f"  {'flechas y orígenes':<38} NO DISPONIBLE")
     _paso("cadenas acotadas a su adapter", check_cadenas)

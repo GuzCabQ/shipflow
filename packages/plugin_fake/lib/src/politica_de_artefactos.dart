@@ -14,8 +14,8 @@ class PoliticaDeArtefactosFalsa implements ArtifactPolicy {
   PoliticaDeArtefactosFalsa({
     Set<String> generados = const {},
     Set<String> noEditables = const {},
-  })  : _generados = Set.unmodifiable(generados),
-        _noEditables = Set.unmodifiable(noEditables);
+  }) : _generados = Set.unmodifiable(generados),
+       _noEditables = Set.unmodifiable(noEditables);
 
   /// Compara NORMALIZADO, igual que el real. Normalizar una ruta no es
   /// conocimiento de ningún ecosistema —es semántica de rutas— así que

@@ -33,12 +33,12 @@ class SecretoEnLaRebanada extends RebanadaNoAplicable {
   final List<Secreto> hallazgos;
 
   SecretoEnLaRebanada(this.hallazgos)
-      : super(_razon(hallazgos), hallazgos.first.queHacer);
+    : super(_razon(hallazgos), hallazgos.first.queHacer);
 
   static String _razon(List<Secreto> h) => h.length == 1
       ? 'hay ${h.first.queEs} en ${h.first.archivo}:${h.first.linea}.'
       : 'hay ${h.length} secretos en ${h.first.archivo}, el primero '
-          '${h.first.queEs} en la línea ${h.first.linea}.';
+            '${h.first.queEs} en la línea ${h.first.linea}.';
 }
 
 /// Una entrada de `ls-tree -r -z`, ya partida.
@@ -96,15 +96,15 @@ class _CandidatoGit implements PreparedCandidate {
     required this.root,
     required List<String> changedPaths,
     required List<RutaNoMaterializada> noMaterializadas,
-  })  : _repo = repo,
-        _slice = slice,
-        _rutas = rutas,
-        _rama = rama,
-        _temporal = temporal,
-        _objetos = objetos,
-        _indice = indice,
-        changedPaths = List.unmodifiable(changedPaths),
-        noMaterializadas = List.unmodifiable(noMaterializadas);
+  }) : _repo = repo,
+       _slice = slice,
+       _rutas = rutas,
+       _rama = rama,
+       _temporal = temporal,
+       _objetos = objetos,
+       _indice = indice,
+       changedPaths = List.unmodifiable(changedPaths),
+       noMaterializadas = List.unmodifiable(noMaterializadas);
 
   /// El entorno que manda `git` a escribir a un almacén que no es el del
   /// usuario.
@@ -114,15 +114,17 @@ class _CandidatoGit implements PreparedCandidate {
   /// confirmado nada, y hay tres caminos que prometen cero efectos: el ensayo,
   /// la ausencia de terminal, y el usuario que dice que no.
   Map<String, String> get _entorno => {
-        'GIT_OBJECT_DIRECTORY': _objetos.path,
-        'GIT_ALTERNATE_OBJECT_DIRECTORIES': _almacenReal,
-        'GIT_INDEX_FILE': _indice.path,
-      };
+    'GIT_OBJECT_DIRECTORY': _objetos.path,
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES': _almacenReal,
+    'GIT_INDEX_FILE': _indice.path,
+  };
 
   late final String _almacenReal;
 
   static Future<_CandidatoGit> preparar(
-      RepositorioGit repo, PullRequestSlice slice) async {
+    RepositorioGit repo,
+    PullRequestSlice slice,
+  ) async {
     final rutas = await repo._rutasDeLaRebanada(slice);
     await repo._exigirSinConflictos();
 
@@ -132,24 +134,31 @@ class _CandidatoGit implements PreparedCandidate {
     final rama = await repo.ramaActual;
     if (rama.isEmpty) {
       throw const RebanadaNoAplicable(
-          'HEAD está suelto, sin ninguna rama.',
-          'Poné una rama antes de preparar el candidato: `git switch -c '
-              'lo-que-sea`. El cambio se aplica sobre una referencia, y sin '
-              'rama no hay ninguna a la que condicionarlo.');
+        'HEAD está suelto, sin ninguna rama.',
+        'Poné una rama antes de preparar el candidato: `git switch -c '
+            'lo-que-sea`. El cambio se aplica sobre una referencia, y sin '
+            'rama no hay ninguna a la que condicionarlo.',
+      );
     }
 
-    final cabeza =
-        await repo._git(['rev-parse', '--verify', '--quiet', 'HEAD']);
+    final cabeza = await repo._git([
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      'HEAD',
+    ]);
     if (cabeza.exitCode != 0) {
       throw const RebanadaNoAplicable(
-          'el repositorio todavía no tiene ningún commit.',
-          'El candidato se construye sobre una base y se compara contra ella. '
-              'Hacé el primer commit y volvé a intentar.');
+        'el repositorio todavía no tiene ningún commit.',
+        'El candidato se construye sobre una base y se compara contra ella. '
+            'Hacé el primer commit y volvé a intentar.',
+      );
     }
     final base = (cabeza.stdout as String).trim();
 
-    final temporal =
-        await Directory.systemTemp.createTemp('shipflow-candidato-');
+    final temporal = await Directory.systemTemp.createTemp(
+      'shipflow-candidato-',
+    );
     final objetos = Directory('${temporal.path}/objetos');
     final indice = File('${temporal.path}/indice');
     final arbol = Directory('${temporal.path}/arbol');
@@ -165,8 +174,10 @@ class _CandidatoGit implements PreparedCandidate {
         temporal: temporal,
         objetos: objetos,
         indice: indice,
-        identity:
-            CandidateIdentity(contentRevision: 'pendiente', baseRevision: base),
+        identity: CandidateIdentity(
+          contentRevision: 'pendiente',
+          baseRevision: base,
+        ),
         root: arbol.path,
         changedPaths: const [],
         noMaterializadas: const [],
@@ -185,7 +196,9 @@ class _CandidatoGit implements PreparedCandidate {
   /// final: un candidato cuya identidad se puede reasignar es un candidato que
   /// puede dejar de nombrar lo que se verificó.
   Future<_CandidatoGit> _fijarYMaterializar(
-      String base, Directory arbol) async {
+    String base,
+    Directory arbol,
+  ) async {
     // Los filtros corren UNA vez, acá. Un digest capturado antes de la cascada
     // no sería comparable después: está medido que un filtro no determinista
     // da objetos distintos en dos stagings del mismo archivo sin tocar.
@@ -193,12 +206,15 @@ class _CandidatoGit implements PreparedCandidate {
     await _repo._exigir(['add', '--', ..._rutas], entorno: _entorno);
     final contenido = await _repo._exigir(['write-tree'], entorno: _entorno);
 
-    final cambiadas = _partirNul(await _repo._exigirBytes(
-            ['diff', '--name-only', '-z', base, contenido],
-            entorno: _entorno))
-        .map(_comoRuta)
-        .toList()
-      ..sort();
+    final cambiadas = _partirNul(
+      await _repo._exigirBytes([
+        'diff',
+        '--name-only',
+        '-z',
+        base,
+        contenido,
+      ], entorno: _entorno),
+    ).map(_comoRuta).toList()..sort();
 
     // **La cláusula de [apply] se traslada entera, no se pierde.** Vale en los
     // dos sentidos: ni un archivo de más ni uno declarado que no cambió.
@@ -208,16 +224,18 @@ class _CandidatoGit implements PreparedCandidate {
     final faltan = pedidas.difference(entran).toList()..sort();
     if (demas.isNotEmpty) {
       throw PromesaIncumplida(
-          'un candidato con exactamente ${_rutas.join(", ")}',
-          'uno que además cambia ${demas.join(", ")}');
+        'un candidato con exactamente ${_rutas.join(", ")}',
+        'uno que además cambia ${demas.join(", ")}',
+      );
     }
     if (faltan.isNotEmpty) {
       throw RebanadaNoAplicable(
-          'la rebanada declara ${faltan.join(", ")} y ahí no hay ningún '
-              'cambio contra la base.',
-          'Puede ser que el plan haya declarado algo que no tocó —la cláusula '
-              'dice EXACTAMENTE, y eso vale en los dos sentidos— o que esta '
-              'rebanada YA se haya aplicado. Mirá `git log` antes de tocarla.');
+        'la rebanada declara ${faltan.join(", ")} y ahí no hay ningún '
+            'cambio contra la base.',
+        'Puede ser que el plan haya declarado algo que no tocó —la cláusula '
+            'dice EXACTAMENTE, y eso vale en los dos sentidos— o que esta '
+            'rebanada YA se haya aplicado. Mirá `git log` antes de tocarla.',
+      );
     }
 
     final noMaterializadas = await _materializar(contenido, arbol);
@@ -230,8 +248,10 @@ class _CandidatoGit implements PreparedCandidate {
       temporal: _temporal,
       objetos: _objetos,
       indice: _indice,
-      identity:
-          CandidateIdentity(contentRevision: contenido, baseRevision: base),
+      identity: CandidateIdentity(
+        contentRevision: contenido,
+        baseRevision: base,
+      ),
       root: arbol.path,
       changedPaths: cambiadas,
       noMaterializadas: noMaterializadas,
@@ -246,29 +266,43 @@ class _CandidatoGit implements PreparedCandidate {
   /// no aplica ningún atributo, y eso es lo que hace que la igualdad con el
   /// objeto commiteado sea literal.
   Future<List<RutaNoMaterializada>> _materializar(
-      String contenido, Directory arbol) async {
+    String contenido,
+    Directory arbol,
+  ) async {
     final declaradas = <RutaNoMaterializada>[];
 
-    for (final entrada in _leerArbol(await _repo
-        ._exigirBytes(['ls-tree', '-r', '-z', contenido], entorno: _entorno))) {
+    for (final entrada in _leerArbol(
+      await _repo._exigirBytes([
+        'ls-tree',
+        '-r',
+        '-z',
+        contenido,
+      ], entorno: _entorno),
+    )) {
       final ruta = _comoRuta(entrada.rutaCruda);
 
       // Un submódulo no es contenido de este árbol: es un puntero a otro
       // repositorio. Se declara.
       if (entrada.modo == '160000') {
-        declaradas.add(RutaNoMaterializada(
+        declaradas.add(
+          RutaNoMaterializada(
             ruta: ruta,
             motivo: MotivoDeNoMaterializacion.referenciaAOtroRepositorio,
-            detalle: 'Es un submódulo. Esta rebanada no los materializa, así '
-                'que ningún control corrió sobre su contenido.'));
+            detalle:
+                'Es un submódulo. Esta rebanada no los materializa, así '
+                'que ningún control corrió sobre su contenido.',
+          ),
+        );
         continue;
       }
 
       final destino = File('${arbol.path}/$ruta');
       await destino.parent.create(recursive: true);
-      final bytes = await _repo._exigirBytes(
-          ['cat-file', entrada.tipo, entrada.sha],
-          entorno: _entorno);
+      final bytes = await _repo._exigirBytes([
+        'cat-file',
+        entrada.tipo,
+        entrada.sha,
+      ], entorno: _entorno);
 
       if (entrada.modo == '120000') {
         // El contenido del objeto ES el destino del enlace. **Se decodifica
@@ -280,11 +314,15 @@ class _CandidatoGit implements PreparedCandidate {
         try {
           apunta = const Utf8Decoder(allowMalformed: false).convert(bytes);
         } on FormatException {
-          declaradas.add(RutaNoMaterializada(
+          declaradas.add(
+            RutaNoMaterializada(
               ruta: ruta,
               motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
-              detalle: 'El destino del enlace no es UTF-8, así que no se puede '
-                  'nombrar sin transformarlo.'));
+              detalle:
+                  'El destino del enlace no es UTF-8, así que no se puede '
+                  'nombrar sin transformarlo.',
+            ),
+          );
           continue;
         }
         // **Una sola conducta: no se recrea.** Y el motivo dice lo que de
@@ -293,15 +331,18 @@ class _CandidatoGit implements PreparedCandidate {
         // se queda adentro y también se rechaza, porque averiguarlo exigiría
         // reimplementar la resolución de enlaces del sistema.
         if (apunta.startsWith('/') || apunta.split('/').any((s) => s == '..')) {
-          declaradas.add(RutaNoMaterializada(
+          declaradas.add(
+            RutaNoMaterializada(
               ruta: ruta,
               motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
               detalle: apunta.startsWith('/')
                   ? 'Es un enlace absoluto («$apunta»): apunta fuera del '
-                      'candidato. Recrearlo dejaría que un control leyera algo '
-                      'que no se fijó.'
+                        'candidato. Recrearlo dejaría que un control leyera algo '
+                        'que no se fijó.'
                   : 'El destino («$apunta») contiene `..`, así que tal como '
-                      'está escrito no queda contenido en el candidato.'));
+                        'está escrito no queda contenido en el candidato.',
+            ),
+          );
           continue;
         }
         await Link(destino.path).create(apunta);
@@ -317,9 +358,10 @@ class _CandidatoGit implements PreparedCandidate {
         final r = await Process.run(_repo.programaChmod, ['755', destino.path]);
         if (r.exitCode != 0) {
           throw PromesaIncumplida(
-              'materializar $ruta con su bit ejecutable',
-              'un archivo sin el bit: '
-                  '${"${r.stdout}${r.stderr}".trim()}');
+            'materializar $ruta con su bit ejecutable',
+            'un archivo sin el bit: '
+                '${"${r.stdout}${r.stderr}".trim()}',
+          );
         }
       }
     }
@@ -365,9 +407,10 @@ class _CandidatoGit implements PreparedCandidate {
     final revision = _revision;
     if (revision == null) {
       throw StateError(
-          'No hay revisión que aplicar: llamá primero a `createRevision`, y '
-          'persistila antes de aplicar. Esa secuencia es lo que permite '
-          'recuperarse de una muerte entre las dos.');
+        'No hay revisión que aplicar: llamá primero a `createRevision`, y '
+        'persistila antes de aplicar. Esa secuencia es lo que permite '
+        'recuperarse de una muerte entre las dos.',
+      );
     }
 
     // **Dónde estamos ahora.** Si el usuario cambió de rama entre la
@@ -407,7 +450,9 @@ class _CandidatoGit implements PreparedCandidate {
     final quedo = await _repo._exigir(['rev-parse', 'refs/heads/$_rama']);
     if (quedo != revision) {
       throw PromesaIncumplida(
-          'dejar «$_rama» en $revision', 'la rama en $quedo');
+        'dejar «$_rama» en $revision',
+        'la rama en $quedo',
+      );
     }
 
     // El índice del usuario, al día con el nuevo `HEAD` y **solo en estas
@@ -415,14 +460,21 @@ class _CandidatoGit implements PreparedCandidate {
     // borrado. `commit-tree` no lo toca —no es `git commit`— así que acá la
     // sincronización no es cosmética: sin ella el árbol de trabajo queda
     // mintiendo.
-    final sincronizado =
-        await _repo._git(['reset', '--quiet', '--', ..._rutas]);
+    final sincronizado = await _repo._git([
+      'reset',
+      '--quiet',
+      '--',
+      ..._rutas,
+    ]);
     if (sincronizado.exitCode != 0) {
       return LocalInconsistent(
-          revision: revision,
-          detalle: IndiceDesincronizado(revision, _rutas,
-                  '${sincronizado.stdout}${sincronizado.stderr}'.trim())
-              .toString());
+        revision: revision,
+        detalle: IndiceDesincronizado(
+          revision,
+          _rutas,
+          '${sincronizado.stdout}${sincronizado.stderr}'.trim(),
+        ).toString(),
+      );
     }
 
     return Committed(revision);
@@ -471,15 +523,17 @@ class _CandidatoGit implements PreparedCandidate {
     if (empaquetados.existsSync() &&
         empaquetados.listSync().whereType<File>().isNotEmpty) {
       throw const PromesaIncumplida(
-          'promover objetos sueltos, uno por uno',
-          'un almacén temporal con objetos empaquetados, que esta rebanada no '
-              'sabe promover');
+        'promover objetos sueltos, uno por uno',
+        'un almacén temporal con objetos empaquetados, que esta rebanada no '
+            'sabe promover',
+      );
     }
 
-    for (final objeto in _objetos
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((f) => !f.path.contains('/pack/'))) {
+    for (final objeto
+        in _objetos
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((f) => !f.path.contains('/pack/'))) {
       final partes = objeto.uri.pathSegments;
       final sha = '${partes[partes.length - 2]}${partes.last}';
       // **No se fija la longitud del identificador.** Fijarla en 40 dejaba
@@ -491,16 +545,29 @@ class _CandidatoGit implements PreparedCandidate {
       // existe es `cat-file`, no una expresión nuestra.
       if (!RegExp(r'^[0-9a-f]+$').hasMatch(sha)) continue;
 
-      final tipo =
-          await _repo._exigir(['cat-file', '-t', sha], entorno: _entorno);
-      final contenido =
-          await _repo._exigirBytes(['cat-file', tipo, sha], entorno: _entorno);
+      final tipo = await _repo._exigir([
+        'cat-file',
+        '-t',
+        sha,
+      ], entorno: _entorno);
+      final contenido = await _repo._exigirBytes([
+        'cat-file',
+        tipo,
+        sha,
+      ], entorno: _entorno);
       // Sin `_entorno`: el destino es el almacén del usuario.
-      final promovido = await _repo._exigirConEntrada(
-          ['hash-object', '-t', tipo, '-w', '--stdin'], contenido);
+      final promovido = await _repo._exigirConEntrada([
+        'hash-object',
+        '-t',
+        tipo,
+        '-w',
+        '--stdin',
+      ], contenido);
       if (promovido != sha) {
-        throw PromesaIncumplida('promover $sha sin transformarlo',
-            'el objeto $promovido, que no es el mismo');
+        throw PromesaIncumplida(
+          'promover $sha sin transformarlo',
+          'el objeto $promovido, que no es el mismo',
+        );
       }
     }
 
@@ -515,8 +582,9 @@ class _CandidatoGit implements PreparedCandidate {
     final tipo = await _repo._git(['cat-file', '-t', identity.contentRevision]);
     if (tipo.exitCode != 0 || (tipo.stdout as String).trim() != 'tree') {
       throw PromesaIncumplida(
-          'que ${identity.contentRevision} resuelva en el repositorio real',
-          'un identificador que ahí no existe');
+        'que ${identity.contentRevision} resuelva en el repositorio real',
+        'un identificador que ahí no existe',
+      );
     }
   }
 
@@ -550,12 +618,15 @@ class _CandidatoGit implements PreparedCandidate {
     for (final registro in _partirNul(bytes)) {
       final tab = registro.indexOf(9);
       if (tab < 0) {
-        throw const PromesaIncumplida('leer una entrada de árbol',
-            'un registro de `ls-tree -z` sin tabulador');
+        throw const PromesaIncumplida(
+          'leer una entrada de árbol',
+          'un registro de `ls-tree -z` sin tabulador',
+        );
       }
       final meta = utf8.decode(registro.sublist(0, tab)).split(' ');
-      entradas.add(_EntradaDeArbol(
-          meta[0], meta[1], meta[2], registro.sublist(tab + 1)));
+      entradas.add(
+        _EntradaDeArbol(meta[0], meta[1], meta[2], registro.sublist(tab + 1)),
+      );
     }
     return entradas;
   }
@@ -570,13 +641,15 @@ class _CandidatoGit implements PreparedCandidate {
     try {
       return const Utf8Decoder(allowMalformed: false).convert(bytes);
     } on FormatException {
-      final hex =
-          bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+      final hex = bytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
       throw RebanadaNoAplicable(
-          'el árbol contiene una ruta que no es UTF-8 (bytes: $hex).',
-          'Renombrá ese archivo a un nombre UTF-8. Esta rebanada prefiere '
-              'negarse a nombrarlo mal: una ruta decodificada con reemplazo se '
-              'parece a la real y no lo es.');
+        'el árbol contiene una ruta que no es UTF-8 (bytes: $hex).',
+        'Renombrá ese archivo a un nombre UTF-8. Esta rebanada prefiere '
+            'negarse a nombrarlo mal: una ruta decodificada con reemplazo se '
+            'parece a la real y no lo es.',
+      );
     }
   }
 }
