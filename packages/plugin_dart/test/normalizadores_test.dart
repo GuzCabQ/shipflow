@@ -12,13 +12,8 @@ import 'package:test/test.dart';
 
 QuotedText t(String s) => QuotedText(s, source: 'prueba');
 
-Matcher rechazaPor(String fragmento) => throwsA(
-  isA<UnreadableToolOutput>().having(
-    (e) => e.reason,
-    'motivo',
-    contains(fragmento),
-  ),
-);
+Matcher rechazaPor(String fragmento) => throwsA(isA<UnreadableToolOutput>()
+    .having((e) => e.reason, 'motivo', contains(fragmento)));
 
 void main() {
   group('analizador estatico', () {
@@ -34,31 +29,21 @@ void main() {
     });
 
     test('una version de esquema desconocida no se lee con reglas viejas', () {
-      expect(
-        () => n.normalize(t(r'{"version":2,"diagnostics":[]}')),
-        rechazaPor('version'),
-      );
+      expect(() => n.normalize(t(r'{"version":2,"diagnostics":[]}')),
+          rechazaPor('version'));
     });
 
     test('una severidad sin mapeo no cae en la mas suave', () {
       expect(
-        () => n.normalize(
-          t(
-            r'{"version":1,"diagnostics":[{"code":"c",'
-            r'"severity":"HINT","problemMessage":"m","location":{"file":"a"}}]}',
-          ),
-        ),
-        rechazaPor('Severidad desconocida'),
-      );
+          () => n.normalize(t(r'{"version":1,"diagnostics":[{"code":"c",'
+              r'"severity":"HINT","problemMessage":"m","location":{"file":"a"}}]}')),
+          rechazaPor('Severidad desconocida'));
     });
 
     test('lo informativo anota y lo demas detiene', () {
       List<Diagnostic> uno(String sev) => n.normalize(
-        t(
-          '{"version":1,"diagnostics":[{"code":"c","severity":"$sev",'
-          r'"problemMessage":"m","location":{"file":"a.txt"}}]}',
-        ),
-      );
+          t('{"version":1,"diagnostics":[{"code":"c","severity":"$sev",'
+              r'"problemMessage":"m","location":{"file":"a.txt"}}]}'));
       expect(uno('ERROR').single.severity, Severity.bloquea);
       // La herramienta trae `--fatal-warnings` encendido por defecto: una
       // advertencia detiene igual que un error.
@@ -69,12 +54,8 @@ void main() {
     test('un hallazgo sin linea la deja nula, no en cero', () {
       // Cero es una linea que existe. Nulo es «la herramienta no dijo».
       final d = n
-          .normalize(
-            t(
-              r'{"version":1,"diagnostics":[{"code":"c",'
-              r'"severity":"INFO","problemMessage":"m","location":{"file":"a.txt"}}]}',
-            ),
-          )
+          .normalize(t(r'{"version":1,"diagnostics":[{"code":"c",'
+              r'"severity":"INFO","problemMessage":"m","location":{"file":"a.txt"}}]}'))
           .single;
       expect(d.line, isNull);
       expect(d.file, 'a.txt');
@@ -82,26 +63,16 @@ void main() {
 
     test('la correccion sugerida va a la escotilla, no al mensaje', () {
       final d = n
-          .normalize(
-            t(
-              r'{"version":1,"diagnostics":[{"code":"c",'
+          .normalize(t(r'{"version":1,"diagnostics":[{"code":"c",'
               r'"severity":"INFO","problemMessage":"m","correctionMessage":"hace esto",'
-              r'"location":{"file":"a.txt","range":{"start":{"line":9}}}}]}',
-            ),
-          )
+              r'"location":{"file":"a.txt","range":{"start":{"line":9}}}}]}'))
           .single;
-      expect(
-        d.message.content,
-        'm',
-        reason: 'el mensaje es el de la herramienta y nada mas (INV-6)',
-      );
+      expect(d.message.content, 'm',
+          reason: 'el mensaje es el de la herramienta y nada mas (INV-6)');
       expect(d.sourceMetadata['correccion'], 'hace esto');
       expect(d.line, 9);
-      expect(
-        d.ruleId,
-        'c',
-        reason: 'el codigo de la herramienta viaja tal cual',
-      );
+      expect(d.ruleId, 'c',
+          reason: 'el codigo de la herramienta viaja tal cual');
     });
   });
 
@@ -109,13 +80,12 @@ void main() {
     const n = NormalizadorDeFormato();
 
     test('sin linea de resumen no hay denominador y no se interpreta', () {
-      expect(
-        () => n.normalize(t('Changed lib/a.dart\n')),
-        rechazaPor('denominador'),
-      );
+      expect(() => n.normalize(t('Changed lib/a.dart\n')),
+          rechazaPor('denominador'));
     });
 
-    test('«no files» se interpreta y da cero: el cero archivos lo juzga el '
+    test(
+        '«no files» se interpreta y da cero: el cero archivos lo juzga el '
         'testigo, no esto', () {
       // Decision escrita, no accidente. Esta salida es la que produce la
       // herramienta cuando le pasan un directorio que no existe, Y SALE CON
@@ -127,20 +97,13 @@ void main() {
 
     test('un archivo sin formatear detiene y trae su alternativa', () {
       final d = n
-          .normalize(
-            t(
-              'Changed lib/a.dart\n'
-              'Formatted 3 files (1 changed) in 0.01 seconds.\n',
-            ),
-          )
+          .normalize(t('Changed lib/a.dart\n'
+              'Formatted 3 files (1 changed) in 0.01 seconds.\n'))
           .single;
       expect(d.file, 'lib/a.dart');
       expect(d.severity, Severity.bloquea);
-      expect(
-        d.sourceMetadata['alternativa'],
-        isNotNull,
-        reason: 'INV-8: solo detiene lo que puede decir que hacer',
-      );
+      expect(d.sourceMetadata['alternativa'], isNotNull,
+          reason: 'INV-8: solo detiene lo que puede decir que hacer');
     });
 
     test('el resumen se reconcilia: declara mas de lo que se pudo leer', () {
@@ -148,45 +111,32 @@ void main() {
       // aca no se leyo ninguno: devolver la lista vacia reporta como «todo
       // formateado» algo que la propia herramienta dijo que no lo estaba.
       expect(
-        () =>
-            n.normalize(t('Formatted 2 files (1 changed) in 0.01 seconds.\n')),
-        rechazaPor('perderia el resto en silencio'),
-      );
+          () => n
+              .normalize(t('Formatted 2 files (1 changed) in 0.01 seconds.\n')),
+          rechazaPor('perderia el resto en silencio'));
     });
 
     test('el resumen se reconcilia: se leyo mas de lo que declara', () {
       // El otro sentido. Menos peligroso, pero igual de imposible de creer:
       // una de las dos lecturas esta mal y no se sabe cual.
       expect(
-        () => n.normalize(
-          t(
-            'Changed a\nChanged b\n'
-            'Formatted 2 files (1 changed) in 0.01 seconds.\n',
-          ),
-        ),
-        rechazaPor('no se puede saber cual'),
-      );
+          () => n.normalize(t('Changed a\nChanged b\n'
+              'Formatted 2 files (1 changed) in 0.01 seconds.\n')),
+          rechazaPor('no se puede saber cual'));
     });
 
     test('un total sin su parentesis no se completa con cero', () {
       // Suponerlo en cero es fabricar el denominador que falta, que es
       // exactamente lo que el denominador existe para impedir.
-      expect(
-        () => n.normalize(t('Formatted 2 files in 0.01 seconds.\n')),
-        rechazaPor('no cuantos cambio'),
-      );
+      expect(() => n.normalize(t('Formatted 2 files in 0.01 seconds.\n')),
+          rechazaPor('no cuantos cambio'));
     });
 
     test('dos resumenes no son un denominador', () {
       expect(
-        () => n.normalize(
-          t(
-            'Formatted 1 file (0 changed) in 0.0 seconds.\n'
-            'Formatted 9 files (3 changed) in 0.0 seconds.\n',
-          ),
-        ),
-        rechazaPor('uno solo'),
-      );
+          () => n.normalize(t('Formatted 1 file (0 changed) in 0.0 seconds.\n'
+              'Formatted 9 files (3 changed) in 0.0 seconds.\n')),
+          rechazaPor('uno solo'));
     });
 
     test('un numero que no se puede leer no lanza el tipo equivocado', () {
@@ -194,50 +144,34 @@ void main() {
       // promete. El paso de cascada solo atrapa `UnreadableToolOutput`: con
       // cualquier otro tipo la corrida aborta en vez de dar no concluyente.
       expect(
-        () => n.normalize(
-          t(
-            'Formatted no files in 0.00 seconds.\n'
-            'Could not format because the source could not be parsed:\n'
-            'line ${'9' * 40}, column 1 of a: x\n',
-          ),
-        ),
-        rechazaPor('no se puede leer'),
-      );
+          () => n.normalize(t('Formatted no files in 0.00 seconds.\n'
+              'Could not format because the source could not be parsed:\n'
+              'line ${'9' * 40}, column 1 of a: x\n')),
+          rechazaPor('no se puede leer'));
     });
 
     test('S4 · un archivo que no parsea produce diagnostico con su linea', () {
-      final ds = n.normalize(
-        t(
-          'Formatted no files in 0.00 seconds.\n'
+      final ds = n.normalize(t('Formatted no files in 0.00 seconds.\n'
           'Could not format because the source could not be parsed:\n'
           '\n'
           "line 7, column 1 of lib/roto.dart: Expected to find '}'.\n"
-          '  |\n',
-        ),
-      );
+          '  |\n'));
       expect(ds, hasLength(1));
       expect(ds.single.file, 'lib/roto.dart');
       expect(ds.single.line, 7);
       expect(ds.single.severity, Severity.bloquea);
     });
 
-    test(
-      'S4 · si el bloque de parseo no deja leer ni una linea, es ilegible',
-      () {
-        // El salto silencioso exacto que S4 busca: la herramienta dijo que algo
-        // no parsea y de ese bloque no salio ningun hallazgo. Devolver la lista
-        // sin ellos convertiria un archivo corrupto en silencio.
-        expect(
-          () => n.normalize(
-            t(
-              'Formatted no files in 0.00 seconds.\n'
+    test('S4 · si el bloque de parseo no deja leer ni una linea, es ilegible',
+        () {
+      // El salto silencioso exacto que S4 busca: la herramienta dijo que algo
+      // no parsea y de ese bloque no salio ningun hallazgo. Devolver la lista
+      // sin ellos convertiria un archivo corrupto en silencio.
+      expect(
+          () => n.normalize(t('Formatted no files in 0.00 seconds.\n'
               'Could not format because the source could not be parsed:\n'
-              'formato que no reconocemos\n',
-            ),
-          ),
-          rechazaPor('salto silencioso'),
-        );
-      },
-    );
+              'formato que no reconocemos\n')),
+          rechazaPor('salto silencioso'));
+    });
   });
 }

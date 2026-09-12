@@ -141,8 +141,8 @@ class ObservadorDeAlcanceFalso implements ScopeObserver {
   ObservadorDeAlcanceFalso({
     required Map<String, ObservedSubject> observados,
     Map<String, String> noObservados = const {},
-  }) : observados = Map.unmodifiable(observados),
-       noObservados = Map.unmodifiable(noObservados);
+  })  : observados = Map.unmodifiable(observados),
+        noObservados = Map.unmodifiable(noObservados);
 
   @override
   Future<ScopeObservation> observe(List<String> requested) async {
@@ -157,12 +157,11 @@ class ObservadorDeAlcanceFalso implements ScopeObserver {
       final o = observados[s];
       if (o == null) {
         throw ArgumentError.value(
-          s,
-          'requested',
-          'El fake no tiene declarado este sujeto. Declaralo en '
-              '`observados` o en `noObservados`: adivinar sería '
-              'clasificar por su cuenta',
-        );
+            s,
+            'requested',
+            'El fake no tiene declarado este sujeto. Declaralo en '
+                '`observados` o en `noObservados`: adivinar sería '
+                'clasificar por su cuenta');
       }
       vistos.add(o);
     }
@@ -229,7 +228,7 @@ Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
               finishedAt: DateTime.utc(2026),
             ),
             diagnostics: d,
-          ),
+          )
         );
       }
     }
@@ -237,15 +236,14 @@ Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
   yield (
     'aborted',
     Aborted(
-      attempt: Attempt(
-        invocation: 'herramienta',
-        subjects: sujetosA,
-        termination: Termination.tiempoAgotado,
-        exitCode: -1,
-        note: 'se acabó el presupuesto',
-        finishedAt: DateTime.utc(2026),
-      ),
-    ),
+        attempt: Attempt(
+      invocation: 'herramienta',
+      subjects: sujetosA,
+      termination: Termination.tiempoAgotado,
+      exitCode: -1,
+      note: 'se acabó el presupuesto',
+      finishedAt: DateTime.utc(2026),
+    ))
   );
   yield ('broken', Broken(component: 'X', error: 'se rompió', context: 'lib'));
 }
@@ -260,18 +258,18 @@ Iterable<(String, StepOutcome)> desenlacesPosiblesA() sync* {
 /// coherente con [alcanceNoObservable] por construcción — reusa el
 /// `UnobservedSubject` que la propia observación produjo.
 (String, StepOutcome) desenlaceDeNoObservable(
-  ScopeObservation alcanceNoObservable,
-) => (
-  'unobservable',
-  Unobservable(causes: [alcanceNoObservable.unobserved.single]),
-);
+        ScopeObservation alcanceNoObservable) =>
+    (
+      'unobservable',
+      Unobservable(causes: [alcanceNoObservable.unobserved.single])
+    );
 
 Diagnostic _diag(Severity s) => Diagnostic(
-  file: 'a.fuente',
-  severity: s,
-  ruleId: 'r',
-  message: const QuotedText('m', source: 'test'),
-);
+      file: 'a.fuente',
+      severity: s,
+      ruleId: 'r',
+      message: const QuotedText('m', source: 'test'),
+    );
 
 /// Arma un `ResultadoDeCascada` de un único paso `A` con desenlace [d], sobre
 /// [alcance]. **Coherente por construcción**: el alcance esperado del paso es
@@ -289,36 +287,33 @@ ResultadoDeCascada _resultadoCon(ScopeObservation alcance, StepOutcome d) =>
 /// en una corrida real: sin aplicabilidad por paso, es la única forma que el
 /// constructor acepta (mismo comentario que [_resultadoCon]).
 ResultadoDeCascada _resultadoMixto(
-  ScopeObservation alcance,
-  StepOutcome p1,
-  StepOutcome p2,
-) => ResultadoDeCascada(
-  registrados: [
-    RegisteredStep(id: 'P1', expectedScope: alcance.usable()),
-    RegisteredStep(id: 'P2', expectedScope: alcance.usable()),
-  ],
-  alcance: alcance,
-  desenlaces: {'P1': p1, 'P2': p2},
-);
+        ScopeObservation alcance, StepOutcome p1, StepOutcome p2) =>
+    ResultadoDeCascada(
+      registrados: [
+        RegisteredStep(id: 'P1', expectedScope: alcance.usable()),
+        RegisteredStep(id: 'P2', expectedScope: alcance.usable()),
+      ],
+      alcance: alcance,
+      desenlaces: {'P1': p1, 'P2': p2},
+    );
 
 /// Los casos del escenario mixto. [alcance] tiene un único sujeto utilizable
 /// —el otro es ajeno— así que el alcance esperado de P1 y P2 es ese único
 /// sujeto: [_resultadoMixto] rechazaría cualquier otra cosa.
 Iterable<(String, ResultadoDeCascada)> casosMixtos(
-  ScopeObservation alcance,
-) sync* {
+    ScopeObservation alcance) sync* {
   final ajenoReal = alcance.observed.singleWhere((o) => !o.ofStack);
 
   Executed cubreLoUtilizable() => Executed(
-    witness: Witness(
-      invocation: 'herramienta',
-      subjects: const [sujetoMixtoDelStack],
-      exitCode: 0,
-      omitted: const [],
-      finishedAt: DateTime.utc(2026),
-    ),
-    diagnostics: const [],
-  );
+        witness: Witness(
+          invocation: 'herramienta',
+          subjects: const [sujetoMixtoDelStack],
+          exitCode: 0,
+          omitted: const [],
+          finishedAt: DateTime.utc(2026),
+        ),
+        diagnostics: const [],
+      );
   Skipped seSalta() => Skipped(notOfStack: [ajenoReal]);
 
   // **La mordida de C1.** P1 ejecuta de verdad y cubre lo único utilizable;
@@ -330,7 +325,7 @@ Iterable<(String, ResultadoDeCascada)> casosMixtos(
   // ejecutó ni dio cuenta de lo suyo.
   yield (
     'P1 ejecuta y cubre · P2 se salta',
-    _resultadoMixto(alcance, cubreLoUtilizable(), seSalta()),
+    _resultadoMixto(alcance, cubreLoUtilizable(), seSalta())
   );
 
   // Control negativo: los dos ejecutan y cubren. Tiene que seguir dando
@@ -338,7 +333,7 @@ Iterable<(String, ResultadoDeCascada)> casosMixtos(
   // correcto de uno que además rompe el verde legítimo.
   yield (
     'los dos ejecutan y cubren',
-    _resultadoMixto(alcance, cubreLoUtilizable(), cubreLoUtilizable()),
+    _resultadoMixto(alcance, cubreLoUtilizable(), cubreLoUtilizable())
   );
 
   // Los dos se saltan: ninguno cubre lo utilizable, así que el libro tiene
@@ -352,11 +347,10 @@ Iterable<(String, ResultadoDeCascada)> casosMixtos(
 /// el (alcance, desenlace) suelto— porque el escenario mixto necesita DOS
 /// pasos y un solo desenlace ya no alcanza para nombrar un caso.
 Iterable<(String, ResultadoDeCascada)> todosLosCasos(
-  ScopeObservation alcanceA,
-  ScopeObservation alcanceSalto,
-  ScopeObservation alcanceNoObservable,
-  ScopeObservation alcanceMixto,
-) sync* {
+    ScopeObservation alcanceA,
+    ScopeObservation alcanceSalto,
+    ScopeObservation alcanceNoObservable,
+    ScopeObservation alcanceMixto) sync* {
   for (final (nombre, d) in desenlacesPosiblesA()) {
     yield ('A·$nombre', _resultadoCon(alcanceA, d));
   }
@@ -365,7 +359,7 @@ Iterable<(String, ResultadoDeCascada)> todosLosCasos(
   final (nombreNoObs, noObs) = desenlaceDeNoObservable(alcanceNoObservable);
   yield (
     'NoObservable·$nombreNoObs',
-    _resultadoCon(alcanceNoObservable, noObs),
+    _resultadoCon(alcanceNoObservable, noObs)
   );
   for (final (nombre, r) in casosMixtos(alcanceMixto)) {
     yield ('Mixto·$nombre', r);
@@ -373,41 +367,30 @@ Iterable<(String, ResultadoDeCascada)> todosLosCasos(
 }
 
 void main() {
-  final observadorA = ObservadorDeAlcanceFalso(
-    observados: {
-      for (final s in sujetosA)
-        s: ObservedSubject(subject: s, ofStack: true, files: 1),
-    },
-  );
-  final observadorSalto = ObservadorDeAlcanceFalso(
-    observados: {
-      sujetoDelSalto: ObservedSubject(
+  final observadorA = ObservadorDeAlcanceFalso(observados: {
+    for (final s in sujetosA)
+      s: ObservedSubject(subject: s, ofStack: true, files: 1),
+  });
+  final observadorSalto = ObservadorDeAlcanceFalso(observados: {
+    sujetoDelSalto: ObservedSubject(
         subject: sujetoDelSalto,
         ofStack: false,
         files: 0,
-        reason: 'no es de este stack',
-      ),
-    },
-  );
+        reason: 'no es de este stack'),
+  });
   final observadorNoObservable = ObservadorDeAlcanceFalso(
     observados: const {},
     noObservados: const {sujetoPerdido: 'no se pudo mirar'},
   );
-  final observadorMixto = ObservadorDeAlcanceFalso(
-    observados: {
-      sujetoMixtoDelStack: ObservedSubject(
-        subject: sujetoMixtoDelStack,
-        ofStack: true,
-        files: 1,
-      ),
-      sujetoMixtoAjeno: ObservedSubject(
+  final observadorMixto = ObservadorDeAlcanceFalso(observados: {
+    sujetoMixtoDelStack:
+        ObservedSubject(subject: sujetoMixtoDelStack, ofStack: true, files: 1),
+    sujetoMixtoAjeno: ObservedSubject(
         subject: sujetoMixtoAjeno,
         ofStack: false,
         files: 0,
-        reason: 'no es de este stack',
-      ),
-    },
-  );
+        reason: 'no es de este stack'),
+  });
 
   late ScopeObservation alcanceA;
   late ScopeObservation alcanceSalto;
@@ -417,44 +400,39 @@ void main() {
   setUpAll(() async {
     alcanceA = await observadorA.observe(sujetosA);
     alcanceSalto = await observadorSalto.observe(const [sujetoDelSalto]);
-    alcanceNoObservable = await observadorNoObservable.observe(const [
-      sujetoPerdido,
-    ]);
-    alcanceMixto = await observadorMixto.observe(const [
-      sujetoMixtoDelStack,
-      sujetoMixtoAjeno,
-    ]);
+    alcanceNoObservable =
+        await observadorNoObservable.observe(const [sujetoPerdido]);
+    alcanceMixto = await observadorMixto
+        .observe(const [sujetoMixtoDelStack, sujetoMixtoAjeno]);
   });
 
   Iterable<(String, ResultadoDeCascada)> todos() =>
       todosLosCasos(alcanceA, alcanceSalto, alcanceNoObservable, alcanceMixto);
 
-  test(
-    'a · todo desenlace construible tiene estado y causa. Función total',
-    () {
-      // **Esta propiedad no tiene una guardia que se le pueda quitar.** No es
-      // una debilidad de la prueba: `estado` y `causas` (en el archivo de la
-      // cascada) son funciones sin ningún camino parcial —ni `.first` sin
-      // resguardo, ni `as` inseguro, ni acceso a una clave que pudiera
-      // faltar— sobre un conjunto de variantes que `sealed` cierra para
-      // siempre: nada fuera de el archivo de desenlace puede agregar un sexto
-      // `StepOutcome`. Y si alguna vez se agregara uno ADENTRO de ese archivo,
-      // los `switch` exhaustivos sobre `StepKind` que ya existen
-      // —`StepOutcome.fromJson` acá, `_etapaDe` y `_desenlaceEnTexto` en
-      // `cli`— dejan de compilar hasta que alguien lo atienda en cada uno. La
-      // totalidad de esta función la sostiene el compilador, no un `if` que
-      // esta prueba pueda desarmar; por eso el ejercicio de mordida de esta
-      // rebanada la deja aparte, y por eso sigue acá: sin este comentario, el
-      // próximo que lo revise la va a encontrar muda —sin nada que remover y
-      // ver caer— y la va a borrar por inútil, cuando lo que pasa es lo
-      // contrario: el invariante es más fuerte que una prueba.
-      for (final (nombre, r) in todos()) {
-        expect(() => r.estado, returnsNormally, reason: nombre);
-        expect(() => r.causas, returnsNormally, reason: nombre);
-        expect(EstadoDeCorrida.values, contains(r.estado), reason: nombre);
-      }
-    },
-  );
+  test('a · todo desenlace construible tiene estado y causa. Función total',
+      () {
+    // **Esta propiedad no tiene una guardia que se le pueda quitar.** No es
+    // una debilidad de la prueba: `estado` y `causas` (en el archivo de la
+    // cascada) son funciones sin ningún camino parcial —ni `.first` sin
+    // resguardo, ni `as` inseguro, ni acceso a una clave que pudiera
+    // faltar— sobre un conjunto de variantes que `sealed` cierra para
+    // siempre: nada fuera de el archivo de desenlace puede agregar un sexto
+    // `StepOutcome`. Y si alguna vez se agregara uno ADENTRO de ese archivo,
+    // los `switch` exhaustivos sobre `StepKind` que ya existen
+    // —`StepOutcome.fromJson` acá, `_etapaDe` y `_desenlaceEnTexto` en
+    // `cli`— dejan de compilar hasta que alguien lo atienda en cada uno. La
+    // totalidad de esta función la sostiene el compilador, no un `if` que
+    // esta prueba pueda desarmar; por eso el ejercicio de mordida de esta
+    // rebanada la deja aparte, y por eso sigue acá: sin este comentario, el
+    // próximo que lo revise la va a encontrar muda —sin nada que remover y
+    // ver caer— y la va a borrar por inútil, cuando lo que pasa es lo
+    // contrario: el invariante es más fuerte que una prueba.
+    for (final (nombre, r) in todos()) {
+      expect(() => r.estado, returnsNormally, reason: nombre);
+      expect(() => r.causas, returnsNormally, reason: nombre);
+      expect(EstadoDeCorrida.values, contains(r.estado), reason: nombre);
+    }
+  });
 
   test('b · verde implica toda obligación saldada y nada sin concluir', () {
     for (final (nombre, r) in todos()) {
@@ -474,10 +452,9 @@ void main() {
 
   test('c · la cuenta de diagnósticos es la suma de los ejecutados', () {
     for (final (nombre, r) in todos()) {
-      final esperados = r.desenlaces.values.whereType<Executed>().fold<int>(
-        0,
-        (n, e) => n + e.diagnostics.length,
-      );
+      final esperados = r.desenlaces.values
+          .whereType<Executed>()
+          .fold<int>(0, (n, e) => n + e.diagnostics.length);
       expect(r.diagnosticos, hasLength(esperados), reason: nombre);
     }
   });
@@ -519,27 +496,22 @@ void main() {
     // cobertura vacía y parcial, así que esto tiene que ser mayor que cero;
     // si baja a cero, el generador dejó de ejercitar la propiedad y hay que
     // arreglarlo, no relajar el `expect`.
-    expect(
-      ejercitados,
-      greaterThan(0),
-      reason:
-          'el generador tiene que producir al menos un desenlace con '
-          'cobertura incompleta sobre sujetos reales, o esta propiedad no '
-          'está probando nada',
-    );
+    expect(ejercitados, greaterThan(0),
+        reason: 'el generador tiene que producir al menos un desenlace con '
+            'cobertura incompleta sobre sujetos reales, o esta propiedad no '
+            'está probando nada');
   });
 
   test('e · un registrado sin desenlace no se puede construir', () {
     expect(
-      () => ResultadoDeCascada(
-        registrados: [
-          RegisteredStep(id: 'A', expectedScope: alcanceA.usable()),
-          RegisteredStep(id: 'B', expectedScope: alcanceA.usable()),
-        ],
-        alcance: alcanceA,
-        desenlaces: {'A': desenlacesPosiblesA().first.$2},
-      ),
-      throwsArgumentError,
-    );
+        () => ResultadoDeCascada(
+              registrados: [
+                RegisteredStep(id: 'A', expectedScope: alcanceA.usable()),
+                RegisteredStep(id: 'B', expectedScope: alcanceA.usable()),
+              ],
+              alcance: alcanceA,
+              desenlaces: {'A': desenlacesPosiblesA().first.$2},
+            ),
+        throwsArgumentError);
   });
 }

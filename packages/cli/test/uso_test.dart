@@ -15,19 +15,15 @@ import 'package:test/test.dart';
 Future<(int, String)> invocar(List<String> args) async {
   final out = StringBuffer();
   final err = StringBuffer();
-  final c = await ejecutar(
-    args,
-    directorio: '.',
-    salida: out,
-    error: err,
-    // Ninguno de los casos de esta suite llega a correr la cascada de
-    // verdad —todos se resuelven antes, en la interpretación o en la
-    // ayuda— así que un observador sin ningún sujeto declarado alcanza.
-    construirCascada: (_) => Cascada(
-      const [],
-      observador: ObservadorDeAlcanceFalso(observados: const {}),
-    ),
-  );
+  final c = await ejecutar(args,
+      directorio: '.',
+      salida: out,
+      error: err,
+      // Ninguno de los casos de esta suite llega a correr la cascada de
+      // verdad —todos se resuelven antes, en la interpretación o en la
+      // ayuda— así que un observador sin ningún sujeto declarado alcanza.
+      construirCascada: (_) => Cascada(const [],
+          observador: ObservadorDeAlcanceFalso(observados: const {})));
   return (c, out.toString());
 }
 
@@ -37,14 +33,8 @@ void main() {
       // `--no-color`, `--config` y `--version` están en el documento y NO
       // implementadas. Aceptarlas sin hacer nada sería prometer algo que no
       // hay, así que caen como desconocidas hasta que existan.
-      expect(banderasGlobales, {
-        '--json',
-        '--quiet',
-        '-q',
-        '--verbose',
-        '--help',
-        '-h',
-      });
+      expect(banderasGlobales,
+          {'--json', '--quiet', '-q', '--verbose', '--help', '-h'});
     });
 
     test('el comando es el primer argumento sin guion', () {
@@ -62,19 +52,16 @@ void main() {
     });
 
     test('sin comando, una bandera desconocida no la puede aceptar nadie', () {
-      expect(
-        () => interpretarGlobales(const ['--inventada']),
-        throwsA(isA<UsoInvalido>()),
-      );
+      expect(() => interpretarGlobales(const ['--inventada']),
+          throwsA(isA<UsoInvalido>()));
     });
 
     test('la contradicción se rechaza ANTES que la ayuda', () {
       // `--quiet --verbose --help` salía con 0 mostrando nada. SC-17 exige 5,
       // y no hay forma de honrar las dos banderas: elegir una es adivinar.
       expect(
-        () => interpretarGlobales(const ['--quiet', '--verbose', '--help']),
-        throwsA(isA<UsoInvalido>()),
-      );
+          () => interpretarGlobales(const ['--quiet', '--verbose', '--help']),
+          throwsA(isA<UsoInvalido>()));
     });
   });
 
@@ -99,11 +86,8 @@ void main() {
       test('«shipflow --json $linea» → un solo envelope', () async {
         final (c, out) = await invocar(['--json', ...args]);
         final lineas = out.trim().split('\n');
-        expect(
-          lineas,
-          hasLength(1),
-          reason: 'con --json no se cuela texto suelto (SC-10)',
-        );
+        expect(lineas, hasLength(1),
+            reason: 'con --json no se cuela texto suelto (SC-10)');
         final r = jsonDecode(lineas.single) as Map<String, Object?>;
         expect(r['type'], 'result');
         expect(r['exitCode'], c, reason: 'el envelope dice el mismo código');

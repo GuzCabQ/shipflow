@@ -125,8 +125,10 @@ class QuotedText {
 
   Map<String, Object?> toJson() => {'content': content, 'source': source};
 
-  factory QuotedText.fromJson(Map<String, Object?> json) =>
-      QuotedText(json['content']! as String, source: json['source']! as String);
+  factory QuotedText.fromJson(Map<String, Object?> json) => QuotedText(
+        json['content']! as String,
+        source: json['source']! as String,
+      );
 
   @override
   bool operator ==(Object other) =>
@@ -186,23 +188,19 @@ class Witness {
     required this.exitCode,
     required this.finishedAt,
     required List<Omission> omitted,
-  }) : subjects = List.unmodifiable(subjects),
-       omitted = List.unmodifiable(omitted) {
+  })  : subjects = List.unmodifiable(subjects),
+        omitted = List.unmodifiable(omitted) {
     if (invocation.trim().isEmpty) {
-      throw ArgumentError.value(
-        invocation,
-        'invocation',
-        'Una invocación en blanco no atestigua nada',
-      );
+      throw ArgumentError.value(invocation, 'invocation',
+          'Una invocación en blanco no atestigua nada');
     }
     if (this.subjects.isEmpty && this.omitted.isEmpty) {
       throw ArgumentError.value(
-        omitted,
-        'omitted',
-        'Un testigo que no cubre nada y no dice por qué deja al reporte '
-            'mandando a leer una lista vacía. Si no cubriste, escribí qué '
-            'quedó afuera',
-      );
+          omitted,
+          'omitted',
+          'Un testigo que no cubre nada y no dice por qué deja al reporte '
+              'mandando a leer una lista vacía. Si no cubriste, escribí qué '
+              'quedó afuera');
     }
     final cubiertos = this.subjects.toSet();
     final contradictorios = [
@@ -211,30 +209,29 @@ class Witness {
     ];
     if (contradictorios.isNotEmpty) {
       throw ArgumentError.value(
-        contradictorios,
-        'omitted',
-        'Estos sujetos están en subjects Y en omitted: el testigo afirma '
-            '«lo cubrí» y «no lo cubrí» del mismo sujeto a la vez',
-      );
+          contradictorios,
+          'omitted',
+          'Estos sujetos están en subjects Y en omitted: el testigo afirma '
+              '«lo cubrí» y «no lo cubrí» del mismo sujeto a la vez');
     }
   }
 
   Map<String, Object?> toJson() => {
-    'invocation': invocation,
-    'subjects': subjects,
-    'exitCode': exitCode,
-    'omitted': [for (final o in omitted) o.toJson()],
-    'finishedAt': finishedAt.toUtc().toIso8601String(),
-  };
+        'invocation': invocation,
+        'subjects': subjects,
+        'exitCode': exitCode,
+        'omitted': [for (final o in omitted) o.toJson()],
+        'finishedAt': finishedAt.toUtc().toIso8601String(),
+      };
 
   factory Witness.fromJson(Map<String, Object?> json) => Witness(
-    invocation: json['invocation']! as String,
-    subjects: List<String>.from(json['subjects']! as List<Object?>),
-    exitCode: json['exitCode']! as int,
-    omitted: [
-      for (final o in json['omitted']! as List<Object?>)
-        Omission.fromJson(Map<String, Object?>.from(o! as Map)),
-    ],
-    finishedAt: DateTime.parse(json['finishedAt']! as String),
-  );
+        invocation: json['invocation']! as String,
+        subjects: List<String>.from(json['subjects']! as List<Object?>),
+        exitCode: json['exitCode']! as int,
+        omitted: [
+          for (final o in json['omitted']! as List<Object?>)
+            Omission.fromJson(Map<String, Object?>.from(o! as Map)),
+        ],
+        finishedAt: DateTime.parse(json['finishedAt']! as String),
+      );
 }

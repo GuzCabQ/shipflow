@@ -32,19 +32,17 @@ final implementaciones = <String, ArtifactPolicy Function()>{
   'real · clasifica con los patrones de N1-02 y N1-03': () =>
       const PoliticaDeArtefactosDart(),
   'falsa · se le declaran las respuestas': () => PoliticaDeArtefactosFalsa(
-    generados: generadas.toSet(),
-    noEditables: deBuild.toSet(),
-  ),
+        generados: generadas.toSet(),
+        noEditables: deBuild.toSet(),
+      ),
 };
 
 void main() {
   test('la suite corre contra DOS implementaciones, no una', () {
     expect(implementaciones, hasLength(2));
     expect(
-      implementaciones.keys.where((k) => k.startsWith('real')),
-      hasLength(1),
-      reason: 'sin la implementación real esto no es una suite de contrato',
-    );
+        implementaciones.keys.where((k) => k.startsWith('real')), hasLength(1),
+        reason: 'sin la implementación real esto no es una suite de contrato');
   });
 
   for (final entrada in implementaciones.entries) {
@@ -64,13 +62,9 @@ void main() {
       for (final ruta in deBuild) {
         test('«$ruta» no es editable, y tampoco es «generado»', () {
           expect(puerto.isEditable(ruta), isFalse);
-          expect(
-            puerto.isGenerated(ruta),
-            isFalse,
-            reason:
-                'un artefacto de build no es código generado: son dos '
-                'categorías distintas de N1-02 y N1-03',
-          );
+          expect(puerto.isGenerated(ruta), isFalse,
+              reason: 'un artefacto de build no es código generado: son dos '
+                  'categorías distintas de N1-02 y N1-03');
         });
       }
 
@@ -81,7 +75,8 @@ void main() {
         });
       }
 
-      test('dos formas de escribir el mismo archivo dan la misma respuesta', () {
+      test('dos formas de escribir el mismo archivo dan la misma respuesta',
+          () {
         // Cláusula 3 del puerto. Sin normalizar, `lib/src/../l10n/x` esquivaba
         // la cláusula 1: el mismo archivo salía generado por un camino y
         // editable por el otro.
@@ -90,16 +85,12 @@ void main() {
           'lib/modelo.g.dart': './lib/modelo.g.dart',
           'build/salida.txt': 'build/./salida.txt',
         }.entries) {
+          expect(puerto.isGenerated(par.value),
+              equals(puerto.isGenerated(par.key)),
+              reason: '«${par.value}» y «${par.key}» son el mismo archivo');
           expect(
-            puerto.isGenerated(par.value),
-            equals(puerto.isGenerated(par.key)),
-            reason: '«${par.value}» y «${par.key}» son el mismo archivo',
-          );
-          expect(
-            puerto.isEditable(par.value),
-            equals(puerto.isEditable(par.key)),
-            reason: '«${par.value}» y «${par.key}» son el mismo archivo',
-          );
+              puerto.isEditable(par.value), equals(puerto.isEditable(par.key)),
+              reason: '«${par.value}» y «${par.key}» son el mismo archivo');
         }
       });
 

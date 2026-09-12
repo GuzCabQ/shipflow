@@ -92,11 +92,8 @@ class EjecutorDelSistema implements EjecutorDeProceso {
   }) async {
     final Process proceso;
     try {
-      proceso = await Process.start(
-        ejecutable,
-        argumentos,
-        workingDirectory: directorio,
-      );
+      proceso = await Process.start(ejecutable, argumentos,
+          workingDirectory: directorio);
     } on ProcessException catch (e) {
       // El caso que ADR-011 nombra primero. Un verde acá sería «no encontró
       // nada» cuando nadie miró.
@@ -125,10 +122,8 @@ class EjecutorDelSistema implements EjecutorDeProceso {
       }
     }
 
-    final corrientes = Future.wait([
-      drenar(proceso.stdout, salida),
-      drenar(proceso.stderr, error),
-    ]);
+    final corrientes = Future.wait(
+        [drenar(proceso.stdout, salida), drenar(proceso.stderr, error)]);
 
     try {
       final codigo = await proceso.exitCode.timeout(presupuesto);
@@ -138,8 +133,7 @@ class EjecutorDelSistema implements EjecutorDeProceso {
           terminacion: Termination.interrumpida,
           codigo: codigo,
           salidaEstandar: salida.toString(),
-          salidaDeError:
-              'No se pudo leer la salida del proceso: '
+          salidaDeError: 'No se pudo leer la salida del proceso: '
               '$falloDeCorriente',
         );
       }
@@ -154,10 +148,8 @@ class EjecutorDelSistema implements EjecutorDeProceso {
       // lecturas vivos después de que el resultado ya decía «tiempo agotado»,
       // así que la evidencia adelantaba un hecho que todavía no había pasado.
       final disparo = proceso.kill(ProcessSignal.sigkill);
-      final codigo = await proceso.exitCode.timeout(
-        _limpieza,
-        onTimeout: () => -1,
-      );
+      final codigo =
+          await proceso.exitCode.timeout(_limpieza, onTimeout: () => -1);
       await corrientes.timeout(_limpieza, onTimeout: () => <void>[]);
       return ResultadoDeProceso(
         terminacion: Termination.tiempoAgotado,
@@ -166,7 +158,7 @@ class EjecutorDelSistema implements EjecutorDeProceso {
         salidaDeError: disparo
             ? 'Presupuesto agotado; el proceso se detuvo con código $codigo.'
             : 'Presupuesto agotado y la señal no llegó a entregarse: el '
-                  'proceso pudo haber terminado solo, o pudo seguir vivo.',
+                'proceso pudo haber terminado solo, o pudo seguir vivo.',
       );
     }
   }

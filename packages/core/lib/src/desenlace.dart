@@ -32,27 +32,23 @@ class Omission {
   Omission({this.subject, required this.reason}) {
     if (reason.trim().isEmpty) {
       throw ArgumentError.value(
-        reason,
-        'reason',
-        'Una omisión sin motivo no dice qué quedó afuera',
-      );
+          reason, 'reason', 'Una omisión sin motivo no dice qué quedó afuera');
     }
     if (subject != null && subject!.trim().isEmpty) {
       throw ArgumentError.value(
-        subject,
-        'subject',
-        'Un sujeto en blanco no nombra nada. Si la omisión no es de ningún '
-            'sujeto, dejalo nulo: eso significa residuo general',
-      );
+          subject,
+          'subject',
+          'Un sujeto en blanco no nombra nada. Si la omisión no es de ningún '
+              'sujeto, dejalo nulo: eso significa residuo general');
     }
   }
 
   Map<String, Object?> toJson() => {'subject': subject, 'reason': reason};
 
   factory Omission.fromJson(Map<String, Object?> json) => Omission(
-    subject: json['subject'] as String?,
-    reason: json['reason']! as String,
-  );
+        subject: json['subject'] as String?,
+        reason: json['reason']! as String,
+      );
 }
 
 /// Un intento que no llegó a una terminación completa.
@@ -81,47 +77,42 @@ class Attempt {
   }) : subjects = List.unmodifiable(subjects) {
     if (this.subjects.isEmpty) {
       throw ArgumentError.value(
-        subjects,
-        'subjects',
-        'Un alcance vacío es precondición violada, no un desenlace: no se '
-            'invoca nada sobre una lista de sujetos vacía, así que tampoco '
-            'hay un intento que registrar sobre ella',
-      );
+          subjects,
+          'subjects',
+          'Un alcance vacío es precondición violada, no un desenlace: no se '
+              'invoca nada sobre una lista de sujetos vacía, así que tampoco '
+              'hay un intento que registrar sobre ella');
     }
     if (termination == Termination.completa) {
       throw ArgumentError.value(
-        termination,
-        'termination',
-        'Un intento que terminó completo no es un intento: es un testigo. '
-            'Construí un Witness, no un Attempt',
-      );
+          termination,
+          'termination',
+          'Un intento que terminó completo no es un intento: es un testigo. '
+              'Construí un Witness, no un Attempt');
     }
     if (note.trim().isEmpty) {
       throw ArgumentError.value(
-        note,
-        'note',
-        'Una nota en blanco no dice qué pasó',
-      );
+          note, 'note', 'Una nota en blanco no dice qué pasó');
     }
   }
 
   Map<String, Object?> toJson() => {
-    'invocation': invocation,
-    'subjects': subjects,
-    'termination': termination.name,
-    'exitCode': exitCode,
-    'note': note,
-    'finishedAt': finishedAt.toUtc().toIso8601String(),
-  };
+        'invocation': invocation,
+        'subjects': subjects,
+        'termination': termination.name,
+        'exitCode': exitCode,
+        'note': note,
+        'finishedAt': finishedAt.toUtc().toIso8601String(),
+      };
 
   factory Attempt.fromJson(Map<String, Object?> json) => Attempt(
-    invocation: json['invocation']! as String,
-    subjects: List<String>.from(json['subjects']! as List<Object?>),
-    termination: Termination.values.byName(json['termination']! as String),
-    exitCode: json['exitCode']! as int,
-    note: json['note']! as String,
-    finishedAt: DateTime.parse(json['finishedAt']! as String),
-  );
+        invocation: json['invocation']! as String,
+        subjects: List<String>.from(json['subjects']! as List<Object?>),
+        termination: Termination.values.byName(json['termination']! as String),
+        exitCode: json['exitCode']! as int,
+        note: json['note']! as String,
+        finishedAt: DateTime.parse(json['finishedAt']! as String),
+      );
 }
 
 /// Los cinco desenlaces posibles de un paso.
@@ -174,11 +165,10 @@ sealed class VerificationOutcome extends StepOutcome {
     final outcome = StepOutcome.fromJson(json);
     if (outcome is VerificationOutcome) return outcome;
     throw ArgumentError.value(
-      outcome.kind.name,
-      'kind',
-      'Un Verifier no puede devolver esto: el salto, lo no observable y lo '
-          'roto los decide quien compone la corrida, no un verificador',
-    );
+        outcome.kind.name,
+        'kind',
+        'Un Verifier no puede devolver esto: el salto, lo no observable y lo '
+            'roto los decide quien compone la corrida, no un verificador');
   }
 }
 
@@ -194,7 +184,7 @@ class Executed extends VerificationOutcome {
   final List<Diagnostic> diagnostics;
 
   Executed({required this.witness, required List<Diagnostic> diagnostics})
-    : diagnostics = List.unmodifiable(diagnostics);
+      : diagnostics = List.unmodifiable(diagnostics);
 
   /// El veredicto, calculado. No hay forma de fijarlo desde afuera: sin
   /// sujetos cubiertos no es concluyente, y con un bloqueante es rojo.
@@ -207,24 +197,20 @@ class Executed extends VerificationOutcome {
 
   @override
   Map<String, Object?> toJson() => {
-    'kind': kind.name,
-    'witness': witness.toJson(),
-    'diagnostics': [for (final d in diagnostics) d.toJson()],
-  };
+        'kind': kind.name,
+        'witness': witness.toJson(),
+        'diagnostics': [for (final d in diagnostics) d.toJson()],
+      };
 
   factory Executed.fromJson(Map<String, Object?> json) {
     final kind = StepKind.values.byName(json['kind']! as String);
     if (kind != StepKind.executed) {
-      throw ArgumentError.value(
-        kind,
-        'kind',
-        'Executed.fromJson recibió un discriminador que no es el suyo',
-      );
+      throw ArgumentError.value(kind, 'kind',
+          'Executed.fromJson recibió un discriminador que no es el suyo');
     }
     return Executed(
-      witness: Witness.fromJson(
-        Map<String, Object?>.from(json['witness']! as Map),
-      ),
+      witness:
+          Witness.fromJson(Map<String, Object?>.from(json['witness']! as Map)),
       diagnostics: [
         for (final d in json['diagnostics']! as List<Object?>)
           Diagnostic.fromJson(Map<String, Object?>.from(d! as Map)),
@@ -243,24 +229,18 @@ class Aborted extends VerificationOutcome {
   Aborted({required this.attempt});
 
   @override
-  Map<String, Object?> toJson() => {
-    'kind': kind.name,
-    'attempt': attempt.toJson(),
-  };
+  Map<String, Object?> toJson() =>
+      {'kind': kind.name, 'attempt': attempt.toJson()};
 
   factory Aborted.fromJson(Map<String, Object?> json) {
     final kind = StepKind.values.byName(json['kind']! as String);
     if (kind != StepKind.aborted) {
-      throw ArgumentError.value(
-        kind,
-        'kind',
-        'Aborted.fromJson recibió un discriminador que no es el suyo',
-      );
+      throw ArgumentError.value(kind, 'kind',
+          'Aborted.fromJson recibió un discriminador que no es el suyo');
     }
     return Aborted(
-      attempt: Attempt.fromJson(
-        Map<String, Object?>.from(json['attempt']! as Map),
-      ),
+      attempt:
+          Attempt.fromJson(Map<String, Object?>.from(json['attempt']! as Map)),
     );
   }
 }
@@ -277,41 +257,36 @@ class Skipped extends StepOutcome {
   final List<ObservedSubject> notOfStack;
 
   Skipped({required List<ObservedSubject> notOfStack})
-    : notOfStack = List.unmodifiable(notOfStack) {
+      : notOfStack = List.unmodifiable(notOfStack) {
     if (this.notOfStack.isEmpty) {
       throw ArgumentError.value(
-        notOfStack,
-        'notOfStack',
-        'Un salto sin sujetos ajenos no es un salto: no hay nada que '
-            'explique por qué el paso no tenía nada que hacer',
-      );
+          notOfStack,
+          'notOfStack',
+          'Un salto sin sujetos ajenos no es un salto: no hay nada que '
+              'explique por qué el paso no tenía nada que hacer');
     }
     final propios = this.notOfStack.where((o) => o.ofStack).toList();
     if (propios.isNotEmpty) {
       throw ArgumentError.value(
-        propios,
-        'notOfStack',
-        'Estos sujetos el observador los declaró del stack. Un salto '
-            'afirma «ninguno de estos era mío»: no puede listar uno que sí '
-            'lo era',
-      );
+          propios,
+          'notOfStack',
+          'Estos sujetos el observador los declaró del stack. Un salto '
+              'afirma «ninguno de estos era mío»: no puede listar uno que sí '
+              'lo era');
     }
   }
 
   @override
   Map<String, Object?> toJson() => {
-    'kind': kind.name,
-    'notOfStack': [for (final o in notOfStack) o.toJson()],
-  };
+        'kind': kind.name,
+        'notOfStack': [for (final o in notOfStack) o.toJson()],
+      };
 
   factory Skipped.fromJson(Map<String, Object?> json) {
     final kind = StepKind.values.byName(json['kind']! as String);
     if (kind != StepKind.skipped) {
-      throw ArgumentError.value(
-        kind,
-        'kind',
-        'Skipped.fromJson recibió un discriminador que no es el suyo',
-      );
+      throw ArgumentError.value(kind, 'kind',
+          'Skipped.fromJson recibió un discriminador que no es el suyo');
     }
     return Skipped(
       notOfStack: [
@@ -330,31 +305,27 @@ class Unobservable extends StepOutcome {
   final List<UnobservedSubject> causes;
 
   Unobservable({required List<UnobservedSubject> causes})
-    : causes = List.unmodifiable(causes) {
+      : causes = List.unmodifiable(causes) {
     if (this.causes.isEmpty) {
       throw ArgumentError.value(
-        causes,
-        'causes',
-        'Lo no observable sin causa no dice qué no se pudo mirar ni por '
-            'qué',
-      );
+          causes,
+          'causes',
+          'Lo no observable sin causa no dice qué no se pudo mirar ni por '
+              'qué');
     }
   }
 
   @override
   Map<String, Object?> toJson() => {
-    'kind': kind.name,
-    'causes': [for (final c in causes) c.toJson()],
-  };
+        'kind': kind.name,
+        'causes': [for (final c in causes) c.toJson()],
+      };
 
   factory Unobservable.fromJson(Map<String, Object?> json) {
     final kind = StepKind.values.byName(json['kind']! as String);
     if (kind != StepKind.unobservable) {
-      throw ArgumentError.value(
-        kind,
-        'kind',
-        'Unobservable.fromJson recibió un discriminador que no es el suyo',
-      );
+      throw ArgumentError.value(kind, 'kind',
+          'Unobservable.fromJson recibió un discriminador que no es el suyo');
     }
     return Unobservable(
       causes: [
@@ -381,43 +352,31 @@ class Broken extends StepOutcome {
   }) {
     if (component.trim().isEmpty) {
       throw ArgumentError.value(
-        component,
-        'component',
-        'Un roto sin componente no dice qué falló',
-      );
+          component, 'component', 'Un roto sin componente no dice qué falló');
     }
     if (error.trim().isEmpty) {
       throw ArgumentError.value(
-        error,
-        'error',
-        'Un roto sin error no dice qué pasó',
-      );
+          error, 'error', 'Un roto sin error no dice qué pasó');
     }
     if (context.trim().isEmpty) {
       throw ArgumentError.value(
-        context,
-        'context',
-        'Un roto sin contexto no dice dónde pasó',
-      );
+          context, 'context', 'Un roto sin contexto no dice dónde pasó');
     }
   }
 
   @override
   Map<String, Object?> toJson() => {
-    'kind': kind.name,
-    'component': component,
-    'error': error,
-    'context': context,
-  };
+        'kind': kind.name,
+        'component': component,
+        'error': error,
+        'context': context,
+      };
 
   factory Broken.fromJson(Map<String, Object?> json) {
     final kind = StepKind.values.byName(json['kind']! as String);
     if (kind != StepKind.broken) {
-      throw ArgumentError.value(
-        kind,
-        'kind',
-        'Broken.fromJson recibió un discriminador que no es el suyo',
-      );
+      throw ArgumentError.value(kind, 'kind',
+          'Broken.fromJson recibió un discriminador que no es el suyo');
     }
     return Broken(
       component: json['component']! as String,
@@ -450,11 +409,8 @@ final class Committed extends CommitOutcome {
   final String revision;
   Committed(this.revision) {
     if (revision.trim().isEmpty) {
-      throw ArgumentError.value(
-        revision,
-        'revision',
-        'Un commit aplicado sin revisión no nombra lo que se aplicó.',
-      );
+      throw ArgumentError.value(revision, 'revision',
+          'Un commit aplicado sin revisión no nombra lo que se aplicó.');
     }
   }
 }
@@ -503,23 +459,18 @@ final class NotApplied extends CommitOutcome {
     this.ramaObservada,
   }) {
     if (revision.trim().isEmpty) {
-      throw ArgumentError.value(
-        revision,
-        'revision',
-        'Sin revisión no se puede decir qué fue lo que no se aplicó.',
-      );
+      throw ArgumentError.value(revision, 'revision',
+          'Sin revisión no se puede decir qué fue lo que no se aplicó.');
     }
     if (baseEsperada.trim().isEmpty || headObservado.trim().isEmpty) {
       throw ArgumentError(
-        'La base esperada y el HEAD observado nombran revisiones: ninguna '
-        'puede ir en blanco, porque juntas son la explicación del rechazo.',
-      );
+          'La base esperada y el HEAD observado nombran revisiones: ninguna '
+          'puede ir en blanco, porque juntas son la explicación del rechazo.');
     }
     if ((causa == CausaDeNoAplicacion.ramaCambiada) !=
         (ramaObservada != null)) {
       throw ArgumentError(
-        'La rama observada acompaña a `ramaCambiada`, y solo a ella.',
-      );
+          'La rama observada acompaña a `ramaCambiada`, y solo a ella.');
     }
   }
 }
@@ -535,18 +486,12 @@ final class LocalInconsistent extends CommitOutcome {
 
   LocalInconsistent({required this.revision, required this.detalle}) {
     if (revision.trim().isEmpty) {
-      throw ArgumentError.value(
-        revision,
-        'revision',
-        'El commit existe: sin su revisión nadie puede repararlo.',
-      );
+      throw ArgumentError.value(revision, 'revision',
+          'El commit existe: sin su revisión nadie puede repararlo.');
     }
     if (detalle.trim().isEmpty) {
-      throw ArgumentError.value(
-        detalle,
-        'detalle',
-        'Un estado a medias sin detalle no dice qué hay que reparar.',
-      );
+      throw ArgumentError.value(detalle, 'detalle',
+          'Un estado a medias sin detalle no dice qué hay que reparar.');
     }
   }
 }

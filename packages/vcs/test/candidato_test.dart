@@ -57,18 +57,16 @@ void main() {
   /// `--batch-all-objects` enumera sueltos Y empaquetados, y un OID no cambia
   /// cuando se empaqueta: el conjunto es estable bajo lo que git hace solo, y
   /// exacto sobre lo que se quiere medir.
-  Set<String> objetosDelRepo() => git([
-    'cat-file',
-    '--batch-all-objects',
-    '--batch-check=%(objectname)',
-  ]).split('\n').where((l) => l.trim().isNotEmpty).toSet();
+  Set<String> objetosDelRepo() =>
+      git(['cat-file', '--batch-all-objects', '--batch-check=%(objectname)'])
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toSet();
 
   setUp(() {
     raiz = Directory.systemTemp.createTempSync('candidato_');
-    repo = RepositorioGit(
-      directorio: raiz.path,
-      politica: const _TodoEsFuente(),
-    );
+    repo =
+        RepositorioGit(directorio: raiz.path, politica: const _TodoEsFuente());
     git(['init', '--initial-branch=main', '.']);
     git(['config', 'user.email', 'p@p']);
     git(['config', 'user.name', 'prueba']);
@@ -80,10 +78,9 @@ void main() {
 
   tearDown(() => raiz.deleteSync(recursive: true));
 
-  PullRequestSlice rebanada(
-    List<String> files, {
-    String intent = 'porque sí',
-  }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
+  PullRequestSlice rebanada(List<String> files,
+          {String intent = 'porque sí'}) =>
+      PullRequestSlice(id: 'r1', intent: intent, files: files);
 
   /// Crear la revisión y aplicarla, que es lo que hace el coordinador.
   ///
@@ -96,10 +93,8 @@ void main() {
   }
 
   /// Prepara y **siempre** libera, incluso si la prueba falla.
-  Future<T> conCandidato<T>(
-    PullRequestSlice slice,
-    Future<T> Function(PreparedCandidate) usar,
-  ) async {
+  Future<T> conCandidato<T>(PullRequestSlice slice,
+      Future<T> Function(PreparedCandidate) usar) async {
     final c = await repo.prepareCandidate(slice);
     try {
       return await usar(c);
@@ -118,11 +113,8 @@ void main() {
       escribir('a.txt', 'modificado\n');
       final antes = objetosDelRepo();
       await conCandidato(rebanada(['a.txt']), (c) async {
-        expect(
-          objetosDelRepo().difference(antes),
-          isEmpty,
-          reason: 'preparar no puede escribir en el almacén del usuario',
-        );
+        expect(objetosDelRepo().difference(antes), isEmpty,
+            reason: 'preparar no puede escribir en el almacén del usuario');
         return null;
       });
       expect(objetosDelRepo().difference(antes), isEmpty);
@@ -162,47 +154,39 @@ void main() {
         final d = await aplicar(c);
         expect(d, isA<Committed>());
         expect((d as Committed).revision, isNotEmpty);
-        expect(
-          git(['rev-parse', '${d.revision}^{tree}']),
-          c.identity.contentRevision,
-          reason: 'el árbol del commit ES el candidato, no una copia',
-        );
+        expect(git(['rev-parse', '${d.revision}^{tree}']),
+            c.identity.contentRevision,
+            reason: 'el árbol del commit ES el candidato, no una copia');
         return d.revision;
       });
       expect(git(['rev-parse', 'HEAD']), revision);
     });
 
-    test(
-      'el bit ejecutable cambia la identidad aunque el objeto no cambie',
-      () async {
-        // Medido: cambiar el bit conserva el objeto del archivo y cambia el
-        // commit. Es la razón por la que la identidad es un árbol y no un digest
-        // por ruta.
-        escribir('ejec.sh', '#!/bin/sh\necho hola\n');
-        git(['add', 'ejec.sh']);
-        git(['commit', '-m', 'script']);
-        final objetoAntes = git(['rev-parse', 'HEAD:ejec.sh']);
+    test('el bit ejecutable cambia la identidad aunque el objeto no cambie',
+        () async {
+      // Medido: cambiar el bit conserva el objeto del archivo y cambia el
+      // commit. Es la razón por la que la identidad es un árbol y no un digest
+      // por ruta.
+      escribir('ejec.sh', '#!/bin/sh\necho hola\n');
+      git(['add', 'ejec.sh']);
+      git(['commit', '-m', 'script']);
+      final objetoAntes = git(['rev-parse', 'HEAD:ejec.sh']);
 
-        Process.runSync('chmod', ['755', '${raiz.path}/ejec.sh']);
-        await conCandidato(rebanada(['ejec.sh']), (c) async {
-          expect(c.changedPaths, [
-            'ejec.sh',
-          ], reason: 'el árbol detecta el cambio de modo');
-          // **Se pregunta DESPUÉS de aplicar, y no es un rodeo.** Mientras el
-          // candidato está preparado, su árbol vive en un almacén que el `git`
-          // del usuario no ve: preguntarle desde afuera falla, que es justo la
-          // propiedad de aislamiento que otra prueba de este archivo fija.
-          await aplicar(c);
-          return null;
-        });
-        expect(
-          git(['rev-parse', 'HEAD:ejec.sh']),
-          objetoAntes,
-          reason: 'el objeto del archivo es el mismo: el modo no viaja ahí',
-        );
-        expect(git(['ls-files', '-s', 'ejec.sh']), startsWith('100755'));
-      },
-    );
+      Process.runSync('chmod', ['755', '${raiz.path}/ejec.sh']);
+      await conCandidato(rebanada(['ejec.sh']), (c) async {
+        expect(c.changedPaths, ['ejec.sh'],
+            reason: 'el árbol detecta el cambio de modo');
+        // **Se pregunta DESPUÉS de aplicar, y no es un rodeo.** Mientras el
+        // candidato está preparado, su árbol vive en un almacén que el `git`
+        // del usuario no ve: preguntarle desde afuera falla, que es justo la
+        // propiedad de aislamiento que otra prueba de este archivo fija.
+        await aplicar(c);
+        return null;
+      });
+      expect(git(['rev-parse', 'HEAD:ejec.sh']), objetoAntes,
+          reason: 'el objeto del archivo es el mismo: el modo no viaja ahí');
+      expect(git(['ls-files', '-s', 'ejec.sh']), startsWith('100755'));
+    });
 
     test('un borrado no necesita ningún objeto resultante', () async {
       // Un digest obligatorio por ruta sería un tipo mal formado: acá no hay
@@ -213,14 +197,11 @@ void main() {
         final d = await aplicar(c);
         expect(d, isA<Committed>());
         expect(
-          Process.runSync('git', [
-            'cat-file',
-            '-e',
-            'HEAD:a.txt',
-          ], workingDirectory: raiz.path).exitCode,
-          isNot(0),
-          reason: 'el borrado quedó commiteado',
-        );
+            Process.runSync('git', ['cat-file', '-e', 'HEAD:a.txt'],
+                    workingDirectory: raiz.path)
+                .exitCode,
+            isNot(0),
+            reason: 'el borrado quedó commiteado');
         return null;
       });
     });
@@ -231,82 +212,63 @@ void main() {
     void conFiltros() {
       git(['config', 'filter.marca.clean', 'sed s/SUCIO/LIMPIO/']);
       git(['config', 'filter.marca.smudge', 'sed s/LIMPIO/SUCIO/']);
-      escribir(
-        '.gitattributes',
-        'conmarca.txt filter=marca\ncrlf.txt text eol=crlf\n',
-      );
+      escribir('.gitattributes',
+          'conmarca.txt filter=marca\ncrlf.txt text eol=crlf\n');
       escribir('conmarca.txt', 'valor LIMPIO\n');
       escribir('crlf.txt', 'l1\nl2\n');
       git(['add', '-A']);
       git(['commit', '-m', 'filtros']);
     }
 
+    test('con filtro smudge y con eol=crlf, lo materializado ES el objeto',
+        () async {
+      // **La prueba que impide volver a `checkout-index`.** Está medido que
+      // `checkout-index` aplica la conversión inversa y rompe la igualdad en
+      // estos dos casos exactos. La materialización por plumbing no.
+      conFiltros();
+      escribir('conmarca.txt', 'valor SUCIO otra vez\n');
+      escribir('crlf.txt', 'l1\nl2\nl3\n');
+
+      await conCandidato(rebanada(['conmarca.txt', 'crlf.txt']), (c) async {
+        // Se aplica primero para que los objetos existan en el almacén real y
+        // se puedan leer con el `git` del usuario; el workspace materializado
+        // sigue en pie hasta el `dispose`.
+        expect(await aplicar(c), isA<Committed>());
+        for (final nombre in ['conmarca.txt', 'crlf.txt']) {
+          final r = Process.runSync('git', ['cat-file', 'blob', 'HEAD:$nombre'],
+              workingDirectory: raiz.path, stdoutEncoding: null);
+          expect(r.exitCode, 0,
+              reason: 'el objeto de $nombre tiene que existir');
+          final delObjeto = r.stdout as List<int>;
+          expect(delObjeto, isNotEmpty);
+          final enDisco = File('${c.root}/$nombre').readAsBytesSync();
+          expect(enDisco, delObjeto,
+              reason: 'igualdad literal en $nombre: sin esto el artefacto '
+                  'afirma sobre bytes que nadie verificó');
+        }
+        return null;
+      });
+    });
+
+    test('el filtro clean corre UNA vez: promover no lo vuelve a correr',
+        () async {
+      // `hash-object -t <tipo> -w --stdin` sin `--path` no aplica atributos.
+      // Que el identificador que vuelve sea el mismo es lo que lo convierte en
+      // un hecho comprobado y no en una expectativa.
+      conFiltros();
+      escribir('conmarca.txt', 'otro SUCIO\n');
+      await conCandidato(rebanada(['conmarca.txt']), (c) async {
+        final esperado = c.identity.contentRevision;
+        await aplicar(c);
+        expect(git(['rev-parse', 'HEAD^{tree}']), esperado);
+        expect(git(['cat-file', 'blob', 'HEAD:conmarca.txt']), 'otro LIMPIO',
+            reason: 'el filtro corrió una sola vez, en la preparación');
+        return null;
+      });
+    });
+
     test(
-      'con filtro smudge y con eol=crlf, lo materializado ES el objeto',
-      () async {
-        // **La prueba que impide volver a `checkout-index`.** Está medido que
-        // `checkout-index` aplica la conversión inversa y rompe la igualdad en
-        // estos dos casos exactos. La materialización por plumbing no.
-        conFiltros();
-        escribir('conmarca.txt', 'valor SUCIO otra vez\n');
-        escribir('crlf.txt', 'l1\nl2\nl3\n');
-
-        await conCandidato(rebanada(['conmarca.txt', 'crlf.txt']), (c) async {
-          // Se aplica primero para que los objetos existan en el almacén real y
-          // se puedan leer con el `git` del usuario; el workspace materializado
-          // sigue en pie hasta el `dispose`.
-          expect(await aplicar(c), isA<Committed>());
-          for (final nombre in ['conmarca.txt', 'crlf.txt']) {
-            final r = Process.runSync(
-              'git',
-              ['cat-file', 'blob', 'HEAD:$nombre'],
-              workingDirectory: raiz.path,
-              stdoutEncoding: null,
-            );
-            expect(
-              r.exitCode,
-              0,
-              reason: 'el objeto de $nombre tiene que existir',
-            );
-            final delObjeto = r.stdout as List<int>;
-            expect(delObjeto, isNotEmpty);
-            final enDisco = File('${c.root}/$nombre').readAsBytesSync();
-            expect(
-              enDisco,
-              delObjeto,
-              reason:
-                  'igualdad literal en $nombre: sin esto el artefacto '
-                  'afirma sobre bytes que nadie verificó',
-            );
-          }
-          return null;
-        });
-      },
-    );
-
-    test(
-      'el filtro clean corre UNA vez: promover no lo vuelve a correr',
-      () async {
-        // `hash-object -t <tipo> -w --stdin` sin `--path` no aplica atributos.
-        // Que el identificador que vuelve sea el mismo es lo que lo convierte en
-        // un hecho comprobado y no en una expectativa.
-        conFiltros();
-        escribir('conmarca.txt', 'otro SUCIO\n');
-        await conCandidato(rebanada(['conmarca.txt']), (c) async {
-          final esperado = c.identity.contentRevision;
-          await aplicar(c);
-          expect(git(['rev-parse', 'HEAD^{tree}']), esperado);
-          expect(
-            git(['cat-file', 'blob', 'HEAD:conmarca.txt']),
-            'otro LIMPIO',
-            reason: 'el filtro corrió una sola vez, en la preparación',
-          );
-          return null;
-        });
-      },
-    );
-
-    test('el árbol de trabajo puede cambiar entre verificar y commitear, y el '
+        'el árbol de trabajo puede cambiar entre verificar y commitear, y el '
         'commit se lleva el candidato', () async {
       // **Acá muere el TOCTOU.** No hay `git add` en el momento del commit: el
       // objeto ya está fijado. Sabotaje del estado intermedio n.º 2: si alguien
@@ -315,10 +277,8 @@ void main() {
       await conCandidato(rebanada(['a.txt']), (c) async {
         escribir('a.txt', 'lo que alguien escribió después\n');
         final d = await aplicar(c) as Committed;
-        expect(
-          git(['cat-file', 'blob', '${d.revision}:a.txt']),
-          'lo que se verificó',
-        );
+        expect(git(['cat-file', 'blob', '${d.revision}:a.txt']),
+            'lo que se verificó');
         return null;
       });
     });
@@ -326,10 +286,8 @@ void main() {
 
   group('la rebanada sigue siendo exacta', () {
     test('un archivo declarado sin cambios no arma candidato', () async {
-      expect(
-        () => repo.prepareCandidate(rebanada(['a.txt'])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+      expect(() => repo.prepareCandidate(rebanada(['a.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
 
     test('los cambios ajenos sobreviven y no entran', () async {
@@ -341,19 +299,14 @@ void main() {
         return null;
       });
       expect(
-        File('${raiz.path}/ajeno.txt').readAsStringSync(),
-        'no declarado\n',
-        reason: 'lo que no es de la rebanada queda intacto en el árbol',
-      );
+          File('${raiz.path}/ajeno.txt').readAsStringSync(), 'no declarado\n',
+          reason: 'lo que no es de la rebanada queda intacto en el árbol');
       expect(
-        Process.runSync('git', [
-          'cat-file',
-          '-e',
-          'HEAD:ajeno.txt',
-        ], workingDirectory: raiz.path).exitCode,
-        isNot(0),
-        reason: 'y no se commitea',
-      );
+          Process.runSync('git', ['cat-file', '-e', 'HEAD:ajeno.txt'],
+                  workingDirectory: raiz.path)
+              .exitCode,
+          isNot(0),
+          reason: 'y no se commitea');
     });
 
     test('un alta entra como alta', () async {
@@ -377,17 +330,13 @@ void main() {
 
     test('una ruta repetida se rechaza', () {
       escribir('a.txt', 'x\n');
-      expect(
-        () => repo.prepareCandidate(rebanada(['a.txt', 'a.txt'])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+      expect(() => repo.prepareCandidate(rebanada(['a.txt', 'a.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
 
     test('una rebanada vacía se rechaza', () {
-      expect(
-        () => repo.prepareCandidate(rebanada([])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+      expect(() => repo.prepareCandidate(rebanada([])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
   });
 
@@ -398,50 +347,38 @@ void main() {
       git(['commit', '-m', 'enlace']);
       escribir('a.txt', 'x\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
-        expect(
-          Link('${c.root}/enlace').existsSync(),
-          isTrue,
-          reason: 'se crea el enlace, no un archivo con el destino adentro',
-        );
+        expect(Link('${c.root}/enlace').existsSync(), isTrue,
+            reason: 'se crea el enlace, no un archivo con el destino adentro');
         expect(Link('${c.root}/enlace').targetSync(), 'sub/hondo.txt');
         expect(c.noMaterializadas, isEmpty);
         return null;
       });
     });
 
-    test(
-      'un enlace absoluto o con .. NO se recrea, y queda declarado',
-      () async {
-        Link('${raiz.path}/afuera').createSync('/etc/passwd');
-        Link('${raiz.path}/escapa').createSync('../../fuera');
-        git(['add', 'afuera', 'escapa']);
-        git(['commit', '-m', 'enlaces']);
-        escribir('a.txt', 'x\n');
-        await conCandidato(rebanada(['a.txt']), (c) async {
-          expect(
+    test('un enlace absoluto o con .. NO se recrea, y queda declarado',
+        () async {
+      Link('${raiz.path}/afuera').createSync('/etc/passwd');
+      Link('${raiz.path}/escapa').createSync('../../fuera');
+      git(['add', 'afuera', 'escapa']);
+      git(['commit', '-m', 'enlaces']);
+      escribir('a.txt', 'x\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(
             FileSystemEntity.typeSync('${c.root}/afuera', followLinks: false),
-            FileSystemEntityType.notFound,
-          );
-          expect(
+            FileSystemEntityType.notFound);
+        expect(
             FileSystemEntity.typeSync('${c.root}/escapa', followLinks: false),
-            FileSystemEntityType.notFound,
-          );
-          expect(
-            c.noMaterializadas.map((n) => n.ruta).toSet(),
-            {'afuera', 'escapa'},
-            reason: 'una sola conducta: no se recrea, y no se calla',
-          );
-          expect(
-            c.noMaterializadas.every(
-              (n) =>
-                  n.motivo == MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
-            ),
-            isTrue,
-          );
-          return null;
-        });
-      },
-    );
+            FileSystemEntityType.notFound);
+        expect(
+            c.noMaterializadas.map((n) => n.ruta).toSet(), {'afuera', 'escapa'},
+            reason: 'una sola conducta: no se recrea, y no se calla');
+        expect(
+            c.noMaterializadas.every((n) =>
+                n.motivo == MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro),
+            isTrue);
+        return null;
+      });
+    });
 
     test('un enlace cuyo DESTINO no es UTF-8 no se recrea', () async {
       // El destino se decodificaba con reemplazo, así que un enlace con bytes
@@ -458,13 +395,10 @@ void main() {
 
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(
-          FileSystemEntity.typeSync(
-            '${c.root}/enlace-raro',
-            followLinks: false,
-          ),
-          FileSystemEntityType.notFound,
-          reason: 'no se crea un enlace que no es el que el árbol dice',
-        );
+            FileSystemEntity.typeSync('${c.root}/enlace-raro',
+                followLinks: false),
+            FileSystemEntityType.notFound,
+            reason: 'no se crea un enlace que no es el que el árbol dice');
         expect(c.noMaterializadas.map((n) => n.ruta), contains('enlace-raro'));
         return null;
       });
@@ -480,10 +414,8 @@ void main() {
       escribir('a.txt', 'x\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         expect(c.noMaterializadas.map((n) => n.ruta).toList(), ['submod']);
-        expect(
-          c.noMaterializadas.single.motivo,
-          MotivoDeNoMaterializacion.referenciaAOtroRepositorio,
-        );
+        expect(c.noMaterializadas.single.motivo,
+            MotivoDeNoMaterializacion.referenciaAOtroRepositorio);
         expect(Directory('${c.root}/submod').existsSync(), isFalse);
         return null;
       });
@@ -497,10 +429,8 @@ void main() {
       git(['commit', '-m', 'raro']);
       escribir('a.txt', 'x\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
-        expect(
-          File('${c.root}/con\nsalto.txt').readAsStringSync(),
-          'nombre raro\n',
-        );
+        expect(File('${c.root}/con\nsalto.txt').readAsStringSync(),
+            'nombre raro\n');
         return null;
       });
     });
@@ -516,11 +446,8 @@ void main() {
         // **Sin `stat`.** `stat -f %Lp` es sintaxis BSD: pasaba en esta
         // máquina y habría fallado en el runner de CI, que es Ubuntu. El modo
         // lo da la biblioteca estándar, sin depender de qué `stat` haya.
-        expect(
-          File('${c.root}/ejec.sh').statSync().mode & 0x1FF,
-          0x1ED,
-          reason: '0o755',
-        );
+        expect(File('${c.root}/ejec.sh').statSync().mode & 0x1FF, 0x1ED,
+            reason: '0o755');
         return null;
       });
     });
@@ -534,14 +461,11 @@ void main() {
       git(['commit', '-m', 'script']);
       escribir('a.txt', 'x\n');
       final sinChmod = RepositorioGit(
-        directorio: raiz.path,
-        politica: const _TodoEsFuente(),
-        programaChmod: '${raiz.path}/no-existe-chmod',
-      );
-      expect(
-        () => sinChmod.prepareCandidate(rebanada(['a.txt'])),
-        throwsA(anyOf(isA<PromesaIncumplida>(), isA<ProcessException>())),
-      );
+          directorio: raiz.path,
+          politica: const _TodoEsFuente(),
+          programaChmod: '${raiz.path}/no-existe-chmod');
+      expect(() => sinChmod.prepareCandidate(rebanada(['a.txt'])),
+          throwsA(anyOf(isA<PromesaIncumplida>(), isA<ProcessException>())));
     });
   });
 
@@ -562,18 +486,16 @@ void main() {
       });
     });
 
-    test(
-      'el contenido resuelve desde el repositorio real, sin alternates',
-      () async {
-        escribir('sub/hondo.txt', 'anidado v2\n');
-        final c = await repo.prepareCandidate(rebanada(['sub/hondo.txt']));
-        final contenido = c.identity.contentRevision;
-        await aplicar(c);
-        await c.dispose();
-        // Sin `GIT_ALTERNATE_OBJECT_DIRECTORIES`, y con el temporal borrado.
-        expect(git(['cat-file', '-t', contenido]), 'tree');
-      },
-    );
+    test('el contenido resuelve desde el repositorio real, sin alternates',
+        () async {
+      escribir('sub/hondo.txt', 'anidado v2\n');
+      final c = await repo.prepareCandidate(rebanada(['sub/hondo.txt']));
+      final contenido = c.identity.contentRevision;
+      await aplicar(c);
+      await c.dispose();
+      // Sin `GIT_ALTERNATE_OBJECT_DIRECTORIES`, y con el temporal borrado.
+      expect(git(['cat-file', '-t', contenido]), 'tree');
+    });
   });
 
   group('el compare-and-swap', () {
@@ -592,17 +514,11 @@ void main() {
         expect(na.ramaObservada, isNull);
         expect(na.baseEsperada, c.identity.baseRevision);
         expect(na.headObservado, movido);
-        expect(
-          git(['rev-parse', 'HEAD']),
-          movido,
-          reason: 'la rama quedó intacta',
-        );
+        expect(git(['rev-parse', 'HEAD']), movido,
+            reason: 'la rama quedó intacta');
         expect(git(['rev-parse', 'refs/heads/main']), movido);
-        expect(
-          na.revision,
-          isNotEmpty,
-          reason: 'el objeto commit existe y queda inalcanzable: no es daño',
-        );
+        expect(na.revision, isNotEmpty,
+            reason: 'el objeto commit existe y queda inalcanzable: no es daño');
         expect(git(['cat-file', '-t', na.revision]), 'commit');
         return null;
       });
@@ -623,11 +539,8 @@ void main() {
         // exactamente lo que pasaba antes.
         expect(na.revision, isNotEmpty);
         expect(git(['cat-file', '-t', na.revision]), 'commit');
-        expect(
-          git(['rev-parse', 'refs/heads/main']),
-          antes,
-          reason: 'no se mueve una rama que no está puesta',
-        );
+        expect(git(['rev-parse', 'refs/heads/main']), antes,
+            reason: 'no se mueve una rama que no está puesta');
         return null;
       });
     });
@@ -649,29 +562,20 @@ void main() {
       final base = git(['rev-parse', 'HEAD']);
       git(['checkout', '--detach', base]);
       escribir('a.txt', 'x\n');
-      expect(
-        () => repo.prepareCandidate(rebanada(['a.txt'])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+      expect(() => repo.prepareCandidate(rebanada(['a.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
 
     test('un repositorio sin ningún commit', () async {
       final vacio = Directory.systemTemp.createTempSync('vacio_');
       addTearDown(() => vacio.deleteSync(recursive: true));
-      Process.runSync('git', [
-        'init',
-        '--initial-branch=main',
-        '.',
-      ], workingDirectory: vacio.path);
+      Process.runSync('git', ['init', '--initial-branch=main', '.'],
+          workingDirectory: vacio.path);
       File('${vacio.path}/a.txt').writeAsStringSync('x\n');
       final r = RepositorioGit(
-        directorio: vacio.path,
-        politica: const _TodoEsFuente(),
-      );
-      expect(
-        () => r.prepareCandidate(rebanada(['a.txt'])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+          directorio: vacio.path, politica: const _TodoEsFuente());
+      expect(() => r.prepareCandidate(rebanada(['a.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
 
     test('un merge sin resolver', () async {
@@ -682,10 +586,8 @@ void main() {
       escribir('a.txt', 'de main\n');
       git(['commit', '-am', 'main']);
       Process.runSync('git', ['merge', 'rama-b'], workingDirectory: raiz.path);
-      expect(
-        () => repo.prepareCandidate(rebanada(['a.txt'])),
-        throwsA(isA<RebanadaNoAplicable>()),
-      );
+      expect(() => repo.prepareCandidate(rebanada(['a.txt'])),
+          throwsA(isA<RebanadaNoAplicable>()));
     });
 
     test('commit sobre un candidato ya liberado no escribe nada', () async {
@@ -712,16 +614,11 @@ void main() {
       final cabeza = git(['rev-parse', 'HEAD']);
       await conCandidato(rebanada(['a.txt']), (c) async {
         await expectLater(
-          c.createRevision(),
-          throwsA(isA<SecretoEnLaRebanada>()),
-        );
+            c.createRevision(), throwsA(isA<SecretoEnLaRebanada>()));
         return null;
       });
-      expect(
-        objetosDelRepo().difference(antes),
-        isEmpty,
-        reason: 'se niega ANTES de promover: cero objetos nuevos',
-      );
+      expect(objetosDelRepo().difference(antes), isEmpty,
+          reason: 'se niega ANTES de promover: cero objetos nuevos');
       expect(git(['rev-parse', 'HEAD']), cabeza);
     });
 
@@ -747,10 +644,8 @@ void main() {
       git(['add', 'b.txt']);
       git(['commit', '-m', 'x']);
       escribir('b.txt', clave.replaceFirst('EXAMPLE', 'EXAMPLF'));
-      expect(
-        () => repo.apply(rebanada(['b.txt'])),
-        throwsA(isA<SecretoEnLaRebanada>()),
-      );
+      expect(() => repo.apply(rebanada(['b.txt'])),
+          throwsA(isA<SecretoEnLaRebanada>()));
     });
   });
 
@@ -764,16 +659,10 @@ void main() {
       await conCandidato(rebanada(['a.txt']), (c) async {
         final antes = git(['rev-parse', 'HEAD']);
         final revision = await c.createRevision();
-        expect(
-          git(['cat-file', '-t', revision]),
-          'commit',
-          reason: 'el objeto existe y se puede persistir',
-        );
-        expect(
-          git(['rev-parse', 'HEAD']),
-          antes,
-          reason: 'y la rama no se movió',
-        );
+        expect(git(['cat-file', '-t', revision]), 'commit',
+            reason: 'el objeto existe y se puede persistir');
+        expect(git(['rev-parse', 'HEAD']), antes,
+            reason: 'y la rama no se movió');
         expect(await c.applyRevision(), isA<Committed>());
         expect(git(['rev-parse', 'HEAD']), revision);
         return null;
@@ -808,19 +697,16 @@ void main() {
       // que se le sacó una sola capacidad, que es como este repositorio prueba
       // que un guardia sabe fallar.
       final falso = '${raiz.path}/git-sin-reset';
-      File(falso).writeAsStringSync(
-        '#!/bin/sh\n'
-        'for a in "\$@"; do [ "\$a" = reset ] && exit 9; done\n'
-        'exec git "\$@"\n',
-      );
+      File(falso).writeAsStringSync('#!/bin/sh\n'
+          'for a in "\$@"; do [ "\$a" = reset ] && exit 9; done\n'
+          'exec git "\$@"\n');
       Process.runSync('chmod', ['700', falso]);
 
       escribir('a.txt', 'modificado\n');
       final r = RepositorioGit(
-        directorio: raiz.path,
-        politica: const _TodoEsFuente(),
-        programa: falso,
-      );
+          directorio: raiz.path,
+          politica: const _TodoEsFuente(),
+          programa: falso);
       final c = await r.prepareCandidate(rebanada(['a.txt']));
       try {
         await c.createRevision();
@@ -829,11 +715,8 @@ void main() {
         final li = d as LocalInconsistent;
         expect(li.revision, isNotEmpty);
         expect(li.detalle, isNotEmpty);
-        expect(
-          git(['rev-parse', 'HEAD']),
-          li.revision,
-          reason: 'la rama SÍ avanzó: el commit no se deshace',
-        );
+        expect(git(['rev-parse', 'HEAD']), li.revision,
+            reason: 'la rama SÍ avanzó: el commit no se deshace');
       } finally {
         await c.dispose();
       }
@@ -864,28 +747,19 @@ void main() {
       g(['commit', '-m', 'base']);
 
       final r = RepositorioGit(
-        directorio: s256.path,
-        politica: const _TodoEsFuente(),
-      );
+          directorio: s256.path, politica: const _TodoEsFuente());
       File('${s256.path}/sub/hondo.txt').writeAsStringSync('anidado v2\n');
       final c = await r.prepareCandidate(rebanada(['sub/hondo.txt']));
       try {
-        expect(
-          c.identity.contentRevision.length,
-          64,
-          reason: 'la premisa: acá los identificadores son de 64',
-        );
+        expect(c.identity.contentRevision.length, 64,
+            reason: 'la premisa: acá los identificadores son de 64');
         await c.createRevision();
         expect(await c.applyRevision(), isA<Committed>());
         expect(
-          (Process.runSync('git', [
-                'cat-file',
-                'blob',
-                'HEAD:sub/hondo.txt',
-              ], workingDirectory: s256.path).stdout
-              as String),
-          'anidado v2\n',
-        );
+            (Process.runSync('git', ['cat-file', 'blob', 'HEAD:sub/hondo.txt'],
+                    workingDirectory: s256.path)
+                .stdout as String),
+            'anidado v2\n');
       } finally {
         await c.dispose();
       }
@@ -901,23 +775,16 @@ void main() {
       addTearDown(() {
         if (wt.existsSync()) wt.deleteSync(recursive: true);
       });
-      expect(
-        File('${wt.path}/.git').existsSync(),
-        isTrue,
-        reason: 'la premisa: acá .git es un ARCHIVO',
-      );
+      expect(File('${wt.path}/.git').existsSync(), isTrue,
+          reason: 'la premisa: acá .git es un ARCHIVO');
 
-      final desdeWt = RepositorioGit(
-        directorio: wt.path,
-        politica: const _TodoEsFuente(),
-      );
+      final desdeWt =
+          RepositorioGit(directorio: wt.path, politica: const _TodoEsFuente());
       File('${wt.path}/a.txt').writeAsStringSync('desde el worktree\n');
       final c = await desdeWt.prepareCandidate(rebanada(['a.txt']));
       try {
         expect(
-          File('${c.root}/a.txt').readAsStringSync(),
-          'desde el worktree\n',
-        );
+            File('${c.root}/a.txt').readAsStringSync(), 'desde el worktree\n');
         expect(await aplicar(c), isA<Committed>());
       } finally {
         await c.dispose();
@@ -926,29 +793,24 @@ void main() {
   });
 
   group('la premisa de git, no la nuestra', () {
-    test(
-      'check-attr NO informa core.autocrlf: no hay preflight barato',
-      () async {
-        // Si un `git` futuro lo anunciara, esta prueba se pone roja y habilita
-        // saltarse la materialización cuando no hay ninguna conversión. Hoy no
-        // se puede saber sin materializar, y por eso se materializa siempre.
-        git(['config', 'core.autocrlf', 'true']);
-        final salida = git([
-          'check-attr',
-          'text',
-          'eol',
-          'working-tree-encoding',
-          '--',
-          'a.txt',
-        ]);
-        expect(salida, contains('unspecified'));
-        expect(
-          salida.split('\n').every((l) => l.endsWith('unspecified')),
-          isTrue,
-          reason: 'las tres claves sin especificar, con autocrlf activo',
-        );
-      },
-    );
+    test('check-attr NO informa core.autocrlf: no hay preflight barato',
+        () async {
+      // Si un `git` futuro lo anunciara, esta prueba se pone roja y habilita
+      // saltarse la materialización cuando no hay ninguna conversión. Hoy no
+      // se puede saber sin materializar, y por eso se materializa siempre.
+      git(['config', 'core.autocrlf', 'true']);
+      final salida = git([
+        'check-attr',
+        'text',
+        'eol',
+        'working-tree-encoding',
+        '--',
+        'a.txt'
+      ]);
+      expect(salida, contains('unspecified'));
+      expect(salida.split('\n').every((l) => l.endsWith('unspecified')), isTrue,
+          reason: 'las tres claves sin especificar, con autocrlf activo');
+    });
 
     test('checkout-index rompe la igualdad que el plumbing conserva', () async {
       // **El sabotaje de la materialización.** Si alguien reintroduce
@@ -963,22 +825,15 @@ void main() {
 
       final salida = Directory('${raiz.path}/salida');
       salida.createSync();
-      Process.runSync('git', [
-        'checkout-index',
-        '-a',
-        '--prefix=${salida.path}/',
-      ], workingDirectory: raiz.path);
+      Process.runSync(
+          'git', ['checkout-index', '-a', '--prefix=${salida.path}/'],
+          workingDirectory: raiz.path);
       final delObjeto = git(['cat-file', 'blob', 'HEAD:conmarca.txt']);
-      final tras = File(
-        '${salida.path}/conmarca.txt',
-      ).readAsStringSync().trim();
-      expect(
-        tras,
-        isNot(delObjeto),
-        reason:
-            'si esto deja de ser cierto, `checkout-index` volvió a ser '
-            'una opción y hay que revisar la decisión, no el código',
-      );
+      final tras =
+          File('${salida.path}/conmarca.txt').readAsStringSync().trim();
+      expect(tras, isNot(delObjeto),
+          reason: 'si esto deja de ser cierto, `checkout-index` volvió a ser '
+              'una opción y hay que revisar la decisión, no el código');
       expect(utf8.encode(tras), isNotEmpty);
     });
   });

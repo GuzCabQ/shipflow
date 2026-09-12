@@ -19,11 +19,11 @@ class OperationalSurface {
   }) : toolsUsed = List.unmodifiable(toolsUsed);
 
   Map<String, Object?> toJson() => {
-    'toolsUsed': toolsUsed,
-    'inputTokens': inputTokens,
-    'outputTokens': outputTokens,
-    'elapsed': elapsed.inMilliseconds,
-  };
+        'toolsUsed': toolsUsed,
+        'inputTokens': inputTokens,
+        'outputTokens': outputTokens,
+        'elapsed': elapsed.inMilliseconds,
+      };
 
   factory OperationalSurface.fromJson(Map<String, Object?> json) =>
       OperationalSurface(
@@ -52,10 +52,10 @@ class CognitiveSurface {
   }) : decisions = List.unmodifiable(decisions);
 
   Map<String, Object?> toJson() => {
-    'available': available,
-    'decisions': decisions,
-    'planSummary': planSummary,
-  };
+        'available': available,
+        'decisions': decisions,
+        'planSummary': planSummary,
+      };
 
   factory CognitiveSurface.fromJson(Map<String, Object?> json) =>
       CognitiveSurface(
@@ -78,17 +78,16 @@ class ContextualSurface {
   }) : filesInContext = List.unmodifiable(filesInContext);
 
   Map<String, Object?> toJson() => {
-    'revision': revision,
-    'filesInContext': filesInContext,
-    'dirtyWorktree': dirtyWorktree,
-  };
+        'revision': revision,
+        'filesInContext': filesInContext,
+        'dirtyWorktree': dirtyWorktree,
+      };
 
   factory ContextualSurface.fromJson(Map<String, Object?> json) =>
       ContextualSurface(
         revision: json['revision']! as String,
-        filesInContext: List<String>.from(
-          json['filesInContext']! as List<Object?>,
-        ),
+        filesInContext:
+            List<String>.from(json['filesInContext']! as List<Object?>),
         dirtyWorktree: json['dirtyWorktree']! as bool,
       );
 }
@@ -110,26 +109,23 @@ class Trace {
   });
 
   Map<String, Object?> toJson() => {
-    'runId': runId,
-    'startedAt': startedAt.toUtc().toIso8601String(),
-    'operational': operational.toJson(),
-    'cognitive': cognitive.toJson(),
-    'contextual': contextual.toJson(),
-  };
+        'runId': runId,
+        'startedAt': startedAt.toUtc().toIso8601String(),
+        'operational': operational.toJson(),
+        'cognitive': cognitive.toJson(),
+        'contextual': contextual.toJson(),
+      };
 
   factory Trace.fromJson(Map<String, Object?> json) => Trace(
-    runId: json['runId']! as String,
-    startedAt: DateTime.parse(json['startedAt']! as String),
-    operational: OperationalSurface.fromJson(
-      Map<String, Object?>.from(json['operational']! as Map),
-    ),
-    cognitive: CognitiveSurface.fromJson(
-      Map<String, Object?>.from(json['cognitive']! as Map),
-    ),
-    contextual: ContextualSurface.fromJson(
-      Map<String, Object?>.from(json['contextual']! as Map),
-    ),
-  );
+        runId: json['runId']! as String,
+        startedAt: DateTime.parse(json['startedAt']! as String),
+        operational: OperationalSurface.fromJson(
+            Map<String, Object?>.from(json['operational']! as Map)),
+        cognitive: CognitiveSurface.fromJson(
+            Map<String, Object?>.from(json['cognitive']! as Map)),
+        contextual: ContextualSurface.fromJson(
+            Map<String, Object?>.from(json['contextual']! as Map)),
+      );
 }
 
 /// La salida de un sensor **inferencial**. Anota, no bloquea.
@@ -160,18 +156,19 @@ class Finding {
   });
 
   Map<String, Object?> toJson() => {
-    'sensorId': sensorId,
-    'criterionId': criterionId,
-    'file': file,
-    'line': line,
-    'note': note.toJson(),
-  };
+        'sensorId': sensorId,
+        'criterionId': criterionId,
+        'file': file,
+        'line': line,
+        'note': note.toJson(),
+      };
 
   factory Finding.fromJson(Map<String, Object?> json) => Finding(
-    sensorId: json['sensorId']! as String,
-    criterionId: json['criterionId']! as String,
-    file: json['file']! as String,
-    line: json['line'] as int?,
-    note: QuotedText.fromJson(Map<String, Object?>.from(json['note']! as Map)),
-  );
+        sensorId: json['sensorId']! as String,
+        criterionId: json['criterionId']! as String,
+        file: json['file']! as String,
+        line: json['line'] as int?,
+        note: QuotedText.fromJson(
+            Map<String, Object?>.from(json['note']! as Map)),
+      );
 }

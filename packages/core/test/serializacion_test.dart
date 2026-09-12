@@ -39,9 +39,7 @@ List<String> valoresPorDefecto(Object? nodo, [String ruta = '']) {
     return [
       for (final e in nodo.entries)
         ...valoresPorDefecto(
-          e.value,
-          ruta.isEmpty ? '${e.key}' : '$ruta.${e.key}',
-        ),
+            e.value, ruta.isEmpty ? '${e.key}' : '$ruta.${e.key}'),
     ];
   }
   return const [];
@@ -52,10 +50,8 @@ void main() {
 
   final criterio = AcceptanceCriterion(
     id: 'AC-1',
-    statement: QuotedText(
-      'el saldo no puede quedar negativo',
-      source: 'ticket',
-    ),
+    statement:
+        QuotedText('el saldo no puede quedar negativo', source: 'ticket'),
     assertionForm: 'forma-de-aserción-7',
   );
 
@@ -66,7 +62,7 @@ void main() {
     criteria: [criterio],
     sourceMetadata: {
       'campoDelAdapter': 'valor',
-      'anidado': {'a': 1},
+      'anidado': {'a': 1}
     },
   );
 
@@ -137,189 +133,166 @@ void main() {
     prohibitive: true,
   );
 
-  final rebanada = PullRequestSlice(
-    id: 'PR-1',
-    intent: 'por qué existe',
-    files: ['a.txt'],
-  );
+  final rebanada =
+      PullRequestSlice(id: 'PR-1', intent: 'por qué existe', files: ['a.txt']);
 
   final candidato = CandidateIdentity(
-    contentRevision: 'arbol-del-candidato',
-    baseRevision: 'commit-de-base',
-  );
+      contentRevision: 'arbol-del-candidato', baseRevision: 'commit-de-base');
 
   final noMaterializada = RutaNoMaterializada(
-    ruta: 'enlace-que-escapa',
-    motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
-    detalle: 'el destino es absoluto',
-  );
+      ruta: 'enlace-que-escapa',
+      motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
+      detalle: 'el destino es absoluto');
 
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
-        'QuotedText': (cita.toJson(), QuotedText.fromJson),
-        'Witness': (testigo.toJson(), Witness.fromJson),
-        'AcceptanceCriterion': (
-          criterio.toJson(),
-          AcceptanceCriterion.fromJson,
-        ),
-        'WorkItem': (item.toJson(), WorkItem.fromJson),
-        'ChangeClass': (
-          const ChangeClass('clase-opaca').toJson(),
-          ChangeClass.fromJson,
-        ),
-        'Diagnostic': (diagnostico.toJson(), Diagnostic.fromJson),
-        'CandidateIdentity': (candidato.toJson(), CandidateIdentity.fromJson),
-        'RutaNoMaterializada': (
-          noMaterializada.toJson(),
-          RutaNoMaterializada.fromJson,
-        ),
-        'Package': (
-          Package(name: 'p', path: 'packages/p', dependsOn: ['core']).toJson(),
-          Package.fromJson,
-        ),
-        'PullRequestSlice': (rebanada.toJson(), PullRequestSlice.fromJson),
-        'Plan': (
-          Plan(
-            workItemId: 'W-1',
-            files: ['lib/algo.fuente'],
-            tests: ['test/algo_prueba.fuente'],
-            slices: [rebanada],
-          ).toJson(),
-          Plan.fromJson,
-        ),
-        'OperationalSurface': (
-          traza.operational.toJson(),
-          OperationalSurface.fromJson,
-        ),
-        'CognitiveSurface': (
-          traza.cognitive.toJson(),
-          CognitiveSurface.fromJson,
-        ),
-        'ContextualSurface': (
-          traza.contextual.toJson(),
-          ContextualSurface.fromJson,
-        ),
-        'Trace': (traza.toJson(), Trace.fromJson),
-        'Finding': (
-          Finding(
-            sensorId: 'S-1',
-            criterionId: 'C-1',
-            file: 'lib/algo.fuente',
-            line: 9,
-            note: cita,
-          ).toJson(),
-          Finding.fromJson,
-        ),
-        'Rule': (regla.toJson(), Rule.fromJson),
-        'Omission': (omision.toJson(), Omission.fromJson),
-        'Attempt': (intento.toJson(), Attempt.fromJson),
-        'Executed': (
-          Executed(witness: testigo, diagnostics: [diagnostico]).toJson(),
-          Executed.fromJson,
-        ),
-        'Aborted': (Aborted(attempt: intento).toJson(), Aborted.fromJson),
-        // **`Skipped` NO entra acá.** `Skipped` ahora rechaza cualquier sujeto
-        // que el observador haya declarado del stack (invariante nueva, ver la
-        // suite de verificación), así que la única instancia válida de
-        // `notOfStack` trae exclusivamente sujetos ajenos — y esos SIEMPRE traen
-        // `files: 0` y `ofStack: false` por el invariante de `ObservedSubject`.
-        // Ninguna instancia canónica válida puede entonces hacer viajar esos dos
-        // campos con un valor no default, así que este check —que exige
-        // exactamente eso— no se le puede aplicar. Antes esta entrada usaba una
-        // segunda instancia con un sujeto contradictorio (del stack) para
-        // esquivarlo; era el síntoma del hallazgo crítico de la ronda 1,
-        // convertido en dato de prueba. Ver el caso dedicado más abajo, que hace
-        // lo mismo que ya hace `ScopeObservation` con su propio campo forzoso.
-        'Unobservable': (
-          Unobservable(
-            causes: [
-              UnobservedSubject(
-                subject: 'no/existe',
-                cause: 'no existe en el árbol',
-              ),
-            ],
-          ).toJson(),
-          Unobservable.fromJson,
-        ),
-        'Broken': (
-          Broken(
-            component: 'analizador-x',
-            error: 'no se pudo invocar el binario',
-            context: 'paso lib/algo.fuente',
-          ).toJson(),
-          Broken.fromJson,
-        ),
-        'ObservedSubject · del stack': (
+    'QuotedText': (cita.toJson(), QuotedText.fromJson),
+    'Witness': (testigo.toJson(), Witness.fromJson),
+    'AcceptanceCriterion': (criterio.toJson(), AcceptanceCriterion.fromJson),
+    'WorkItem': (item.toJson(), WorkItem.fromJson),
+    'ChangeClass': (
+      const ChangeClass('clase-opaca').toJson(),
+      ChangeClass.fromJson
+    ),
+    'Diagnostic': (diagnostico.toJson(), Diagnostic.fromJson),
+    'CandidateIdentity': (candidato.toJson(), CandidateIdentity.fromJson),
+    'RutaNoMaterializada': (
+      noMaterializada.toJson(),
+      RutaNoMaterializada.fromJson
+    ),
+    'Package': (
+      Package(name: 'p', path: 'packages/p', dependsOn: ['core']).toJson(),
+      Package.fromJson
+    ),
+    'PullRequestSlice': (rebanada.toJson(), PullRequestSlice.fromJson),
+    'Plan': (
+      Plan(
+        workItemId: 'W-1',
+        files: ['lib/algo.fuente'],
+        tests: ['test/algo_prueba.fuente'],
+        slices: [rebanada],
+      ).toJson(),
+      Plan.fromJson
+    ),
+    'OperationalSurface': (
+      traza.operational.toJson(),
+      OperationalSurface.fromJson
+    ),
+    'CognitiveSurface': (traza.cognitive.toJson(), CognitiveSurface.fromJson),
+    'ContextualSurface': (
+      traza.contextual.toJson(),
+      ContextualSurface.fromJson
+    ),
+    'Trace': (traza.toJson(), Trace.fromJson),
+    'Finding': (
+      Finding(
+        sensorId: 'S-1',
+        criterionId: 'C-1',
+        file: 'lib/algo.fuente',
+        line: 9,
+        note: cita,
+      ).toJson(),
+      Finding.fromJson
+    ),
+    'Rule': (regla.toJson(), Rule.fromJson),
+    'Omission': (omision.toJson(), Omission.fromJson),
+    'Attempt': (intento.toJson(), Attempt.fromJson),
+    'Executed': (
+      Executed(witness: testigo, diagnostics: [diagnostico]).toJson(),
+      Executed.fromJson
+    ),
+    'Aborted': (Aborted(attempt: intento).toJson(), Aborted.fromJson),
+    // **`Skipped` NO entra acá.** `Skipped` ahora rechaza cualquier sujeto
+    // que el observador haya declarado del stack (invariante nueva, ver la
+    // suite de verificación), así que la única instancia válida de
+    // `notOfStack` trae exclusivamente sujetos ajenos — y esos SIEMPRE traen
+    // `files: 0` y `ofStack: false` por el invariante de `ObservedSubject`.
+    // Ninguna instancia canónica válida puede entonces hacer viajar esos dos
+    // campos con un valor no default, así que este check —que exige
+    // exactamente eso— no se le puede aplicar. Antes esta entrada usaba una
+    // segunda instancia con un sujeto contradictorio (del stack) para
+    // esquivarlo; era el síntoma del hallazgo crítico de la ronda 1,
+    // convertido en dato de prueba. Ver el caso dedicado más abajo, que hace
+    // lo mismo que ya hace `ScopeObservation` con su propio campo forzoso.
+    'Unobservable': (
+      Unobservable(causes: [
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
+      ]).toJson(),
+      Unobservable.fromJson
+    ),
+    'Broken': (
+      Broken(
+        component: 'analizador-x',
+        error: 'no se pudo invocar el binario',
+        context: 'paso lib/algo.fuente',
+      ).toJson(),
+      Broken.fromJson
+    ),
+    'ObservedSubject · del stack': (
+      ObservedSubject(subject: 'lib/codigo', ofStack: true, files: 2).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'ObservedSubject · ajeno al stack': (
+      ObservedSubject(
+        subject: 'lib/ajeno',
+        ofStack: false,
+        files: 0,
+        reason: 'está fuera del stack',
+      ).toJson(),
+      ObservedSubject.fromJson
+    ),
+    'UnobservedSubject': (
+      UnobservedSubject(
+        subject: 'no/existe',
+        cause: 'no existe en el árbol',
+      ).toJson(),
+      UnobservedSubject.fromJson
+    ),
+    // **Lo único que ve un `Verifier`.** Cada campo con un valor
+    // distinguible: dos sujetos con nombres distintos entre sí y un conteo
+    // que no coincide con la cantidad de sujetos, para que una serialización
+    // que confunda «cuántos sujetos» con «cuántos archivos» no cuadre.
+    'VerificationScope': (
+      VerificationScope(
+        subjects: const ['lib', 'test'],
+        files: 7,
+      ).toJson(),
+      VerificationScope.fromJson
+    ),
+    'ScopeObservation · con sujetos del stack': (
+      ScopeObservation(
+        requested: const ['lib', 'no/existe'],
+        observed: [
+          ObservedSubject(subject: 'lib', ofStack: true, files: 2),
+        ],
+        unobserved: [
+          UnobservedSubject(
+              subject: 'no/existe', cause: 'no existe en el árbol'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
+    ),
+    'ScopeObservation · con sujetos ajenos': (
+      ScopeObservation(
+        requested: const ['lib', 'LEEME.md'],
+        observed: [
           ObservedSubject(
-            subject: 'lib/codigo',
-            ofStack: true,
-            files: 2,
-          ).toJson(),
-          ObservedSubject.fromJson,
-        ),
-        'ObservedSubject · ajeno al stack': (
-          ObservedSubject(
-            subject: 'lib/ajeno',
+            subject: 'lib',
             ofStack: false,
             files: 0,
             reason: 'está fuera del stack',
-          ).toJson(),
-          ObservedSubject.fromJson,
-        ),
-        'UnobservedSubject': (
-          UnobservedSubject(
-            subject: 'no/existe',
-            cause: 'no existe en el árbol',
-          ).toJson(),
-          UnobservedSubject.fromJson,
-        ),
-        // **Lo único que ve un `Verifier`.** Cada campo con un valor
-        // distinguible: dos sujetos con nombres distintos entre sí y un conteo
-        // que no coincide con la cantidad de sujetos, para que una serialización
-        // que confunda «cuántos sujetos» con «cuántos archivos» no cuadre.
-        'VerificationScope': (
-          VerificationScope(subjects: const ['lib', 'test'], files: 7).toJson(),
-          VerificationScope.fromJson,
-        ),
-        'ScopeObservation · con sujetos del stack': (
-          ScopeObservation(
-            requested: const ['lib', 'no/existe'],
-            observed: [
-              ObservedSubject(subject: 'lib', ofStack: true, files: 2),
-            ],
-            unobserved: [
-              UnobservedSubject(
-                subject: 'no/existe',
-                cause: 'no existe en el árbol',
-              ),
-            ],
-            observedAt: DateTime.utc(2026, 9, 5),
-          ).toJson(),
-          ScopeObservation.fromJson,
-        ),
-        'ScopeObservation · con sujetos ajenos': (
-          ScopeObservation(
-            requested: const ['lib', 'LEEME.md'],
-            observed: [
-              ObservedSubject(
-                subject: 'lib',
-                ofStack: false,
-                files: 0,
-                reason: 'está fuera del stack',
-              ),
-            ],
-            unobserved: [
-              UnobservedSubject(
-                subject: 'LEEME.md',
-                cause: 'no es código fuente',
-              ),
-            ],
-            observedAt: DateTime.utc(2026, 9, 5),
-          ).toJson(),
-          ScopeObservation.fromJson,
-        ),
-      };
+          ),
+        ],
+        unobserved: [
+          UnobservedSubject(subject: 'LEEME.md', cause: 'no es código fuente'),
+        ],
+        observedAt: DateTime.utc(2026, 9, 5),
+      ).toJson(),
+      ScopeObservation.fromJson
+    ),
+  };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
   /// todos con valor, así que la precondición se cumple **sobre el conjunto**
@@ -337,13 +310,9 @@ void main() {
       final clase = e.key.split(' · ').first;
       if (excluyentes.contains(clase)) continue;
       test(e.key, () {
-        expect(
-          valoresPorDefecto(e.value.$1),
-          isEmpty,
-          reason:
-              'estos campos salen con su valor por defecto, así que no '
-              'distinguen «viajó» de «se perdió»',
-        );
+        expect(valoresPorDefecto(e.value.$1), isEmpty,
+            reason: 'estos campos salen con su valor por defecto, así que no '
+                'distinguen «viajó» de «se perdió»');
       });
     }
 
@@ -353,26 +322,16 @@ void main() {
           for (final e in canonicas.entries)
             if (e.key.split(' · ').first == clase) e.value.$1,
         ];
-        expect(
-          instancias,
-          hasLength(greaterThan(1)),
-          reason:
-              'una clase con campos excluyentes necesita más de una '
-              'instancia canónica, o la precondición no se puede cumplir',
-        );
+        expect(instancias, hasLength(greaterThan(1)),
+            reason: 'una clase con campos excluyentes necesita más de una '
+                'instancia canónica, o la precondición no se puede cumplir');
         final enDefectoEnTodas = valoresPorDefecto(instancias.first)
-            .where(
-              (ruta) =>
-                  instancias.every((i) => valoresPorDefecto(i).contains(ruta)),
-            )
+            .where((ruta) =>
+                instancias.every((i) => valoresPorDefecto(i).contains(ruta)))
             .toList();
-        expect(
-          enDefectoEnTodas,
-          isEmpty,
-          reason:
-              'estos campos salen con su valor por defecto en TODAS las '
-              'instancias, así que no distinguen «viajó» de «se perdió»',
-        );
+        expect(enDefectoEnTodas, isEmpty,
+            reason: 'estos campos salen con su valor por defecto en TODAS las '
+                'instancias, así que no distinguen «viajó» de «se perdió»');
       });
     }
   });
@@ -383,19 +342,15 @@ void main() {
         final (original, reconstruir) = e.value;
         final texto = jsonEncode(original);
         final vuelto = reconstruir(jsonDecode(texto) as Map<String, Object?>);
-        expect(
-          jsonEncode((vuelto as dynamic).toJson()),
-          equals(texto),
-          reason: 'algún campo de ${e.key} no sobrevivió el viaje',
-        );
+        expect(jsonEncode((vuelto as dynamic).toJson()), equals(texto),
+            reason: 'algún campo de ${e.key} no sobrevivió el viaje');
       });
     }
   });
 
   test('la escotilla de metadatos transporta sin interpretar (D-015)', () {
     final ida = WorkItem.fromJson(
-      jsonDecode(jsonEncode(item.toJson())) as Map<String, Object?>,
-    );
+        jsonDecode(jsonEncode(item.toJson())) as Map<String, Object?>);
     expect(ida.sourceMetadata['anidado'], equals({'a': 1}));
   });
 
@@ -409,7 +364,7 @@ void main() {
       requested: const ['lib', 'no/existe'],
       observed: [ObservedSubject(subject: 'lib', ofStack: true, files: 3)],
       unobserved: [
-        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol'),
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
       ],
       observedAt: DateTime.utc(2026, 9, 5),
     );
@@ -432,22 +387,12 @@ void main() {
     // aplastado. Se excluyen de la comprobación de vacíos por la misma razón
     // que arriba excluye `reason`, y el round-trip se verifica a mano en vez
     // de por la lista `canonicas`.
-    final s = Skipped(
-      notOfStack: [
-        ObservedSubject(
-          subject: 'lib/ajeno-a',
-          ofStack: false,
-          files: 0,
-          reason: 'motivo a',
-        ),
-        ObservedSubject(
-          subject: 'lib/ajeno-b',
-          ofStack: false,
-          files: 0,
-          reason: 'motivo b',
-        ),
-      ],
-    );
+    final s = Skipped(notOfStack: [
+      ObservedSubject(
+          subject: 'lib/ajeno-a', ofStack: false, files: 0, reason: 'motivo a'),
+      ObservedSubject(
+          subject: 'lib/ajeno-b', ofStack: false, files: 0, reason: 'motivo b'),
+    ]);
     final json = s.toJson();
     for (final e in json['notOfStack']! as List) {
       (e as Map)

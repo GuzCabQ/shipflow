@@ -60,26 +60,21 @@ void main() {
     expect(o.unobserved.single.cause, contains('no existe'));
   });
 
-  test(
-    'un directorio sin permisos es inobservable',
-    () async {
-      final cerrado = Directory('${raiz.path}/cerrado')..createSync();
-      File('${cerrado.path}/x.dart').writeAsStringSync('void main() {}\n');
-      Process.runSync('chmod', ['000', cerrado.path]);
-      addTearDown(() => Process.runSync('chmod', ['700', cerrado.path]));
-      final o = await obs.observe(['cerrado']);
-      expect(o.unobserved.single.cause, contains('no se pudo mirar'));
-    },
-    onPlatform: const {'windows': Skip('los permisos POSIX no aplican')},
-  );
+  test('un directorio sin permisos es inobservable', () async {
+    final cerrado = Directory('${raiz.path}/cerrado')..createSync();
+    File('${cerrado.path}/x.dart').writeAsStringSync('void main() {}\n');
+    Process.runSync('chmod', ['000', cerrado.path]);
+    addTearDown(() => Process.runSync('chmod', ['700', cerrado.path]));
+    final o = await obs.observe(['cerrado']);
+    expect(o.unobserved.single.cause, contains('no se pudo mirar'));
+  }, onPlatform: const {'windows': Skip('los permisos POSIX no aplican')});
 
   test('lo que cuelga de una carpeta oculta no se cuenta', () async {
     // Está medido: la herramienta del stack salta los componentes ocultos al
     // recorrer. Contarlos haría que la reconciliación no cerrara nunca.
     Directory('${raiz.path}/lib/.oculto').createSync();
-    File(
-      '${raiz.path}/lib/.oculto/c.dart',
-    ).writeAsStringSync('void main() {}\n');
+    File('${raiz.path}/lib/.oculto/c.dart')
+        .writeAsStringSync('void main() {}\n');
     final o = await obs.observe(['lib']);
     expect(unico(o).files, 1);
   });
@@ -93,16 +88,14 @@ void main() {
     expect(o.usable(), ['lib']);
   });
 
-  test(
-    'el sujeto vuelve TAL COMO SE PIDIÓ, aunque haya que canonizarlo',
-    () async {
-      // El observador canoniza para decidir el hecho; si además renombrara el
-      // sujeto, la partición de `core` no cerraría.
-      final o = await obs.observe(['./lib']);
-      expect(o.observed.single.subject, './lib');
-      expect(o.observed.single.ofStack, isTrue);
-    },
-  );
+  test('el sujeto vuelve TAL COMO SE PIDIÓ, aunque haya que canonizarlo',
+      () async {
+    // El observador canoniza para decidir el hecho; si además renombrara el
+    // sujeto, la partición de `core` no cerraría.
+    final o = await obs.observe(['./lib']);
+    expect(o.observed.single.subject, './lib');
+    expect(o.observed.single.ofStack, isTrue);
+  });
 
   test('un alcance vacío da una observación vacía, no un error', () async {
     final o = await obs.observe(const []);

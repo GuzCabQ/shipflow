@@ -88,12 +88,12 @@ class Nodo {
   Nodo(this.id, this.tipo, this.aristas);
 
   Map<String, Object?> toJson() => {
-    'id': id,
-    'tipo': tipo,
-    'saltos': saltos,
-    'aristas': [for (final a in aristas) a.toJson()],
-    'citado_por': (citadoPor.toList()..sort()),
-  };
+        'id': id,
+        'tipo': tipo,
+        'saltos': saltos,
+        'aristas': [for (final a in aristas) a.toJson()],
+        'citado_por': (citadoPor.toList()..sort()),
+      };
 }
 
 String _normalizar(String p) => p.replaceAll(r'\', '/');
@@ -132,9 +132,8 @@ String resolverImport(String uri, String archivoRel, Set<String> internos) {
 }
 
 void main(List<String> args) {
-  final raiz = Directory(
-    File.fromUri(Platform.script).parent.parent.parent.parent.path,
-  );
+  final raiz =
+      Directory(File.fromUri(Platform.script).parent.parent.parent.parent.path);
   final salida = File('${raiz.path}/grafo.jsonl');
 
   // --- meta · la regla que este generador aplica sigue en el registro ----
@@ -147,11 +146,9 @@ void main(List<String> args) {
     stderr.writeln('grafo: no encuentro arquitectura.json');
     exit(2);
   }
-  final regla =
-      ((jsonDecode(registro.readAsStringSync())
-                  as Map<String, Object?>)['reglas']
-              as Map<String, Object?>)['grafo-derivado']
-          as Map<String, Object?>?;
+  final regla = ((jsonDecode(registro.readAsStringSync())
+          as Map<String, Object?>)['reglas']
+      as Map<String, Object?>)['grafo-derivado'] as Map<String, Object?>?;
   final malRegistro = <String>[
     if (regla == null)
       'arquitectura.json: falta la regla «grafo-derivado». Un control que '
@@ -190,10 +187,8 @@ void main(List<String> args) {
   }
   todos.sort();
   if (todos.isEmpty) {
-    stderr.writeln(
-      'grafo: no encontré ningún archivo. Un grafo vacío se lee '
-      'igual que un proyecto limpio, así que esto falla.',
-    );
+    stderr.writeln('grafo: no encontré ningún archivo. Un grafo vacío se lee '
+        'igual que un proyecto limpio, así que esto falla.');
     exit(1);
   }
   final internos = todos.toSet();
@@ -223,10 +218,8 @@ void main(List<String> args) {
       );
       if (resultado.errors.isNotEmpty) {
         final d = resultado.errors.first;
-        ilegibles.add(
-          '$rel:${d.offset}: no pude leer el archivo — '
-          '${d.message} (${resultado.errors.length} error(es) de sintaxis)',
-        );
+        ilegibles.add('$rel:${d.offset}: no pude leer el archivo — '
+            '${d.message} (${resultado.errors.length} error(es) de sintaxis)');
         continue;
       }
       final unidad = resultado.unit;
@@ -255,9 +248,8 @@ void main(List<String> args) {
 
   if (ilegibles.isNotEmpty) {
     stderr.writeln(
-      'grafo: FALLA — no pude leer ${ilegibles.length} archivo(s). '
-      'Un nodo que falta hace el grafo más chico sin que nadie lo note:\n',
-    );
+        'grafo: FALLA — no pude leer ${ilegibles.length} archivo(s). '
+        'Un nodo que falta hace el grafo más chico sin que nadie lo note:\n');
     for (final i in ilegibles) {
       stderr.writeln('  $i');
     }
@@ -265,10 +257,9 @@ void main(List<String> args) {
   }
   // Atestación: cuántos archivos se miraron, contra cuántos hay.
   if (nodos.length != todos.length) {
-    stderr.writeln(
-      'grafo: ${todos.length} archivos candidatos y ${nodos.length} '
-      'nodos. Alguno se perdió en silencio.',
-    );
+    stderr
+        .writeln('grafo: ${todos.length} archivos candidatos y ${nodos.length} '
+            'nodos. Alguno se perdió en silencio.');
     exit(1);
   }
 
@@ -280,7 +271,7 @@ void main(List<String> args) {
   }
   final cola = <String>[
     for (final i in todos)
-      if (esIndice(i)) i,
+      if (esIndice(i)) i
   ];
   for (final i in cola) {
     nodos[i]!.saltos = 0;
@@ -344,10 +335,8 @@ void main(List<String> args) {
 
   if (args.contains('--escribir')) {
     salida.writeAsStringSync(texto);
-    stdout.writeln(
-      'grafo: escrito — ${nodos.length} nodos, '
-      '${nodos.values.fold<int>(0, (s, n) => s + n.aristas.length)} aristas.',
-    );
+    stdout.writeln('grafo: escrito — ${nodos.length} nodos, '
+        '${nodos.values.fold<int>(0, (s, n) => s + n.aristas.length)} aristas.');
     return;
   }
 
@@ -365,23 +354,17 @@ void main(List<String> args) {
       final x = i < a.length ? a[i] : '(no está)';
       final y = i < b.length ? b[i] : '(no está)';
       if (x != y && mostradas++ < 5) {
-        stderr.writeln(
-          '  línea ${i + 1}\n    commiteado: '
-          '${x.length > 140 ? '${x.substring(0, 140)}…' : x}\n'
-          '    derivado:   ${y.length > 140 ? '${y.substring(0, 140)}…' : y}',
-        );
+        stderr.writeln('  línea ${i + 1}\n    commiteado: '
+            '${x.length > 140 ? '${x.substring(0, 140)}…' : x}\n'
+            '    derivado:   ${y.length > 140 ? '${y.substring(0, 140)}…' : y}');
       }
     }
-    stderr.writeln(
-      '\n  Regeneralo con `dart run bin/grafo.dart --escribir` '
-      'desde tool/analisis. No lo edites a mano: se deriva, no se mantiene.',
-    );
+    stderr.writeln('\n  Regeneralo con `dart run bin/grafo.dart --escribir` '
+        'desde tool/analisis. No lo edites a mano: se deriva, no se mantiene.');
     exit(1);
   }
-  stdout.writeln(
-    'grafo: ok — ${nodos.length} nodos y '
-    '${nodos.values.fold<int>(0, (s, n) => s + n.aristas.length)} aristas, '
-    'derivados del árbol y coincidentes con lo commiteado '
-    '($vistos archivos mirados).',
-  );
+  stdout.writeln('grafo: ok — ${nodos.length} nodos y '
+      '${nodos.values.fold<int>(0, (s, n) => s + n.aristas.length)} aristas, '
+      'derivados del árbol y coincidentes con lo commiteado '
+      '($vistos archivos mirados).');
 }

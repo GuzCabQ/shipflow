@@ -31,60 +31,48 @@ class ObservedSubject {
   }) {
     if (subject.trim().isEmpty) {
       throw ArgumentError.value(
-        subject,
-        'subject',
-        'Un sujeto en blanco no nombra nada',
-      );
+          subject, 'subject', 'Un sujeto en blanco no nombra nada');
     }
     if (files < 0) {
       throw ArgumentError.value(
-        files,
-        'files',
-        'Un conteo negativo no significa nada',
-      );
+          files, 'files', 'Un conteo negativo no significa nada');
     }
     if (ofStack) {
       if (files < 1) {
         throw ArgumentError.value(
-          files,
-          'files',
-          'Un sujeto del stack con cero archivos afirma dos cosas '
-              'incompatibles. Si no hay archivos, no es del stack',
-        );
+            files,
+            'files',
+            'Un sujeto del stack con cero archivos afirma dos cosas '
+                'incompatibles. Si no hay archivos, no es del stack');
       }
       if (reason != null) {
         throw ArgumentError.value(
-          reason,
-          'reason',
-          'El motivo explica por qué un sujeto NO es del stack. Uno que sí '
-              'lo es no tiene qué explicar',
-        );
+            reason,
+            'reason',
+            'El motivo explica por qué un sujeto NO es del stack. Uno que sí '
+                'lo es no tiene qué explicar');
       }
     } else {
       if (files != 0) {
-        throw ArgumentError.value(
-          files,
-          'files',
-          'Un sujeto ajeno al stack no aporta archivos de fuente',
-        );
+        throw ArgumentError.value(files, 'files',
+            'Un sujeto ajeno al stack no aporta archivos de fuente');
       }
       if (reason == null || reason!.trim().isEmpty) {
         throw ArgumentError.value(
-          reason,
-          'reason',
-          'Un sujeto que se descarta sin decir por qué es un descarte '
-              'silencioso, y el corolario 1 de ADR-011 lo prohíbe',
-        );
+            reason,
+            'reason',
+            'Un sujeto que se descarta sin decir por qué es un descarte '
+                'silencioso, y el corolario 1 de ADR-011 lo prohíbe');
       }
     }
   }
 
   Map<String, Object?> toJson() => {
-    'subject': subject,
-    'ofStack': ofStack,
-    'files': files,
-    'reason': reason,
-  };
+        'subject': subject,
+        'ofStack': ofStack,
+        'files': files,
+        'reason': reason
+      };
 
   factory ObservedSubject.fromJson(Map<String, Object?> json) =>
       ObservedSubject(
@@ -106,17 +94,11 @@ class UnobservedSubject {
   UnobservedSubject({required this.subject, required this.cause}) {
     if (subject.trim().isEmpty) {
       throw ArgumentError.value(
-        subject,
-        'subject',
-        'Un sujeto en blanco no nombra nada',
-      );
+          subject, 'subject', 'Un sujeto en blanco no nombra nada');
     }
     if (cause.trim().isEmpty) {
-      throw ArgumentError.value(
-        cause,
-        'cause',
-        'Sin causa, «no pude mirar» es indistinguible de «no miré»',
-      );
+      throw ArgumentError.value(cause, 'cause',
+          'Sin causa, «no pude mirar» es indistinguible de «no miré»');
     }
   }
 
@@ -143,9 +125,9 @@ class ScopeObservation {
     required List<ObservedSubject> observed,
     required List<UnobservedSubject> unobserved,
     required this.observedAt,
-  }) : requested = List.unmodifiable(requested),
-       observed = List.unmodifiable(observed),
-       unobserved = List.unmodifiable(unobserved) {
+  })  : requested = List.unmodifiable(requested),
+        observed = List.unmodifiable(observed),
+        unobserved = List.unmodifiable(unobserved) {
     final vistos = <String>[
       for (final o in this.observed) o.subject,
       for (final u in this.unobserved) u.subject,
@@ -153,54 +135,48 @@ class ScopeObservation {
     final unicos = vistos.toSet();
     if (unicos.length != vistos.length) {
       throw ArgumentError.value(
-        vistos,
-        'observed/unobserved',
-        'Hay un sujeto clasificado dos veces. Un sujeto se pudo mirar o no '
-            'se pudo, y no las dos cosas',
-      );
+          vistos,
+          'observed/unobserved',
+          'Hay un sujeto clasificado dos veces. Un sujeto se pudo mirar o no '
+              'se pudo, y no las dos cosas');
     }
     final pedidos = this.requested.toSet();
     if (pedidos.length != this.requested.length) {
-      throw ArgumentError.value(
-        requested,
-        'requested',
-        'Hay un sujeto pedido dos veces. La partición no tendría denominador',
-      );
+      throw ArgumentError.value(requested, 'requested',
+          'Hay un sujeto pedido dos veces. La partición no tendría denominador');
     }
     final faltan = pedidos.difference(unicos);
     if (faltan.isNotEmpty) {
       throw ArgumentError.value(
-        faltan.toList(),
-        'observed/unobserved',
-        'Estos sujetos se pidieron y no se clasificaron. Un sujeto que '
-            'desaparece acá no lo ve ninguna guardia posterior, y la corrida '
-            'puede salir verde sobre algo que nadie miró',
-      );
+          faltan.toList(),
+          'observed/unobserved',
+          'Estos sujetos se pidieron y no se clasificaron. Un sujeto que '
+              'desaparece acá no lo ve ninguna guardia posterior, y la corrida '
+              'puede salir verde sobre algo que nadie miró');
     }
     final sobran = unicos.difference(pedidos);
     if (sobran.isNotEmpty) {
       throw ArgumentError.value(
-        sobran.toList(),
-        'observed/unobserved',
-        'Estos sujetos se clasificaron y no se pidieron. La identidad es la '
-            'cadena tal como se pidió: si el observador canoniza, no puede '
-            'renombrar lo que devuelve',
-      );
+          sobran.toList(),
+          'observed/unobserved',
+          'Estos sujetos se clasificaron y no se pidieron. La identidad es la '
+              'cadena tal como se pidió: si el observador canoniza, no puede '
+              'renombrar lo que devuelve');
     }
   }
 
   /// Los sujetos sobre los que tiene sentido invocar algo.
   List<String> usable() => List.unmodifiable([
-    for (final o in observed)
-      if (o.ofStack) o.subject,
-  ]);
+        for (final o in observed)
+          if (o.ofStack) o.subject
+      ]);
 
   Map<String, Object?> toJson() => {
-    'requested': requested,
-    'observed': [for (final o in observed) o.toJson()],
-    'unobserved': [for (final u in unobserved) u.toJson()],
-    'observedAt': observedAt.toUtc().toIso8601String(),
-  };
+        'requested': requested,
+        'observed': [for (final o in observed) o.toJson()],
+        'unobserved': [for (final u in unobserved) u.toJson()],
+        'observedAt': observedAt.toUtc().toIso8601String(),
+      };
 
   factory ScopeObservation.fromJson(Map<String, Object?> json) =>
       ScopeObservation(
@@ -253,37 +229,29 @@ class VerificationScope {
   final int files;
 
   VerificationScope({required List<String> subjects, required this.files})
-    : subjects = List.unmodifiable(subjects) {
+      : subjects = List.unmodifiable(subjects) {
     if (this.subjects.isEmpty) {
       throw ArgumentError.value(
-        subjects,
-        'subjects',
-        'Un alcance de verificación no puede estar vacío. Verificar nada no '
-            'es ni verde ni no concluyente: es precondición violada de '
-            'quien llama',
-      );
+          subjects,
+          'subjects',
+          'Un alcance de verificación no puede estar vacío. Verificar nada no '
+              'es ni verde ni no concluyente: es precondición violada de '
+              'quien llama');
     }
     if (this.subjects.any((s) => s.trim().isEmpty)) {
-      throw ArgumentError.value(
-        subjects,
-        'subjects',
-        'Hay un sujeto en blanco. Un sujeto en blanco no nombra nada',
-      );
+      throw ArgumentError.value(subjects, 'subjects',
+          'Hay un sujeto en blanco. Un sujeto en blanco no nombra nada');
     }
     if (this.subjects.toSet().length != this.subjects.length) {
       throw ArgumentError.value(
-        subjects,
-        'subjects',
-        'Hay un sujeto repetido. El libro de obligaciones cuenta por par '
-            'paso-sujeto: un repetido pediría cuenta dos veces de lo mismo',
-      );
+          subjects,
+          'subjects',
+          'Hay un sujeto repetido. El libro de obligaciones cuenta por par '
+              'paso-sujeto: un repetido pediría cuenta dos veces de lo mismo');
     }
     if (files < 0) {
       throw ArgumentError.value(
-        files,
-        'files',
-        'No se pueden haber contado archivos negativos',
-      );
+          files, 'files', 'No se pueden haber contado archivos negativos');
     }
     // **Cada sujeto utilizable aporta uno como mínimo.** No es una regla
     // nueva: es la de [ObservedSubject] llegando hasta acá. Un sujeto solo
@@ -298,12 +266,11 @@ class VerificationScope {
     // dos incumple lo mismo y pasaría. El piso es la cantidad de sujetos.
     if (files < this.subjects.length) {
       throw ArgumentError.value(
-        files,
-        'files',
-        'Hay ${this.subjects.length} sujeto(s) utilizable(s) y solo $files '
-            'archivo(s) contado(s). Un sujeto del stack tiene al menos uno: '
-            'si no tiene ninguno, no es del stack y no debería estar acá',
-      );
+          files,
+          'files',
+          'Hay ${this.subjects.length} sujeto(s) utilizable(s) y solo $files '
+              'archivo(s) contado(s). Un sujeto del stack tiene al menos uno: '
+              'si no tiene ninguno, no es del stack y no debería estar acá');
     }
   }
 

@@ -15,55 +15,44 @@ Rule regla({
   List<String> knownEvasions = const [],
   String? alternative,
   bool prohibitive = false,
-}) => Rule(
-  id: 'R-1',
-  statement: 'enunciado',
-  origin: RuleOrigin.derivada,
-  loadLevel: LoadLevel.bajoDemanda,
-  signalType: signalType,
-  severity: severity,
-  layer: layer,
-  knownEvasions: knownEvasions,
-  alternative: alternative,
-  prohibitive: prohibitive,
-);
+}) =>
+    Rule(
+      id: 'R-1',
+      statement: 'enunciado',
+      origin: RuleOrigin.derivada,
+      loadLevel: LoadLevel.bajoDemanda,
+      signalType: signalType,
+      severity: severity,
+      layer: layer,
+      knownEvasions: knownEvasions,
+      alternative: alternative,
+      prohibitive: prohibitive,
+    );
 
-Matcher rechazaPor(String invariante) => throwsA(
-  isA<RuleNotInstallable>().having(
-    (e) => e.invariant,
-    'invariante',
-    invariante,
-  ),
-);
+Matcher rechazaPor(String invariante) => throwsA(isA<RuleNotInstallable>()
+    .having((e) => e.invariant, 'invariante', invariante));
 
 void main() {
   test('INV-11 · una prohibición sin alternativa no se instala', () {
     expect(() => regla(prohibitive: true), rechazaPor('INV-11'));
+    expect(() => regla(prohibitive: true, alternative: '   '),
+        rechazaPor('INV-11'));
     expect(
-      () => regla(prohibitive: true, alternative: '   '),
-      rechazaPor('INV-11'),
-    );
-    expect(
-      regla(prohibitive: true, alternative: 'hacé esto').prohibitive,
-      isTrue,
-    );
+        regla(prohibitive: true, alternative: 'hacé esto').prohibitive, isTrue);
   });
 
   test('INV-8 · se bloquea solo si se puede decir qué hacer', () {
     expect(() => regla(severity: Severity.bloquea), rechazaPor('INV-8'));
-    expect(
-      regla(severity: Severity.bloquea, alternative: 'hacé esto').severity,
-      equals(Severity.bloquea),
-    );
+    expect(regla(severity: Severity.bloquea, alternative: 'hacé esto').severity,
+        equals(Severity.bloquea));
   });
 
   test('INV-4 · un control inferencial nunca bloquea', () {
     expect(
       () => regla(
-        signalType: SignalType.inferencial,
-        severity: Severity.bloquea,
-        alternative: 'hacé esto',
-      ),
+          signalType: SignalType.inferencial,
+          severity: Severity.bloquea,
+          alternative: 'hacé esto'),
       rechazaPor('INV-4'),
     );
   });
@@ -71,22 +60,18 @@ void main() {
   test('INV-3 · ningún gancho se instala sin sus evasiones declaradas', () {
     expect(() => regla(layer: ControlLayer.ganchos), rechazaPor('INV-3'));
     expect(
-      regla(
-        layer: ControlLayer.ganchos,
-        knownEvasions: ['se saltea así'],
-      ).layer,
-      equals(ControlLayer.ganchos),
-    );
+        regla(layer: ControlLayer.ganchos, knownEvasions: ['se saltea así'])
+            .layer,
+        equals(ControlLayer.ganchos));
   });
 
   test('INV-10 · lo que bloquea no se funda en la capa de ganchos', () {
     expect(
       () => regla(
-        layer: ControlLayer.ganchos,
-        knownEvasions: ['se saltea así'],
-        severity: Severity.bloquea,
-        alternative: 'hacé esto',
-      ),
+          layer: ControlLayer.ganchos,
+          knownEvasions: ['se saltea así'],
+          severity: Severity.bloquea,
+          alternative: 'hacé esto'),
       rechazaPor('INV-10'),
     );
   });
@@ -95,27 +80,21 @@ void main() {
     // Ocupaba lugar en la lista y hacía que `isEmpty` diera falso, así que el
     // gancho se instalaba «con evasiones declaradas» sin declarar ninguna.
     expect(
-      () => regla(layer: ControlLayer.ganchos, knownEvasions: const ['   ']),
-      rechazaPor('INV-3'),
-    );
+        () => regla(layer: ControlLayer.ganchos, knownEvasions: const ['   ']),
+        rechazaPor('INV-3'));
     expect(
-      () => regla(
-        layer: ControlLayer.ganchos,
-        knownEvasions: const ['se saltea así', ''],
-      ),
-      rechazaPor('INV-3'),
-    );
+        () => regla(
+            layer: ControlLayer.ganchos,
+            knownEvasions: const ['se saltea así', '']),
+        rechazaPor('INV-3'));
   });
 
   test('las evasiones no se pueden vaciar después de construir la regla', () {
     final evasiones = ['se saltea así'];
     final r = regla(layer: ControlLayer.ganchos, knownEvasions: evasiones);
     evasiones.clear();
-    expect(
-      r.knownEvasions,
-      hasLength(1),
-      reason: 'la regla copió su lista; el invariante es del tipo',
-    );
+    expect(r.knownEvasions, hasLength(1),
+        reason: 'la regla copió su lista; el invariante es del tipo');
     expect(() => r.knownEvasions.add('otra'), throwsUnsupportedError);
   });
 

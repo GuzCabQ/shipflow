@@ -88,46 +88,42 @@ Future<int> ejecutar(
       g = interpretarGlobales(args);
     } on UsoInvalido catch (e) {
       return _emitir(
-        imp,
-        'shipflow',
-        Desenlace(
-          codigo: Codigo.errorDeUso,
-          verdict: null,
-          humano: 'shipflow: ${e.reason}',
-          queHacer: e.queHacer,
-          datos: {'error': e.reason},
-        ),
-      );
+          imp,
+          'shipflow',
+          Desenlace(
+            codigo: Codigo.errorDeUso,
+            verdict: null,
+            humano: 'shipflow: ${e.reason}',
+            queHacer: e.queHacer,
+            datos: {'error': e.reason},
+          ));
     }
 
     // La ayuda gana sobre `--quiet`: se pidió, y callarla es no hacer lo que
     // se pidió. Por eso se emite con una impresora que no silencia.
     if (g.ayuda && g.comando == null) {
       return _emitir(
-        Impresora(salida: salida, error: error, json: g.json),
-        'shipflow',
-        const Desenlace(
-          codigo: Codigo.exito,
-          verdict: 'ok',
-          humano: _ayuda,
-          datos: {'help': _ayuda},
-        ),
-      );
+          Impresora(salida: salida, error: error, json: g.json),
+          'shipflow',
+          const Desenlace(
+              codigo: Codigo.exito,
+              verdict: 'ok',
+              humano: _ayuda,
+              datos: {'help': _ayuda}));
     }
 
     if (g.comando == null) {
       // Una invocación vacía no cumplió ningún contrato: no hizo nada.
       return _emitir(
-        Impresora(salida: salida, error: error, json: g.json),
-        'shipflow',
-        const Desenlace(
-          codigo: Codigo.errorDeUso,
-          verdict: null,
-          humano: _ayuda,
-          queHacer: 'Elegí un comando. Hoy existe `verify`.',
-          datos: {'error': 'invocación sin acción', 'help': _ayuda},
-        ),
-      );
+          Impresora(salida: salida, error: error, json: g.json),
+          'shipflow',
+          const Desenlace(
+            codigo: Codigo.errorDeUso,
+            verdict: null,
+            humano: _ayuda,
+            queHacer: 'Elegí un comando. Hoy existe `verify`.',
+            datos: {'error': 'invocación sin acción', 'help': _ayuda},
+          ));
     }
 
     if (g.comando != nombreDelComando) {
@@ -176,8 +172,7 @@ int _emitir(Impresora imp, String comando, Desenlace d) {
 /// Si el resultado ya salió, no se emite un segundo —el protocolo promete uno
 /// solo— y queda la red de la corriente de error, que no serializa nada.
 int _rescatar(Impresora imp, Object e, StackTrace pila) {
-  const queHacer =
-      'Se rompió el arnés, no la verificación del cambio. '
+  const queHacer = 'Se rompió el arnés, no la verificación del cambio. '
       'Reportalo con esta traza y volvé a correr; si se repite, es del arnés.';
   if (imp.resultadosEmitidos == 0) {
     try {

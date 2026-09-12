@@ -40,14 +40,12 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
       if (r.causa != null) {
         noObservados.add(UnobservedSubject(subject: sujeto, cause: r.causa!));
       } else {
-        observados.add(
-          ObservedSubject(
-            subject: sujeto,
-            ofStack: r.archivos > 0,
-            files: r.archivos,
-            reason: r.archivos > 0 ? null : r.motivo,
-          ),
-        );
+        observados.add(ObservedSubject(
+          subject: sujeto,
+          ofStack: r.archivos > 0,
+          files: r.archivos,
+          reason: r.archivos > 0 ? null : r.motivo,
+        ));
       }
     }
 
@@ -68,9 +66,8 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
   /// aunque sea oculto, también medido, y por eso la regla se aplica a lo que
   /// hay debajo del sujeto y no al sujeto.
   ({int archivos, String? motivo, String? causa}) _mirar(String pedido) {
-    final absoluto = rutas.isAbsolute(pedido)
-        ? pedido
-        : rutas.join(directorio, pedido);
+    final absoluto =
+        rutas.isAbsolute(pedido) ? pedido : rutas.join(directorio, pedido);
     try {
       if (File(absoluto).existsSync()) {
         return absoluto.endsWith(sufijoDeFuente)
@@ -89,11 +86,9 @@ class ObservadorDeAlcanceDart implements ScopeObserver {
           .listSync(recursive: true, followLinks: false)
           .whereType<File>()
           .where((f) => f.path.endsWith(sufijoDeFuente))
-          .where(
-            (f) => !rutas
-                .split(rutas.relative(f.path, from: absoluto))
-                .any((parte) => parte.startsWith('.')),
-          )
+          .where((f) => !rutas
+              .split(rutas.relative(f.path, from: absoluto))
+              .any((parte) => parte.startsWith('.')))
           .length;
       return cuantos == 0
           ? (

@@ -20,8 +20,8 @@ class ObservadorDeAlcanceFalso implements ScopeObserver {
   ObservadorDeAlcanceFalso({
     required Map<String, ObservedSubject> observados,
     Map<String, String> noObservados = const {},
-  }) : observados = Map.unmodifiable(observados),
-       noObservados = Map.unmodifiable(noObservados);
+  })  : observados = Map.unmodifiable(observados),
+        noObservados = Map.unmodifiable(noObservados);
 
   @override
   Future<ScopeObservation> observe(List<String> requested) async {
@@ -39,11 +39,10 @@ class ObservadorDeAlcanceFalso implements ScopeObserver {
       // el fake decidiendo, que es justo lo que el puerto vino a impedir.
       if (o == null) {
         throw ArgumentError.value(
-          s,
-          'requested',
-          'El fake no tiene declarado este sujeto. Declaralo en `observados` '
-              'o en `noObservados`: adivinar sería clasificar por su cuenta',
-        );
+            s,
+            'requested',
+            'El fake no tiene declarado este sujeto. Declaralo en `observados` '
+                'o en `noObservados`: adivinar sería clasificar por su cuenta');
       }
       vistos.add(o);
     }

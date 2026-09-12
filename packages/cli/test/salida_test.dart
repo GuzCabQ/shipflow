@@ -15,20 +15,14 @@ import 'apoyo.dart';
 Impresora _impresora() =>
     Impresora(salida: StringBuffer(), error: StringBuffer(), json: true);
 
-const _result = ResultEnvelope(
-  command: 'verify',
-  exitCode: 0,
-  verdict: 'ok',
-  data: {},
-);
+const _result =
+    ResultEnvelope(command: 'verify', exitCode: 0, verdict: 'ok', data: {});
 
 void main() {
   group('el protocolo con --json', () {
     test('todo es JSON Lines, y hay EXACTAMENTE un result, último', () async {
-      final (_, salida) = await correr(
-        const ['--json'],
-        [Paso.rojo('A'), Paso.verde('B')],
-      );
+      final (_, salida) =
+          await correr(const ['--json'], [Paso.rojo('A'), Paso.verde('B')]);
       final objetos = lineas(salida);
       expect(objetos.where((o) => o['type'] == 'result'), hasLength(1));
       expect(objetos.last['type'], 'result');
@@ -38,36 +32,24 @@ void main() {
     test('un error de uso TAMBIÉN sale como envelope', () async {
       // Imprimía texto humano y con `--json` eso rompe a cualquier consumidor:
       // la primera línea no es JSON y no hay resultado que leer.
-      final (c, salida) = await correr(const [
-        '--json',
-        '--inventada',
-      ], const []);
+      final (c, salida) =
+          await correr(const ['--json', '--inventada'], const []);
       expect(c, 5);
       final r = lineas(salida).single;
       expect(r['type'], 'result');
       expect(r['exitCode'], 5);
       expect(r['nextAction'], isNotNull);
-      expect(
-        r['verdict'],
-        isNull,
-        reason:
-            'un error de uso no alcanzó el dominio: no tiene veredicto '
-            'que dar, y la superficie no declara ninguno para el código 5',
-      );
-      expect(
-        r['runId'],
-        isNull,
-        reason:
-            'un error de uso no llegó a componer ninguna cascada, así '
-            'que no hay ninguna corrida que identificar',
-      );
+      expect(r['verdict'], isNull,
+          reason: 'un error de uso no alcanzó el dominio: no tiene veredicto '
+              'que dar, y la superficie no declara ninguno para el código 5');
+      expect(r['runId'], isNull,
+          reason: 'un error de uso no llegó a componer ninguna cascada, así '
+              'que no hay ninguna corrida que identificar');
     });
 
     test('el result lleva registrados Y ejecutados', () async {
-      final (_, salida) = await correr(
-        const ['--json'],
-        [Paso.verde('A'), Paso('B', lanza: StateError('x'))],
-      );
+      final (_, salida) = await correr(const ['--json'],
+          [Paso.verde('A'), Paso('B', lanza: StateError('x'))]);
       final data = lineas(salida).last['data']! as Map<String, Object?>;
       final registrados = (data['registered']! as List)
           .cast<Map<String, Object?>>()
@@ -119,12 +101,11 @@ void main() {
       final imp = _impresora();
       imp.resultado(_result, 'x');
       expect(
-        () => imp.evento(
-          EventEnvelope(command: 'verify', type: 'progress', data: const {}),
-          'x',
-        ),
-        throwsA(isA<ProtocoloRoto>()),
-      );
+          () => imp.evento(
+              EventEnvelope(
+                  command: 'verify', type: 'progress', data: const {}),
+              'x'),
+          throwsA(isA<ProtocoloRoto>()));
     });
   });
 
@@ -134,10 +115,8 @@ void main() {
       // resultado», y nadie escribía en ella: el rescate reintentaba sobre la
       // misma salida que acababa de fallar.
       final err = StringBuffer();
-      Impresora(
-        salida: StringBuffer(),
-        error: err,
-      ).ultimoRecurso('se rompió', 'hacé esto');
+      Impresora(salida: StringBuffer(), error: err)
+          .ultimoRecurso('se rompió', 'hacé esto');
       expect(err.toString(), contains('se rompió'));
       expect(err.toString(), contains('→ hacé esto'));
     });

@@ -12,22 +12,19 @@ ObservedSubject delStack(String s, {int archivos = 1}) =>
     ObservedSubject(subject: s, ofStack: true, files: archivos);
 
 ObservedSubject ajeno(String s) => ObservedSubject(
-  subject: s,
-  ofStack: false,
-  files: 0,
-  reason: 'no es de este stack',
-);
+    subject: s, ofStack: false, files: 0, reason: 'no es de este stack');
 
 ScopeObservation obs({
   required List<String> pedidos,
   List<ObservedSubject> observados = const [],
   List<UnobservedSubject> noObservados = const [],
-}) => ScopeObservation(
-  requested: pedidos,
-  observed: observados,
-  unobserved: noObservados,
-  observedAt: DateTime.utc(2026),
-);
+}) =>
+    ScopeObservation(
+      requested: pedidos,
+      observed: observados,
+      unobserved: noObservados,
+      observedAt: DateTime.utc(2026),
+    );
 
 void main() {
   group('la partición es exacta', () {
@@ -37,9 +34,7 @@ void main() {
         observados: [delStack('lib', archivos: 3)],
         noObservados: [
           UnobservedSubject(
-            subject: 'no/existe',
-            cause: 'no existe en el árbol',
-          ),
+              subject: 'no/existe', cause: 'no existe en el árbol')
         ],
       );
       expect(o.usable(), ['lib']);
@@ -48,43 +43,37 @@ void main() {
     test('un sujeto pedido que no aparece en ninguna lista se rechaza', () {
       // El agujero: desaparece antes de calcular lo utilizable y nadie lo ve.
       expect(
-        () =>
-            obs(pedidos: const ['lib', 'test'], observados: [delStack('lib')]),
-        throwsArgumentError,
-      );
+          () => obs(
+              pedidos: const ['lib', 'test'], observados: [delStack('lib')]),
+          throwsArgumentError);
     });
 
     test('un sujeto que aparece y no se pidió se rechaza', () {
       expect(
-        () => obs(
-          pedidos: const ['lib'],
-          observados: [delStack('lib'), delStack('test')],
-        ),
-        throwsArgumentError,
-      );
+          () => obs(
+              pedidos: const ['lib'],
+              observados: [delStack('lib'), delStack('test')]),
+          throwsArgumentError);
     });
 
     test('un sujeto en las dos listas se rechaza', () {
       expect(
-        () => obs(
-          pedidos: const ['lib'],
-          observados: [delStack('lib')],
-          noObservados: [
-            UnobservedSubject(subject: 'lib', cause: 'no se dejó leer'),
-          ],
-        ),
-        throwsArgumentError,
-      );
+          () => obs(
+                pedidos: const ['lib'],
+                observados: [delStack('lib')],
+                noObservados: [
+                  UnobservedSubject(subject: 'lib', cause: 'no se dejó leer')
+                ],
+              ),
+          throwsArgumentError);
     });
 
     test('un sujeto repetido dentro de una lista se rechaza', () {
       expect(
-        () => obs(
-          pedidos: const ['lib'],
-          observados: [delStack('lib'), delStack('lib')],
-        ),
-        throwsArgumentError,
-      );
+          () => obs(
+              pedidos: const ['lib'],
+              observados: [delStack('lib'), delStack('lib')]),
+          throwsArgumentError);
     });
 
     test('un sujeto PEDIDO dos veces se rechaza: no hay denominador', () {
@@ -96,9 +85,9 @@ void main() {
       // la guardia se podía quitar en una refactorización sin que nada lo
       // note.
       expect(
-        () => obs(pedidos: const ['lib', 'lib'], observados: [delStack('lib')]),
-        throwsArgumentError,
-      );
+          () =>
+              obs(pedidos: const ['lib', 'lib'], observados: [delStack('lib')]),
+          throwsArgumentError);
     });
 
     test('la identidad es la cadena TAL COMO SE PIDIÓ', () {
@@ -106,75 +95,54 @@ void main() {
       // devolviera `lib` para un pedido `./lib`, la partición no cierra y el
       // rechazo es correcto — la canonización es asunto suyo, y no puede
       // renombrar el sujeto que devuelve.
-      expect(
-        () => obs(pedidos: const ['./lib'], observados: [delStack('lib')]),
-        throwsArgumentError,
-      );
+      expect(() => obs(pedidos: const ['./lib'], observados: [delStack('lib')]),
+          throwsArgumentError);
     });
   });
 
   group('un sujeto observado dice una sola cosa', () {
     test('ajeno al stack no puede traer archivos', () {
       expect(
-        () => ObservedSubject(
-          subject: 'a',
-          ofStack: false,
-          files: 2,
-          reason: 'x',
-        ),
-        throwsArgumentError,
-      );
+          () => ObservedSubject(
+              subject: 'a', ofStack: false, files: 2, reason: 'x'),
+          throwsArgumentError);
     });
 
     test('ajeno al stack sin motivo no dice por qué', () {
-      expect(
-        () => ObservedSubject(subject: 'a', ofStack: false, files: 0),
-        throwsArgumentError,
-      );
+      expect(() => ObservedSubject(subject: 'a', ofStack: false, files: 0),
+          throwsArgumentError);
     });
 
     test('ajeno al stack con motivo en blanco tampoco', () {
       expect(
-        () => ObservedSubject(
-          subject: 'a',
-          ofStack: false,
-          files: 0,
-          reason: '  ',
-        ),
-        throwsArgumentError,
-      );
+          () => ObservedSubject(
+              subject: 'a', ofStack: false, files: 0, reason: '  '),
+          throwsArgumentError);
     });
 
     test('del stack con cero archivos es una contradicción', () {
-      expect(
-        () => ObservedSubject(subject: 'a', ofStack: true, files: 0),
-        throwsArgumentError,
-      );
+      expect(() => ObservedSubject(subject: 'a', ofStack: true, files: 0),
+          throwsArgumentError);
     });
 
     test('del stack con motivo es una contradicción', () {
       // El motivo existe para explicar por qué NO era suyo.
       expect(
-        () =>
-            ObservedSubject(subject: 'a', ofStack: true, files: 1, reason: 'x'),
-        throwsArgumentError,
-      );
+          () => ObservedSubject(
+              subject: 'a', ofStack: true, files: 1, reason: 'x'),
+          throwsArgumentError);
     });
 
     test('un sujeto en blanco no es un sujeto', () {
-      expect(
-        () => ObservedSubject(subject: '  ', ofStack: true, files: 1),
-        throwsArgumentError,
-      );
+      expect(() => ObservedSubject(subject: '  ', ofStack: true, files: 1),
+          throwsArgumentError);
     });
   });
 
   group('un sujeto no observado dice su causa', () {
     test('una causa en blanco no es una causa', () {
-      expect(
-        () => UnobservedSubject(subject: 'a', cause: ' '),
-        throwsArgumentError,
-      );
+      expect(() => UnobservedSubject(subject: 'a', cause: ' '),
+          throwsArgumentError);
     });
   });
 
@@ -190,9 +158,8 @@ void main() {
 
   test('lo utilizable excluye lo ajeno al stack', () {
     final o = obs(
-      pedidos: const ['lib', 'LEEME.md'],
-      observados: [delStack('lib'), ajeno('LEEME.md')],
-    );
+        pedidos: const ['lib', 'LEEME.md'],
+        observados: [delStack('lib'), ajeno('LEEME.md')]);
     expect(o.usable(), ['lib']);
   });
 
@@ -201,7 +168,7 @@ void main() {
       pedidos: const ['lib', 'no/existe'],
       observados: [delStack('lib', archivos: 3)],
       noObservados: [
-        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol'),
+        UnobservedSubject(subject: 'no/existe', cause: 'no existe en el árbol')
       ],
     );
     final ida = ScopeObservation.fromJson(o.toJson());
@@ -221,20 +188,16 @@ void main() {
       // `ObservedSubject(ofStack: true)`, y ése exige al menos un archivo: si
       // no hay archivos, no es del stack. Así que este alcance afirma dos
       // cosas incompatibles a la vez, y ninguna observación real lo produce.
-      expect(
-        () => VerificationScope(subjects: const ['lib'], files: 0),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const ['lib'], files: 0),
+          throwsArgumentError);
     });
 
     test('dos sujetos con un solo archivo tampoco', () {
       // Cada sujeto utilizable aporta uno como mínimo, así que el total no
       // puede ser menor que la cantidad de sujetos. Es el caso que un
       // `files >= 1` a secas dejaría pasar.
-      expect(
-        () => VerificationScope(subjects: const ['lib', 'test'], files: 1),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const ['lib', 'test'], files: 1),
+          throwsArgumentError);
     });
 
     test('y tampoco entrando por fromJson', () {
@@ -243,12 +206,11 @@ void main() {
       // documento de afuera es justo por donde entra un estado que el resto
       // del programa no puede fabricar.
       expect(
-        () => VerificationScope.fromJson(const {
-          'subjects': ['lib', 'test'],
-          'files': 1,
-        }),
-        throwsArgumentError,
-      );
+          () => VerificationScope.fromJson(const {
+                'subjects': ['lib', 'test'],
+                'files': 1,
+              }),
+          throwsArgumentError);
     });
 
     test('control negativo: dos sujetos y dos archivos sí se construye', () {
@@ -261,33 +223,25 @@ void main() {
 
     test('un alcance vacío no se construye', () {
       // La precondición que vivía adentro de `run` y se mudó acá.
-      expect(
-        () => VerificationScope(subjects: const [], files: 0),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const [], files: 0),
+          throwsArgumentError);
     });
 
     test('un sujeto en blanco no se construye', () {
-      expect(
-        () => VerificationScope(subjects: const ['  '], files: 1),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const ['  '], files: 1),
+          throwsArgumentError);
     });
 
     test('un sujeto repetido no se construye', () {
       // El libro de obligaciones cuenta por par paso-sujeto: un repetido
       // pediría cuenta dos veces de lo mismo.
-      expect(
-        () => VerificationScope(subjects: const ['lib', 'lib'], files: 2),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const ['lib', 'lib'], files: 2),
+          throwsArgumentError);
     });
 
     test('un conteo negativo no se construye', () {
-      expect(
-        () => VerificationScope(subjects: const ['lib'], files: -1),
-        throwsArgumentError,
-      );
+      expect(() => VerificationScope(subjects: const ['lib'], files: -1),
+          throwsArgumentError);
     });
 
     test('sale de la observación con lo utilizable y su conteo', () {
@@ -297,26 +251,20 @@ void main() {
           ObservedSubject(subject: 'lib', ofStack: true, files: 3),
           ObservedSubject(subject: 'test', ofStack: true, files: 2),
           ObservedSubject(
-            subject: 'LEEME.md',
-            ofStack: false,
-            files: 0,
-            reason: 'no es de este stack',
-          ),
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
         ],
         unobserved: [
           UnobservedSubject(
-            subject: 'no/existe',
-            cause: 'no existe en el árbol',
-          ),
+              subject: 'no/existe', cause: 'no existe en el árbol')
         ],
         observedAt: DateTime.utc(2026),
       );
       final a = VerificationScope.de(o);
-      expect(
-        a.subjects,
-        ['lib', 'test'],
-        reason: 'ni el ajeno ni el que no se pudo mirar llegan al paso',
-      );
+      expect(a.subjects, ['lib', 'test'],
+          reason: 'ni el ajeno ni el que no se pudo mirar llegan al paso');
       expect(a.files, 5, reason: 'solo cuentan los archivos del stack');
     });
 
@@ -327,11 +275,10 @@ void main() {
         requested: const ['LEEME.md'],
         observed: [
           ObservedSubject(
-            subject: 'LEEME.md',
-            ofStack: false,
-            files: 0,
-            reason: 'no es de este stack',
-          ),
+              subject: 'LEEME.md',
+              ofStack: false,
+              files: 0,
+              reason: 'no es de este stack'),
         ],
         unobserved: const [],
         observedAt: DateTime.utc(2026),

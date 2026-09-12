@@ -28,10 +28,8 @@ void main() {
   test('jsonEncode se niega, en vez de escribir el secreto', () {
     // Sin `toJson`, `jsonEncode` no tiene por dónde. Que LANCE en vez de
     // escribir algo es el comportamiento deseado: falla ruidosa, no silenciosa.
-    expect(
-      () => jsonEncode(credencial),
-      throwsA(isA<JsonUnsupportedObjectError>()),
-    );
+    expect(() => jsonEncode(credencial),
+        throwsA(isA<JsonUnsupportedObjectError>()));
   });
 
   test('el secreto solo se alcanza dentro de use()', () {

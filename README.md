@@ -66,7 +66,7 @@ dart test packages/vcs                        # la rama y el commit, contra git 
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
 dart analyze --fatal-infos
-dart format --set-exit-if-changed packages tool
+dart format --language-version=3.6 --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
@@ -394,6 +394,36 @@ contra los imports; **no mira la prosa**. Quitar las tres de `cli` dejó dos
 frases falsas —el barril de `cli` y este README— que nombraban a `agents` de
 ejemplo, y esta regla no las habría visto. Son dos controles distintos, y solo
 uno está claro cómo se automatiza sin producir ruido.
+
+### El piso del SDK y el estilo del formato son dos cosas, y Dart las acopla
+
+Los diez pubspec declaraban `sdk: ^3.6.0` mientras el lock exige `>=3.11.0`:
+seis versiones menores de soporte prometido que nadie podía cumplir. No era un
+hueco de verificación —el workflow ya declaraba que la matriz no prueba el
+mínimo— sino **una afirmación falsa**, y el fixture se había corregido por esto
+mismo sin propagarse.
+
+Alinearlo cuesta diez líneas y **arrastra 49 archivos**: el formateador toma su
+estilo de la versión de lenguaje, y esa sale del pubspec.
+
+```
+con sdk: ^3.6.0     →  dart format:  0 archivos cambiados
+con sdk: ^3.11.0    →  dart format: 49 archivos cambiados
+```
+
+Peor: el estilo nuevo **todavía se mueve entre versiones menores de Dart**. Con
+el árbol formateado por 3.12, la pata `stable` —3.13.3— reformateaba cinco
+archivos. El canario habría quedado rojo para siempre, y un canario rojo por
+construcción deja de mirarse.
+
+**El piso es una afirmación de compatibilidad; el estilo es una decisión
+estética.** Dart los acopla y acá se desacoplan: el piso queda en `^3.11.0`,
+honesto, y el formato se fija con `--language-version=3.6`, que selecciona el
+estilo anterior — congelado.
+
+`[S]` La estabilidad de ese estilo en versiones futuras es política declarada de
+Dart, no algo medido acá. Si dejara de valer, el canario lo va a decir, que es
+para lo que está.
 
 ### Tres propiedades que hacen verificable el registro
 

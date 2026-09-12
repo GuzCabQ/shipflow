@@ -90,13 +90,11 @@ class _Caso {
   /// Entradas que NO se pueden interpretar, con el motivo por el que estan.
   final Map<String, String> ilegibles;
 
-  const _Caso(
-    this.normalizador, {
-    required this.limpio,
-    required this.conHallazgos,
-    required this.cuantos,
-    required this.ilegibles,
-  });
+  const _Caso(this.normalizador,
+      {required this.limpio,
+      required this.conHallazgos,
+      required this.cuantos,
+      required this.ilegibles});
 }
 
 /// Ilegibles que valen para cualquier formato: son la clausula 2 y su vecina.
@@ -142,8 +140,7 @@ final implementaciones = <String, _Caso>{
   'falsa · formato propio, trivial': _Caso(
     const NormalizadorFalso(),
     limpio: '${NormalizadorFalso.encabezado}\n',
-    conHallazgos:
-        '${NormalizadorFalso.encabezado}\n'
+    conHallazgos: '${NormalizadorFalso.encabezado}\n'
         'bloquea|src/a|12|regla-x|Primer mensaje\n'
         'reporta|src/b||regla-y|Segundo mensaje\n',
     cuantos: 2,
@@ -175,14 +172,11 @@ Map<String, String> mutaciones(String bueno) {
     'con una linea de basura al final': '$bueno\nbasura sin estructura',
     // El eje que el review encontro: lo que parece numero deja de serlo.
     'con los digitos vueltos letras': bueno.replaceAll(RegExp(r'\d'), 'x'),
-    'con digitos absurdamente largos': bueno.replaceAll(
-      RegExp(r'(?<!\d)\d(?!\d)'),
-      '9' * 40,
-    ),
+    'con digitos absurdamente largos':
+        bueno.replaceAll(RegExp(r'(?<!\d)\d(?!\d)'), '9' * 40),
     'sin delimitadores': bueno.replaceAll('|', ' ').replaceAll(':', ' '),
-    'con las llaves y corchetes dados vuelta': bueno
-        .replaceAll('{', '[')
-        .replaceAll('}', ']'),
+    'con las llaves y corchetes dados vuelta':
+        bueno.replaceAll('{', '[').replaceAll('}', ']'),
   };
   // Las mutaciones globales de arriba tocan TODAS las lineas, incluida la
   // primera — y si el formato tiene un preambulo, el guardia que lo comprueba
@@ -196,16 +190,12 @@ Map<String, String> mutaciones(String bueno) {
     String conLinea(String nueva) =>
         [...lineas.sublist(0, i), nueva, ...lineas.sublist(i + 1)].join('\n');
 
-    salida['sin la linea ${i + 1}'] = [
-      ...lineas.sublist(0, i),
-      ...lineas.sublist(i + 1),
-    ].join('\n');
-    salida['linea ${i + 1} con los digitos vueltos letras'] = conLinea(
-      lineas[i].replaceAll(RegExp(r'\d'), 'x'),
-    );
-    salida['linea ${i + 1} con un numero larguisimo'] = conLinea(
-      lineas[i].replaceAll(RegExp(r'\d+'), '9' * 40),
-    );
+    salida['sin la linea ${i + 1}'] =
+        [...lineas.sublist(0, i), ...lineas.sublist(i + 1)].join('\n');
+    salida['linea ${i + 1} con los digitos vueltos letras'] =
+        conLinea(lineas[i].replaceAll(RegExp(r'\d'), 'x'));
+    salida['linea ${i + 1} con un numero larguisimo'] =
+        conLinea(lineas[i].replaceAll(RegExp(r'\d+'), '9' * 40));
     salida['linea ${i + 1} en blanco'] = conLinea('');
   }
   return salida;
@@ -215,10 +205,8 @@ void main() {
   test('la suite corre contra las TRES implementaciones, y dos son reales', () {
     expect(implementaciones, hasLength(3));
     expect(
-      implementaciones.keys.where((k) => k.startsWith('real')),
-      hasLength(2),
-      reason: 'sin las reales esto no es una suite de contrato',
-    );
+        implementaciones.keys.where((k) => k.startsWith('real')), hasLength(2),
+        reason: 'sin las reales esto no es una suite de contrato');
   });
 
   for (final entrada in implementaciones.entries) {
@@ -251,28 +239,21 @@ void main() {
 
       test('una salida con hallazgos los devuelve TODOS', () {
         final r = n.normalize(_entrada(caso.conHallazgos, quien));
-        expect(
-          r,
-          hasLength(caso.cuantos),
-          reason:
-              'un normalizador que descarta lo que no entiende devuelve '
-              'menos de los que hay, y nada lo dice',
-        );
+        expect(r, hasLength(caso.cuantos),
+            reason: 'un normalizador que descarta lo que no entiende devuelve '
+                'menos de los que hay, y nada lo dice');
       });
 
       test('la lista devuelta es inmodificable', () {
         final r = n.normalize(_entrada(caso.conHallazgos, quien));
         expect(
-          () => r.add(
-            Diagnostic(
-              file: 'x',
-              severity: Severity.reporta,
-              ruleId: 'r',
-              message: const QuotedText('m', source: 'test'),
-            ),
-          ),
-          throwsUnsupportedError,
-        );
+            () => r.add(Diagnostic(
+                  file: 'x',
+                  severity: Severity.reporta,
+                  ruleId: 'r',
+                  message: const QuotedText('m', source: 'test'),
+                )),
+            throwsUnsupportedError);
       });
 
       // Las entradas corruptas NO las elige quien escribe el caso: se derivan
@@ -285,35 +266,31 @@ void main() {
       // que DOS implementaciones lanzaran `FormatException`, y ninguna de las
       // entradas ilegibles escritas a mano tocaba ese camino.
       for (final mutacion in mutaciones(caso.conHallazgos).entries) {
-        test('corrompida «${mutacion.key}»: o la lee, o lanza el tipo que el '
+        test(
+            'corrompida «${mutacion.key}»: o la lee, o lanza el tipo que el '
             'puerto promete', () {
           try {
             n.normalize(_entrada(mutacion.value, quien));
           } on UnreadableToolOutput {
             // El unico fracaso admitido por la clausula 1.
           } catch (e) {
-            fail(
-              'lanzo ${e.runtimeType} y no UnreadableToolOutput. El paso '
-              'de cascada solo atrapa el segundo: cualquier otro tipo aborta '
-              'la corrida en vez de producir un veredicto no concluyente.',
-            );
+            fail('lanzo ${e.runtimeType} y no UnreadableToolOutput. El paso '
+                'de cascada solo atrapa el segundo: cualquier otro tipo aborta '
+                'la corrida en vez de producir un veredicto no concluyente.');
           }
         });
       }
 
-      test('el mensaje de cada hallazgo es el de la herramienta, sin '
+      test(
+          'el mensaje de cada hallazgo es el de la herramienta, sin '
           'reescribir', () {
         // Clausula 4, INV-6. Se comprueba contra el texto de entrada: si el
         // normalizador redactara el mensaje, el suyo no estaria ahi.
         final r = n.normalize(_entrada(caso.conHallazgos, quien));
         for (final d in r) {
-          expect(
-            caso.conHallazgos,
-            contains(d.message.content),
-            reason:
-                'el mensaje «${d.message.content}» no aparece en la '
-                'salida de la herramienta: alguien lo reescribio',
-          );
+          expect(caso.conHallazgos, contains(d.message.content),
+              reason: 'el mensaje «${d.message.content}» no aparece en la '
+                  'salida de la herramienta: alguien lo reescribio');
         }
       });
     });

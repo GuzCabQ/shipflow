@@ -55,17 +55,16 @@ class Clase {
   final Set<String> superTipos;
 
   Clase(
-    this.nombre,
-    this.archivo,
-    this.esAbstracta,
-    this.esSellada,
-    this.camposPublicos,
-    this.coleccionesAliasadas,
-    this.clavesToJson,
-    this.clavesFromJson,
-    this.literalDeToString,
-    this.superTipos,
-  );
+      this.nombre,
+      this.archivo,
+      this.esAbstracta,
+      this.esSellada,
+      this.camposPublicos,
+      this.coleccionesAliasadas,
+      this.clavesToJson,
+      this.clavesFromJson,
+      this.literalDeToString,
+      this.superTipos);
 }
 
 /// Junta las claves que un `fromJson` lee del mapa que recibe.
@@ -108,11 +107,9 @@ Set<String>? _clavesDeMapa(FunctionBody cuerpo, String donde) {
     }
   }
   if (lit == null) {
-    fallos.add(
-      '$donde: no pude leer el mapa que devuelve. Escribilo como un '
-      'literal de mapa devuelto directamente. No mirar no es lo mismo que '
-      'no encontrar nada, así que esto falla en vez de pasar.',
-    );
+    fallos.add('$donde: no pude leer el mapa que devuelve. Escribilo como un '
+        'literal de mapa devuelto directamente. No mirar no es lo mismo que '
+        'no encontrar nada, así que esto falla en vez de pasar.');
     return null;
   }
   final claves = <String>{};
@@ -120,11 +117,9 @@ Set<String>? _clavesDeMapa(FunctionBody cuerpo, String donde) {
     if (e is MapLiteralEntry && e.key is SimpleStringLiteral) {
       claves.add((e.key as SimpleStringLiteral).value);
     } else {
-      fallos.add(
-        '$donde: hay una entrada cuya clave no es una cadena literal '
-        '(`${e.toSource()}`). No puedo derivar los campos: escribí las claves '
-        'literales.',
-      );
+      fallos.add('$donde: hay una entrada cuya clave no es una cadena literal '
+          '(`${e.toSource()}`). No puedo derivar los campos: escribí las claves '
+          'literales.');
       return null;
     }
   }
@@ -142,10 +137,8 @@ List<Clase> clasesDe(File archivo, String rel) {
   // tenía nada que verificar». Es la falla silenciosa de siempre, así que se
   // reporta acá y no se espera a que `dart analyze` la encuentre después.
   for (final d in resultado.errors) {
-    fallos.add(
-      '$rel:${d.offset}: no parsea, así que no pude derivar nada de '
-      'este archivo. ${d.message}',
-    );
+    fallos.add('$rel:${d.offset}: no parsea, así que no pude derivar nada de '
+        'este archivo. ${d.message}');
   }
   final unidad = resultado.unit;
   final salida = <Clase>[];
@@ -191,10 +184,8 @@ List<Clase> clasesDe(File archivo, String rel) {
         tieneFromJson = true;
         final params = m.parameters.parameters;
         if (params.isEmpty || params.first.name == null) {
-          fallos.add(
-            '$rel · $nombre.fromJson: no pude leer el nombre de su '
-            'parámetro, así que no puedo derivar qué claves lee.',
-          );
+          fallos.add('$rel · $nombre.fromJson: no pude leer el nombre de su '
+              'parámetro, así que no puedo derivar qué claves lee.');
         } else {
           final v = _Indices(params.first.name!.lexeme);
           m.visitChildren(v);
@@ -232,12 +223,10 @@ List<Clase> clasesDe(File archivo, String rel) {
           final p = param is DefaultFormalParameter ? param.parameter : param;
           return p is FieldFormalParameter && p.name.lexeme == entrada.key;
         });
-        final copiada = m.initializers.any(
-          (ini) =>
-              ini is ConstructorFieldInitializer &&
-              ini.fieldName.name == entrada.key &&
-              ini.expression.toSource().contains('.unmodifiable('),
-        );
+        final copiada = m.initializers.any((ini) =>
+            ini is ConstructorFieldInitializer &&
+            ini.fieldName.name == entrada.key &&
+            ini.expression.toSource().contains('.unmodifiable('));
         if (porReferencia || !copiada) aliasadas.add(entrada.key);
       }
     }
@@ -250,8 +239,7 @@ List<Clase> clasesDe(File archivo, String rel) {
         _nombreDeTipo(t),
     };
     final esSellada = d.sealedKeyword != null;
-    salida.add(
-      Clase(
+    salida.add(Clase(
         nombre,
         rel,
         d.abstractKeyword != null || esSellada,
@@ -261,22 +249,17 @@ List<Clase> clasesDe(File archivo, String rel) {
         tieneToJson ? toJson : null,
         tieneFromJson ? fromJson : null,
         literalToString,
-        supers,
-      ),
-    );
+        supers));
   }
   return salida;
 }
 
-List<File> fuentes(Directory d) =>
-    d
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where(
-          (f) => f.path.endsWith('.dart') && !f.path.contains('.dart_tool'),
-        )
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
+List<File> fuentes(Directory d) => d
+    .listSync(recursive: true)
+    .whereType<File>()
+    .where((f) => f.path.endsWith('.dart') && !f.path.contains('.dart_tool'))
+    .toList()
+  ..sort((a, b) => a.path.compareTo(b.path));
 
 /// Las cifras que el README afirma de la cascada, **derivadas del árbol
 /// sintáctico**.
@@ -295,46 +278,37 @@ List<File> fuentes(Directory d) =>
 void _cifrasDeLaCascada(Directory raiz, String readme) {
   final fuente = File('${raiz.path}/packages/cli/lib/src/verify.dart');
   if (!fuente.existsSync()) {
-    fallos.add(
-      'no encontré packages/cli/lib/src/verify.dart, así que no puedo '
-      'derivar el presupuesto por paso. No mirar no es lo mismo que no '
-      'encontrar nada.',
-    );
+    fallos.add('no encontré packages/cli/lib/src/verify.dart, así que no puedo '
+        'derivar el presupuesto por paso. No mirar no es lo mismo que no '
+        'encontrar nada.');
     return;
   }
   final r = parseString(
-    content: fuente.readAsStringSync(),
-    featureSet: FeatureSet.latestLanguageVersion(),
-    throwIfDiagnostics: false,
-  );
+      content: fuente.readAsStringSync(),
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false);
   // Mismo criterio que `clasesDe`: un archivo que no parsea devuelve un árbol
   // PARCIAL, y de un árbol parcial no sale nada — que se lee igual que «no
   // había nada que verificar».
   for (final d in r.errors) {
-    fallos.add(
-      'packages/cli/lib/src/verify.dart:${d.offset}: no parsea, así '
-      'que no pude derivar la cascada. ${d.message}',
-    );
+    fallos.add('packages/cli/lib/src/verify.dart:${d.offset}: no parsea, así '
+        'que no pude derivar la cascada. ${d.message}');
   }
   if (r.errors.isNotEmpty) return;
 
   final buscador = _CascadaPorDefecto();
   r.unit.accept(buscador);
   if (buscador.ambiguedad != null) {
-    fallos.add(
-      'no pude derivar la cascada de `cascadaPorDefecto`: '
-      '${buscador.ambiguedad}. Esta derivación falla cerrada a propósito — '
-      'una forma que no sabe leer no se saltea, porque saltearla deja la '
-      'cifra del README sin nadie que la contradiga.',
-    );
+    fallos.add('no pude derivar la cascada de `cascadaPorDefecto`: '
+        '${buscador.ambiguedad}. Esta derivación falla cerrada a propósito — '
+        'una forma que no sabe leer no se saltea, porque saltearla deja la '
+        'cifra del README sin nadie que la contradiga.');
     return;
   }
   if (buscador.lista == null) {
-    fallos.add(
-      'no encontré la lista de pasos de `cascadaPorDefecto` en '
-      'verify.dart. Si cambió de forma hay que reapuntar esta derivación, no '
-      'borrarla: un patrón que no encuentra nada no comprueba nada.',
-    );
+    fallos.add('no encontré la lista de pasos de `cascadaPorDefecto` en '
+        'verify.dart. Si cambió de forma hay que reapuntar esta derivación, no '
+        'borrarla: un patrón que no encuentra nada no comprueba nada.');
     return;
   }
 
@@ -356,29 +330,23 @@ void _cifrasDeLaCascada(Directory raiz, String readme) {
       pasos.add(elemento);
       continue;
     }
-    fallos.add(
-      'la lista de pasos de `cascadaPorDefecto` tiene un elemento de '
-      'forma `${elemento.runtimeType}`, que esta derivación no sabe contar. '
-      'Un `...spread`, un `if` o un `for` pueden aportar cualquier cantidad '
-      'de pasos, y saltearlos deja la cifra del README sin quien la '
-      'contradiga. Escribilos como elementos literales, o enseñale a leer esa '
-      'forma — no la omitas.',
-    );
+    fallos.add('la lista de pasos de `cascadaPorDefecto` tiene un elemento de '
+        'forma `${elemento.runtimeType}`, que esta derivación no sabe contar. '
+        'Un `...spread`, un `if` o un `for` pueden aportar cualquier cantidad '
+        'de pasos, y saltearlos deja la cifra del README sin quien la '
+        'contradiga. Escribilos como elementos literales, o enseñale a leer esa '
+        'forma — no la omitas.');
   }
   if (fallos.isNotEmpty) return;
   if (pasos.isEmpty) {
-    fallos.add(
-      'conté cero pasos en `cascadaPorDefecto`. Cero se lee igual que '
-      '«no miré».',
-    );
+    fallos.add('conté cero pasos en `cascadaPorDefecto`. Cero se lee igual que '
+        '«no miré».');
     return;
   }
   if (buscador.minutos == null) {
-    fallos.add(
-      'no encontré el presupuesto por defecto en verify.dart. Si '
-      'cambió de forma, esta derivación dejó de mirar algo y hay que '
-      'arreglarla, no borrarla.',
-    );
+    fallos.add('no encontré el presupuesto por defecto en verify.dart. Si '
+        'cambió de forma, esta derivación dejó de mirar algo y hay que '
+        'arreglarla, no borrarla.');
     return;
   }
   final minutos = buscador.minutos!;
@@ -391,27 +359,23 @@ void _cifrasDeLaCascada(Directory raiz, String readme) {
     final args = paso is InstanceCreationExpression
         ? paso.argumentList.arguments
         : paso is MethodInvocation
-        ? paso.argumentList.arguments
-        : const <Expression>[];
+            ? paso.argumentList.arguments
+            : const <Expression>[];
     final dado = args
         .whereType<NamedExpression>()
         .where((a) => a.name.label.name == 'presupuesto')
         .map((a) => a.expression)
         .firstOrNull;
     if (dado == null) {
-      fallos.add(
-        'un paso de `cascadaPorDefecto` no recibe presupuesto '
-        'explícito, así que no está cubierto por esta cuenta.',
-      );
+      fallos.add('un paso de `cascadaPorDefecto` no recibe presupuesto '
+          'explícito, así que no está cubierto por esta cuenta.');
       continue;
     }
     if (!(dado is SimpleIdentifier && dado.name == 'presupuesto')) {
-      fallos.add(
-        'un paso de `cascadaPorDefecto` recibe «$dado» como '
-        'presupuesto y no el parámetro. La cifra del README multiplica UN '
-        'valor por la cantidad de pasos: con presupuestos distintos deja de '
-        'significar lo que dice.',
-      );
+      fallos.add('un paso de `cascadaPorDefecto` recibe «$dado» como '
+          'presupuesto y no el parámetro. La cifra del README multiplica UN '
+          'valor por la cantidad de pasos: con presupuestos distintos deja de '
+          'significar lo que dice.');
     }
   }
 
@@ -419,26 +383,24 @@ void _cifrasDeLaCascada(Directory raiz, String readme) {
     (
       RegExp(r'un default de \*\*(\d+) minutos\*\*'),
       minutos,
-      'el presupuesto por paso',
+      'el presupuesto por paso'
     ),
     (
       RegExp(r'Con los (\d+) pasos de hoy'),
       pasos.length,
-      'los pasos de la cascada',
+      'los pasos de la cascada'
     ),
     (
       RegExp(r'una corrida puede tardar\s+(\d+) minutos'),
       minutos * pasos.length,
-      'el peor caso de una corrida',
+      'el peor caso de una corrida'
     ),
   ]) {
     final m = patron.firstMatch(readme);
     if (m == null) {
-      fallos.add(
-        'README.md ya no afirma $que en la forma que esta derivación '
-        'reconoce. Un patrón que no encuentra nada no comprueba nada, y se '
-        'lee igual que uno que sí.',
-      );
+      fallos.add('README.md ya no afirma $que en la forma que esta derivación '
+          'reconoce. Un patrón que no encuentra nada no comprueba nada, y se '
+          'lee igual que uno que sí.');
     } else if (int.parse(m.group(1)!) != esperado) {
       fallos.add('README.md dice «${m.group(0)}»; $que da $esperado.');
     }
@@ -466,9 +428,8 @@ class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
   void visitFunctionDeclaration(FunctionDeclaration node) {
     if (node.name.lexeme != 'cascadaPorDefecto') return;
 
-    for (final p
-        in node.functionExpression.parameters?.parameters ??
-            const <FormalParameter>[]) {
+    for (final p in node.functionExpression.parameters?.parameters ??
+        const <FormalParameter>[]) {
       if (p.name?.lexeme != 'presupuesto') continue;
       final d = p is DefaultFormalParameter ? p.defaultValue : null;
       final args = d is InstanceCreationExpression
@@ -489,8 +450,7 @@ class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
       final retornos = <ReturnStatement>[];
       cuerpo.accept(_Retornos(retornos));
       if (retornos.length != 1) {
-        ambiguedad =
-            'tiene ${retornos.length} `return`, y hace falta uno solo '
+        ambiguedad = 'tiene ${retornos.length} `return`, y hace falta uno solo '
             'para saber cuál cascada es la que se usa';
         return;
       }
@@ -503,8 +463,7 @@ class _CascadaPorDefecto extends RecursiveAstVisitor<void> {
 
     final args = _argumentosDe(retornada, 'Cascada');
     if (args == null) {
-      ambiguedad =
-          'lo que retorna no es una llamada a `Cascada`, sino '
+      ambiguedad = 'lo que retorna no es una llamada a `Cascada`, sino '
           '`${retornada.runtimeType}`';
       return;
     }
@@ -553,18 +512,15 @@ ArgumentList? _argumentosDe(Expression e, String nombre) {
 }
 
 void main(List<String> args) {
-  final raiz = Directory(
-    File.fromUri(Platform.script).parent.parent.parent.parent.path,
-  );
+  final raiz =
+      Directory(File.fromUri(Platform.script).parent.parent.parent.parent.path);
   final registro = File('${raiz.path}/arquitectura.json');
   if (!registro.existsSync()) {
     stderr.writeln('no encuentro arquitectura.json desde ${raiz.path}');
     exit(2);
   }
-  final reglas =
-      (jsonDecode(registro.readAsStringSync())
-              as Map<String, Object?>)['reglas']
-          as Map<String, Object?>;
+  final reglas = (jsonDecode(registro.readAsStringSync())
+      as Map<String, Object?>)['reglas'] as Map<String, Object?>;
 
   _cifrasDeLaCascada(raiz, File('${raiz.path}/README.md').readAsStringSync());
 
@@ -578,50 +534,38 @@ void main(List<String> args) {
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
     if (r == null) {
-      fallos.add(
-        'arquitectura.json: falta la regla «${e.key}». Un control que '
-        'desaparece sin ruido es F33.',
-      );
+      fallos.add('arquitectura.json: falta la regla «${e.key}». Un control que '
+          'desaparece sin ruido es F33.');
       continue;
     }
     if (r['tipo'] != e.value) {
-      fallos.add(
-        'arquitectura.json: «${e.key}» tiene tipo «${r['tipo']}»; se '
-        'esperaba «${e.value}». Cambiarlo la saltea sin borrarla.',
-      );
+      fallos.add('arquitectura.json: «${e.key}» tiene tipo «${r['tipo']}»; se '
+          'esperaba «${e.value}». Cambiarlo la saltea sin borrarla.');
     }
     if (r['violacion_canonica'] == null) {
-      fallos.add(
-        'arquitectura.json: «${e.key}» no declara violación canónica. '
-        'Una regla que no puede ponerse roja no está probada.',
-      );
+      fallos.add('arquitectura.json: «${e.key}» no declara violación canónica. '
+          'Una regla que no puede ponerse roja no está probada.');
     }
     if (r['caso_ciego'] == null) {
-      fallos.add(
-        'arquitectura.json: «${e.key}» no declara `caso_ciego`. Nadie '
-        'probó nunca qué hace este control cuando NO PUEDE MIRAR, y su '
-        'silencio es indistinguible de su aprobación (ADR-011 §5).',
-      );
+      fallos.add('arquitectura.json: «${e.key}» no declara `caso_ciego`. Nadie '
+          'probó nunca qué hace este control cuando NO PUEDE MIRAR, y su '
+          'silencio es indistinguible de su aprobación (ADR-011 §5).');
     }
     if (r['aplicada_por'] != 'tool/analisis') {
-      fallos.add(
-        'arquitectura.json: «${e.key}» ya no delega en este '
-        'verificador. Quedaría registrada y sin ejecutar.',
-      );
+      fallos.add('arquitectura.json: «${e.key}» ya no delega en este '
+          'verificador. Quedaría registrada y sin ejecutar.');
     }
   }
 
-  final opacos =
-      ((reglas['opacidad-declarada'] as Map<String, Object?>?)?['opacos']
-                as Map<String, Object?>? ??
-            {})
-        ..remove('_');
-  final sinImpl =
-      ((reglas['puertos-sin-implementacion']
-                    as Map<String, Object?>?)?['sin_implementacion']
-                as Map<String, Object?>? ??
-            {})
-        ..remove('_');
+  final opacos = ((reglas['opacidad-declarada']
+          as Map<String, Object?>?)?['opacos'] as Map<String, Object?>? ??
+      {})
+    ..remove('_');
+  final sinImpl = ((reglas['puertos-sin-implementacion']
+              as Map<String, Object?>?)?['sin_implementacion']
+          as Map<String, Object?>? ??
+      {})
+    ..remove('_');
 
   // --- lo que hay de verdad --------------------------------------------
   final dirCore = Directory('${raiz.path}/packages/core/lib');
@@ -639,10 +583,8 @@ void main(List<String> args) {
     todasLasClases.addAll(clasesDe(f, f.path.substring(raiz.path.length + 1)));
   }
   if (clasesCore.isEmpty) {
-    fallos.add(
-      'no encontré ninguna clase en packages/core/lib. O el paquete '
-      'está vacío, o no supe leerlo: las dos cosas son rojas.',
-    );
+    fallos.add('no encontré ninguna clase en packages/core/lib. O el paquete '
+        'está vacío, o no supe leerlo: las dos cosas son rojas.');
   }
 
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
@@ -666,13 +608,11 @@ void main(List<String> args) {
     (nombresDeCore[c.nombre] ??= []).add(c);
   }
   for (final e in nombresDeCore.entries.where((e) => e.value.length > 1)) {
-    fallos.add(
-      '«${e.key}» está declarada ${e.value.length} veces dentro de '
-      'core (${e.value.map((c) => c.archivo).join(", ")}). Los registros de '
-      'arquitectura.json direccionan las clases por su nombre, así que no se '
-      'pueden describir por separado y la declaración de una tapa a la otra. '
-      'Renombrá una: acá el nombre no es una referencia, es una clave.',
-    );
+    fallos.add('«${e.key}» está declarada ${e.value.length} veces dentro de '
+        'core (${e.value.map((c) => c.archivo).join(", ")}). Los registros de '
+        'arquitectura.json direccionan las clases por su nombre, así que no se '
+        'pueden describir por separado y la declaración de una tapa a la otra. '
+        'Renombrá una: acá el nombre no es una referencia, es una clave.');
   }
 
   // --- 1 · serialización sin pérdida ------------------------------------
@@ -682,38 +622,28 @@ void main(List<String> args) {
     if (c.clavesToJson == null || c.clavesFromJson == null) continue;
     final campos = c.camposPublicos.toSet();
     for (final falta in (campos.difference(c.clavesToJson!)).toList()..sort()) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: el campo «$falta» no está en '
-        'toJson. Se pierde en cada serialización y ningún test de ida y '
-        'vuelta lo nota.',
-      );
+      fallos.add('${c.archivo} · ${c.nombre}: el campo «$falta» no está en '
+          'toJson. Se pierde en cada serialización y ningún test de ida y '
+          'vuelta lo nota.');
     }
     for (final sobra in (c.clavesToJson!.difference(campos)).toList()..sort()) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: toJson escribe «$sobra», que no '
-        'es un campo de la clase. fromJson no lo va a poder reconstruir.',
-      );
+      fallos.add('${c.archivo} · ${c.nombre}: toJson escribe «$sobra», que no '
+          'es un campo de la clase. fromJson no lo va a poder reconstruir.');
     }
-    for (final falta in (campos.difference(
-      c.clavesFromJson!,
-    )).toList()..sort()) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: fromJson no lee «$falta». '
-        'El campo viaja de ida y se pierde a la vuelta.',
-      );
+    for (final falta in (campos.difference(c.clavesFromJson!)).toList()
+      ..sort()) {
+      fallos.add('${c.archivo} · ${c.nombre}: fromJson no lee «$falta». '
+          'El campo viaja de ida y se pierde a la vuelta.');
     }
     // La cuarta dirección, que faltaba. El enunciado dice EXACTAMENTE las
     // mismas claves, y se comprobaban tres de los cuatro sentidos: un
     // `fromJson` que leyera una clave inexistente pasaba en verde. Comparar
     // conjuntos en una sola dirección es media comparación.
-    for (final sobra in (c.clavesFromJson!.difference(
-      campos,
-    )).toList()..sort()) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: fromJson lee «$sobra», que no es '
-        'un campo de la clase y que toJson nunca escribe. O sobra la '
-        'lectura, o falta el campo.',
-      );
+    for (final sobra in (c.clavesFromJson!.difference(campos)).toList()
+      ..sort()) {
+      fallos.add('${c.archivo} · ${c.nombre}: fromJson lee «$sobra», que no es '
+          'un campo de la clase y que toJson nunca escribe. O sobra la '
+          'lectura, o falta el campo.');
     }
   }
 
@@ -723,24 +653,19 @@ void main(List<String> args) {
   // pero solo sobre las clases que alguien se acordó de poner en ella. Una
   // entidad nueva sin su caso pasaba en verde por las dos: cada uno cubría lo
   // que el otro no, y el hueco quedaba entre los dos.
-  final prueba = File(
-    '${raiz.path}/packages/core/test/serializacion_test.dart',
-  );
+  final prueba =
+      File('${raiz.path}/packages/core/test/serializacion_test.dart');
   if (!prueba.existsSync()) {
-    fallos.add(
-      'falta packages/core/test/serializacion_test.dart. Es lo único '
-      'que verifica que los VALORES sobrevivan el viaje.',
-    );
+    fallos.add('falta packages/core/test/serializacion_test.dart. Es lo único '
+        'que verifica que los VALORES sobrevivan el viaje.');
   } else {
     final texto = prueba.readAsStringSync();
     for (final c in clasesCore) {
       if (c.esAbstracta || c.clavesToJson == null) continue;
       if (!texto.contains("'${c.nombre}'")) {
-        fallos.add(
-          'packages/core/test/serializacion_test.dart: «${c.nombre}» '
-          'serializa y no tiene caso canónico. Agregá una instancia con un '
-          'valor distinguible en cada campo.',
-        );
+        fallos.add('packages/core/test/serializacion_test.dart: «${c.nombre}» '
+            'serializa y no tiene caso canónico. Agregá una instancia con un '
+            'valor distinguible en cada campo.');
       }
     }
   }
@@ -756,13 +681,11 @@ void main(List<String> args) {
   for (final c in clasesCore) {
     if (c.esAbstracta || opacos.containsKey(c.nombre)) continue;
     for (final campo in c.coleccionesAliasadas) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: el campo de colección «$campo» '
-        'entra al constructor por referencia. Copialo con '
-        '`List.unmodifiable(...)` o `Map.unmodifiable(...)` en la lista de '
-        'inicializadores: sin eso, el invariante se puede romper DESPUÉS de '
-        'construir el objeto, y entonces no es una propiedad del tipo.',
-      );
+      fallos.add('${c.archivo} · ${c.nombre}: el campo de colección «$campo» '
+          'entra al constructor por referencia. Copialo con '
+          '`List.unmodifiable(...)` o `Map.unmodifiable(...)` en la lista de '
+          'inicializadores: sin eso, el invariante se puede romper DESPUÉS de '
+          'construir el objeto, y entonces no es una propiedad del tipo.');
     }
   }
 
@@ -786,37 +709,29 @@ void main(List<String> args) {
         final que = c.esSellada
             ? 'es la base de una jerarquía sellada'
             : 'tiene campos';
-        fallos.add(
-          '${c.archivo} · ${c.nombre}: $que y no serializa, y '
-          'no está declarada opaca. Escribile toJson y fromJson, o declarala '
-          'en «opacidad-declarada.opacos» con su motivo.',
-        );
+        fallos.add('${c.archivo} · ${c.nombre}: $que y no serializa, y '
+            'no está declarada opaca. Escribile toJson y fromJson, o declarala '
+            'en «opacidad-declarada.opacos» con su motivo.');
       }
       continue;
     }
     if (c.clavesToJson != null || c.clavesFromJson != null) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: está declarada opaca y sin '
-        'embargo serializa. ${declarada['por_que']}',
-      );
+      fallos.add('${c.archivo} · ${c.nombre}: está declarada opaca y sin '
+          'embargo serializa. ${declarada['por_que']}');
     }
     final mascara = declarada['mascara'] as String?;
     if (mascara != null && c.literalDeToString != mascara) {
-      fallos.add(
-        '${c.archivo} · ${c.nombre}: su toString no devuelve la '
-        'máscara declarada «$mascara» como literal '
-        '(leí: ${c.literalDeToString ?? 'algo que no es un literal'}). '
-        'Es lo que aparece en una interpolación o en un log.',
-      );
+      fallos.add('${c.archivo} · ${c.nombre}: su toString no devuelve la '
+          'máscara declarada «$mascara» como literal '
+          '(leí: ${c.literalDeToString ?? 'algo que no es un literal'}). '
+          'Es lo que aparece en una interpolación o en un log.');
     }
   }
   for (final n in opacos.keys) {
     if (!clasesCore.any((c) => c.nombre == n)) {
-      fallos.add(
-        'arquitectura.json: «opacidad-declarada» declara opaca a '
-        '«$n», que ya no existe en core. Una declaración vieja tapa la '
-        'siguiente clase que se llame igual.',
-      );
+      fallos.add('arquitectura.json: «opacidad-declarada» declara opaca a '
+          '«$n», que ya no existe en core. Una declaración vieja tapa la '
+          'siguiente clase que se llame igual.');
     }
   }
 
@@ -856,11 +771,9 @@ void main(List<String> args) {
     final decls = porNombre[n];
     if (decls == null || decls.length < 2) return false;
     final primero = decls.first.superTipos;
-    return decls.any(
-      (d) =>
-          d.superTipos.length != primero.length ||
-          !d.superTipos.every(primero.contains),
-    );
+    return decls.any((d) =>
+        d.superTipos.length != primero.length ||
+        !d.superTipos.every(primero.contains));
   }
 
   final superDe = {for (final c in todasLasClases) c.nombre: c.superTipos};
@@ -901,37 +814,30 @@ void main(List<String> args) {
   // Un puerto duplicado también decide la respuesta, aunque nadie lo herede.
   puertos.forEach(anotarSiEsAmbiguo);
   for (final n in ambiguosUsados.toList()..sort()) {
-    fallos.add(
-      '«$n» está declarada ${porNombre[n]!.length} veces, con '
-      'herencias DISTINTAS '
-      '(${porNombre[n]!.map((c) => c.archivo).join(", ")}), y participa de '
-      'una resolución que este control tiene que hacer. Resuelve por NOMBRE '
-      'SIMPLE, así que no puede distinguirlas y no va a adivinar: renombrá '
-      'una, o dale identidad calificada al control —biblioteca más símbolo— '
-      'antes de creerle.',
-    );
+    fallos.add('«$n» está declarada ${porNombre[n]!.length} veces, con '
+        'herencias DISTINTAS '
+        '(${porNombre[n]!.map((c) => c.archivo).join(", ")}), y participa de '
+        'una resolución que este control tiene que hacer. Resuelve por NOMBRE '
+        'SIMPLE, así que no puede distinguirlas y no va a adivinar: renombrá '
+        'una, o dale identidad calificada al control —biblioteca más símbolo— '
+        'antes de creerle.');
   }
 
   final huerfanos = puertos.where((p) => !implementados.contains(p)).toSet();
-  for (final p in (huerfanos.difference(
-    sinImpl.keys.toSet(),
-  )).toList()..sort()) {
+  for (final p in (huerfanos.difference(sinImpl.keys.toSet())).toList()
+    ..sort()) {
     fallos.add(
-      'packages/core: el puerto «$p» no tiene ninguna implementación y '
-      'no está declarado en «puertos-sin-implementacion». Una superficie de '
-      'puertos completa se lee como un sistema que hace esas cosas.',
-    );
+        'packages/core: el puerto «$p» no tiene ninguna implementación y '
+        'no está declarado en «puertos-sin-implementacion». Una superficie de '
+        'puertos completa se lee como un sistema que hace esas cosas.');
   }
-  for (final p in (sinImpl.keys.toSet().difference(
-    huerfanos,
-  )).toList()..sort()) {
+  for (final p in (sinImpl.keys.toSet().difference(huerfanos)).toList()
+    ..sort()) {
     final motivo = puertos.contains(p)
         ? 'ya tiene implementación: sacalo de la lista.'
         : 'no es un puerto de core: la declaración quedó vieja.';
-    fallos.add(
-      'arquitectura.json: «puertos-sin-implementacion» declara «$p», '
-      'que $motivo',
-    );
+    fallos.add('arquitectura.json: «puertos-sin-implementacion» declara «$p», '
+        'que $motivo');
   }
 
   // --- salida -----------------------------------------------------------
@@ -942,12 +848,9 @@ void main(List<String> args) {
     }
     exit(1);
   }
-  final serializables = clasesCore
-      .where((c) => !c.esAbstracta && c.clavesToJson != null)
-      .length;
-  stdout.writeln(
-    'serializacion: ok — $serializables clases serializables '
-    'verificadas campo por campo, ${opacos.length} opacas declaradas, '
-    '${huerfanos.length} puertos sin implementación declarados.',
-  );
+  final serializables =
+      clasesCore.where((c) => !c.esAbstracta && c.clavesToJson != null).length;
+  stdout.writeln('serializacion: ok — $serializables clases serializables '
+      'verificadas campo por campo, ${opacos.length} opacas declaradas, '
+      '${huerfanos.length} puertos sin implementación declarados.');
 }
