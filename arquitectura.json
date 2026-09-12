@@ -409,7 +409,7 @@
       "enunciado": "Una clase de core o serializa, o esta declarada opaca con su motivo. No hay tercera opcion silenciosa.",
       "origen": "INV-5, docs/03 §4, y ADR-011 corolario 5",
       "tipo": "opacidad_declarada",
-      "aplicada_por": "tool/inexistente",
+      "aplicada_por": "tool/analisis",
       "alternativa": "Si el tipo no debe viajar, declaralo aca con su motivo y su mascara. Si debe viajar, escribile toJson y fromJson.",
       "opacos": {
         "_": "Clases que NO serializan a proposito. Cada una con su motivo y la mascara exacta que devuelve su toString.",
