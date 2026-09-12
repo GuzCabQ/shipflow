@@ -236,6 +236,65 @@ cadenas.
 Ahora son **catorce pasos independientes**. Con el campo roto, el que revienta
 se reporta y los trece restantes corren.
 
+### El arnés no toca el checkout compartido
+
+Escribía cada sabotaje sobre el árbol de trabajo y restauraba después. El diario
+cubría las interrupciones y **no cubría la concurrencia**: mientras una corrida
+tenía un sabotaje puesto, otro proceso commiteó. El commit se llevó el
+`aplicada_por` de una regla apuntado a un aplicador inexistente, un canario
+sintético versionado, y la huella del JSON saboteado — los tres estados internamente coherentes, así que nada
+local se puso rojo. **Un checkout limpio de ese commit fallaba `capas.py` con dos
+errores.**
+
+Y el motivo por el que ningún control lo vio es el que vale registrar: **todos
+miran el árbol de trabajo, y ninguno mira lo commiteado.**
+
+```
+probar_reglas.py                                   ← el árbol compartido
+  ├─ huella del original
+  ├─ copytree → /tmp/arnes-copia-XXXX/             0,11 s
+  ├─ los 107 sabotajes, adentro de la copia
+  ├─ borrar la copia
+  └─ la huella del original tiene que coincidir
+```
+
+**`.dart_tool` se copia, y por eso no hace falta `pub get`.** Sus rutas a los
+miembros del workspace son relativas, así que en la copia resuelven a la copia —
+el mismo hecho medido que hace funcionar el candidato. Copiar 84 MB cuesta una
+décima de segundo; resolver de nuevo costaría más y necesitaría el cache.
+
+**La detección de residuo dejó de preguntarle a git.** `estado_git` tenía dos
+límites: solo veía lo versionado —un canario en un directorio ignorado no
+aparecía— y necesitaba un `.git` que la copia no tiene. Ahora es una huella de
+contenido, y son dos preguntas distintas: **afuera**, que el original no cambió
+en absoluto, con lo generado incluido; **adentro**, que los sabotajes no dejaron
+residuo, con lo generado excluido, porque `package_config.json` lleva fecha de
+generación y los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+### Y el arnés se niega antes de escribir donde no debe
+
+Una revisión pidió una prueba de que el árbol compartido no cambia. La huella
+que se compara antes y después ya lo mide **en cada corrida** — pero tiene un
+hueco: si alguien saca el desvío a la copia, la comprobación se va con él.
+
+Una negativa cierra eso mejor que una prueba. El proceso externo le dice al
+interno de dónde salió la copia; si esa variable no está, o apunta al árbol
+donde el proceso está parado, **no sabotea nada**:
+
+```
+$ python3 tool/checks/probar_reglas.py --en-copia
+Me niego a sabotear este árbol.
+```
+
+Sacar el desvío no deja al arnés escribiendo sobre el checkout compartido: lo
+deja rojo.
+
+**Lo que queda declarado:** `--recuperar` y `probar_recuperacion.py` siguen
+existiendo y siguen pasando, pero su motivo original —recuperar el checkout
+compartido tras una corrida muerta— ya no aplica, porque ese checkout no se
+toca. Retirarlos es un cambio coordinado aparte: son un paso obligatorio de CI y
+una cifra derivada de este README.
+
 ### Tres propiedades que hacen verificable el registro
 
 - **Cada regla tiene un `id` estable y una violación canónica.**

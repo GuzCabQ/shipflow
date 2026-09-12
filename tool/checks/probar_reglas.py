@@ -41,15 +41,36 @@ exime de tener que poder ponerse roja.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
+
+# **Los sabotajes corren sobre una COPIA PRIVADA, nunca sobre el checkout
+# compartido.** Esta bandera la pone el proceso externo cuando ya hizo la copia;
+# sin ella, `main` copia y se rehace a sí mismo adentro.
+EN_COPIA = "--en-copia"
+
+# Por dónde el proceso externo le dice al interno de dónde salió la copia. No es
+# comodidad: es lo que le permite al interno NEGARSE a sabotear si resulta que
+# está parado sobre el original. Ver `main`.
+ORIGEN = "ARNES_ORIGEN"
+
+# Lo que NO se copia: el historial —que la copia no necesita y pesa—, los
+# artefactos de build y los snapshots, que se regeneran. `.dart_tool` SÍ se
+# copia: sus rutas a los miembros del workspace son relativas, así que en la
+# copia resuelven a la copia, y eso evita un `pub get` por corrida. Es el mismo
+# hecho medido que hace funcionar el candidato.
+SIN_COPIAR = (".git", "build", "*.dill")
 
 RAIZ = Path(__file__).resolve().parents[2]
 CHECK = RAIZ / "tool" / "checks" / "capas.py"
@@ -69,6 +90,80 @@ CI_REL = ".github/workflows/checks.yml"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
 REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
+
+
+def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
+    """Huella del contenido de un árbol. **Bytes, no `git status`.**
+
+    `estado_git` preguntaba a git, así que solo veía lo versionado y necesitaba
+    un `.git` que la copia no tiene. Esto compara contenido, y sirve para las
+    dos preguntas distintas que hay que hacerse:
+
+    - **afuera**, que el checkout compartido no haya cambiado en absoluto, y ahí
+      `.dart_tool` SÍ cuenta: nada nuestro corre pub sobre el original;
+    - **adentro**, que los sabotajes no dejen residuo, y ahí `.dart_tool` NO
+      puede contar, porque `package_config.json` lleva una fecha de generación y
+      los casos que corren `pub get` la cambian sin que eso sea residuo.
+    """
+    h = hashlib.sha256()
+    ignorados = {".git", "build"} | (set() if con_generados else {".dart_tool"})
+    for ruta in sorted(raiz.rglob("*")):
+        rel = ruta.relative_to(raiz)
+        if set(rel.parts) & ignorados or rel.suffix == ".dill":
+            continue
+        h.update(str(rel).encode("utf-8"))
+        if ruta.is_symlink():
+            h.update(b"\0enlace\0" + os.readlink(ruta).encode("utf-8"))
+        elif ruta.is_file():
+            h.update(b"\0" + ruta.read_bytes())
+    return h.hexdigest()
+
+
+def en_copia_privada(argumentos: list[str]) -> int:
+    """Copia el árbol, corre el arnés adentro, y comprueba que el original no
+    cambió.
+
+    **El arnés escribía los sabotajes sobre el checkout compartido y restauraba
+    después.** El diario cubría las interrupciones y no cubría la concurrencia:
+    mientras una corrida tenía un sabotaje puesto, otro proceso commiteó — y el
+    commit se llevó `aplicada_por: tool/inexistente`, un canario sintético
+    versionado, y la huella del JSON saboteado. Un checkout limpio de ese commit
+    fallaba `capas.py` con dos errores. Ningún control lo vio, porque todos miran
+    el árbol de trabajo y ninguno mira lo commiteado.
+
+    Copiar cuesta una décima de segundo y vuelve el problema imposible en vez de
+    improbable: el original queda intocado por construcción, y además se
+    comprueba. Lo segundo no es redundante — es lo que convierte «no lo tocamos»
+    en un hecho medido.
+    """
+    antes = huella_del_arbol(RAIZ, con_generados=True)
+    temporal = Path(tempfile.mkdtemp(prefix="arnes-copia-"))
+    # `flush` porque el proceso interno escribe a la misma salida sin buffer:
+    # sin esto, el aviso de la copia aparecía DESPUÉS del veredicto, que es
+    # decir dónde corrió una vez que ya no importa.
+    print(f"  copia privada en {temporal}\n", flush=True)
+    try:
+        destino = temporal / RAIZ.name
+        shutil.copytree(RAIZ, destino,
+                        ignore=shutil.ignore_patterns(*SIN_COPIAR),
+                        symlinks=True)
+        adentro = subprocess.run(
+            [sys.executable,
+             str(destino / "tool" / "checks" / "probar_reglas.py"),
+             EN_COPIA, *argumentos],
+            env={**os.environ, ORIGEN: str(RAIZ)})
+        codigo = adentro.returncode
+    finally:
+        shutil.rmtree(temporal, ignore_errors=True)
+
+    if huella_del_arbol(RAIZ, con_generados=True) != antes:
+        print("\nprobar_reglas: FALLA\n")
+        print("  el checkout COMPARTIDO cambió durante la corrida. Los sabotajes "
+              "viven en una\n  copia privada, así que esto no puede venir del "
+              "arnés: o alguien más lo editó,\n  o hay un camino que se escapó de "
+              "la copia. Lo segundo es grave.")
+        return 1
+    return codigo
 
 
 def arq_con(mutar) -> str:
@@ -820,12 +915,10 @@ def pub_get() -> None:
     subprocess.run(["dart", "pub", "get"], cwd=RAIZ, capture_output=True, timeout=180)
 
 
-def estado_git() -> str | None:
-    """Huella del árbol. No exige que esté LIMPIO —esto corre mientras se
-    desarrolla— sino que no CAMBIE: busca residuo, no pulcritud."""
-    r = subprocess.run(["git", "status", "--porcelain"], cwd=RAIZ,
-                       capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else None
+# **Acá vivía `estado_git`, y se fue con su motivo.** Detectaba residuo
+# preguntándole a `git status`, lo que traía dos límites: solo veía lo
+# versionado —un canario en un directorio ignorado no aparecía— y necesitaba un
+# `.git`, que la copia privada no tiene. `huella_del_arbol` compara contenido.
 
 
 def aplicar(archivos: dict[str, str]) -> dict[str, str | None]:
@@ -989,10 +1082,41 @@ def main() -> int:
     global ORDENES
     for s in (signal.SIGINT, signal.SIGTERM):
         signal.signal(s, _al_recibir_senal)
+    # **`--recuperar` opera sobre el árbol donde se lo invoca, no sobre una
+    # copia.** Existe para deshacer lo que dejó una corrida vieja —de antes de
+    # que los sabotajes vivieran en una copia—, y `probar_recuperacion.py` lo
+    # ejercita sobre el árbol real. Mandarlo a una copia lo volvería un no-op
+    # silencioso.
     if recuperar(reparar="--recuperar" in sys.argv):
         return 1
     if "--recuperar" in sys.argv:
         return 0
+
+    # Y si todavía no estamos adentro de la copia, se hace y nos rehacemos ahí.
+    if EN_COPIA not in sys.argv:
+        return en_copia_privada([a for a in sys.argv[1:] if a != EN_COPIA])
+
+    # **Y acá se NIEGA a sabotear el original.**
+    #
+    # Una revisión pidió una prueba que demostrara que el árbol compartido no
+    # cambia. La huella que compara `en_copia_privada` antes y después ya lo mide
+    # en cada corrida, pero tiene un hueco: si alguien saca el desvío a la copia,
+    # la comprobación se va con él y nada queda mirando.
+    #
+    # Una negativa cierra eso mejor que una prueba. El proceso externo dice de
+    # dónde salió la copia; si esa variable no está, o si apunta al árbol donde
+    # estamos parados, este proceso no sabotea nada. Sacar el desvío no deja al
+    # arnés escribiendo sobre el checkout compartido: lo deja **rojo**.
+    origen = os.environ.get(ORIGEN)
+    if origen is None or Path(origen).resolve() == RAIZ:
+        print("Me niego a sabotear este árbol.\n")
+        print(f"  Los sabotajes viven en una copia privada, y «{ORIGEN}» "
+              f"{'no está puesta' if origen is None else 'apunta acá mismo'}.\n"
+              f"  Si el desvío a la copia se sacó, esto es exactamente lo que "
+              f"tenía que pasar:\n  el arnés no escribe sobre el checkout "
+              f"compartido ni cuando se lo rompen.")
+        return 1
+
     ORDENES = compilar()
     codigo, salida = corre_check()
     if codigo != 0:
@@ -1006,7 +1130,10 @@ def main() -> int:
             print(f"  {f}")
         return 1
 
-    git_antes = estado_git()
+    # **Residuo por CONTENIDO, no por `git status`.** La copia no tiene `.git`,
+    # y además preguntarle a git solo veía lo versionado: un canario sintético
+    # en un directorio ignorado no aparecía.
+    huella_antes = huella_del_arbol(RAIZ, con_generados=False)
     print("  árbol limpio\n")
 
     problemas: list[str] = []
@@ -1038,12 +1165,11 @@ def main() -> int:
     codigo, _ = corre_check()
     if codigo != 0:
         problemas.append("el árbol quedó en rojo tras restaurar")
-    git_despues = estado_git()
-    if git_antes is None or git_despues is None:
-        print("\n  (sin git: no se pudo verificar que no quedara residuo)")
-    elif git_antes != git_despues:
-        nuevos = sorted(set(git_despues.splitlines()) - set(git_antes.splitlines()))
-        problemas.append("los sabotajes dejaron residuo:\n      " + "\n      ".join(nuevos))
+    if huella_del_arbol(RAIZ, con_generados=False) != huella_antes:
+        problemas.append(
+            "los sabotajes dejaron residuo: el contenido del árbol no volvió a "
+            "ser el de antes.\n      Alguno no restauró lo que tocó, y el "
+            "siguiente corrió sobre un árbol que no era el que dice.")
 
     if problemas:
         print("\nprobar_reglas: FALLA\n")
