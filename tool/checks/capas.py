@@ -844,40 +844,109 @@ def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str]
 
 # --- las flechas declaradas se usan -------------------------------------
 
-def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
-    """Toda dependencia interna declarada se importa.
+def _importado_por_paquete() -> dict[str, dict[str, set[str]]]:
+    """Qué paquetes internos importa cada paquete, y **desde qué ámbito**.
 
-    **`deps-hacia-core` dice qué flechas están PERMITIDAS; esta dice que las
-    declaradas se USAN.** Un review encontró tres en `cli` con cero imports, y
-    escribir este check encontró dos más en los stubs. Ninguna otra regla podía
+    **Sale del grafo, no de un regex sobre el texto.** La primera versión
+    buscaba `package:<nombre>/` en todo el archivo, así que un comentario
+    contaba como uso: una revisión lo reprodujo declarando `rules` en `cli`,
+    sin ningún import, con una sola línea `// package:rules/rules.dart` — y
+    `capas.py` salió con cero. Era el mismo error de leer sintaxis con una
+    expresión regular que este arnés acababa de sacar de otra parte.
+
+    `grafo.jsonl` lo deriva `tool/analisis` del ÁRBOL SINTÁCTICO, mirando
+    `ImportDirective` y `ExportDirective`, y `grafo-derivado` lo verifica contra
+    el árbol en cada corrida. Un comentario no es una directiva, así que no
+    aparece.
+
+    **Si el grafo no está, esto no pasa en silencio:** sin aristas no hay uso
+    para nadie y toda dependencia declarada queda señalada. Falla cerrado.
+    """
+    por_paquete: dict[str, dict[str, set[str]]] = {}
+    archivo = RAIZ / "grafo.jsonl"
+    if not archivo.exists():
+        return por_paquete
+    for linea in archivo.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        try:
+            nodo = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        origen = _paquete_de(nodo.get("id", ""))
+        if origen is None:
+            continue
+        ambito = _ambito_de(nodo["id"])
+        caja = por_paquete.setdefault(origen, {"produccion": set(), "prueba": set()})
+        for arista in nodo.get("aristas", []):
+            if arista.get("tipo") != "importa":
+                continue
+            destino = _paquete_de(arista.get("a", ""))
+            if destino is not None and destino != origen:
+                caja[ambito].add(destino)
+    return por_paquete
+
+
+def _paquete_de(ruta: str) -> str | None:
+    partes = ruta.split("/")
+    return partes[1] if len(partes) > 2 and partes[0] == "packages" else None
+
+
+def _ambito_de(ruta: str) -> str:
+    """`test/` es prueba; `lib/` y `bin/` son producción."""
+    partes = ruta.split("/")
+    return "prueba" if len(partes) > 2 and partes[2] == "test" else "produccion"
+
+
+def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
+    """Toda dependencia interna declarada se importa, **y desde el ámbito que
+    su sección promete**.
+
+    `deps-hacia-core` dice qué flechas están PERMITIDAS; esta dice que las
+    declaradas se USAN. Un review encontró tres en `cli` con cero imports, y
+    escribir el check encontró dos más en los stubs. Ninguna otra regla podía
     verlas: estaban permitidas, así que para `deps-hacia-core` no había nada mal.
 
-    Se cuentan las externas afuera a propósito. Que `test` esté declarado y no se
-    use es ruido de desarrollo; que `cli` declare `vcs` es una afirmación sobre
-    la arquitectura del producto.
+    **Y la sección importa.** Una dependencia de producción que solo se importa
+    desde `test/` está declarada en el lugar equivocado: `plugin_fake` estaba así
+    en `cli` —siete archivos, todos de prueba— mientras `plugin_dart` ya usaba el
+    patrón correcto. Confundir «¿se importa en algún lado?» con «¿está en la
+    sección correcta?» deja pasar la mitad de la pregunta.
+
+    Las externas quedan afuera a propósito: que `test` esté declarado y no se use
+    es ruido de desarrollo; que `cli` declare `vcs` es una afirmación sobre la
+    arquitectura del producto.
     """
     regla = REGLAS["dependencias-declaradas-se-usan"]
+    importa = _importado_por_paquete()
     internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
     for nombre in sorted(internos):
-        pkg = PAQUETES / nombre
-        if not pkg.exists():
+        if not (PAQUETES / nombre).exists():
             continue
-        usados: set[str] = set()
-        for archivo in pkg.rglob("*.dart"):
-            if ".dart_tool" in str(archivo) or "/build/" in str(archivo):
+        caja = importa.get(nombre, {"produccion": set(), "prueba": set()})
+        for dep in g[nombre].get("directDependencies", []):
+            if dep not in internos or dep in caja["produccion"]:
                 continue
-            usados.update(re.findall(r"package:([a-z_0-9]+)/",
-                                     archivo.read_text(encoding="utf-8")))
-        for clave in ("directDependencies", "devDependencies"):
-            for dep in g[nombre].get(clave, []):
-                if dep not in internos or dep in usados:
-                    continue
-                que = ("dependencia" if clave == "directDependencies"
-                       else "dependencia de desarrollo")
+            if dep in caja["prueba"]:
                 fallos.append(
-                    f"packages/{nombre}: declara «{dep}» como {que} y no la "
-                    f"importa en ninguna línea. {regla['enunciado']}\n"
-                    f"      → {regla['alternativa']}")
+                    f"packages/{nombre}: declara «{dep}» como dependencia de "
+                    f"producción y solo la importa desde `test/`.\n"
+                    f"      → Movela a `dev_dependencies`, que es donde una "
+                    f"dependencia de prueba dice lo que es.")
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia y no la "
+                f"importa en ninguna directiva. {regla['enunciado']}\n"
+                f"      → {regla['alternativa']}")
+        for dep in g[nombre].get("devDependencies", []):
+            if dep not in internos:
+                continue
+            if dep in caja["produccion"] or dep in caja["prueba"]:
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia de "
+                f"desarrollo y no la importa en ninguna directiva. "
+                f"{regla['enunciado']}\n      → {regla['alternativa']}")
 
 
 # --- origen de dependencias · independiente de la anterior --------------

@@ -254,7 +254,7 @@ miran el árbol de trabajo, y ninguno mira lo commiteado.**
 probar_reglas.py                                   ← el árbol compartido
   ├─ huella del original
   ├─ copytree → /tmp/arnes-copia-XXXX/             0,11 s
-  ├─ los 107 sabotajes, adentro de la copia
+  ├─ los sabotajes, adentro de la copia
   ├─ borrar la copia
   └─ la huella del original tiene que coincidir
 ```
@@ -267,10 +267,15 @@ décima de segundo; resolver de nuevo costaría más y necesitaría el cache.
 **La detección de residuo dejó de preguntarle a git.** `estado_git` tenía dos
 límites: solo veía lo versionado —un canario en un directorio ignorado no
 aparecía— y necesitaba un `.git` que la copia no tiene. Ahora es una huella de
-contenido, y son dos preguntas distintas: **afuera**, que el original no cambió
-en absoluto, con lo generado incluido; **adentro**, que los sabotajes no dejaron
-residuo, con lo generado excluido, porque `package_config.json` lleva fecha de
-generación y los casos que corren `pub get` la cambian sin que eso sea residuo.
+contenido, y son dos preguntas distintas: **afuera**, que el original no cambió,
+con lo generado incluido; **adentro**, que los sabotajes no dejaron residuo, con
+lo generado excluido, porque `package_config.json` lleva fecha de generación y
+los casos que corren `pub get` la cambian sin que eso sea residuo.
+
+**Con su alcance escrito, no «en absoluto».** Compara ruta, tipo, modo y
+contenido de cada archivo y enlace, con las longitudes por delante. Quedan
+afuera `.git`, `build/` y los snapshots `.dill` —que se regeneran— y el modo de
+los directorios. Decir «no cambió en absoluto» afirmaba más de lo que mide.
 
 ### Y el arnés se niega antes de escribir donde no debe
 
@@ -355,6 +360,27 @@ el mismo criterio, y `pubspec.lock` no se movió en ninguno de los dos casos.
 > **`dependencias-declaradas-se-usan`** — toda dependencia interna declarada en
 > un pubspec se importa en ese paquete. Su violación canónica es exactamente la
 > flecha que se acaba de quitar: `cli` declarando `vcs`.
+
+**La evidencia sale del árbol sintáctico, no de un regex.** La primera versión
+buscaba `package:<nombre>/` en todo el texto del archivo, así que un comentario
+contaba como uso: una revisión lo reprodujo declarando `rules` en `cli`, sin
+ningún import, con una sola línea `// package:rules/rules.dart` — y `capas.py`
+salió con cero. Era el mismo error de leer sintaxis con una expresión regular que
+este arnés acababa de sacar de otra parte.
+
+Ahora la evidencia sale de `grafo.jsonl`, que `tool/analisis` deriva mirando
+`ImportDirective` y `ExportDirective`, y que `grafo-derivado` verifica contra el
+árbol en cada corrida. Un comentario no es una directiva.
+
+**Y la sección importa.** El grafo distingue `test/` de `lib/` y `bin/`, así que
+la regla contesta dos preguntas y no una: si la dependencia se importa, y si está
+declarada donde corresponde. Eso encontró que `plugin_fake` era dependencia de
+producción de `cli` con sus siete imports en `test/`, mientras `plugin_dart` ya
+usaba el patrón correcto.
+
+Las tres ramas —producción sin usar, desarrollo sin usar, y producción usada solo
+en pruebas— tienen su sabotaje. La segunda faltaba, y una revisión lo comprobó
+borrando esa rama del bucle: los sabotajes seguían todos verdes.
 
 **Límite declarado, y hay que decirlo porque ya cobró.** Esto mira el pubspec
 contra los imports; **no mira la prosa**. Quitar las tres de `cli` dejó dos
@@ -1200,7 +1226,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 115 sabotajes.**
+y su caso ciego. **El arnés aplica 117 sabotajes.**
 
 ---
 

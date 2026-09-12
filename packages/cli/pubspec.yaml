@@ -22,8 +22,6 @@ dependencies:
     path: ../orchestration
   plugin_dart:
     path: ../plugin_dart
-  plugin_fake:
-    path: ../plugin_fake
 
 # Las suites de contrato viven acá, así que la dependencia es real y se declara.
 # `core` no puede hacer lo mismo —`nucleo-sin-externas` le prohíbe TODA
@@ -31,3 +29,9 @@ dependencies:
 # la del workspace. Acá no hace falta esa excepción.
 dev_dependencies:
   test: ^1.25.0
+  # **De desarrollo, no de producción.** Sus siete imports viven en `test/`, y
+  # el paquete se describe a sí mismo como implementaciones falsas «para
+  # pruebas». Estaba declarado como dependencia de producción, que decía otra
+  # cosa; `plugin_dart` ya usaba el patrón correcto.
+  plugin_fake:
+    path: ../plugin_fake

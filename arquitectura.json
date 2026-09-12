@@ -617,12 +617,12 @@
         "controles distintos y solo uno esta claro como se automatiza sin ruido."
       ],
       "alcance": {
-        "_": "`directDependencies` y `devDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las externas no las gobierna: que `test` este declarado y no se use es ruido de desarrollo, no una afirmacion sobre la arquitectura.",
+        "_": "`directDependencies` y `devDependencies` del grafo de `dart pub deps --json`, FILTRADAS a los miembros del workspace. Las externas no las gobierna: que `test` este declarado y no se use es ruido de desarrollo, no una afirmacion sobre la arquitectura. La EVIDENCIA DE USO sale de `grafo.jsonl`, que `tool/analisis` deriva del arbol sintactico mirando `ImportDirective` y `ExportDirective`; y de que ese grafo distinga `test/` de `lib/` y `bin/` sale la comprobacion de que cada dependencia este en su seccion.",
         "raiz": "packages",
         "extensiones": [
           ".dart"
         ],
-        "residuo_declarado": "Cuenta `package:<nombre>/` sobre el texto de los `.dart` del paquete, asi que ve `import`, `export` y `part of` por igual — que es lo que se quiere. Lo que NO ve es una dependencia usada solo desde un archivo generado que no este en el arbol."
+        "residuo_declarado": "Una directiva es lo unico que cuenta: un comentario o una cadena que nombre `package:x/` no. La primera version usaba un regex sobre el texto y un comentario alcanzaba para simular uso — reproducido. Lo que NO ve es una dependencia usada solo desde un archivo generado que no este en el arbol, ni una cuyo import el grafo no alcance: de eso responde `grafo-derivado`, que verifica el grafo contra el arbol."
       },
       "violacion_canonica": {
         "_": "La flecha que se acaba de quitar: `cli` declarando `vcs`, que ninguna linea importa. Es PERMITIDA por `deps-hacia-core`, asi que ninguna otra regla la ve — es exactamente el hueco que esta regla cierra.",
@@ -637,7 +637,27 @@
         "como": "grafo_indisponible",
         "por_que_ciega": "Las flechas se las pide a pub. Sin grafo no hay ninguna dependencia declarada que mirar, y cero dependencias se lee igual que «todas estan usadas».",
         "debe_mencionar": "dart pub deps"
-      }
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "una dependencia de desarrollo sin usar",
+          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note.",
+          "archivos": {
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  vcs:\n    path: ../vcs\n"
+          },
+          "debe_mencionar": "desarrollo",
+          "requiere_pub_get": true
+        },
+        {
+          "nombre": "una dependencia de produccion que solo se usa en pruebas",
+          "por_que": "`plugin_fake` estaba declarado como dependencia de produccion de `cli` y sus siete imports vivian en `test/`. Sin este caso, la regla contesta «se importa en algun lado» y no «esta en la seccion correcta», que son dos preguntas distintas.",
+          "archivos": {
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  plugin_fake:\n    path: ../plugin_fake\n\ndev_dependencies:\n  test: ^1.25.0\n"
+          },
+          "debe_mencionar": "solo la importa desde",
+          "requiere_pub_get": true
+        }
+      ]
     }
   }
 }
