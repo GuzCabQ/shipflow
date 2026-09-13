@@ -449,6 +449,15 @@ abstract interface class PreparedCandidate {
 /// `candidateRoot`, y [PreparedCandidate.dispose] ya borra esa raíz entera. Un
 /// segundo cierre sería redundante o un doble borrado, con un orden
 /// determinante que nada impone.
+///
+/// **Se deriva UNA vez por candidato, y eso es una precondición, no un
+/// detalle.** El rechazo por «el árbol versiona lo que la derivación genera»
+/// mira el disco, que es lo único que la implementación puede mirar: no conoce
+/// git y no debe conocerlo. Después de una derivación exitosa ese disco ya tiene
+/// lo generado, así que una segunda llamada sobre el mismo candidato lo
+/// rechazaría — y tendría razón según lo que puede ver. Quien recomponga una
+/// corrida prepara un candidato nuevo; es lo que hace [PreparedCandidate] con su
+/// raíz temporal.
 abstract interface class VerificationEnvironment {
   Future<ResultadoDeEntorno> derivar(
     String candidateRoot, {

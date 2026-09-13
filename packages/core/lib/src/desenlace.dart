@@ -642,6 +642,13 @@ final class EntornoDerivado extends ResultadoDeEntorno {
     'toolchain': toolchain.toJson(),
   };
 
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of EntornoDerivado» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'EntornoDerivado($paquetes paquetes en $raices raíz/raíces)';
+
   factory EntornoDerivado.fromJson(Map<String, Object?> json) {
     ResultadoDeEntorno._exigirKind(json['kind'], 'derivado');
     return EntornoDerivado(
@@ -702,6 +709,13 @@ final class CandidatoRechazado extends ResultadoDeEntorno {
     'evidencia': evidencia.toJson(),
   };
 
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of CandidatoRechazado» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'CandidatoRechazado(${causa.name}): ${evidencia.content}';
+
   factory CandidatoRechazado.fromJson(Map<String, Object?> json) {
     ResultadoDeEntorno._exigirKind(json['kind'], 'rechazado');
     return CandidatoRechazado(
@@ -749,6 +763,13 @@ final class DerivacionAbortada extends ResultadoDeEntorno {
     'terminacion': terminacion.name,
     'evidencia': evidencia.toJson(),
   };
+
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of DerivacionAbortada» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'DerivacionAbortada(${terminacion.name}): ${evidencia.content}';
 
   factory DerivacionAbortada.fromJson(Map<String, Object?> json) {
     ResultadoDeEntorno._exigirKind(json['kind'], 'abortada');
