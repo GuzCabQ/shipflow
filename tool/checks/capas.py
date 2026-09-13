@@ -190,6 +190,7 @@ CIEGO_FIJO = {
     "grafo-derivado": "archivo_ilegible",
     "colecciones-inmutables": "archivo_ilegible",
     "dependencias-declaradas-se-usan": "grafo_indisponible",
+    "subprocesos-con-entorno-saneado": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {

@@ -248,6 +248,12 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "una dependencia de produccion usada solo desde integration_test",
         "un comentario que nombra el paquete no es evidencia de uso",
     },
+    "subprocesos-con-entorno-saneado": {
+        "sin environment, hereda todo",
+        "entornoSaneado sin includeParentEnvironment false",
+        "start y runSync tambien cuentan",
+        "un part suma un lanzamiento a la biblioteca exceptuada",
+    },
     "puertos-sin-implementacion": {
         "implementado a traves de una base abstracta",
         "homonima en el ORIGEN de la resolucion",

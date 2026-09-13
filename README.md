@@ -87,6 +87,7 @@ la arquitectura y se revisa como tal.
 | `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
 | `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
 | `dependencias-declaradas-se-usan` | Que un pubspec declare una flecha interna que ninguna línea importa | `capas.py` |
+| `subprocesos-con-entorno-saneado` | Que un subproceso **herede** el entorno del padre —el token de la forja, un `GIT_*` del shell— en vez de recibir la lista blanca | `tool/analisis` |
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
@@ -1275,7 +1276,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 119 sabotajes.**
+y su caso ciego. **El arnés aplica 128 sabotajes.**
 
 ---
 

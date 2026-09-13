@@ -682,6 +682,89 @@
           "requiere_pub_get": true
         }
       ]
+    },
+    "subprocesos-con-entorno-saneado": {
+      "enunciado": "Todo subproceso que este repositorio lanza recibe `environment: entornoSaneado(...)` e `includeParentEnvironment: false`. El entorno del padre NO se hereda.",
+      "origen": "Propuesta del entorno de verificacion §8 y §9, aprobada el 12/09/2026. Medido: con el entorno heredado, el token de la forja llega a todo hijo y a todo lo que ese hijo lance; y un GIT_DIR en el shell del usuario corrompe las operaciones de vcs sin que nada lo note.",
+      "tipo": "entorno_saneado",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Pasale `environment: entornoSaneado(padre, propias: {...})` e `includeParentEnvironment: false`. Lo que esa invocacion necesite de mas va en `propias`, nunca heredado.",
+      "por_que": [
+        "Una lista negra promete solo sobre lo que alguien enumero: cualquier",
+        "variable secreta futura se filtra sola. La lista blanca promete lo",
+        "contrario, y esta regla exige que sea la UNICA forma de armar el entorno de",
+        "un proceso.",
+        "",
+        "COMPRUEBA SEMANTICA, NO FORMA. La primera version del diseño pedia que",
+        "existieran `environment:` e `includeParentEnvironment: false`. Esto los",
+        "cumple al pie y no sanea nada:",
+        "",
+        "    Process.run(exe, args,",
+        "        environment: Platform.environment,   // cumple la forma",
+        "        includeParentEnvironment: false);    // y filtra CERO",
+        "",
+        "Asi que lo que se exige es que la expresion de `environment:` SEA una",
+        "llamada a `entornoSaneado`, derivado del arbol sintactico, en los tres",
+        "lanzadores: run, runSync y start."
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete. Los test/ NO: las pruebas lanzan git y chmod a mano, y esa es su forma de medir que recibe un hijo.",
+        "residuo_declarado": "Mira `Process.run|runSync|start` por nombre simple. Un alias (`final p = Process; p.run(...)`) o una funcion que envuelva `Process.start` y reciba el entorno de afuera no se ven. Lo segundo es exactamente lo que hacen las costuras de vcs y de plugin_dart, y por eso la regla se aplica ADENTRO de ellas, donde esta el `Process.` literal."
+      },
+      "excepciones": [
+        {
+          "archivo": "packages/vcs/lib/src/repositorio.dart",
+          "metodo": "_identidadComoEntorno",
+          "por_que": "La identidad de git se captura UNA vez con el entorno del padre, antes de sanear. `git config --get` tiene que ver XDG_CONFIG_HOME y GIT_CONFIG_GLOBAL, que la lista blanca no lleva a proposito, y enumerar por donde git puede leer su configuracion es la misma carrera que una lista negra. Medido: con PATH y HOME solos, una identidad que vive en XDG se pierde y git FABRICA el autor. Es un `git config --get` de solo lectura: no corre ganchos ni filtros y no escribe nada. El check admite EXACTAMENTE UN lanzamiento sin sanear en esta biblioteca, dentro de este metodo, y cuenta: un segundo es rojo."
+        }
+      ],
+      "violacion_canonica": {
+        "donde": "packages/vcs/lib/src/_canario_proceso.dart",
+        "contenido": "import 'dart:io';\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n",
+        "debe_mencionar": "entornoSaneado"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "sin environment, hereda todo",
+          "por_que": "El caso mas simple y el que estaba en el arbol antes de esta rebanada: no pasar nada. `environment` ausente significa heredar, y el mensaje tiene que decirlo.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nFuture<void> canario() async {\n  await Process.run('x', const []);\n}\n"
+          },
+          "debe_mencionar": "hereda todo"
+        },
+        {
+          "nombre": "entornoSaneado sin includeParentEnvironment false",
+          "por_que": "Sanear y ADEMAS heredar no sanea: el mapa se SUMA al del padre. Es la mitad del arreglo, que se lee como el arreglo entero.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nimport 'package:core/core.dart';\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(Platform.environment),\n  );\n}\n"
+          },
+          "debe_mencionar": "includeParentEnvironment"
+        },
+        {
+          "nombre": "start y runSync tambien cuentan",
+          "por_que": "Tres lanzadores, no uno. Una regla que mirara solo `run` dejaria abiertos los otros dos, y este repositorio usa los tres.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nvoid canario() {\n  Process.runSync(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n  Process.start(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "entornoSaneado"
+        },
+        {
+          "nombre": "un part suma un lanzamiento a la biblioteca exceptuada",
+          "por_que": "La excepcion admite UN sitio y se cuenta por BIBLIOTECA, no por archivo: un `part` puede agregarle otro sin tocar el archivo declarado, y entonces la declaracion lo taparia. Este canario es un part de repositorio.dart y tiene que salir rojo.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "part of 'repositorio.dart';\n\nFuture<void> canarioDeExcepcion(RepositorioGit r) async {\n  await Process.run(\n    'git',\n    const ['config', '--get', 'user.name'],\n    environment: r._padre,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "excepcion"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simetrico de la violacion canonica: aquella prueba que el check detecta un EXCESO; este, que detecta una OMISION.",
+        "que": "Un archivo de packages/ que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Los lanzamientos se buscan en el arbol sintactico. De un arbol parcial no sale ninguno, y un archivo que no se pudo leer no tiene subprocesos que revisar — que se lee exactamente igual que no tenerlos.",
+        "debe_mencionar": "no parsea"
+      }
     }
   }
 }

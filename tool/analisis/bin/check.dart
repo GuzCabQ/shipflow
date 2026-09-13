@@ -552,6 +552,129 @@ ArgumentList? _argumentosDe(Expression e, String nombre) {
   return null;
 }
 
+/// Un lanzamiento de proceso, y si cumple la regla del entorno saneado.
+class _Lanzamiento {
+  /// Relativo a la raíz del repositorio.
+  final String archivo;
+
+  /// A qué biblioteca pertenece: el archivo mismo, o el de su `part of`.
+  ///
+  /// **La excepción se cuenta por BIBLIOTECA y no por archivo.** Un `part`
+  /// puede agregar un lanzamiento a la biblioteca exceptuada sin tocar el
+  /// archivo declarado, y entonces la declaración lo taparía.
+  final String biblioteca;
+
+  final int offset;
+
+  /// Los métodos y funciones que lo contienen, de afuera hacia adentro.
+  ///
+  /// **Es el ámbito completo y no solo el más interno**, porque una excepción
+  /// declarada para un método vale también para un ayudante local suyo: la
+  /// captura de identidad lanza desde una función anidada, y mirar solo el nivel
+  /// de adentro leía `leer` donde la declaración dice `_capturarIdentidad`.
+  final List<String> ambito;
+
+  /// Nulo si cumple.
+  final String? problema;
+
+  const _Lanzamiento(
+    this.archivo,
+    this.biblioteca,
+    this.offset,
+    this.ambito,
+    this.problema,
+  );
+
+  /// Lo más interno, para el mensaje.
+  String get donde => ambito.isEmpty ? 'el tope del archivo' : ambito.last;
+}
+
+/// Busca `Process.run`, `Process.runSync` y `Process.start` y comprueba la
+/// SEMÁNTICA de su entorno, no la forma.
+///
+/// La primera versión del diseño pedía que existieran `environment:` e
+/// `includeParentEnvironment: false`. Esto los cumple al pie y no sanea nada:
+///
+///     Process.run(exe, args,
+///         environment: Platform.environment,   // ← cumple la forma
+///         includeParentEnvironment: false);    // ← y filtra CERO
+///
+/// Así que lo que se exige es que la expresión de `environment:` **sea una
+/// llamada a `entornoSaneado`**.
+class _Subprocesos extends RecursiveAstVisitor<void> {
+  _Subprocesos(this.archivo, this.biblioteca);
+
+  final String archivo;
+  final String biblioteca;
+  final List<_Lanzamiento> vistos = [];
+  final List<String> _pila = [];
+
+  static const _lanzadores = {'run', 'runSync', 'start'};
+
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    _pila.add(node.name.lexeme);
+    super.visitMethodDeclaration(node);
+    _pila.removeLast();
+  }
+
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    _pila.add(node.name.lexeme);
+    super.visitFunctionDeclaration(node);
+    _pila.removeLast();
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    super.visitMethodInvocation(node);
+    if (node.target?.toSource() != 'Process' ||
+        !_lanzadores.contains(node.methodName.name)) {
+      return;
+    }
+    final nombrados = {
+      for (final a in node.argumentList.arguments)
+        if (a is NamedExpression) a.name.label.name: a.expression,
+    };
+    final entorno = nombrados['environment'];
+    final hereda = nombrados['includeParentEnvironment'];
+    String? problema;
+    if (entorno is! MethodInvocation ||
+        entorno.methodName.name != 'entornoSaneado') {
+      problema =
+          '`environment:` no es una llamada a `entornoSaneado`'
+          '${entorno == null ? " (no está, así que hereda todo)" : ""}. '
+          'Pasar `Platform.environment` cumple la forma y filtra cero.';
+    } else if (hereda is! BooleanLiteral || hereda.value) {
+      problema =
+          'falta `includeParentEnvironment: false` literal: sin él, el '
+          'entorno saneado se SUMA al del padre en vez de reemplazarlo.';
+    }
+    vistos.add(
+      _Lanzamiento(
+        archivo,
+        biblioteca,
+        node.offset,
+        List<String>.unmodifiable(_pila),
+        problema,
+      ),
+    );
+  }
+}
+
+/// A qué biblioteca pertenece un archivo: él mismo, o el de su `part of`.
+String _bibliotecaDe(CompilationUnit unidad, String rel) {
+  for (final d in unidad.directives) {
+    if (d is PartOfDirective && d.uri != null) {
+      final uri = d.uri!.stringValue;
+      if (uri == null) continue;
+      final corte = rel.lastIndexOf('/');
+      return corte < 0 ? uri : '${rel.substring(0, corte)}/$uri';
+    }
+  }
+  return rel;
+}
+
 void main(List<String> args) {
   final raiz = Directory(
     File.fromUri(Platform.script).parent.parent.parent.parent.path,
@@ -574,6 +697,7 @@ void main(List<String> args) {
     'opacidad-declarada': 'opacidad_declarada',
     'puertos-sin-implementacion': 'huecos_declarados',
     'colecciones-inmutables': 'colecciones_copiadas',
+    'subprocesos-con-entorno-saneado': 'entorno_saneado',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
@@ -934,6 +1058,82 @@ void main(List<String> args) {
     );
   }
 
+  // --- 4 · subprocesos con entorno saneado -------------------------------
+  //
+  // Se comprueba SEMÁNTICA, no forma: lo que se exige es la llamada a
+  // `entornoSaneado`, no que el parámetro exista. Ver `_Subprocesos`.
+  final reglaDeEntorno =
+      reglas['subprocesos-con-entorno-saneado'] as Map<String, Object?>?;
+  // biblioteca → el único método donde se admite un lanzamiento sin sanear.
+  final exceptuadas = <String, String>{
+    for (final e
+        in (reglaDeEntorno?['excepciones'] as List<Object?>? ?? const []))
+      (e as Map<String, Object?>)['archivo']! as String: e['metodo']! as String,
+  };
+  final lanzamientos = <_Lanzamiento>[];
+  for (final f in fuentes(dirPaquetes)) {
+    final rel = f.path.substring(raiz.path.length + 1);
+    // **Producción es un conjunto cerrado: `lib/` y `bin/`.** Los `test/` no
+    // entran: las pruebas lanzan `git` y `chmod` a mano, y esa es su forma de
+    // medir qué recibe un hijo.
+    if (!RegExp(r'^packages/[^/]+/(lib|bin)/').hasMatch(rel)) continue;
+    final r = parseFile(
+      path: f.path,
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false,
+    );
+    // Un archivo que no parsea ya lo reportó `clasesDe`: de un árbol parcial no
+    // sale ningún lanzamiento, y cero se lee igual que «no tenía ninguno».
+    if (r.errors.isNotEmpty) continue;
+    final v = _Subprocesos(rel, _bibliotecaDe(r.unit, rel));
+    r.unit.accept(v);
+    lanzamientos.addAll(v.vistos);
+  }
+  final sinSanear = lanzamientos.where((l) => l.problema != null).toList();
+  final porBiblioteca = <String, List<_Lanzamiento>>{};
+  for (final l in sinSanear) {
+    (porBiblioteca[l.biblioteca] ??= []).add(l);
+  }
+  for (final e in porBiblioteca.entries) {
+    final metodo = exceptuadas[e.key];
+    if (metodo == null) {
+      for (final l in e.value) {
+        fallos.add(
+          '${l.archivo}:${l.offset}: lanza un proceso y ${l.problema} '
+          'Un hijo que hereda el entorno recibe el token de la forja y '
+          'cualquier `GIT_*` del shell del usuario.',
+        );
+      }
+      continue;
+    }
+    // La excepción admite EXACTAMENTE uno, y dentro del método declarado.
+    for (final l in e.value.where((l) => !l.ambito.contains(metodo))) {
+      fallos.add(
+        '${l.archivo}:${l.offset}: la excepcion declarada para ${e.key} '
+        'admite un solo lanzamiento sin sanear, dentro de `$metodo`, y este '
+        'está en `${l.donde}`. ${l.problema}',
+      );
+    }
+    final adentro = e.value.where((l) => l.ambito.contains(metodo)).length;
+    if (adentro > 1) {
+      fallos.add(
+        '${e.key}: `$metodo` tiene $adentro lanzamientos sin sanear y la '
+        'excepcion admite uno. Una excepcion que crece en silencio es una '
+        'lista negra.',
+      );
+    }
+  }
+  for (final e in exceptuadas.entries) {
+    if (!(porBiblioteca[e.key]?.any((l) => l.ambito.contains(e.value)) ??
+        false)) {
+      fallos.add(
+        'arquitectura.json: «subprocesos-con-entorno-saneado» exceptua '
+        '`${e.value}` en ${e.key}, y ahi no hay ningun lanzamiento sin '
+        'sanear. La declaracion quedo vieja y taparia al proximo.',
+      );
+    }
+  }
+
   // --- salida -----------------------------------------------------------
   if (fallos.isNotEmpty) {
     stdout.writeln('serializacion: FALLA\n');
@@ -948,6 +1148,8 @@ void main(List<String> args) {
   stdout.writeln(
     'serializacion: ok — $serializables clases serializables '
     'verificadas campo por campo, ${opacos.length} opacas declaradas, '
-    '${huerfanos.length} puertos sin implementación declarados.',
+    '${huerfanos.length} puertos sin implementación declarados, '
+    '${lanzamientos.length} lanzamientos de proceso con entorno saneado '
+    '(${sinSanear.length} exceptuado).',
   );
 }
