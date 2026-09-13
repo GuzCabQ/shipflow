@@ -386,6 +386,22 @@ abstract interface class PreparedCandidate {
   /// motivo. Nunca se omiten en silencio.
   List<RutaNoMaterializada> get noMaterializadas;
 
+  /// Qué entradas versionadas del candidato dejaron de coincidir con su árbol.
+  ///
+  /// Vacío significa intacto. **Los archivos nuevos no cuentan**: son lo que el
+  /// entorno de verificación genera, y generarlos es su trabajo. **Lo declarado
+  /// en [noMaterializadas] tampoco**, porque el candidato lo dejó afuera a
+  /// sabiendas — pero si alguien escribió algo en esa ruta, eso sí cuenta.
+  ///
+  /// Se comprueba **dos veces**, y las dos tienen su motivo: después de derivar
+  /// el entorno, contra que la derivación haya borrado contenido versionado
+  /// —está medido que lo hace—; y después de la cascada, contra que un
+  /// verificador haya escrito en el workspace, que nada le impide.
+  ///
+  /// Una alteración hace la corrida **no concluyente, nunca roja**: no se puede
+  /// afirmar nada sobre un árbol que dejó de ser el que se fijó.
+  Future<List<AlteracionDelCandidato>> alteraciones();
+
   /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**
   ///
   /// Es el primer paso que escribe en el repositorio, y está separado de

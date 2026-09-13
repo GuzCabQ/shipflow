@@ -26,6 +26,7 @@ import 'package:core/core.dart';
 import 'secretos.dart';
 
 part 'candidato.dart';
+part 'alteraciones.dart';
 
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///

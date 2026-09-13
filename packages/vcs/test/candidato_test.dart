@@ -155,6 +155,173 @@ void main() {
     });
   });
 
+  group('la integridad del candidato se comprueba, no se supone', () {
+    test('un candidato intacto no tiene alteraciones', () async {
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+
+    test('modificado, borrado, +x y un regular donde había enlace', () async {
+      escribir('a.txt', 'dos\n');
+      escribir('b.txt', 'b\n');
+      Link('${raiz.path}/enlace').createSync('a.txt');
+      git(['add', '-A']);
+      git(['commit', '-m', 'con enlace']);
+      escribir('a.txt', 'tres\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/a.txt').writeAsStringSync('otra cosa\n');
+        File('${c.root}/sub/hondo.txt').deleteSync();
+        Process.runSync('chmod', ['755', '${c.root}/b.txt']);
+        Link('${c.root}/enlace').deleteSync();
+        File('${c.root}/enlace').writeAsStringSync('regular\n');
+        final a = {for (final x in await c.alteraciones()) x.ruta: x.tipo};
+        expect(a, {
+          'a.txt': TipoDeAlteracion.modificada,
+          'sub/hondo.txt': TipoDeAlteracion.borrada,
+          'b.txt': TipoDeAlteracion.cambioDeModo,
+          'enlace': TipoDeAlteracion.cambioDeTipo,
+        });
+        return null;
+      });
+    });
+
+    test('un archivo generado nuevo NO es una alteración', () async {
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        Directory('${c.root}/.generado').createSync();
+        File('${c.root}/.generado/config.json').writeAsStringSync('{}');
+        File('${c.root}/nuevo.txt').writeAsStringSync('x');
+        expect(
+          await c.alteraciones(),
+          isEmpty,
+          reason: 'generar es el trabajo del entorno, no una alteración',
+        );
+        return null;
+      });
+    });
+
+    test('lo declarado en noMaterializadas no es una alteración, los cuatro '
+        'a la vez', () async {
+      // Enlace absoluto, enlace con `..`, destino que no es UTF-8, y submódulo.
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      Link('${raiz.path}/up').createSync('../fuera');
+      git(['add', '-A']);
+      // El destino que no es UTF-8 no se puede escribir como enlace del árbol de
+      // trabajo con una cadena, así que el objeto va directo al índice.
+      // `Process.start` y no `runSync`: hay que mandarle BYTES por la entrada.
+      final p = await Process.start('git', [
+        'hash-object',
+        '-w',
+        '--stdin',
+      ], workingDirectory: raiz.path);
+      p.stdin.add([0xff, 0xfe, 0x2f, 0x78]);
+      await p.stdin.close();
+      final shaMalo = (await utf8.decodeStream(p.stdout)).trim();
+      await p.exitCode;
+      git(['update-index', '--add', '--cacheinfo', '120000,$shaMalo,raro']);
+      git([
+        'update-index',
+        '--add',
+        '--cacheinfo',
+        '160000,4b825dc642cb6eb9a060e54bf8d69288fbee4904,submodulo',
+      ]);
+      git(['commit', '-m', 'lo que no se materializa']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(
+          c.noMaterializadas.map((n) => n.ruta),
+          unorderedEquals(['abs', 'up', 'raro', 'submodulo']),
+        );
+        expect(
+          await c.alteraciones(),
+          isEmpty,
+          reason:
+              'sin restar lo declarado, todo candidato con un enlace absoluto '
+              'sería no concluyente para siempre',
+        );
+        return null;
+      });
+    });
+
+    test('un regular escrito donde el árbol tiene un enlace no materializado '
+        'SÍ es una alteración', () async {
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      git(['add', '-A']);
+      git(['commit', '-m', 'abs']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/abs').writeAsStringSync('regular\n');
+        final a = await c.alteraciones();
+        expect(a.single.ruta, 'abs');
+        expect(a.single.tipo, TipoDeAlteracion.cambioDeTipo);
+        return null;
+      });
+    });
+
+    test('intacto con clean, smudge y eol=crlf da CERO alteraciones', () async {
+      git(['config', 'filter.marca.clean', 'sed s/SUCIO/LIMPIO/']);
+      git(['config', 'filter.marca.smudge', 'sed s/LIMPIO/SUCIO/']);
+      git(['config', 'core.autocrlf', 'true']);
+      escribir(
+        '.gitattributes',
+        'conmarca.txt filter=marca\ncrlf.txt text eol=crlf\n',
+      );
+      escribir('conmarca.txt', 'esto esta SUCIO\n');
+      escribir('crlf.txt', 'l1\r\nl2\r\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'filtros']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+
+    test('un clean NO idempotente hace «modificada» a un candidato intacto: '
+        'el límite declarado', () async {
+      // **Esta prueba FIJA un límite, no comprueba una capacidad.**
+      // `update-index --refresh` pasa cada archivo por el filtro `clean` antes
+      // de comparar —la traza lo muestra— y la materialización escribe los
+      // bytes del objeto sin `smudge`. Con filtros idempotentes eso cierra en
+      // cero; con uno que no lo es, no hay forma de distinguir «intacto» de
+      // «modificado».
+      //
+      // El límite es de git antes que nuestro: `gitattributes(5)` pide que
+      // `clean → clean` equivalga a `clean`, y un repositorio que lo viola ya ve
+      // sus archivos perpetuamente modificados en `git status`. Si algún día
+      // esto da cero, lo que hay que revisar es la decisión, no el código.
+      git(['config', 'filter.suma.clean', r'sed s/$/x/']);
+      escribir('.gitattributes', 'suma.txt filter=suma\n');
+      escribir('suma.txt', 'base\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'no idempotente']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['suma.txt']);
+        expect(a.single.tipo, TipoDeAlteracion.modificada);
+        return null;
+      });
+    });
+
+    test('se puede comprobar dos veces, y también después de crear la '
+        'revisión', () async {
+      // Después de promover, el almacén temporal se borra y el árbol resuelve
+      // desde el repositorio real. Que la comprobación siga funcionando ahí es
+      // lo que permite llamarla antes y después de la cascada.
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        await c.createRevision();
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+  });
+
   group('la identidad es un árbol', () {
     test('el contenido preparado es el árbol que se commitea', () async {
       escribir('a.txt', 'modificado\n');

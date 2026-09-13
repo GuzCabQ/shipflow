@@ -64,6 +64,12 @@ class _CandidatoGit implements PreparedCandidate {
   final Directory _objetos;
   final File _indice;
 
+  /// Un índice **aparte** del de preparación, para el control de integridad.
+  ///
+  /// No se puede reusar el otro: `read-tree` lo sobreescribiría, y ese índice
+  /// es el que fijó qué contenido se está verificando.
+  final File _indiceDeIntegridad;
+
   @override
   final CandidateIdentity identity;
 
@@ -92,6 +98,7 @@ class _CandidatoGit implements PreparedCandidate {
     required Directory temporal,
     required Directory objetos,
     required File indice,
+    required File indiceDeIntegridad,
     required this.identity,
     required this.root,
     required List<String> changedPaths,
@@ -103,6 +110,7 @@ class _CandidatoGit implements PreparedCandidate {
        _temporal = temporal,
        _objetos = objetos,
        _indice = indice,
+       _indiceDeIntegridad = indiceDeIntegridad,
        changedPaths = List.unmodifiable(changedPaths),
        noMaterializadas = List.unmodifiable(noMaterializadas);
 
@@ -161,6 +169,7 @@ class _CandidatoGit implements PreparedCandidate {
     );
     final objetos = Directory('${temporal.path}/objetos');
     final indice = File('${temporal.path}/indice');
+    final indiceDeIntegridad = File('${temporal.path}/indice-integridad');
     final arbol = Directory('${temporal.path}/arbol');
     await objetos.create();
     await arbol.create();
@@ -174,6 +183,7 @@ class _CandidatoGit implements PreparedCandidate {
         temporal: temporal,
         objetos: objetos,
         indice: indice,
+        indiceDeIntegridad: indiceDeIntegridad,
         identity: CandidateIdentity(
           contentRevision: 'pendiente',
           baseRevision: base,
@@ -248,6 +258,7 @@ class _CandidatoGit implements PreparedCandidate {
       temporal: _temporal,
       objetos: _objetos,
       indice: _indice,
+      indiceDeIntegridad: _indiceDeIntegridad,
       identity: CandidateIdentity(
         contentRevision: contenido,
         baseRevision: base,
@@ -367,6 +378,52 @@ class _CandidatoGit implements PreparedCandidate {
     }
 
     return declaradas;
+  }
+
+  @override
+  Future<List<AlteracionDelCandidato>> alteraciones() async {
+    if (_dispuesto) {
+      throw StateError('El candidato ya se liberó: no hay árbol que comparar.');
+    }
+    // **No se compara byte a byte a mano: se le pide a `git`.** Con un índice
+    // propio, leído del árbol fijado, refrescado contra el disco y comparado.
+    // Los tres comandos están medidos, y cada bandera tiene su motivo:
+    //
+    //  - sin `--refresh`, el índice recién leído no tiene información de `stat`
+    //    y `diff-index` reporta el árbol entero como modificado: cien
+    //    diferencias falsas;
+    //  - **con `-q`**, porque `--refresh` sale con 1 cuando algún archivo
+    //    necesita actualización —es decir, exactamente cuando hay algo que
+    //    reportar—, y `_exigir` convertiría ese 1 en `GitFallo` antes de que el
+    //    `diff-index` alcance a describirlo;
+    //  - **`--raw` y no `--name-status`**, porque aquel pliega un cambio de
+    //    modo en una `M` indistinguible de un cambio de contenido.
+    //
+    // **El almacén temporal solo se nombra mientras existe.** `_promover` lo
+    // borra, y un `GIT_OBJECT_DIRECTORY` que apunta a un directorio que ya no
+    // está hace que `git` conteste «not a git repository» — acusando al
+    // repositorio, que está perfecto. Después de promover, el árbol resuelve
+    // desde el almacén real y no hace falta nombrar ninguno.
+    final entorno = {
+      if (!_promovido) ..._entorno,
+      'GIT_INDEX_FILE': _indiceDeIntegridad.path,
+      'GIT_WORK_TREE': root,
+    };
+    await _repo._exigir([
+      'read-tree',
+      identity.contentRevision,
+    ], entorno: entorno);
+    await _repo._exigir(['update-index', '-q', '--refresh'], entorno: entorno);
+    final crudo = await _repo._exigirBytes([
+      'diff-index',
+      '--raw',
+      '-z',
+      identity.contentRevision,
+    ], entorno: entorno);
+    return leerDiffRaw(
+      crudo,
+      declaradas: {for (final n in noMaterializadas) n.ruta},
+    );
   }
 
   @override
