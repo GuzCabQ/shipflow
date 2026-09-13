@@ -20,7 +20,12 @@ import 'valores.dart';
 /// rebanada del entorno de verificación, que produjo hechos que la cascada no
 /// conoce y que igual vuelven la corrida no concluyente.
 enum MotivoDeCriterio {
-  /// El control encontró algo. **Todos sus sujetos**, no solo el del
+  /// El control encontró algo: **cualquier diagnóstico, bloqueante o no**. Un
+  /// informativo deja el veredicto en verde y sin embargo es un hallazgo, así
+  /// que también emite este motivo — si no, un sujeto de ese paso quedaba
+  /// cubierto y el revisor leía que podía no mirarlo.
+  ///
+  /// Se emite sobre **todos los sujetos del paso**, no solo el del
   /// diagnóstico: el veredicto es global al paso, y está medido que los
   /// diagnósticos no tienen relación validada con los sujetos del testigo.
   hallazgo,
@@ -28,7 +33,13 @@ enum MotivoDeCriterio {
   /// El control declaró que no miró ese sujeto.
   declaradoNoMirado,
 
-  /// Nadie dio cuenta del sujeto: el libro de obligaciones lo dejó abierto.
+  /// Nadie dio cuenta. **Dos hechos bajo un motivo**, y va escrito: el libro
+  /// de obligaciones dejó el sujeto abierto —un control lo tenía en su alcance
+  /// esperado y su testigo no lo cubrió ni lo nombró como omisión—, o el
+  /// entorno se derivó y **ningún control corrió**, donde no hay libro ni
+  /// sujeto y la entrada va sin los dos. Lo que comparten es lo que el motivo
+  /// nombra: nadie dio cuenta. El detalle de la entrada dice cuál de los dos
+  /// es.
   nadieDioCuenta,
 
   /// El sujeto no es de este stack.
@@ -54,7 +65,7 @@ enum MotivoDeCriterio {
   /// **El candidato dejó de ser el árbol que dice representar.** Una
   /// alteración no dice cuál de los dos árboles vio cada control, así que
   /// ningún sujeto se puede dar por cubierto — el mismo argumento que el
-  /// control rojo.
+  /// control que encontró algo, aplicado al árbol en vez de al paso.
   candidatoAlterado,
 }
 
@@ -110,7 +121,14 @@ class EntradaDeCriterio {
 ///
 /// **No se ensambla a mano.** Un constructor público dejaría armar una
 /// afirmación cubierta con cualquier afirmación y cualquier testigo; la única
-/// entrada es [desde], que comprueba las cuatro cosas que la vuelven cierta.
+/// entrada es [desde], que niega la afirmación con **tres** condiciones —tres
+/// `if`, tres ramas de código—: el desenlace no ejecutó, trae algún
+/// diagnóstico, o su testigo no incluye al sujeto pedido. Hay una cuarta cosa
+/// que la vuelve cierta y **no es una rama**: que el control, la afirmación y
+/// el testigo salgan del mismo desenlace que recibe la llamada. Eso lo
+/// sostiene la firma —no hay forma de construir el caso que lo rompería—, no
+/// una condición en tiempo de ejecución. Quien lea el código buscando cuatro
+/// `if` va a encontrar tres.
 ///
 /// **Residuo declarado, y sin control que lo sostenga.** Que la única entrada
 /// sea [desde] **no lo verifica nada**: lo sostiene el código fuente, y punto.
@@ -143,9 +161,9 @@ class AfirmacionCubierta {
   /// más frecuente:
   ///
   /// - el desenlace no ejecutó —no hay testigo del que leer cobertura—;
-  /// - el desenlace es **rojo**: el veredicto es global al paso y los
-  ///   diagnósticos no tienen relación validada con los sujetos, así que no se
-  ///   sabe cuál lo originó;
+  /// - el desenlace trae **cualquier diagnóstico**, bloqueante o no: el
+  ///   veredicto es global al paso y los diagnósticos no tienen relación
+  ///   validada con los sujetos, así que no se sabe cuál lo originó;
   /// - el testigo **no cubre** ese sujeto.
   ///
   /// La afirmación y el id salen del control, no de quien llama: así no hay
@@ -156,7 +174,20 @@ class AfirmacionCubierta {
     required String sujeto,
   }) {
     if (desenlace is! Executed) return null;
-    if (desenlace.verdict != Verdict.verde) return null;
+    // **Cualquier diagnóstico, no solo el bloqueante.** [Executed.verdict]
+    // solo mira `Severity.bloquea`, así que un paso con un diagnóstico
+    // informativo sale verde: rechazar por veredicto dejaba cubierto un
+    // sujeto de un control que SÍ encontró algo, y la superficie le decía al
+    // revisor que podía no mirarlo. El argumento es el mismo que ya sostenía
+    // la regla del rojo y no depende de la severidad: con un informativo
+    // tampoco se sabe cuál sujeto lo originó.
+    //
+    // Y **subsume el chequeo del veredicto**, que por eso ya no está: `rojo`
+    // exige un bloqueante, que es un diagnóstico; `noConcluyente` exige
+    // `subjects` vacío, y entonces el `if` de abajo rechaza igual. Dejarlo
+    // sería una condición que no puede decidir nada — un guardia que no se
+    // puede poner rojo, que es justo lo que este archivo se prohíbe.
+    if (desenlace.diagnostics.isNotEmpty) return null;
     if (!desenlace.witness.subjects.contains(sujeto)) return null;
     return AfirmacionCubierta._(
       controlId: control.id,

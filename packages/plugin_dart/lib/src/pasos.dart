@@ -230,7 +230,11 @@ final class PasoDeFormato extends PasoDeCascada {
   @override
   Afirmacion get afirmacion => Afirmacion(
     id: 'formato.conforme',
-    demuestra: 'que el archivo coincide con la salida del formateador',
+    // «El sujeto», no «el archivo»: lo que se le pasa puede ser un directorio
+    // entero, y ahí la afirmación es sobre todo lo que contiene.
+    demuestra:
+        'que el sujeto —un archivo o un directorio entero— coincide con la '
+        'salida del formateador',
     noDemuestra: 'comportamiento, lógica ni criterios de aceptación',
   );
 
@@ -358,8 +362,18 @@ final class PasoDeAnalisis extends PasoDeCascada {
     // **Lo segundo está medido, no supuesto.** La salida del analizador trae
     // solo diagnósticos y versión: no lista los archivos que leyó, así que un
     // sujeto limpio es indistinguible de uno que no se analizó.
+    //
+    // **Y lo tercero es el límite que encontró la revisión final de la
+    // rebanada**: esa misma salida tampoco ata un diagnóstico a un sujeto del
+    // alcance, y un informativo no bloquea — así que «sin bloqueantes» no es
+    // «sin hallazgos», y de un paso que reportó cualquier cosa no se sabe
+    // sobre cuál de sus sujetos la reportó. La superficie de verificación no
+    // le da cobertura a ninguno.
     noDemuestra:
-        'que haya leído todos los archivos del alcance, ni comportamiento',
+        'que haya leído todos los archivos del alcance, ni comportamiento, ni '
+        'a cuál sujeto corresponde un diagnóstico: un informativo no bloquea '
+        'y tampoco se puede atribuir, así que un paso que reportó algo no '
+        'afirma nada sobre ninguno de sus sujetos',
   );
 
   @override

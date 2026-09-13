@@ -135,6 +135,56 @@ void main() {
     expect(s.estado, EstadoDeCorrida.rojo);
   });
 
+  test('un control con un diagnóstico QUE SOLO REPORTA no cubre nada', () {
+    // El crítico de la revisión final. `Executed.verdict` solo mira los
+    // bloqueantes, así que un paso con un diagnóstico informativo salía verde
+    // y la superficie publicaba «estado verde, cubierto 1, criterio 0» para
+    // una corrida donde el arnés SÍ había encontrado algo. Es alcanzable
+    // desde una corrida real: el normalizador del analizador mapea los
+    // informativos a `Severity.reporta`.
+    final s = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: const [],
+      cascada: _cascada(
+        {
+          'ctrl': Executed(
+            witness: _testigo(['lib', 'bin']),
+            diagnostics: [
+              Diagnostic(
+                file: 'lib/a.fuente',
+                severity: Severity.reporta,
+                ruleId: 'r',
+                message: const QuotedText('algo menor', source: 'herramienta'),
+              ),
+            ],
+          ),
+        },
+        ['lib', 'bin'],
+      ),
+      controles: {'ctrl': _Control('ctrl')},
+    );
+    expect(
+      s.cubierto,
+      isEmpty,
+      reason: 'el veredicto no ve el informativo, pero la superficie sí',
+    );
+    expect(s.requiereCriterio.map((e) => e.motivo).toSet(), {
+      MotivoDeCriterio.hallazgo,
+    });
+    expect(
+      s.requiereCriterio.map((e) => e.sujeto),
+      containsAll(['lib', 'bin']),
+      reason: 'todos sus sujetos, porque no se sabe cuál lo originó',
+    );
+    expect(
+      s.estado,
+      EstadoDeCorrida.verde,
+      reason:
+          'el estado es el de la cascada y la cascada no lo ve; lo que esta '
+          'superficie corrige es la COBERTURA, no el veredicto',
+    );
+  });
+
   test('EL ENTORNO NO DERIVADO: sin cascada, y nada cubierto', () {
     // La cascada nunca corrió, así que no hay resultado del cual derivar. El
     // hecho se nombra en vez de faltar.
@@ -374,6 +424,96 @@ void main() {
       expect(s.estado, EstadoDeCorrida.noConcluyente);
     },
   );
+
+  test('UNA ALTERACIÓN se nombra aunque el entorno no se haya derivado', () {
+    // La primera rama devolvía temprano sin leer `alteraciones`, y el hecho
+    // más alarmante que una corrida puede producir desaparecía. Vaciar
+    // «cubierto» y no nombrar el hecho son cosas distintas: el primer camino
+    // ya vaciaba, y por eso el descarte no se notaba.
+    final s = derivarSuperficie(
+      entorno: CandidatoRechazado(
+        causa: CausaDeRechazo.pubRechazoLaResolucion,
+        evidencia: const QuotedText('sin archivo de bloqueo', source: 'r'),
+      ),
+      alteraciones: [
+        AlteracionDelCandidato(
+          ruta: 'lib/nuevo.fuente',
+          tipo: TipoDeAlteracion.agregada,
+        ),
+      ],
+      cascada: null,
+      controles: const {},
+    );
+    expect(s.cubierto, isEmpty);
+    final motivos = s.requiereCriterio.map((e) => e.motivo).toList();
+    expect(motivos, contains(MotivoDeCriterio.entornoNoDerivado));
+    expect(motivos, contains(MotivoDeCriterio.candidatoAlterado));
+    final alterada = s.requiereCriterio.firstWhere(
+      (e) => e.motivo == MotivoDeCriterio.candidatoAlterado,
+    );
+    expect(alterada.sujeto, 'lib/nuevo.fuente');
+    expect(alterada.detalle, contains('agregada'));
+    expect(s.estado, EstadoDeCorrida.noConcluyente);
+  });
+
+  test(
+    'UN PASO REGISTRADO SIN CONTROL en el mapa hace fallar la derivación',
+    () {
+      // Se instaló como arreglo de un falso verde: con el id ausente, la rama
+      // verde no agregaba nada ni a `cubierto` ni a `requiereCriterio`, y la
+      // superficie publicaba «verde, nada cubierto, nada que mirar» para una
+      // corrida donde ese control sí había afirmado algo.
+      expect(
+        () => derivarSuperficie(
+          entorno: _entornoOk,
+          alteraciones: const [],
+          cascada: _cascada(
+            {
+              'ctrl': Executed(
+                witness: _testigo(['lib']),
+                diagnostics: const [],
+              ),
+            },
+            ['lib'],
+          ),
+          controles: const {},
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message.toString(),
+            'message',
+            contains('está registrado y no tiene control'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test('UN CONTROL BAJO LA CLAVE DE OTRO hace fallar la derivación', () {
+    // `AfirmacionCubierta.desde` lee `control.id`, no la clave del mapa, así
+    // que un mapa mal armado le atribuiría a un control la afirmación de
+    // otro y ningún otro lado lo cacharía.
+    expect(
+      () => derivarSuperficie(
+        entorno: _entornoOk,
+        alteraciones: const [],
+        cascada: _cascada(
+          {
+            'ctrl': Executed(witness: _testigo(['lib']), diagnostics: const []),
+          },
+          ['lib'],
+        ),
+        controles: {'ctrl': _Control('otro')},
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => e.message.toString(),
+          'message',
+          contains('declara el id'),
+        ),
+      ),
+    );
+  });
 
   test(
     'sin cascada y sin alteraciones: nadie dio cuenta de la corrida entera',

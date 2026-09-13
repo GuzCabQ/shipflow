@@ -9,6 +9,29 @@ import 'package:core/core.dart';
 
 import 'cascada.dart';
 
+/// Las entradas que nombran cada alteración del candidato.
+///
+/// **Vive aparte porque se emite en los dos caminos que las pueden ver**: con
+/// el entorno derivado, y con el entorno NO derivado — donde la derivación
+/// devuelve temprano y antes las descartaba sin nombrarlas. Vaciar `cubierto` y
+/// no nombrar el hecho son cosas distintas: ese camino ya vaciaba `cubierto`
+/// por su cuenta, y por eso el descarte no se veía. Una alteración del
+/// candidato es el hecho más alarmante que una corrida puede producir; que se
+/// pierda porque otro hecho salió primero es exactamente la desaparición en
+/// silencio que este archivo existe para cerrar.
+List<EntradaDeCriterio> _entradasDeAlteracion(
+  List<AlteracionDelCandidato> alteraciones,
+) => [
+  for (final a in alteraciones)
+    EntradaDeCriterio(
+      sujeto: a.ruta,
+      motivo: MotivoDeCriterio.candidatoAlterado,
+      detalle:
+          'El candidato dejó de coincidir con el árbol que dice '
+          'representar: ${a.ruta} está ${a.tipo.name}.',
+    ),
+];
+
 /// Deriva la superficie de los **tres** hechos de una corrida.
 ///
 /// La primera versión del diseño derivaba solo de [cascada], y la rebanada del
@@ -18,7 +41,10 @@ import 'cascada.dart';
 ///
 /// **El orden importa.** Entorno, integridad, cascada: los dos primeros pueden
 /// vaciar `cubierto` entero, así que decidirlos después sería armar una lista
-/// para tirarla.
+/// para tirarla. Pero el orden decide **qué se vacía, no qué se nombra**: el
+/// camino del entorno no derivado devuelve temprano y aun así emite las
+/// entradas de alteración, porque un hecho que sale primero no borra al otro
+/// — ver [_entradasDeAlteracion].
 ///
 /// [cascada] es nulo cuando **no llegó a correr**, que es lo que pasa cuando el
 /// entorno no se derivó. [controles] mapea id de paso al control, porque el
@@ -59,6 +85,11 @@ SuperficieDeVerificacion derivarSuperficie({
               'El entorno de verificación no se pudo derivar, así que ningún '
               'control llegó a correr. $evidencia',
         ),
+        // El entorno caído no borra la integridad: si el control de integridad
+        // alcanzó a correr y vio una alteración, ese hecho se nombra acá
+        // también. No hay `cubierto` que vaciar en este camino — ya está
+        // vacío—, y por eso el descarte pasaba inadvertido.
+        ..._entradasDeAlteracion(alteraciones),
       ],
       estado: EstadoDeCorrida.noConcluyente,
     );
@@ -67,17 +98,7 @@ SuperficieDeVerificacion derivarSuperficie({
   // 2 · La integridad. Una alteración no dice cuál de los dos árboles vio cada
   //     control, así que ninguno se puede dar por cubierto.
   if (alteraciones.isNotEmpty) {
-    for (final a in alteraciones) {
-      criterio.add(
-        EntradaDeCriterio(
-          sujeto: a.ruta,
-          motivo: MotivoDeCriterio.candidatoAlterado,
-          detalle:
-              'El candidato dejó de coincidir con el árbol que dice '
-              'representar: ${a.ruta} está ${a.tipo.name}.',
-        ),
-      );
-    }
+    criterio.addAll(_entradasDeAlteracion(alteraciones));
     if (cascada != null) {
       for (final registro in cascada.registrados) {
         for (final sujeto in registro.expectedScope) {
@@ -163,8 +184,28 @@ SuperficieDeVerificacion derivarSuperficie({
       );
     }
     switch (desenlace) {
-      case Executed(:final witness, :final verdict):
-        if (verdict == Verdict.rojo) {
+      // **La bifurcación es «con diagnósticos / sin diagnósticos», no
+      // «rojo / verde».** `Executed.verdict` solo mira `Severity.bloquea`, así
+      // que un paso con un diagnóstico informativo salía por la rama verde y
+      // sus sujetos quedaban cubiertos: la superficie publicaba «verde,
+      // cubierto 1, criterio 0» para una corrida donde el arnés SÍ había
+      // encontrado algo, y le decía al revisor que podía saltear ese sujeto.
+      // Es alcanzable desde una corrida real — un informativo del analizador
+      // se normaliza a `Severity.reporta`.
+      //
+      // La regla del rojo se extiende en vez de agregarse una tercera rama, y
+      // con el mismo argumento que ya la sostenía: el veredicto es global al
+      // paso y los diagnósticos no tienen relación validada con los sujetos
+      // del testigo, así que con un informativo tampoco se sabe cuál lo
+      // originó. Dejar un sujeto cubierto Y en criterio sería contradictorio
+      // para quien decide si saltear.
+      //
+      // Los dos `for` son exhaustivos y excluyentes sobre `witness.subjects`,
+      // así que ya no hay un caso —el viejo `noConcluyente`— que no entre en
+      // ninguna rama: con `subjects` vacío los dos no hacen nada, que es lo
+      // mismo que hacían antes.
+      case Executed(:final witness, :final diagnostics):
+        if (diagnostics.isNotEmpty) {
           for (final sujeto in witness.subjects) {
             criterio.add(
               EntradaDeCriterio(
@@ -172,13 +213,13 @@ SuperficieDeVerificacion derivarSuperficie({
                 sujeto: sujeto,
                 motivo: MotivoDeCriterio.hallazgo,
                 detalle:
-                    'El control encontró algo. El veredicto es global al '
-                    'paso y los diagnósticos no se atribuyen a un sujeto, '
-                    'así que ninguno de los suyos queda cubierto.',
+                    'El control encontró algo —bloqueante o no—. El veredicto '
+                    'es global al paso y los diagnósticos no se atribuyen a '
+                    'un sujeto, así que ninguno de los suyos queda cubierto.',
               ),
             );
           }
-        } else if (verdict == Verdict.verde) {
+        } else {
           for (final sujeto in witness.subjects) {
             final a = AfirmacionCubierta.desde(
               control: control,
