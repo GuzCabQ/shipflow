@@ -176,3 +176,60 @@ class AfirmacionCubierta {
         testigo: Witness.fromJson(json['testigo']! as Map<String, Object?>),
       );
 }
+
+/// Lo que se deriva de una corrida entera: qué quedó demostrado y qué requiere
+/// criterio humano.
+///
+/// **No lleva el candidato ni el identificador de la corrida.** Quien quiera
+/// atar la superficie a un contenido usa [ArtefactoDeRevision]; mantenerla sin
+/// identidad es lo que permite derivarla de una corrida que no llegó a tener
+/// candidato — porque el entorno no se pudo derivar — sin inventar un valor.
+class SuperficieDeVerificacion {
+  final List<AfirmacionCubierta> cubierto;
+  final List<EntradaDeCriterio> requiereCriterio;
+
+  /// **Se deriva de la corrida entera, no se copia de la cascada.** Copiarlo
+  /// obligaría a fabricar uno cuando la cascada no corrió, y publicaría el de
+  /// la cascada cuando el candidato se alteró — que es el falso verde que esta
+  /// superficie existe para cerrar.
+  final EstadoDeCorrida estado;
+
+  SuperficieDeVerificacion({
+    required List<AfirmacionCubierta> cubierto,
+    required List<EntradaDeCriterio> requiereCriterio,
+    required this.estado,
+  }) : cubierto = List.unmodifiable(cubierto),
+       requiereCriterio = List.unmodifiable(requiereCriterio) {
+    // No es una comprobación de más: es el invariante del tipo. Una corrida
+    // que no salió verde no puede autorizar a saltear nada sin nombrar qué
+    // requiere criterio. Una sola condición, no dos anidadas: el `if` externo
+    // por sí solo no afirmaba nada.
+    if (estado != EstadoDeCorrida.verde &&
+        cubierto.isNotEmpty &&
+        requiereCriterio.isEmpty) {
+      throw ArgumentError(
+        'Una corrida que no salió verde tiene que decir qué requiere '
+        'criterio: si no, afirma cobertura sin nombrar lo que falta.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {
+    'cubierto': [for (final c in cubierto) c.toJson()],
+    'requiereCriterio': [for (final e in requiereCriterio) e.toJson()],
+    'estado': estado.name,
+  };
+
+  factory SuperficieDeVerificacion.fromJson(Map<String, Object?> json) =>
+      SuperficieDeVerificacion(
+        cubierto: [
+          for (final c in json['cubierto']! as List<Object?>)
+            AfirmacionCubierta.fromJson(Map<String, Object?>.from(c! as Map)),
+        ],
+        requiereCriterio: [
+          for (final e in json['requiereCriterio']! as List<Object?>)
+            EntradaDeCriterio.fromJson(Map<String, Object?>.from(e! as Map)),
+        ],
+        estado: EstadoDeCorrida.values.byName(json['estado']! as String),
+      );
+}
