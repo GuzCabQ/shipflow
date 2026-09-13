@@ -1283,7 +1283,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 128 sabotajes.**
+y su caso ciego. **El arnés aplica 131 sabotajes.**
 
 ---
 
@@ -1509,6 +1509,27 @@ leído no puede aparecer una `A`, y una `R` solo con detección de renombres, qu
 no se pide: si aparece, `git` vio algo que este control no previó, y descartarlo
 sería leer un hueco como un candidato intacto.
 
+### Un archivo nuevo tampoco es siempre inocente
+
+**La primera versión de este control decía que ningún archivo nuevo contaba**, con
+el argumento de que todos serían generados por la derivación. Es falso, y lo
+reprodujo una revisión: la comparación de entradas versionadas **no ve** un
+archivo sin seguimiento, así que un archivo de fuente creado entre la derivación
+y el segundo control quedaba invisible. La cascada lo leía —está dentro del
+alcance que analiza— y la corrida salía **roja**, concluyendo sobre bytes que el
+candidato nunca fijó. Es el falso verde que esta rebanada existe para cerrar,
+abierto por una generalización cómoda.
+
+La corrección no es contar todo archivo nuevo como alteración: **derivar genera
+archivos, y generarlos es su trabajo**. Es preguntarle a quien ya decide eso.
+`ArtifactPolicy` existe desde la fase 2 y el repositorio ya la sostiene, así que
+la regla queda: *una ruta nueva es una alteración salvo que la política la
+declare artefacto*.
+
+Y **sin las exclusiones del repositorio**: usar `--exclude-standard` haría del
+`.gitignore` una segunda autoridad sobre la misma pregunta, callando rutas que la
+política sí considera fuente. La autoridad ya estaba decidida.
+
 ### Lo que el candidato declaró no materializar no es una alteración
 
 El candidato no recrea enlaces absolutos, enlaces con `..`, enlaces cuyo destino
@@ -1651,6 +1672,32 @@ El propio check encontró dos cosas al instalarse: que la declaración nombraba 
 método que yo había renombrado —y lo dijo en los dos sentidos, el lanzamiento
 fuera del ámbito **y** la declaración sin nada que exceptuar— y que este README
 afirmaba una cuenta de sabotajes que ya no era la del arnés.
+
+**Y le faltaba la mitad del trabajo**, que encontró una revisión: comparaba el
+**nombre** `entornoSaneado` sobre un árbol sin resolver. Una función local
+llamada igual, que devolvía el entorno del padre intacto, pasaba en verde — y el
+check anunciaba siete lanzamientos saneados. Comparar nombres es comprobar
+sintaxis, que es exactamente lo que este control existe para no hacer.
+
+Ahora el árbol se **resuelve** y se compara la identidad: la función tiene que
+venir de `core`, y `Process` de la biblioteca de entrada y salida del SDK —una
+clase local homónima abriría el mismo agujero por el otro lado—. Se resuelven
+solo los archivos que mencionan un lanzamiento, y **no poder resolver uno es
+rojo**: no saber no es no tener lanzamientos. Los tres casos son sabotajes
+permanentes.
+
+### La toolchain que no dice su versión no identifica nada
+
+Otro hallazgo de la misma revisión. La atestación comprobaba solo la
+**terminación** del proceso, no su código de salida ni su salida real, así que
+dos casos producían un entorno «derivado»: la herramienta saliendo con código
+distinto de cero, y la herramienta **muda**.
+
+El segundo es el peor. El texto que se arma para poder citar un proceso mudo
+—«sin salida; código 0»— terminaba **siendo la identidad de la toolchain**: una
+cadena nuestra satisfaciendo al constructor que existe para rechazar exactamente
+eso. Ahora la identidad es lo que la herramienta dijo, y si no dijo nada hay un
+aborto con su causa propia, no una identidad fabricada.
 
 ### La prueba decisiva
 

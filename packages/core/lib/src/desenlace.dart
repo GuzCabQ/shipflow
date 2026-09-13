@@ -727,25 +727,50 @@ final class CandidatoRechazado extends ResultadoDeEntorno {
   }
 }
 
+/// Por qué el instrumento no llegó a medir.
+///
+/// **Son dos hechos distintos y se nombran distinto**, igual que
+/// [CausaDeNoAplicacion] separa dos motivos que antes viajaban en un campo que
+/// cambiaba de contenido según el caso.
+enum CausaDeAborto {
+  /// La herramienta no estaba, o no llegó a devolver un resultado.
+  laHerramientaNoRespondio,
+
+  /// **La herramienta corrió y no dijo con qué versión.** Salió con un código
+  /// distinto de cero, o no dijo nada en ninguna corriente. Un entorno derivado
+  /// lleva la identidad de la toolchain citada, y sin ella el testigo no puede
+  /// decir con qué se midió — que es lo único que esa identidad existe para
+  /// decir. Fabricar un texto para llenar el campo sería exactamente el dato
+  /// falso que el tipo existe para impedir.
+  laToolchainNoSeIdentifico,
+}
+
 /// No se pudo derivar **por lo que pasó al intentarlo**. No dice nada del
 /// candidato: dice que el instrumento no llegó a medir.
 final class DerivacionAbortada extends ResultadoDeEntorno {
   @override
   final String kind = 'abortada';
 
-  /// Nunca [Termination.completa]: «corrió y dijo algo» es un rechazo o un
-  /// entorno derivado, no un aborto.
+  /// Cómo terminó la invocación. **[Termination.completa] solo acompaña a
+  /// [CausaDeAborto.laToolchainNoSeIdentifico]**: ahí la herramienta sí corrió
+  /// —terminó del todo— y lo que falló fue lo que dijo.
   final Termination terminacion;
+
+  final CausaDeAborto causa;
 
   final QuotedText evidencia;
 
-  DerivacionAbortada({required this.terminacion, required this.evidencia}) {
-    if (terminacion == Termination.completa) {
-      throw ArgumentError.value(
-        terminacion,
-        'terminacion',
-        'Una derivación que terminó completa no se abortó: o derivó, o '
-            'rechazó al candidato.',
+  DerivacionAbortada({
+    required this.terminacion,
+    required this.causa,
+    required this.evidencia,
+  }) {
+    if ((terminacion == Termination.completa) !=
+        (causa == CausaDeAborto.laToolchainNoSeIdentifico)) {
+      throw ArgumentError(
+        'Una terminación completa solo se aborta porque la toolchain no se '
+        'identificó: ahí la herramienta corrió y lo que falló fue lo que '
+        'dijo. Y si no llegó a responder, su terminación no es completa.',
       );
     }
     if (evidencia.content.trim().isEmpty) {
@@ -761,6 +786,7 @@ final class DerivacionAbortada extends ResultadoDeEntorno {
   Map<String, Object?> toJson() => {
     'kind': kind,
     'terminacion': terminacion.name,
+    'causa': causa.name,
     'evidencia': evidencia.toJson(),
   };
 
@@ -769,12 +795,14 @@ final class DerivacionAbortada extends ResultadoDeEntorno {
   /// código para averiguar qué pasó.
   @override
   String toString() =>
-      'DerivacionAbortada(${terminacion.name}): ${evidencia.content}';
+      'DerivacionAbortada(${causa.name} · ${terminacion.name}): '
+      '${evidencia.content}';
 
   factory DerivacionAbortada.fromJson(Map<String, Object?> json) {
     ResultadoDeEntorno._exigirKind(json['kind'], 'abortada');
     return DerivacionAbortada(
       terminacion: Termination.values.byName(json['terminacion']! as String),
+      causa: CausaDeAborto.values.byName(json['causa']! as String),
       evidencia: QuotedText.fromJson(
         json['evidencia']! as Map<String, Object?>,
       ),

@@ -22,10 +22,13 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/features.dart';
+import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/element/element.dart';
 
 final List<String> fallos = [];
 
@@ -599,8 +602,19 @@ class _Lanzamiento {
 ///         environment: Platform.environment,   // ← cumple la forma
 ///         includeParentEnvironment: false);    // ← y filtra CERO
 ///
-/// Así que lo que se exige es que la expresión de `environment:` **sea una
-/// llamada a `entornoSaneado`**.
+/// Así que se exige que la expresión de `environment:` sea una llamada a
+/// `entornoSaneado`. **Y a ESA, no a cualquiera que se llame igual.**
+///
+/// La primera versión de este control comparaba el NOMBRE sobre un árbol sin
+/// resolver, y un review lo reprodujo: una función local homónima que devolvía
+/// el entorno del padre intacto pasaba en verde, y el check anunciaba siete
+/// lanzamientos saneados. Comparar nombres es comprobar sintaxis, que es
+/// exactamente lo que este control existe para no hacer.
+///
+/// Ahora se resuelve el elemento y se comprueba **de qué biblioteca viene**:
+/// la función tiene que ser la de `core`, y `Process` tiene que ser la de la
+/// biblioteca de entrada y salida del SDK. Una clase local homónima abriría el
+/// mismo agujero por el otro lado.
 class _Subprocesos extends RecursiveAstVisitor<void> {
   _Subprocesos(this.archivo, this.biblioteca);
 
@@ -625,10 +639,20 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
     _pila.removeLast();
   }
 
+  /// De dónde viene el símbolo, resuelto. Vacío si no se pudo resolver.
+  static String _bibliotecaDe(Element? e) => e?.library?.uri.toString() ?? '';
+
+  /// La biblioteca donde vive la función de saneamiento.
+  static const _origenDelSaneador = 'package:core/src/entorno.dart';
+
+  /// La biblioteca de `Process`.
+  static const _origenDeProcess = 'dart:io';
+
   @override
   void visitMethodInvocation(MethodInvocation node) {
     super.visitMethodInvocation(node);
-    if (node.target?.toSource() != 'Process' ||
+    final destino = node.target;
+    if (destino?.toSource() != 'Process' ||
         !_lanzadores.contains(node.methodName.name)) {
       return;
     }
@@ -639,12 +663,34 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
     final entorno = nombrados['environment'];
     final hereda = nombrados['includeParentEnvironment'];
     String? problema;
-    if (entorno is! MethodInvocation ||
+    // **Que `Process` sea el del SDK también se comprueba.** Una clase local
+    // con ese nombre abriría el mismo agujero por el otro lado: el control
+    // creería estar mirando un lanzamiento y estaría mirando otra cosa.
+    final origenDeProcess = destino is Identifier
+        ? _bibliotecaDe(destino.element)
+        : '';
+    if (origenDeProcess != _origenDeProcess) {
+      problema =
+          '`Process` acá no es el de la biblioteca de entrada y salida del '
+          'SDK, sino ${origenDeProcess.isEmpty ? "un símbolo que no se pudo "
+                    "resolver" : "«$origenDeProcess»"}. Este control no puede decir '
+          'qué lanza.';
+    } else if (entorno is! MethodInvocation ||
         entorno.methodName.name != 'entornoSaneado') {
       problema =
           '`environment:` no es una llamada a `entornoSaneado`'
           '${entorno == null ? " (no está, así que hereda todo)" : ""}. '
           'Pasar `Platform.environment` cumple la forma y filtra cero.';
+    } else if (_bibliotecaDe(entorno.methodName.element) !=
+        _origenDelSaneador) {
+      // El caso que un review reprodujo: una homónima que devuelve el entorno
+      // del padre intacto. El nombre coincide; la función no es.
+      final donde = _bibliotecaDe(entorno.methodName.element);
+      problema =
+          'llama a algo llamado `entornoSaneado` que NO es el de `core`: '
+          '${donde.isEmpty ? "no se pudo resolver de dónde viene" : "viene de "
+                    "«$donde»"}. Una homónima que devuelva el entorno del padre '
+          'intacto cumpliría el nombre y filtraría cero.';
     } else if (hereda is! BooleanLiteral || hereda.value) {
       problema =
           'falta `includeParentEnvironment: false` literal: sin él, el '
@@ -675,7 +721,7 @@ String _bibliotecaDe(CompilationUnit unidad, String rel) {
   return rel;
 }
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   final raiz = Directory(
     File.fromUri(Platform.script).parent.parent.parent.parent.path,
   );
@@ -1071,23 +1117,44 @@ void main(List<String> args) {
       (e as Map<String, Object?>)['archivo']! as String: e['metodo']! as String,
   };
   final lanzamientos = <_Lanzamiento>[];
-  for (final f in fuentes(dirPaquetes)) {
-    final rel = f.path.substring(raiz.path.length + 1);
-    // **Producción es un conjunto cerrado: `lib/` y `bin/`.** Los `test/` no
-    // entran: las pruebas lanzan `git` y `chmod` a mano, y esa es su forma de
-    // medir qué recibe un hijo.
-    if (!RegExp(r'^packages/[^/]+/(lib|bin)/').hasMatch(rel)) continue;
-    final r = parseFile(
-      path: f.path,
-      featureSet: FeatureSet.latestLanguageVersion(),
-      throwIfDiagnostics: false,
+  // **Producción es un conjunto cerrado: `lib/` y `bin/`.** Los `test/` no
+  // entran: las pruebas lanzan `git` y `chmod` a mano, y esa es su forma de
+  // medir qué recibe un hijo.
+  final deProduccion = RegExp(r'^packages/[^/]+/(lib|bin)/');
+  final candidatos = [
+    for (final f in fuentes(dirPaquetes))
+      if (deProduccion.hasMatch(f.path.substring(raiz.path.length + 1)) &&
+          f.readAsStringSync().contains('Process.'))
+        f,
+  ];
+  if (candidatos.isNotEmpty) {
+    // **Resuelto y no solo parseado**, porque la regla compara la IDENTIDAD de
+    // lo que se invoca, no su nombre: sin resolución, una función local llamada
+    // igual que la de saneamiento pasa en verde — reproducido por un review.
+    //
+    // Se resuelven solo los archivos que mencionan un lanzamiento, que son un
+    // puñado: resolver todo el árbol costaría segundos por nada.
+    final coleccion = AnalysisContextCollection(
+      includedPaths: [dirPaquetes.path],
     );
-    // Un archivo que no parsea ya lo reportó `clasesDe`: de un árbol parcial no
-    // sale ningún lanzamiento, y cero se lee igual que «no tenía ninguno».
-    if (r.errors.isNotEmpty) continue;
-    final v = _Subprocesos(rel, _bibliotecaDe(r.unit, rel));
-    r.unit.accept(v);
-    lanzamientos.addAll(v.vistos);
+    for (final f in candidatos) {
+      final rel = f.path.substring(raiz.path.length + 1);
+      final ctx = coleccion.contextFor(f.path);
+      final r = await ctx.currentSession.getResolvedUnit(f.path);
+      // **Falla cerrado.** No poder resolver no es no tener lanzamientos: es no
+      // saber, y la regla entera depende de saber de dónde viene cada símbolo.
+      if (r is! ResolvedUnitResult) {
+        fallos.add(
+          '$rel: no se pudo resolver, así que no puedo decir si sus '
+          'lanzamientos de proceso usan el saneador de `core` o una homónima. '
+          'Resolvé las dependencias del workspace antes de correr esto.',
+        );
+        continue;
+      }
+      final v = _Subprocesos(rel, _bibliotecaDe(r.unit, rel));
+      r.unit.accept(v);
+      lanzamientos.addAll(v.vistos);
+    }
   }
   final sinSanear = lanzamientos.where((l) => l.problema != null).toList();
   final porBiblioteca = <String, List<_Lanzamiento>>{};

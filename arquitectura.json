@@ -705,12 +705,18 @@
         "",
         "Asi que lo que se exige es que la expresion de `environment:` SEA una",
         "llamada a `entornoSaneado`, derivado del arbol sintactico, en los tres",
-        "lanzadores: run, runSync y start."
+        "lanzadores: run, runSync y start.",
+        "",
+        "Y compara IDENTIDAD, no nombre. La primera version miraba el nombre sobre un",
+        "arbol sin resolver, y un review lo reprodujo: una funcion local homonima que",
+        "devolvia el entorno del padre intacto pasaba en verde y el check anunciaba",
+        "siete lanzamientos saneados. Comparar nombres es comprobar sintaxis, que es",
+        "justo lo que este control existe para no hacer."
       ],
       "alcance": {
         "raiz": "packages",
         "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete. Los test/ NO: las pruebas lanzan git y chmod a mano, y esa es su forma de medir que recibe un hijo.",
-        "residuo_declarado": "Mira `Process.run|runSync|start` por nombre simple. Un alias (`final p = Process; p.run(...)`) o una funcion que envuelva `Process.start` y reciba el entorno de afuera no se ven. Lo segundo es exactamente lo que hacen las costuras de vcs y de plugin_dart, y por eso la regla se aplica ADENTRO de ellas, donde esta el `Process.` literal."
+        "residuo_declarado": "Mira `Process.run|runSync|start` sobre arbol RESUELTO, asi que comprueba de que biblioteca vienen `Process` y el saneador, no como se llaman. Lo que NO ve: un alias (`final p = Process; p.run(...)`) y una funcion que envuelva `Process.start` recibiendo el entorno de afuera. Lo segundo es lo que hacen las costuras de vcs y de plugin_dart, y por eso la regla se aplica ADENTRO de ellas, donde esta el `Process.` literal. PRECONDICION: la resolucion necesita las dependencias del workspace resueltas; si un archivo no resuelve, el check FALLA en vez de saltearlo, porque no poder resolver no es no tener lanzamientos. COSTO DECLARADO: resolver cuesta ~1,5 s por corrida del verificador con el snapshot que usa el arnes de sabotajes, contra ~0,3 s parseando. Se paga: la alternativa es comparar nombres, que es lo que un review reprodujo pasando una homonima."
       },
       "excepciones": [
         {
@@ -756,6 +762,30 @@
             "packages/vcs/lib/src/_canario_proceso.dart": "part of 'repositorio.dart';\n\nFuture<void> canarioDeExcepcion(RepositorioGit r) async {\n  await Process.run(\n    'git',\n    const ['config', '--get', 'user.name'],\n    environment: r._padre,\n    includeParentEnvironment: false,\n  );\n}\n"
           },
           "debe_mencionar": "excepcion"
+        },
+        {
+          "nombre": "una funcion local llamada entornoSaneado",
+          "por_que": "El caso que reprodujo un review. El nombre coincide y la funcion no es: devuelve el entorno del padre intacto. Sin resolver el elemento, el check pasaba en verde.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nMap<String, String> entornoSaneado(Map<String, String> m) => m;\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(Platform.environment),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "NO es el de `core`"
+        },
+        {
+          "nombre": "un metodo llamado entornoSaneado",
+          "por_que": "Misma falsificacion por otra sintaxis: si el control mirara solo el nombre del metodo invocado, un objeto cualquiera con ese metodo alcanzaria.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nclass Falso {\n  Map<String, String> entornoSaneado(Map<String, String> m) => m;\n}\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: Falso().entornoSaneado(Platform.environment),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "NO es el de `core`"
+        },
+        {
+          "nombre": "una clase local llamada Process",
+          "por_que": "El mismo agujero por el otro lado: si `Process` no es el del SDK, el control cree estar mirando un lanzamiento y esta mirando otra cosa. Un control semantico tiene que saber QUE lanza, no solo como se llama.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'package:core/core.dart';\n\nclass Process {\n  static Future<void> run(\n    String ejecutable,\n    List<String> argumentos, {\n    Map<String, String>? environment,\n    bool? includeParentEnvironment,\n  }) async {}\n}\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(const {}),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "no es el de la biblioteca de entrada y salida"
         }
       ],
       "caso_ciego": {

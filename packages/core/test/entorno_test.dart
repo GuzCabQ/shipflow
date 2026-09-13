@@ -68,21 +68,40 @@ void main() {
       expect(
         () => DerivacionAbortada(
           terminacion: Termination.herramientaAusente,
+          causa: CausaDeAborto.laHerramientaNoRespondio,
           evidencia: const QuotedText('   ', source: 'x'),
         ),
         throwsArgumentError,
       );
     });
 
-    test('una derivación abortada no puede decir que terminó completa', () {
-      // `completa` es «la herramienta corrió y dijo algo»: eso es un rechazo o
-      // un entorno derivado, nunca un aborto.
+    test('la terminación y la causa del aborto tienen que concordar', () {
+      // Una herramienta que corrió del todo y falló al decir su versión SÍ es
+      // un aborto —no llegamos a medir— pero por una causa distinta de la de
+      // una herramienta que no respondió. Cruzarlas describiría mal el hecho.
       expect(
         () => DerivacionAbortada(
           terminacion: Termination.completa,
+          causa: CausaDeAborto.laHerramientaNoRespondio,
           evidencia: cita,
         ),
         throwsArgumentError,
+      );
+      expect(
+        () => DerivacionAbortada(
+          terminacion: Termination.herramientaAusente,
+          causa: CausaDeAborto.laToolchainNoSeIdentifico,
+          evidencia: cita,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        DerivacionAbortada(
+          terminacion: Termination.completa,
+          causa: CausaDeAborto.laToolchainNoSeIdentifico,
+          evidencia: cita,
+        ).causa,
+        CausaDeAborto.laToolchainNoSeIdentifico,
       );
     });
 

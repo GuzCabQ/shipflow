@@ -176,6 +176,7 @@ void main() {
 
   final abortada = DerivacionAbortada(
     terminacion: Termination.tiempoAgotado,
+    causa: CausaDeAborto.laHerramientaNoRespondio,
     evidencia: QuotedText('presupuesto agotado', source: 'resolver'),
   );
 

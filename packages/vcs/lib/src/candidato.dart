@@ -425,10 +425,39 @@ class _CandidatoGit implements PreparedCandidate {
       '-z',
       identity.contentRevision,
     ], entorno: entorno);
-    return leerDiffRaw(
-      crudo,
-      declaradas: {for (final n in noMaterializadas) n.ruta},
-    );
+    final declaradas = {for (final n in noMaterializadas) n.ruta};
+    final alteraciones = leerDiffRaw(crudo, declaradas: declaradas);
+
+    // **Y las rutas NUEVAS, que `diff-index` no ve.** Solo informa entradas que
+    // el árbol conoce, así que un archivo sin seguimiento le es invisible: un
+    // archivo de fuente creado entre la derivación y este control dejaba la corrida
+    // concluyendo sobre bytes que el candidato nunca fijó. Reproducido.
+    //
+    // **Sin `--exclude-standard`, a propósito.** Esa bandera haría de las
+    // exclusiones del repositorio una SEGUNDA autoridad sobre qué es artefacto,
+    // callando rutas que la política sí considera fuente. Quién decide eso ya
+    // está decidido: es [ArtifactPolicy], y acá se le pregunta a ella.
+    //
+    // El candidato se materializa desde el árbol, así que al empezar no hay
+    // nada sin seguimiento: todo lo que aparezca acá apareció DESPUÉS, y la
+    // única pregunta es si la política lo declara artefacto.
+    final nuevas = _partirNul(
+      await _repo._exigirBytes([
+        'ls-files',
+        '--others',
+        '-z',
+      ], entorno: entorno),
+    ).map(_comoRuta);
+
+    for (final ruta in nuevas) {
+      if (declaradas.contains(ruta)) continue;
+      if (!_repo.politica.isEditable(ruta)) continue;
+      alteraciones.add(
+        AlteracionDelCandidato(ruta: ruta, tipo: TipoDeAlteracion.agregada),
+      );
+    }
+    alteraciones.sort((a, b) => a.ruta.compareTo(b.ruta));
+    return alteraciones;
   }
 
   @override

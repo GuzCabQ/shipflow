@@ -391,6 +391,65 @@ void main() {
       expect((r as DerivacionAbortada).terminacion, Termination.tiempoAgotado);
     });
 
+    test('la toolchain que sale con código distinto de cero NO identifica '
+        'nada', () async {
+      // Reproducido en el review: terminación completa y código 17 producían un
+      // entorno DERIVADO cuya identidad de toolchain era el texto de un error.
+      paquete('.');
+      fijarLockfile('.');
+      final r = await derivar(
+        ['lib/a.dart'],
+        ejecutor: EjecutorDeclarado(
+          const ResultadoDeProceso(
+            terminacion: Termination.completa,
+            codigo: 17,
+            salidaEstandar: '',
+            salidaDeError: 'la toolchain se rompió',
+          ),
+        ),
+      );
+      expect(r, isA<DerivacionAbortada>(), reason: '$r');
+      expect(
+        (r as DerivacionAbortada).causa,
+        CausaDeAborto.laToolchainNoSeIdentifico,
+      );
+      expect(r.terminacion, Termination.completa);
+      expect(r.evidencia.content, contains('la toolchain se rompió'));
+    });
+
+    test('la toolchain MUDA tampoco identifica nada', () async {
+      // El peor de los dos: la «identidad» era la frase que arma `_texto` para
+      // poder citar un proceso mudo. Una cadena nuestra satisfaciendo al
+      // constructor que existe para rechazar justo eso.
+      paquete('.');
+      fijarLockfile('.');
+      final r = await derivar(
+        ['lib/a.dart'],
+        ejecutor: EjecutorDeclarado(
+          const ResultadoDeProceso(
+            terminacion: Termination.completa,
+            codigo: 0,
+            salidaEstandar: '',
+            salidaDeError: '',
+          ),
+        ),
+      );
+      expect(r, isA<DerivacionAbortada>(), reason: '$r');
+      expect(
+        (r as DerivacionAbortada).causa,
+        CausaDeAborto.laToolchainNoSeIdentifico,
+      );
+    });
+
+    test('la identidad es lo que la herramienta DIJO, no lo que armamos para '
+        'citarla', () async {
+      paquete('.');
+      fijarLockfile('.');
+      final r = await derivar(['lib/a.dart']) as EntornoDerivado;
+      expect(r.toolchain.version.content, isNot(contains('sin salida')));
+      expect(r.toolchain.version.content, contains('version'));
+    });
+
     test(
       'con el ejecutable ausente DE VERDAD, el ejecutor real lo dice',
       () async {

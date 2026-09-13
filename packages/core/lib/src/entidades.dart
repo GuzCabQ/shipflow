@@ -443,12 +443,29 @@ enum TipoDeAlteracion {
 
   /// Un archivo regular donde el árbol tiene un enlace, o al revés.
   cambioDeTipo,
+
+  /// Una ruta que **no está en el árbol fijado** y apareció en el candidato.
+  ///
+  /// **No toda ruta nueva cuenta**, pero tampoco ninguna: cuenta la que la
+  /// política de artefactos del stack **no** declara artefacto. Derivar el
+  /// entorno genera archivos, y generarlos es su trabajo; un archivo de fuente
+  /// nuevo, un manifiesto nuevo o un efecto lateral de un verificador **no** son
+  /// eso, y
+  /// la cascada los lee igual que a los demás.
+  agregada,
 }
 
-/// Una entrada versionada del candidato que **dejó de coincidir con su árbol**.
+/// El candidato **dejó de ser el árbol que dice representar**.
 ///
-/// Vacío significa intacto. **Los archivos nuevos no cuentan**: son lo que el
-/// entorno genera, y generarlos es su trabajo.
+/// Vacío significa intacto. Cubre dos cosas distintas: una entrada versionada
+/// que cambió, y una ruta nueva que la política de artefactos no declara
+/// artefacto — [TipoDeAlteracion.agregada].
+///
+/// **La primera versión decía que ningún archivo nuevo contaba**, porque todos
+/// serían generados por la derivación. Es falso y está reproducido: un archivo
+/// de fuente creado entre la derivación y el segundo control dejaba la corrida en
+/// rojo, concluyendo sobre bytes que el candidato no fijó. Quién decide qué es
+/// artefacto no se sabe acá: es `ArtifactPolicy`.
 class AlteracionDelCandidato {
   final String ruta;
   final TipoDeAlteracion tipo;

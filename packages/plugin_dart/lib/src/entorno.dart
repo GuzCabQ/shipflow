@@ -80,11 +80,34 @@ class EntornoDart implements VerificationEnvironment {
       directorio: raiz,
       presupuesto: presupuesto,
     );
+    // **Tres condiciones, no una.** Comprobar solo la terminación dejaba pasar
+    // dos casos reproducidos: la herramienta saliendo con código distinto de
+    // cero, y la herramienta muda. Los dos producían un entorno «derivado» cuya
+    // identidad de toolchain era, en el segundo caso, el texto sintético que
+    // arma `_texto` — una cadena nuestra satisfaciendo al constructor que existe
+    // para rechazar exactamente eso.
+    final dijoSuVersion = version.salidaEstandar.trim().isNotEmpty
+        ? version.salidaEstandar.trim()
+        : version.salidaDeError.trim();
     if (version.terminacion != Termination.completa) {
-      return _abortada(version, invocacionDeVersion);
+      return _abortada(
+        version,
+        invocacionDeVersion,
+        CausaDeAborto.laHerramientaNoRespondio,
+      );
     }
+    if (version.codigo != 0 || dijoSuVersion.isEmpty) {
+      return DerivacionAbortada(
+        terminacion: Termination.completa,
+        causa: CausaDeAborto.laToolchainNoSeIdentifico,
+        evidencia: QuotedText(_texto(version), source: invocacionDeVersion),
+      );
+    }
+    // **Y la identidad es lo que la herramienta DIJO**, no el texto que arma
+    // `_texto` para poder citar un fallo: ese texto es evidencia de un problema,
+    // nunca la versión de nada.
     final toolchain = IdentidadDeToolchain(
-      version: QuotedText(_texto(version), source: invocacionDeVersion),
+      version: QuotedText(dijoSuVersion, source: invocacionDeVersion),
     );
 
     var paquetes = 0;
@@ -98,7 +121,11 @@ class EntornoDart implements VerificationEnvironment {
         presupuesto: presupuesto,
       );
       if (resuelto.terminacion != Termination.completa) {
-        return _abortada(resuelto, invocacion);
+        return _abortada(
+          resuelto,
+          invocacion,
+          CausaDeAborto.laHerramientaNoRespondio,
+        );
       }
       if (resuelto.codigo != 0) {
         // **Dijo que no, y no inventamos por qué.** Está medido que el mismo
@@ -128,14 +155,24 @@ class EntornoDart implements VerificationEnvironment {
     );
   }
 
-  DerivacionAbortada _abortada(ResultadoDeProceso r, String invocacion) =>
-      DerivacionAbortada(
-        terminacion: r.terminacion,
-        evidencia: QuotedText(_texto(r), source: invocacion),
-      );
+  DerivacionAbortada _abortada(
+    ResultadoDeProceso r,
+    String invocacion,
+    CausaDeAborto causa,
+  ) => DerivacionAbortada(
+    terminacion: r.terminacion,
+    causa: causa,
+    evidencia: QuotedText(_texto(r), source: invocacion),
+  );
 
-  /// Las dos corrientes, siempre. La versión de la toolchain sale por una u otra
-  /// según la versión, y el resolvedor explica por la de error.
+  /// Las dos corrientes, para **citar evidencia de un problema**.
+  ///
+  /// **No sirve como identidad de nada**, y esa distinción costó un hallazgo:
+  /// cuando el proceso no dice nada, esto devuelve una frase que armamos
+  /// nosotros, y esa frase satisfacía al constructor de la identidad de
+  /// toolchain — el que existe para rechazar una toolchain que no dice qué
+  /// versión es—. Para identidad se usa lo que la herramienta dijo, y si no
+  /// dijo nada, no hay identidad: hay un aborto.
   ///
   /// **Nunca en blanco**: los tipos lo rechazan, y un proceso mudo también es un
   /// hecho que hay que poder citar.

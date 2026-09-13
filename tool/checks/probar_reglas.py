@@ -253,6 +253,9 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "entornoSaneado sin includeParentEnvironment false",
         "start y runSync tambien cuentan",
         "un part suma un lanzamiento a la biblioteca exceptuada",
+        "una funcion local llamada entornoSaneado",
+        "un metodo llamado entornoSaneado",
+        "una clase local llamada Process",
     },
     "puertos-sin-implementacion": {
         "implementado a traves de una base abstracta",

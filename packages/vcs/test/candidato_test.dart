@@ -25,6 +25,25 @@ class _TodoEsFuente implements ArtifactPolicy {
   bool isEditable(String path) => path.trim().isNotEmpty;
 }
 
+/// Una política que **sí declara artefactos**, para poder distinguir «apareció
+/// algo que el entorno genera» de «apareció código».
+///
+/// Sin ella no se puede probar la diferencia: con una política que llama fuente
+/// a todo, ambos casos se ven igual — y con una que no llama fuente a nada,
+/// también. La política es la autoridad, así que la prueba necesita una que
+/// diga las dos cosas.
+class _ConArtefactos implements ArtifactPolicy {
+  const _ConArtefactos();
+  @override
+  bool isGenerated(String path) => path.endsWith('.g.txt');
+  @override
+  bool isEditable(String path) =>
+      path.trim().isNotEmpty &&
+      !isGenerated(path) &&
+      !path.startsWith('generado/') &&
+      !path.contains('/generado/');
+}
+
 void main() {
   late Directory raiz;
   late RepositorioGit repo;
@@ -188,17 +207,69 @@ void main() {
       });
     });
 
-    test('un archivo generado nuevo NO es una alteración', () async {
+    test('un ARTEFACTO nuevo no es una alteración; un archivo de FUENTE '
+        'nuevo SÍ', () async {
+      // **La generalización que costó un review.** La primera versión decía que
+      // ningún archivo nuevo contaba, porque todos serían generados por la
+      // derivación. Es falso: un archivo de fuente creado entre la derivación y
+      // este control queda dentro del alcance que la cascada lee, y la corrida
+      // salía roja concluyendo sobre bytes que el candidato nunca fijó.
+      repo = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _ConArtefactos(),
+      );
       escribir('a.txt', 'dos\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
-        Directory('${c.root}/.generado').createSync();
-        File('${c.root}/.generado/config.json').writeAsStringSync('{}');
-        File('${c.root}/nuevo.txt').writeAsStringSync('x');
+        Directory('${c.root}/generado').createSync();
+        File('${c.root}/generado/mapa.json').writeAsStringSync('{}');
+        File('${c.root}/salida.g.txt').writeAsStringSync('derivado');
         expect(
           await c.alteraciones(),
           isEmpty,
           reason: 'generar es el trabajo del entorno, no una alteración',
         );
+
+        File('${c.root}/nuevo.txt').writeAsStringSync('esto es fuente');
+        final a = await c.alteraciones();
+        expect(a.single.ruta, 'nuevo.txt');
+        expect(a.single.tipo, TipoDeAlteracion.agregada);
+        return null;
+      });
+    });
+
+    test('quién decide qué es artefacto es la POLÍTICA, no las exclusiones '
+        'del repositorio', () async {
+      // Con `--exclude-standard`, un archivo que el repositorio excluye quedaría
+      // callado aunque la política lo llame fuente. Serían dos autoridades sobre
+      // la misma pregunta, y la que manda ya está decidida.
+      escribir('.gitignore', 'excluido.txt\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'con exclusiones']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/excluido.txt').writeAsStringSync('el repo lo excluye');
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['excluido.txt']);
+        expect(a.single.tipo, TipoDeAlteracion.agregada);
+        return null;
+      });
+    });
+
+    test('una ruta declarada en noMaterializadas no cuenta como agregada '
+        'cuando el candidato no la recreó', () async {
+      // Sutil: la ruta NO está en el disco, así que no puede aparecer como
+      // nueva. Pero si alguien la escribe, `diff-index` la ve como cambio de
+      // tipo —ya cubierto— y no como agregada. Esta prueba fija que las dos
+      // vías no se pisen y produzcan la misma ruta dos veces.
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      git(['add', '-A']);
+      git(['commit', '-m', 'abs']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/abs').writeAsStringSync('regular\n');
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['abs'], reason: 'una sola vez');
+        expect(a.single.tipo, TipoDeAlteracion.cambioDeTipo);
         return null;
       });
     });

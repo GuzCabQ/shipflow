@@ -18,14 +18,6 @@ import 'package:plugin_dart/plugin_dart.dart';
 import 'package:test/test.dart';
 import 'package:vcs/vcs.dart';
 
-class _TodoEsFuente implements ArtifactPolicy {
-  const _TodoEsFuente();
-  @override
-  bool isGenerated(String path) => false;
-  @override
-  bool isEditable(String path) => path.trim().isNotEmpty;
-}
-
 const presupuesto = Duration(minutes: 3);
 
 /// La composición que una rebanada futura va a volver productiva: preparar,
@@ -126,9 +118,13 @@ void main() {
     git(['config', 'user.name', 'prueba']);
     git(['add', '-A']);
     git(['commit', '-m', 'base']);
+    // **La política REAL, no un doble.** Es la autoridad sobre qué ruta nueva es
+    // artefacto y cuál es código, y la derivación genera archivos: con una
+    // política que llama fuente a todo, derivar volvería no concluyente a todo
+    // candidato. Es la única prueba donde las dos piezas se encuentran.
     repo = RepositorioGit(
       directorio: raiz.path,
-      politica: const _TodoEsFuente(),
+      politica: const PoliticaDeArtefactosDart(),
     );
   });
   tearDown(() => raiz.deleteSync(recursive: true));
@@ -231,6 +227,66 @@ void main() {
       }
     },
   );
+
+  test('un archivo de FUENTE nuevo antes del segundo control da no '
+      'concluyente, aunque la cascada haya dado rojo', () async {
+    // **El caso que encontró un review, de punta a punta.** Un archivo nuevo es
+    // invisible para la comparación de entradas versionadas, así que la corrida
+    // salía ROJA: concluía sobre un árbol que ya no era el identificado por el
+    // contenido fijado, y que la cascada había leído entero.
+    escribir(
+      'packages/a/lib/a.dart',
+      "int sano() => 1;\nint roto = 'no soy un int';\n",
+    );
+    final c = await repo.prepareCandidate(
+      rebanada('agregar fuente', ['packages/a/lib/a.dart']),
+    );
+    try {
+      final estado = await verificarCandidato(
+        c,
+        archivos: ['packages/a/lib/a.dart'],
+        sujetos: ['packages/a/lib'],
+        medidas: {},
+        entreCascadaYControl: () => File(
+          '${c.root}/packages/a/lib/nuevo.dart',
+        ).writeAsStringSync('int otro() => 3;\n'),
+      );
+      expect(estado, EstadoDeCorrida.noConcluyente);
+      expect(
+        estado,
+        isNot(EstadoDeCorrida.rojo),
+        reason:
+            'la cascada dio rojo, y no se puede afirmar ni eso sobre un árbol '
+            'al que alguien le agregó código que el candidato no fijó',
+      );
+    } finally {
+      await c.dispose();
+    }
+  });
+
+  test('un archivo de fuente nuevo ANTES de la cascada también da no '
+      'concluyente', () async {
+    // La otra mitad: la primera comprobación tiene que verlo igual, porque
+    // entonces la cascada ya lo habría leído.
+    escribir('packages/a/lib/a.dart', 'int sano() => 2;\n');
+    final c = await repo.prepareCandidate(
+      rebanada('agregar fuente antes', ['packages/a/lib/a.dart']),
+    );
+    try {
+      File(
+        '${c.root}/packages/a/lib/colado.dart',
+      ).writeAsStringSync('int colado() => 4;\n');
+      final estado = await verificarCandidato(
+        c,
+        archivos: ['packages/a/lib/a.dart'],
+        sujetos: ['packages/a/lib'],
+        medidas: {},
+      );
+      expect(estado, EstadoDeCorrida.noConcluyente);
+    } finally {
+      await c.dispose();
+    }
+  });
 
   test('una alteración DESPUÉS de la cascada da no concluyente, aunque la '
       'cascada haya dado rojo', () async {

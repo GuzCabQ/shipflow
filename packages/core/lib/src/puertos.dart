@@ -388,10 +388,20 @@ abstract interface class PreparedCandidate {
 
   /// Qué entradas versionadas del candidato dejaron de coincidir con su árbol.
   ///
-  /// Vacío significa intacto. **Los archivos nuevos no cuentan**: son lo que el
-  /// entorno de verificación genera, y generarlos es su trabajo. **Lo declarado
-  /// en [noMaterializadas] tampoco**, porque el candidato lo dejó afuera a
-  /// sabiendas — pero si alguien escribió algo en esa ruta, eso sí cuenta.
+  /// Vacío significa intacto.
+  ///
+  /// **Una ruta nueva cuenta salvo que la política de artefactos del stack la
+  /// declare artefacto.** Derivar el entorno genera archivos, y generarlos es
+  /// su trabajo; pero un archivo de fuente nuevo, un manifiesto nuevo o un
+  /// efecto lateral de un verificador **no** son eso, y la cascada los lee
+  /// igual que a los demás. La primera versión de esta cláusula decía que
+  /// **ningún** archivo nuevo contaba, y con eso un archivo de fuente creado entre la
+  /// derivación y el segundo control dejaba la corrida en rojo, concluyendo
+  /// sobre bytes que el candidato nunca fijó. Está reproducido.
+  ///
+  /// **Lo declarado en [noMaterializadas] tampoco cuenta**, porque el candidato
+  /// lo dejó afuera a sabiendas — pero si alguien escribió algo en esa ruta,
+  /// eso sí cuenta.
   ///
   /// Se comprueba **dos veces**, y las dos tienen su motivo: después de derivar
   /// el entorno, contra que la derivación haya borrado contenido versionado

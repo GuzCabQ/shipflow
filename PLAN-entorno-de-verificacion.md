@@ -2,7 +2,16 @@
 
 > **ESTADO: ejecutado el 12–13/09/2026, inline. Las casillas quedan sin marcar a propósito.**
 >
-> Las once tareas se ejecutaron en orden con `superpowers:executing-plans`, y **el registro es el `git log`**: once commits, uno por tarea, cada uno nombrando lo que encontró. Las sesenta y cinco casillas de abajo dicen «nada hecho» mientras el `README` y el historial dicen que está terminado; **lo cierto es el historial**. Se dejan sin marcar en vez de marcarlas ahora, porque marcarlas al final fabrica un registro de ejecución que nadie llevó paso por paso — es la misma decisión que tomó `PLAN-desenlace-cerrado.md`, y por el mismo motivo.
+> Las once tareas se ejecutaron en orden con `superpowers:executing-plans`, y **el registro es el `git log` de la rama**, un commit por tarea más los de este archivo y los de la revisión. **Acá había una cuenta de commits y se fue en vez de actualizarse**: un número en prosa que nada deriva envejece solo, y este repositorio ya pagó esa lección con la cuenta de sabotajes. Las sesenta y cinco casillas de abajo dicen «nada hecho» mientras el `README` y el historial dicen que está terminado; **lo cierto es el historial**. Se dejan sin marcar en vez de marcarlas ahora, porque marcarlas al final fabrica un registro de ejecución que nadie llevó paso por paso — es la misma decisión que tomó `PLAN-desenlace-cerrado.md`, y por el mismo motivo.
+>
+> **Este plan NO se reescribe para que coincida con lo construido.** Es lo que se planeó, y las
+> divergencias se registran acá en vez de disimularse borrándolas del texto:
+>
+> | Dice el plan | Quedó |
+> |---|---|
+> | `_capturarIdentidad`, memoizado con un `Expando` | **`_identidadComoEntorno`**, sin memoizar: dos lecturas de configuración no justifican perder el constructor `const`. Es el nombre que registra `arquitectura.json`, y el propio check lo cazó cuando la declaración quedó vieja |
+> | `TipoDeAlteracion` con cuatro variantes | **cinco**: una revisión encontró que un archivo nuevo de fuente no invalidaba la integridad, y entró `agregada` |
+> | la regla compara el nombre `entornoSaneado` | compara **identidad resuelta**: la misma revisión pasó una homónima local y el check quedó verde |
 >
 > **Lo que este plan no anticipó está en los commits, no acá.** Nueve hallazgos aparecieron al construir, y tres de ellos corrigen al diseño que el plan implementa; el borrador del corpus y `ADR-020` los registran.
 
