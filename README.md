@@ -1283,7 +1283,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 131 sabotajes.**
+y su caso ciego. **El arnés aplica 133 sabotajes.**
 
 ---
 
@@ -1680,11 +1680,33 @@ check anunciaba siete lanzamientos saneados. Comparar nombres es comprobar
 sintaxis, que es exactamente lo que este control existe para no hacer.
 
 Ahora el árbol se **resuelve** y se compara la identidad: la función tiene que
-venir de `core`, y `Process` de la biblioteca de entrada y salida del SDK —una
-clase local homónima abriría el mismo agujero por el otro lado—. Se resuelven
-solo los archivos que mencionan un lanzamiento, y **no poder resolver uno es
-rojo**: no saber no es no tener lanzamientos. Los tres casos son sabotajes
-permanentes.
+venir de `core`, y el lanzamiento, de la biblioteca de entrada y salida del SDK.
+**No poder resolver un archivo es rojo**: no saber no es no tener lanzamientos.
+
+**Y una segunda revisión encontró que eso todavía no alcanzaba.** La resolución
+era correcta, pero antes había dos filtros sintácticos que decidían **qué
+mirar**, y los dos se esquivaban con sintaxis corriente que el formateador deja
+intacta:
+
+| Forma | Por qué se escapaba |
+|---|---|
+| un comentario entre la clase y el punto | el prefiltro buscaba una cadena de texto en el archivo, y el comentario la parte: **el archivo ni se resolvía** |
+| la clase a través del prefijo de una importación | el destino escrito no es el nombre de la clase, y el visitante salía antes de mirar el símbolo |
+
+Las dos terminaban con código 0 **sin contar siquiera el lanzamiento**. No son
+residuos declarables: son sintaxis ordinaria, y el invariante afirma cubrir
+**todo** lanzamiento.
+
+La corrección es dejar de mirar texto en los dos lados. El prefiltro pasa a ser
+**estructural** —cualquier invocación de un método con uno de los tres nombres,
+sobre cualquier destino— y la identificación la hace el elemento resuelto: **de
+qué clase y de qué biblioteca es el método que se invoca**. Las cinco formas son
+sabotajes permanentes.
+
+Queda un **falso positivo deliberado**: una clase propia que se llame igual que
+la que lanza se reporta igual, porque ahí el control no puede decir qué corre.
+Su precio es renombrarla; el de la alternativa es no ver un lanzamiento envuelto
+en un homónimo.
 
 ### La toolchain que no dice su versión no identifica nada
 

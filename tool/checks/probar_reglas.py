@@ -256,6 +256,8 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "una funcion local llamada entornoSaneado",
         "un metodo llamado entornoSaneado",
         "una clase local llamada Process",
+        "un comentario entre la clase y el punto",
+        "la clase que lanza, a traves del prefijo de una importacion",
     },
     "puertos-sin-implementacion": {
         "implementado a traves de una base abstracta",

@@ -612,9 +612,17 @@ class _Lanzamiento {
 /// exactamente lo que este control existe para no hacer.
 ///
 /// Ahora se resuelve el elemento y se comprueba **de qué biblioteca viene**:
-/// la función tiene que ser la de `core`, y `Process` tiene que ser la de la
-/// biblioteca de entrada y salida del SDK. Una clase local homónima abriría el
-/// mismo agujero por el otro lado.
+/// la función tiene que ser la de `core`, y el lanzamiento, el de la biblioteca
+/// de entrada y salida del SDK.
+///
+/// **Y el lanzamiento se identifica por su ELEMENTO, no por cómo se escribe.**
+/// Una segunda revisión encontró dos formas ordinarias que se escapaban, las dos
+/// con el formateador conforme: un comentario entre la clase y el punto —que el
+/// prefiltro por texto no veía— y una importación con prefijo, donde el destino
+/// escrito no es el nombre de la clase. Ninguna es código raro, y el invariante
+/// afirma cubrir **todo** lanzamiento. Así que no se mira ni el texto del
+/// archivo ni el del destino: se mira de qué clase y de qué biblioteca es el
+/// método que se invoca.
 class _Subprocesos extends RecursiveAstVisitor<void> {
   _Subprocesos(this.archivo, this.biblioteca);
 
@@ -623,7 +631,12 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
   final List<_Lanzamiento> vistos = [];
   final List<String> _pila = [];
 
+  /// Los tres métodos de lanzamiento, por nombre. **Es un filtro barato, no la
+  /// identificación**: esa la hace el elemento resuelto.
   static const _lanzadores = {'run', 'runSync', 'start'};
+
+  /// Cómo se llama la clase que lanza.
+  static const _claseQueLanza = 'Process';
 
   @override
   void visitMethodDeclaration(MethodDeclaration node) {
@@ -651,11 +664,45 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
   @override
   void visitMethodInvocation(MethodInvocation node) {
     super.visitMethodInvocation(node);
-    final destino = node.target;
-    if (destino?.toSource() != 'Process' ||
-        !_lanzadores.contains(node.methodName.name)) {
+    if (node.target == null || !_lanzadores.contains(node.methodName.name)) {
       return;
     }
+    // **De qué clase y de qué biblioteca es el método que se invoca.** No cómo
+    // se escribe el destino: la clase escrita a secas, con un comentario en
+    // medio, o a través del prefijo de una importación resuelven las tres a lo
+    // mismo, y eso es lo que hay que preguntar.
+    final metodo = node.methodName.element;
+    final deDondeViene = _bibliotecaDe(metodo);
+    final esLanzamientoDelSdk =
+        metodo?.enclosingElement?.name == _claseQueLanza &&
+        deDondeViene == _origenDeProcess;
+
+    if (!esLanzamientoDelSdk) {
+      // No es un lanzamiento del SDK. **Salvo que se le parezca demasiado**: un
+      // `X.run(...)` donde `X` se llama igual que la clase que lanza y no es la
+      // del SDK deja a este control sin poder decir qué corre. Es un falso
+      // positivo deliberado, y su precio es renombrar una clase; el de la
+      // alternativa es no ver un lanzamiento envuelto en un homónimo.
+      final destino = node.target;
+      final seLlamaIgual =
+          destino is Identifier &&
+          destino.name.split('.').last == _claseQueLanza;
+      if (!seLlamaIgual) return;
+      vistos.add(
+        _Lanzamiento(
+          archivo,
+          biblioteca,
+          node.offset,
+          List<String>.unmodifiable(_pila),
+          '`$_claseQueLanza` acá no es el de la biblioteca de entrada y salida '
+          'del SDK, sino ${deDondeViene.isEmpty ? "un símbolo que no se "
+                    "pudo resolver" : "«$deDondeViene»"}. Este control no puede '
+          'decir qué lanza.',
+        ),
+      );
+      return;
+    }
+
     final nombrados = {
       for (final a in node.argumentList.arguments)
         if (a is NamedExpression) a.name.label.name: a.expression,
@@ -663,19 +710,7 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
     final entorno = nombrados['environment'];
     final hereda = nombrados['includeParentEnvironment'];
     String? problema;
-    // **Que `Process` sea el del SDK también se comprueba.** Una clase local
-    // con ese nombre abriría el mismo agujero por el otro lado: el control
-    // creería estar mirando un lanzamiento y estaría mirando otra cosa.
-    final origenDeProcess = destino is Identifier
-        ? _bibliotecaDe(destino.element)
-        : '';
-    if (origenDeProcess != _origenDeProcess) {
-      problema =
-          '`Process` acá no es el de la biblioteca de entrada y salida del '
-          'SDK, sino ${origenDeProcess.isEmpty ? "un símbolo que no se pudo "
-                    "resolver" : "«$origenDeProcess»"}. Este control no puede decir '
-          'qué lanza.';
-    } else if (entorno is! MethodInvocation ||
+    if (entorno is! MethodInvocation ||
         entorno.methodName.name != 'entornoSaneado') {
       problema =
           '`environment:` no es una llamada a `entornoSaneado`'
@@ -705,6 +740,31 @@ class _Subprocesos extends RecursiveAstVisitor<void> {
         problema,
       ),
     );
+  }
+}
+
+/// ¿Este archivo tiene alguna invocación con la FORMA de un lanzamiento?
+///
+/// **Estructural, no por texto.** El prefiltro buscaba la cadena `Process.` en
+/// el archivo, y una revisión lo reprodujo: un comentario entre la clase y el
+/// punto —sintaxis corriente, que el formateador deja intacta— rompía esa
+/// cadena y el archivo no se resolvía siquiera. Un prefiltro que decide qué
+/// mirar por coincidencia textual decide mal.
+///
+/// Acá se acepta de más a propósito: cualquier invocación de un método con uno
+/// de los tres nombres, sobre cualquier destino. Quién lanza de verdad lo dice
+/// el elemento resuelto; esto solo evita resolver archivos que no pueden
+/// contener un lanzamiento.
+class _PareceLanzamiento extends RecursiveAstVisitor<void> {
+  bool encontrado = false;
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    super.visitMethodInvocation(node);
+    if (node.target != null &&
+        _Subprocesos._lanzadores.contains(node.methodName.name)) {
+      encontrado = true;
+    }
   }
 }
 
@@ -1121,12 +1181,23 @@ Future<void> main(List<String> args) async {
   // entran: las pruebas lanzan `git` y `chmod` a mano, y esa es su forma de
   // medir qué recibe un hijo.
   final deProduccion = RegExp(r'^packages/[^/]+/(lib|bin)/');
-  final candidatos = [
-    for (final f in fuentes(dirPaquetes))
-      if (deProduccion.hasMatch(f.path.substring(raiz.path.length + 1)) &&
-          f.readAsStringSync().contains('Process.'))
-        f,
-  ];
+  final candidatos = <File>[];
+  for (final f in fuentes(dirPaquetes)) {
+    if (!deProduccion.hasMatch(f.path.substring(raiz.path.length + 1))) {
+      continue;
+    }
+    final parseado = parseFile(
+      path: f.path,
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false,
+    );
+    // Un archivo que no parsea ya lo reportó `clasesDe`: de un árbol parcial no
+    // sale ninguna invocación, y cero se lee igual que «no tenía ninguna».
+    if (parseado.errors.isNotEmpty) continue;
+    final busqueda = _PareceLanzamiento();
+    parseado.unit.accept(busqueda);
+    if (busqueda.encontrado) candidatos.add(f);
+  }
   if (candidatos.isNotEmpty) {
     // **Resuelto y no solo parseado**, porque la regla compara la IDENTIDAD de
     // lo que se invoca, no su nombre: sin resolución, una función local llamada
