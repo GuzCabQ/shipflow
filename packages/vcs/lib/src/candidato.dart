@@ -366,7 +366,12 @@ class _CandidatoGit implements PreparedCandidate {
       // ejecutable conserva el objeto del archivo y cambia el commit. Sale del
       // árbol, que es justamente por lo que la identidad es un árbol.
       if (entrada.modo == '100755') {
-        final r = await Process.run(_repo.programaChmod, ['755', destino.path]);
+        final r = await Process.run(
+          _repo.programaChmod,
+          ['755', destino.path],
+          environment: entornoSaneado(_repo._padre),
+          includeParentEnvironment: false,
+        );
         if (r.exitCode != 0) {
           throw PromesaIncumplida(
             'materializar $ruta con su bit ejecutable',
@@ -446,14 +451,22 @@ class _CandidatoGit implements PreparedCandidate {
     // condición: si el compare-and-swap se rechaza después, este objeto queda
     // inalcanzable y `git gc` lo recoge. No es daño, y a cambio la revisión ya
     // existe y se puede persistir antes de tocar ninguna referencia.
+    // **La identidad viaja capturada, y `useConfigOnly` la exige.** Sin la
+    // captura, el entorno saneado pierde una identidad que viva en XDG; sin
+    // `useConfigOnly`, `git` no falla al no encontrarla: inventa un autor con
+    // el usuario del sistema y el hostname, y el commit queda en el historial
+    // firmado por alguien que no es. Es la diferencia entre un fallo y un dato
+    // falso.
     return _revision = await _repo._exigir([
+      '-c',
+      'user.useConfigOnly=true',
       'commit-tree',
       identity.contentRevision,
       '-p',
       identity.baseRevision,
       '-m',
       _slice.intent,
-    ]);
+    ], entorno: await _repo._identidadComoEntorno());
   }
 
   @override

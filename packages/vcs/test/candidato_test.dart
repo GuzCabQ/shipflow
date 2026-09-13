@@ -322,6 +322,162 @@ void main() {
     });
   });
 
+  group('git corre con el entorno saneado', () {
+    late File registro;
+    late File gitFalso;
+
+    setUp(() {
+      // Un `git` que anota qué entorno recibió y después delega en el de
+      // verdad. Es la única forma de comprobar qué llega y qué no sin
+      // depender del shell de quien corre la suite.
+      registro = File('${raiz.path}/entorno-visto.txt');
+      gitFalso = File('${raiz.path}/git-falso.sh')
+        ..writeAsStringSync(
+          '#!/bin/sh\nenv >> "${registro.path}"\nexec git "\$@"\n',
+        );
+      Process.runSync('chmod', ['755', gitFalso.path]);
+    });
+
+    test('el token del padre no llega a git, ni un GIT_DIR hostil', () async {
+      final r = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _TodoEsFuente(),
+        programa: gitFalso.path,
+        entornoDelPadre: {
+          'PATH': Platform.environment['PATH']!,
+          'HOME': Platform.environment['HOME']!,
+          'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
+          'GIT_DIR': '/otro/repositorio/.git',
+        },
+      );
+      escribir('a.txt', 'dos\n');
+      final c = await r.prepareCandidate(rebanada(['a.txt']));
+      await c.dispose();
+
+      final visto = registro.readAsStringSync();
+      expect(visto, isNotEmpty, reason: 'el git falso tiene que haber corrido');
+      expect(visto, isNot(contains('secreto-de-prueba')));
+      expect(
+        visto.split('\n').where((l) => l.startsWith('GIT_DIR=')),
+        isEmpty,
+        reason:
+            'un GIT_DIR del shell del usuario corrompería nuestras '
+            'operaciones sin que nada lo notara',
+      );
+      expect(
+        visto,
+        contains('GIT_INDEX_FILE='),
+        reason: 'las propias de la invocación sí viajan',
+      );
+    });
+
+    test('chmod también corre saneado', () async {
+      escribir('ejecutable.sh', '#!/bin/sh\n');
+      Process.runSync('chmod', ['755', '${raiz.path}/ejecutable.sh']);
+      git(['add', '-A']);
+      git(['commit', '-m', 'con ejecutable']);
+      final chmodFalso = File('${raiz.path}/chmod-falso.sh')
+        ..writeAsStringSync(
+          '#!/bin/sh\nenv >> "${registro.path}"\nexec chmod "\$@"\n',
+        );
+      Process.runSync('chmod', ['755', chmodFalso.path]);
+      final r = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _TodoEsFuente(),
+        programaChmod: chmodFalso.path,
+        entornoDelPadre: {
+          'PATH': Platform.environment['PATH']!,
+          'HOME': Platform.environment['HOME']!,
+          'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
+        },
+      );
+      escribir('ejecutable.sh', '#!/bin/sh\necho x\n');
+      final c = await r.prepareCandidate(rebanada(['ejecutable.sh']));
+      await c.dispose();
+      expect(registro.readAsStringSync(), contains('PATH='));
+      expect(registro.readAsStringSync(), isNot(contains('secreto-de-prueba')));
+    });
+  });
+
+  group('la identidad del autor es la configurada, o no hay commit', () {
+    late Directory hogar;
+
+    setUp(() {
+      // Sin identidad LOCAL: la que se prueba es la global, que es la que el
+      // saneamiento puede perder.
+      git(['config', '--unset', 'user.email']);
+      git(['config', '--unset', 'user.name']);
+      hogar = Directory.systemTemp.createTempSync('hogar_');
+    });
+    tearDown(() => hogar.deleteSync(recursive: true));
+
+    Map<String, String> padre([Map<String, String> extra = const {}]) => {
+      'PATH': Platform.environment['PATH']!,
+      'HOME': hogar.path,
+      ...extra,
+    };
+
+    RepositorioGit con(Map<String, String> p) => RepositorioGit(
+      directorio: raiz.path,
+      politica: const _TodoEsFuente(),
+      entornoDelPadre: p,
+    );
+
+    Future<String> autorDe(RepositorioGit r) async {
+      escribir('a.txt', 'dos\n');
+      final c = await r.prepareCandidate(rebanada(['a.txt']));
+      try {
+        final rev = await c.createRevision();
+        return git(['log', '-1', '--format=%an <%ae>', rev]);
+      } finally {
+        await c.dispose();
+      }
+    }
+
+    test('con la identidad en el hogar', () async {
+      File('${hogar.path}/.gitconfig').writeAsStringSync(
+        '[user]\n\tname = Del Hogar\n\temail = hogar@ejemplo.test\n',
+      );
+      expect(await autorDe(con(padre())), 'Del Hogar <hogar@ejemplo.test>');
+    });
+
+    test(
+      'con la identidad SOLO en XDG, que la lista blanca no lleva',
+      () async {
+        // **Está medido que con PATH+HOME solos git FABRICA el autor**: usa el
+        // usuario del sistema y el hostname. Enumerar por dónde git puede leer
+        // su configuración —XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL— es la misma
+        // carrera que una lista negra, así que la identidad se captura.
+        final xdg = Directory('${hogar.path}/config/git')
+          ..createSync(recursive: true);
+        File('${xdg.path}/config').writeAsStringSync(
+          '[user]\n\tname = Solo XDG\n\temail = xdg@ejemplo.test\n',
+        );
+        expect(
+          await autorDe(
+            con(padre({'XDG_CONFIG_HOME': '${hogar.path}/config'})),
+          ),
+          'Solo XDG <xdg@ejemplo.test>',
+        );
+      },
+    );
+
+    test('sin ninguna identidad, git se niega en vez de inventar una', () async {
+      // La diferencia entre un fallo y un dato falso. Sin `useConfigOnly`, git
+      // no falla: inventa un autor y lo escribe en el historial del usuario.
+      await expectLater(
+        autorDe(con(padre())),
+        throwsA(
+          isA<GitFallo>().having(
+            (e) => e.salida,
+            'salida',
+            contains('identity'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('la identidad es un árbol', () {
     test('el contenido preparado es el árbol que se commitea', () async {
       escribir('a.txt', 'modificado\n');

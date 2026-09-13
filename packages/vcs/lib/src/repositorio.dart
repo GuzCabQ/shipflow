@@ -111,13 +111,21 @@ class RepositorioGit implements ChangeSink {
   /// difiere del árbol que dice representar.
   final String programaChmod;
 
+  /// El entorno del proceso padre. **Nulo significa el del proceso**; las
+  /// pruebas le pasan el que quieren, que es la única forma de comprobar qué
+  /// llega a `git` y qué no sin depender del shell de quien corre la suite.
+  final Map<String, String>? _entornoDelPadre;
+
   const RepositorioGit({
     required this.directorio,
     required this.politica,
     this.programa = 'git',
     this.programaChmod = 'chmod',
     this.detector = const DetectorDeSecretos(),
-  });
+    Map<String, String>? entornoDelPadre,
+  }) : _entornoDelPadre = entornoDelPadre;
+
+  Map<String, String> get _padre => _entornoDelPadre ?? Platform.environment;
 
   /// **Todo pasa por `--literal-pathspecs`.** Sin eso, `git` lee cada ruta
   /// como un patrón: `*.txt` commitea dos archivos y `:(glob)…` commitea lo
@@ -126,9 +134,13 @@ class RepositorioGit implements ChangeSink {
   ///
   /// El efecto secundario es el que hacía falta: con pathspecs literales, un
   /// archivo que de verdad se llame `*.txt` se commitea, y hoy no se puede.
-  /// [entorno] se **suma** al del proceso, no lo reemplaza: es para
-  /// `GIT_INDEX_FILE`, que es como se le dice a `git` que trabaje sobre un
-  /// índice que no es el del usuario.
+  ///
+  /// [entorno] son las variables **propias de esta invocación**
+  /// —`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, la identidad capturada—. Se
+  /// suman a la lista blanca de [entornoSaneado] y a nada más: **el entorno del
+  /// padre no se hereda**. Se heredaba, y con eso un `GIT_DIR` o un
+  /// `GIT_INDEX_FILE` en el shell del usuario corrompía nuestras operaciones
+  /// sin que nada lo notara.
   Future<ProcessResult> _git(
     List<String> args, {
     Map<String, String> entorno = const {},
@@ -140,7 +152,8 @@ class RepositorioGit implements ChangeSink {
         programa,
         completos,
         workingDirectory: directorio,
-        environment: entorno,
+        environment: entornoSaneado(_padre, propias: entorno),
+        includeParentEnvironment: false,
         stdoutEncoding: utf8,
         stderrEncoding: utf8,
       );
@@ -152,6 +165,56 @@ class RepositorioGit implements ChangeSink {
       );
     }
     return r;
+  }
+
+  /// La identidad de `git`, **capturada con el entorno del padre**, antes de
+  /// sanear.
+  ///
+  /// **Es LA excepción a `subprocesos-con-entorno-saneado`**, y está declarada
+  /// en `arquitectura.json` con su motivo: `git config` tiene que ver
+  /// `XDG_CONFIG_HOME` y `GIT_CONFIG_GLOBAL`, que la lista blanca no lleva a
+  /// propósito, y enumerar por dónde `git` puede leer su configuración es la
+  /// misma carrera que una lista negra. Está medido: con `PATH` y `HOME` solos,
+  /// una identidad que vive en XDG se pierde y `git` fabrica el autor.
+  ///
+  /// Es un `git config --get` de solo lectura: no corre ganchos ni filtros, no
+  /// escribe nada, y lo único que sale de acá son dos cadenas.
+  ///
+  /// **No se memoiza a propósito.** Los dos caminos que commitean la piden una
+  /// vez cada uno, y un campo mutable para guardarla le costaría a esta clase
+  /// su constructor `const` a cambio de ahorrar dos lecturas de configuración.
+  ///
+  /// Devuelve vacío si no hay identidad. Entonces la invocación que commitea
+  /// corre con `user.useConfigOnly=true` y **se niega**, en vez de inventar un
+  /// autor con el usuario del sistema y el hostname y escribirlo en el
+  /// historial de alguien.
+  Future<Map<String, String>> _identidadComoEntorno() async {
+    Future<String> leer(String clave) async {
+      final r = await Process.run(
+        programa,
+        ['config', '--get', clave],
+        workingDirectory: directorio,
+        // La excepción declarada: ver el doc de arriba.
+        environment: _padre,
+        includeParentEnvironment: false,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+      // Un código distinto de cero acá significa «no está configurada», que es
+      // un hecho y no un fallo: `useConfigOnly` lo convierte en el error que
+      // corresponde, en el momento en que importa.
+      return r.exitCode == 0 ? (r.stdout as String).trim() : '';
+    }
+
+    final nombre = await leer('user.name');
+    final correo = await leer('user.email');
+    if (nombre.isEmpty || correo.isEmpty) return const {};
+    return {
+      'GIT_AUTHOR_NAME': nombre,
+      'GIT_AUTHOR_EMAIL': correo,
+      'GIT_COMMITTER_NAME': nombre,
+      'GIT_COMMITTER_EMAIL': correo,
+    };
   }
 
   /// Corre `git` y **exige que haya salido bien**. Un código distinto de cero
@@ -201,7 +264,8 @@ class RepositorioGit implements ChangeSink {
         programa,
         completos,
         workingDirectory: directorio,
-        environment: entorno,
+        environment: entornoSaneado(_padre, propias: entorno),
+        includeParentEnvironment: false,
         stdoutEncoding: null,
         stderrEncoding: utf8,
       );
@@ -240,7 +304,8 @@ class RepositorioGit implements ChangeSink {
         programa,
         completos,
         workingDirectory: directorio,
-        environment: entorno,
+        environment: entornoSaneado(_padre, propias: entorno),
+        includeParentEnvironment: false,
       );
     } on ProcessException catch (e) {
       throw GitFallo(
@@ -613,13 +678,22 @@ class RepositorioGit implements ChangeSink {
       // Un `core.hooksPath` a un directorio vacío los frena a todos, y es UN
       // mecanismo en vez de dos: `--no-verify` al lado de esto sería una línea
       // que no puede fallar.
-      await _exigir([
-        '-c',
-        'core.hooksPath=$sinGanchos',
-        'commit',
-        '--message',
-        slice.intent,
-      ], entorno: entorno);
+      // **`useConfigOnly` también acá.** Este camino commitea igual que el del
+      // candidato, y sin esto `git` fabricaría el autor cuando la captura no
+      // encontró identidad. Dos caminos que escriben en el historial no pueden
+      // tener garantías distintas según por dónde se entre.
+      await _exigir(
+        [
+          '-c',
+          'core.hooksPath=$sinGanchos',
+          '-c',
+          'user.useConfigOnly=true',
+          'commit',
+          '--message',
+          slice.intent,
+        ],
+        entorno: {...entorno, ...await _identidadComoEntorno()},
+      );
       return _exigir(['rev-parse', 'HEAD']);
     });
 
