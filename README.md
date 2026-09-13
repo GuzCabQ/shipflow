@@ -1751,8 +1751,11 @@ monorepo sigue siendo una pregunta abierta, y esto la acota en vez de contestarl
   pudo ejecutar acá, así que la fuente es secundaria y va marcada — pero la
   decisión sí se toma, en vez de dejarla como una pregunta que alguien lea como
   «probablemente funcione».
-- Tampoco: el comando de envío, el artefacto de revisión, la superficie de
-  verificación, la forja, el presupuesto de corrida ni el corte temprano.
+- Tampoco: el comando de envío, la forja, el presupuesto de corrida ni el
+  corte temprano. **La superficie de verificación y el artefacto de revisión
+  estaban en esta lista y ya no**: los construye la rebanada siguiente, que
+  empieza acá abajo. Lo que sí sigue faltando de ellos está en su propia lista,
+  al final de esa sección.
 
 ## La superficie de verificación
 
@@ -1782,21 +1785,42 @@ dice mirar, así que no se escribe ninguna — es exactamente el guardia que no
 se puede poner rojo del que habla el resto de este documento, y se prefiere
 declararlo a fingir un control que no puede mirar.
 
-### Un control rojo no cubre ninguno de sus sujetos, y está medido
+### Un control que encontró algo no cubre ninguno de sus sujetos, y está medido
 
 `AfirmacionCubierta.desde` niega la afirmación con **tres** condiciones —tres
-`if`, tres ramas de código—: el desenlace no es `Executed`, el veredicto es
-rojo, o el testigo no incluye al sujeto pedido. El diseño nombra una cuarta
-comprobación que **no es una rama**: que el control, la afirmación y el
-testigo salgan del mismo desenlace que recibe la llamada, así que no existe
-una segunda llamada que pueda atribuirle a un control la afirmación o el
-testigo de otro. Esa alineación no se comprueba en tiempo de ejecución porque
-no hace falta: la firma no deja construir el caso que la rompería. Quien lea
-el código buscando cuatro `if` va a encontrar tres; el cuarto lo sostiene el
-tipo, no una condición. Y el rojo se rechaza por completo —no solo el sujeto
-del diagnóstico— porque está medido que el veredicto es global al paso y que
-un diagnóstico no tiene relación validada con un sujeto del testigo: no se
-sabe cuál lo originó.
+`if`, tres ramas de código—: el desenlace no es `Executed`, el desenlace trae
+**algún diagnóstico**, o el testigo no incluye al sujeto pedido. El diseño
+nombra una cuarta comprobación que **no es una rama**: que el control, la
+afirmación y el testigo salgan del mismo desenlace que recibe la llamada, así
+que no existe una segunda llamada que pueda atribuirle a un control la
+afirmación o el testigo de otro. Esa alineación no se comprueba en tiempo de
+ejecución porque no hace falta: la firma no deja construir el caso que la
+rompería. Quien lea el código buscando cuatro `if` va a encontrar tres; el
+cuarto lo sostiene el tipo, no una condición. Y el hallazgo se rechaza por
+completo —no solo el sujeto del diagnóstico— porque está medido que el
+veredicto es global al paso y que un diagnóstico no tiene relación validada
+con un sujeto del testigo: no se sabe cuál lo originó.
+
+**La segunda condición decía «el veredicto es rojo», y así se escapaba un
+hallazgo entero de la superficie.** `Executed.verdict` solo mira los
+diagnósticos que bloquean, así que un paso que reportó un informativo salía
+**verde** y sus sujetos quedaban cubiertos: `estado: verde · cubierto: 1 ·
+criterio: 0` para una corrida donde el arnés sí había encontrado algo. Es
+alcanzable desde una corrida real —un informativo del analizador se normaliza
+a la severidad que solo reporta—, y la superficie le decía al revisor que podía
+saltear ese sujeto. Lo cerró la revisión final de la rama, extendiendo la regla
+que ya estaba en vez de agregar una tercera rama: **cualquier** diagnóstico,
+bloqueante o no, deja el paso sin cobertura y manda todos sus sujetos a
+criterio con el motivo `hallazgo`. El argumento es el mismo que ya sostenía el
+rechazo del rojo y no depende de la severidad: con un informativo tampoco se
+sabe cuál sujeto lo originó, y dejar un sujeto cubierto **y** en criterio sería
+contradictorio para quien está decidiendo si mirarlo.
+
+El chequeo del veredicto **desapareció en vez de acumularse**, porque el nuevo
+lo subsume: `rojo` exige un diagnóstico que bloquea —y eso es un diagnóstico—,
+y `noConcluyente` exige un testigo sin sujetos, que la tercera condición ya
+rechaza. Dejarlo habría sido una condición incapaz de decidir nada: otro
+guardia que no se puede poner rojo.
 
 ### Y un candidato alterado tampoco
 
@@ -1805,7 +1829,16 @@ Una alteración del candidato no dice cuál de los dos árboles vio cada control
 por cubierto aunque la cascada haya corrido entera y en verde. `derivarSuperficie`
 decide esto **antes** de mirar la cascada: con alteraciones, todo lo que la
 cascada haya afirmado queda como criterio, nunca como cobertura. Es el mismo
-argumento que el control rojo, aplicado al árbol en vez de al paso.
+argumento que el control con hallazgos, aplicado al árbol en vez de al paso.
+
+Y **la alteración se nombra aunque el entorno se haya caído antes**. Ese camino
+devuelve temprano —sin entorno no hay cascada de la cual derivar nada— y durante
+un tiempo no leyó las alteraciones en absoluto: la superficie salía diciendo
+solo que el entorno no se pudo derivar, y el hecho más alarmante que una corrida
+puede producir desaparecía. Pasó inadvertido porque ese camino ya publicaba
+`cubierto` vacío, así que nada se estaba autorizando de más — pero **vaciar
+«cubierto» y no nombrar el hecho son cosas distintas**, y la segunda deja a un
+revisor sin saber que el árbol cambió.
 
 ### El control declara su afirmación, y su límite
 
@@ -1847,6 +1880,19 @@ afuera. Leer la partición directamente es lo único que los vuelve a nombrar.
   validante y nada más: nadie lo arma todavía a partir de una corrida real de
   `shipflow verify`. Es un tipo sin productor, y eso va declarado en vez de
   quedar como un hueco sin nombrar.
+- **`derivarSuperficie` no tiene llamador.** Sale con su derivación completa y
+  probada motivo por motivo, y **cero invocaciones fuera de sus pruebas**:
+  ningún comando la corre, así que ninguna corrida de `shipflow verify` produce
+  hoy una superficie. Lo que arriba se describe en presente —«toma el desenlace
+  del entorno, las alteraciones y el resultado de la cascada»— es lo que la
+  función hace cuando se la llama, no algo que esté pasando en una corrida. El
+  llamador llega con la etapa que la use, y es la misma que necesita el
+  artefacto.
+- **`Verifier.afirmacion` no lo lee ningún camino productivo.** El miembro está
+  en el puerto y los dos pasos reales lo declaran, pero el único que lo lee es
+  `AfirmacionCubierta.desde`, y a ese solo lo llama `derivarSuperficie`. Un
+  puerto que crece un miembro que nadie consume se lee como capacidad; queda
+  escrito que todavía no lo es.
 
 ## El falso rojo simétrico
 
