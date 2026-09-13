@@ -1,7 +1,7 @@
 /// El parser de `diff-index --raw -z`, aislado.
 ///
-/// Vive aparte de `candidato_test.dart` porque acá está el caso que las pruebas
-/// contra `git` no pueden provocar: una letra que `git` podría emitir algún día
+/// Vive aparte de la suite que corre contra `git` porque acá está el caso que
+/// esa suite no puede provocar: una letra que `git` podría emitir algún día
 /// y que este control no previó. Descartarla en silencio sería leer un hueco
 /// como un candidato intacto.
 library;

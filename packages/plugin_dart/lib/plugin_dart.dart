@@ -14,4 +14,5 @@ export 'src/politica_de_artefactos.dart';
 export 'src/ejecutor.dart';
 export 'src/normalizadores.dart';
 export 'src/pasos.dart';
+export 'src/raices.dart';
 export 'src/topologia.dart';
