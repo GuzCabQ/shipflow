@@ -413,6 +413,34 @@ abstract interface class PreparedCandidate {
   Future<void> dispose();
 }
 
+/// Deja el candidato en condiciones de ser verificado.
+///
+/// **Lo aporta el plugin del stack**, porque qué hace falta para ejecutar es
+/// conocimiento del lenguaje: este paquete no puede saberlo y `orchestration`
+/// no puede verlo.
+///
+/// El entorno se **deriva** del candidato —de lo que el candidato fijó—, nunca
+/// se presta del árbol de trabajo del usuario: prestarlo haría que la cascada
+/// midiera sobre resoluciones que ningún commit contiene.
+///
+/// **Lleva presupuesto porque abre un subproceso**, y recibe los archivos del
+/// alcance porque deriva una vez por cada raíz de resolución que la rebanada
+/// toca: un manifiesto que la rebanada no toca no existe para ella, y derivar
+/// raíces que nadie necesita es pagar por nada el riesgo de una toolchain que
+/// acá está y en el runner no.
+///
+/// **No hay `dispose`**: lo que la derivación escribe vive dentro de
+/// `candidateRoot`, y [PreparedCandidate.dispose] ya borra esa raíz entera. Un
+/// segundo cierre sería redundante o un doble borrado, con un orden
+/// determinante que nada impone.
+abstract interface class VerificationEnvironment {
+  Future<ResultadoDeEntorno> derivar(
+    String candidateRoot, {
+    required List<String> archivos,
+    required Duration presupuesto,
+  });
+}
+
 /// Por donde sale un Pull Request a la forja.
 ///
 /// **Separado de [ChangeSink] a propósito.** Uno es local y funciona sin red;

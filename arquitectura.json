@@ -358,7 +358,8 @@
         "RuleContributor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ReviewCriteria": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "EvasionCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "AssertionForms": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete"
+        "AssertionForms": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "VerificationEnvironment": "rebanada del entorno de verificacion · la implementacion real llega en plugin_dart DENTRO DE ESTA MISMA PR; esta linea existe para que el arbol compile en verde entre las dos tareas, y se borra al implementarlo"
       },
       "violacion_canonica": {
         "donde": "packages/core/lib/src/_canario_puerto.dart",
@@ -440,6 +441,9 @@
         },
         "VerificationOutcome": {
           "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
+        },
+        "ResultadoDeEntorno": {
+          "por_que": "Misma situacion que StepOutcome y CommitOutcome: es la base de una jerarquia sellada cuyas variantes -EntornoDerivado, CandidatoRechazado, DerivacionAbortada- serializan cada una con su kind, y la base solo despacha fromJson. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear- y dejarlo sin declarar seria la tercera opcion silenciosa que esta regla prohibe."
         }
       },
       "violacion_canonica": {

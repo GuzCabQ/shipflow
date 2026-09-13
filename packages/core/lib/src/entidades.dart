@@ -397,3 +397,77 @@ class RutaNoMaterializada {
         detalle: json['detalle']! as String,
       );
 }
+
+/// Con qué toolchain se derivó el entorno del candidato.
+///
+/// La identidad del contenido nombra el lockfile commiteado, **no todos los
+/// bytes que se ejecutan**: la versión de la herramienta queda afuera, y por
+/// eso se atestigua.
+///
+/// **No se parsea la versión. Se cita.** Un número extraído de una frase es un
+/// parser más, y lo que hace falta es que el testigo diga con qué se midió, no
+/// que alguien compare versiones.
+class IdentidadDeToolchain {
+  final QuotedText version;
+
+  IdentidadDeToolchain({required this.version}) {
+    if (version.content.trim().isEmpty) {
+      throw ArgumentError.value(
+        version,
+        'version',
+        'Una toolchain que no dice qué versión es no identifica nada.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {'version': version.toJson()};
+
+  factory IdentidadDeToolchain.fromJson(Map<String, Object?> json) =>
+      IdentidadDeToolchain(
+        version: QuotedText.fromJson(json['version']! as Map<String, Object?>),
+      );
+}
+
+/// Qué le pasó a una entrada versionada del candidato.
+enum TipoDeAlteracion {
+  modificada,
+  borrada,
+
+  /// El modo cambió —el bit ejecutable, típicamente—.
+  ///
+  /// **Residuo declarado:** la comparación no hashea el árbol de trabajo, así
+  /// que si el contenido cambió A LA VEZ que el modo, se reporta esto y no
+  /// [modificada]. Es una alteración igual, y la corrida es no concluyente
+  /// igual; lo que no se puede es leer el tipo como «solo cambió el modo».
+  cambioDeModo,
+
+  /// Un archivo regular donde el árbol tiene un enlace, o al revés.
+  cambioDeTipo,
+}
+
+/// Una entrada versionada del candidato que **dejó de coincidir con su árbol**.
+///
+/// Vacío significa intacto. **Los archivos nuevos no cuentan**: son lo que el
+/// entorno genera, y generarlos es su trabajo.
+class AlteracionDelCandidato {
+  final String ruta;
+  final TipoDeAlteracion tipo;
+
+  AlteracionDelCandidato({required this.ruta, required this.tipo}) {
+    if (ruta.trim().isEmpty) {
+      throw ArgumentError.value(
+        ruta,
+        'ruta',
+        'Una alteración sin ruta no nombra nada.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {'ruta': ruta, 'tipo': tipo.name};
+
+  factory AlteracionDelCandidato.fromJson(Map<String, Object?> json) =>
+      AlteracionDelCandidato(
+        ruta: json['ruta']! as String,
+        tipo: TipoDeAlteracion.values.byName(json['tipo']! as String),
+      );
+}
