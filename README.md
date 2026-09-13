@@ -26,9 +26,11 @@ $ shipflow verify lib
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
 
-**El entorno de verificación se está implementando en esta rama.** El plan, tarea por tarea, está en [PLAN-entorno-de-verificacion.md](PLAN-entorno-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
+**El entorno de verificación ya se deriva del candidato, y ningún subproceso hereda el del padre.** Ver [El entorno de verificación se deriva del candidato](#el-entorno-de-verificación-se-deriva-del-candidato). El plan, tarea por tarea, está en [PLAN-entorno-de-verificacion.md](PLAN-entorno-de-verificacion.md); no le queda nada pendiente — los tres refinamientos que se apartaban del diseño ya se propagaron al corpus.
 
 **El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
+
+**La superficie de verificación se está implementando en esta rama.** Ver [La superficie de verificación](#la-superficie-de-verificación). El plan, tarea por tarea, está en [PLAN-superficie-de-verificacion.md](PLAN-superficie-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
