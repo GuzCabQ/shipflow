@@ -173,4 +173,72 @@ void main() {
       );
     });
   });
+
+  group('el artefacto de revisión', () {
+    final superficie = SuperficieDeVerificacion(
+      cubierto: const [],
+      requiereCriterio: [
+        EntradaDeCriterio(
+          motivo: MotivoDeCriterio.residuoGeneral,
+          detalle: 'algo quedó afuera',
+        ),
+      ],
+      estado: EstadoDeCorrida.noConcluyente,
+    );
+    final candidato = CandidateIdentity(
+      contentRevision: 'arbol',
+      baseRevision: 'base',
+    );
+
+    ArtefactoDeRevision armar({
+      String? plan,
+      String? sinPlanPorque,
+      String alcance = 'lo que se afirmó',
+      String intent = 'por qué existe',
+    }) => ArtefactoDeRevision(
+      superficie: superficie,
+      candidato: candidato,
+      intent: intent,
+      plan: plan,
+      sinPlanPorque: sinPlanPorque,
+      alcanceDeLoAfirmado: alcance,
+    );
+
+    test('la ausencia de plan se DECLARA, no se inventa', () {
+      // Sin plan y sin motivo, el artefacto afirmaría por omisión que no hacía
+      // falta ninguno. Y con los dos, diría dos cosas incompatibles.
+      expect(() => armar(), throwsArgumentError);
+      expect(
+        () => armar(plan: 'el plan', sinPlanPorque: 'no hay'),
+        throwsArgumentError,
+      );
+      expect(
+        armar(sinPlanPorque: 'el modo solo-PR no tiene tareas').plan,
+        isNull,
+      );
+      expect(armar(plan: 'el plan').sinPlanPorque, isNull);
+    });
+
+    test('el alcance de lo afirmado y la intención nunca van en blanco', () {
+      expect(() => armar(plan: 'p', alcance: '  '), throwsArgumentError);
+      expect(() => armar(plan: 'p', intent: ''), throwsArgumentError);
+    });
+
+    test(
+      'el texto de alcance para el modo solo-PR nombra su límite medido',
+      () {
+        // La segunda frase no es adorno: es el límite de la materialización, y
+        // sin ella el revisor lee «el objeto commiteado es el que se verificó»
+        // como si valiera sin condiciones.
+        expect(ArtefactoDeRevision.alcanceSoloPR, contains('revisión humana'));
+        expect(ArtefactoDeRevision.alcanceSoloPR, contains('filtros'));
+      },
+    );
+
+    test('no lleva la revisión: el artefacto existe ANTES del commit', () {
+      final a = armar(plan: 'p');
+      expect(a.toJson().containsKey('revision'), isFalse);
+      expect(a.candidato.contentRevision, 'arbol');
+    });
+  });
 }

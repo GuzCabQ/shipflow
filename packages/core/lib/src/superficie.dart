@@ -9,6 +9,7 @@
 library;
 
 import 'desenlace.dart';
+import 'entidades.dart';
 import 'puertos.dart';
 import 'regla.dart';
 import 'valores.dart';
@@ -235,5 +236,95 @@ class SuperficieDeVerificacion {
             EntradaDeCriterio.fromJson(Map<String, Object?>.from(e! as Map)),
         ],
         estado: EstadoDeCorrida.values.byName(json['estado']! as String),
+      );
+}
+
+/// Lo que se le publica a un revisor humano.
+///
+/// **La revisión no está acá, y es a propósito:** este artefacto existe antes
+/// de que el commit exista. Lo que lleva revisión es la solicitud, y vive del
+/// lado de la forja.
+class ArtefactoDeRevision {
+  final SuperficieDeVerificacion superficie;
+
+  /// Qué contenido se expuso a los controles.
+  final CandidateIdentity candidato;
+
+  /// Por qué existe esta rebanada.
+  final String intent;
+
+  /// El plan, si lo hay.
+  final String? plan;
+
+  /// Por qué no hay plan. **Presente si y solo si [plan] es nulo.**
+  ///
+  /// Sin esto, un artefacto sin plan afirmaría por omisión que no hacía falta
+  /// ninguno. **Y no se inventan tareas**: un listado fabricado sería una
+  /// superficie que se lee como capacidad, que es el diagnóstico que este
+  /// repositorio ya se hace a sí mismo con los puertos sin implementación.
+  final String? sinPlanPorque;
+
+  /// Qué alcance tiene lo que se afirma. **Requerido**: sin él, «cubierto» se
+  /// lee como una afirmación sobre el cambio entero.
+  final String alcanceDeLoAfirmado;
+
+  /// El texto para el modo sin elementos de trabajo.
+  ///
+  /// **La segunda frase no es adorno**: es el límite medido de cómo se
+  /// materializa el candidato. Con normalización o filtros de contenido, el
+  /// objeto que se commitea puede diferir del archivo tal como se ve en el
+  /// editor, y un revisor que no lo sepa lee de más.
+  static const alcanceSoloPR =
+      'No existen criterios de aceptación ni cobertura funcional. Se '
+      'verificaron propiedades de herramienta; el comportamiento y el '
+      'propósito de todos los cambios requieren revisión humana. El objeto '
+      'commiteado es exactamente el que se expuso a los controles; con '
+      'normalización o filtros de contenido, ese objeto puede diferir del '
+      'archivo tal como se ve en el editor.';
+
+  ArtefactoDeRevision({
+    required this.superficie,
+    required this.candidato,
+    required this.intent,
+    required this.plan,
+    required this.sinPlanPorque,
+    required this.alcanceDeLoAfirmado,
+  }) {
+    if ((plan == null) != (sinPlanPorque != null)) {
+      throw ArgumentError(
+        'O hay plan, o hay un motivo por el que no lo hay: sin ninguno de los '
+        'dos el artefacto afirma por omisión que no hacía falta, y con los '
+        'dos dice dos cosas incompatibles.',
+      );
+    }
+    if (intent.trim().isEmpty || alcanceDeLoAfirmado.trim().isEmpty) {
+      throw ArgumentError(
+        'La intención y el alcance de lo afirmado son lo que un revisor lee '
+        'primero: ninguno puede ir en blanco.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {
+    'superficie': superficie.toJson(),
+    'candidato': candidato.toJson(),
+    'intent': intent,
+    'plan': plan,
+    'sinPlanPorque': sinPlanPorque,
+    'alcanceDeLoAfirmado': alcanceDeLoAfirmado,
+  };
+
+  factory ArtefactoDeRevision.fromJson(Map<String, Object?> json) =>
+      ArtefactoDeRevision(
+        superficie: SuperficieDeVerificacion.fromJson(
+          json['superficie']! as Map<String, Object?>,
+        ),
+        candidato: CandidateIdentity.fromJson(
+          json['candidato']! as Map<String, Object?>,
+        ),
+        intent: json['intent']! as String,
+        plan: json['plan'] as String?,
+        sinPlanPorque: json['sinPlanPorque'] as String?,
+        alcanceDeLoAfirmado: json['alcanceDeLoAfirmado']! as String,
       );
 }
