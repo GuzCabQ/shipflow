@@ -112,11 +112,20 @@ class EntradaDeCriterio {
 /// afirmación cubierta con cualquier afirmación y cualquier testigo; la única
 /// entrada es [desde], que comprueba las cuatro cosas que la vuelven cierta.
 ///
-/// **Residuo declarado.** Que la única entrada sea [desde] lo sostiene la
-/// regla de arquitectura de la tarea 7, no una prueba de este archivo: desde
-/// afuera del paquete no hay manera de comprobar que no exista otro
-/// constructor público — solo de comprobar que el que se usó funciona. Una
-/// prueba que afirmara lo contrario no podría fallar por lo que dice mirar.
+/// **Residuo declarado, y sin control que lo sostenga.** Que la única entrada
+/// sea [desde] **no lo verifica nada**: lo sostiene el código fuente, y punto.
+/// Desde afuera del paquete no hay manera de comprobar que no exista otro
+/// constructor público —solo de comprobar que el que se usó funciona— porque
+/// eso pediría reflexión, y este paquete no puede importar la biblioteca que la
+/// trae. Una prueba que dijera vigilarlo no podría fallar por lo que dice
+/// mirar, así que no se escribe ninguna: se prefiere el residuo escrito a un
+/// guardia que no puede ponerse rojo.
+///
+/// Una versión anterior de este párrafo decía que lo sostenía una regla de
+/// arquitectura. **Era falso** —esa regla se decidió no instalar, justamente
+/// porque no puede mirar lo que diría mirar— y lo encontró una revisión: una
+/// afirmación sobre un control inexistente, dentro del archivo que existe para
+/// cerrar esa clase de afirmación.
 class AfirmacionCubierta {
   final String controlId;
   final String sujeto;
