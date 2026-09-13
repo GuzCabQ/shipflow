@@ -13,6 +13,8 @@
 /// - **desenlace** — el desenlace de un paso: [StepOutcome] sellado, y el
 ///   subconjunto propio [VerificationOutcome] que un verificador devuelve.
 /// - **credencial** — [Credential], el único tipo que no serializa.
+/// - **entorno** — [entornoSaneado], la lista blanca con la que se lanza
+///   todo subproceso.
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
@@ -22,6 +24,7 @@ export 'src/alcance.dart';
 export 'src/credencial.dart';
 export 'src/desenlace.dart';
 export 'src/entidades.dart';
+export 'src/entorno.dart';
 export 'src/observacion.dart';
 export 'src/puertos.dart';
 export 'src/regla.dart';
