@@ -32,6 +32,13 @@ class Paso implements Verifier {
   final String? nota;
   final Object? lanza;
 
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
+
   Paso(
     this.id, {
     this.diagnosticos = const [],
@@ -126,6 +133,13 @@ class PasoQueCubre implements Verifier {
   final List<String> cubre;
   final List<Omission> omite;
   PasoQueCubre(this.id, this.cubre, {this.omite = const []});
+
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
 
   @override
   Future<VerificationOutcome> run(VerificationScope alcance) async => Executed(

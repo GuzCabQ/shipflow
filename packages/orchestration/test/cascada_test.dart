@@ -86,6 +86,13 @@ class _Paso implements Verifier {
   final Object? lanza;
   var corrio = false;
 
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
+
   _Paso(this.id, {this.devuelve, this.lanza});
 
   /// Un paso verde, con testigo.
@@ -142,6 +149,13 @@ class _Espia implements Verifier {
   _Espia(this.id);
 
   @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
+
+  @override
   Future<VerificationOutcome> run(VerificationScope alcance) async {
     // **Registra lo RECIBIDO, sin filtrar.** Una versión de este espía
     // llamaba a `usable()` por su cuenta y guardaba eso, así que la prueba
@@ -163,6 +177,13 @@ class _PasoQueCubre implements Verifier {
   final String id;
   final List<String> cubiertos;
   final List<Omission> omite;
+
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
 
   _PasoQueCubre(this.id, this.cubiertos, {this.omite = const []});
 

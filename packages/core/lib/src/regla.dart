@@ -192,3 +192,50 @@ class Rule {
     prohibitive: json['prohibitive']! as bool,
   );
 }
+
+/// Lo que un control demuestra cuando ejecuta limpio, **y lo que no**.
+///
+/// La declara el control, en su puerto. Un registro aparte la pondría lejos
+/// del control que la sostiene, y dejaría construible un registro que afirme
+/// de un control algo que ese control no demuestra.
+///
+/// **[noDemuestra] es obligatorio, y es el mismo invariante que [Rule] aplica
+/// a las prohibiciones.** Lo que entra en «cubierto» habilita a un revisor a
+/// **no mirar**: una afirmación sin límite le dice que se saltee algo sin
+/// decirle qué queda sin verificar, que es el peor fallo que ADR-016 nombra.
+class Afirmacion {
+  /// Identifica la afirmación, no al control: un control podría declarar más
+  /// de una el día que tenga evidencia por sujeto.
+  final String id;
+
+  final String demuestra;
+  final String noDemuestra;
+
+  Afirmacion({
+    required this.id,
+    required this.demuestra,
+    required this.noDemuestra,
+  }) {
+    if (id.trim().isEmpty ||
+        demuestra.trim().isEmpty ||
+        noDemuestra.trim().isEmpty) {
+      throw ArgumentError(
+        'Una afirmación necesita id, qué demuestra y qué NO demuestra, y '
+        'ninguno de los tres puede ir en blanco: lo que entra en «cubierto» '
+        'habilita a un revisor a no mirar.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'demuestra': demuestra,
+    'noDemuestra': noDemuestra,
+  };
+
+  factory Afirmacion.fromJson(Map<String, Object?> json) => Afirmacion(
+    id: json['id']! as String,
+    demuestra: json['demuestra']! as String,
+    noDemuestra: json['noDemuestra']! as String,
+  );
+}

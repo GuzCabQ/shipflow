@@ -228,6 +228,13 @@ final class PasoDeFormato extends PasoDeCascada {
   String get id => 'FormatCheck';
 
   @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'formato.conforme',
+    demuestra: 'que el archivo coincide con la salida del formateador',
+    noDemuestra: 'comportamiento, lógica ni criterios de aceptación',
+  );
+
+  @override
   String get programa => 'dart';
 
   @override
@@ -343,6 +350,17 @@ final class PasoDeAnalisis extends PasoDeCascada {
 
   @override
   String get id => 'StaticAnalysis';
+
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'analisis.sinBloqueantes',
+    demuestra: 'que el analizador no reportó diagnósticos bloqueantes',
+    // **Lo segundo está medido, no supuesto.** La salida del analizador trae
+    // solo diagnósticos y versión: no lista los archivos que leyó, así que un
+    // sujeto limpio es indistinguible de uno que no se analizó.
+    noDemuestra:
+        'que haya leído todos los archivos del alcance, ni comportamiento',
+  );
 
   @override
   String get programa => 'dart';
