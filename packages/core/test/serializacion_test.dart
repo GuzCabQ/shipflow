@@ -180,6 +180,47 @@ void main() {
     evidencia: QuotedText('presupuesto agotado', source: 'resolver'),
   );
 
+  final afirmacion = Afirmacion(
+    id: 'formato.conforme',
+    demuestra: 'que coincide con la salida del formateador',
+    noDemuestra: 'comportamiento ni criterios',
+  );
+
+  final entradaDeCriterio = EntradaDeCriterio(
+    controlId: 'FormatCheck',
+    sujeto: 'lib/algo.fuente',
+    motivo: MotivoDeCriterio.declaradoNoMirado,
+    detalle: 'la herramienta no informó este archivo',
+  );
+
+  final afirmacionCubierta = AfirmacionCubierta.fromJson({
+    'controlId': 'FormatCheck',
+    'sujeto': 'lib',
+    'afirmacion': afirmacion.toJson(),
+    'testigo': testigo.toJson(),
+  });
+
+  final superficie = SuperficieDeVerificacion(
+    cubierto: [afirmacionCubierta],
+    requiereCriterio: [entradaDeCriterio],
+    estado: EstadoDeCorrida.noConcluyente,
+  );
+
+  // **`plan: null`, no `sinPlanPorque: null`.** Los dos son excluyentes por
+  // invariante del tipo —ver `ArtefactoDeRevision`—, así que uno de los dos
+  // tiene que salir nulo, y `null` es un valor por defecto para la prueba de
+  // más abajo. Se resuelve exactamente como ya resuelve `ScopeObservation` su
+  // `reason` forzoso: una ruta declarada como excepción, con el motivo al
+  // lado (`rutasExentas`, más abajo), en vez de inventar un segundo mecanismo.
+  final artefacto = ArtefactoDeRevision(
+    superficie: superficie,
+    candidato: candidato,
+    intent: 'por qué existe esta rebanada',
+    plan: null,
+    sinPlanPorque: 'el modo solo-PR no tiene tareas',
+    alcanceDeLoAfirmado: 'propiedades de herramienta, nada de comportamiento',
+  );
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -356,6 +397,23 @@ void main() {
           ).toJson(),
           ScopeObservation.fromJson,
         ),
+        'Afirmacion': (afirmacion.toJson(), Afirmacion.fromJson),
+        'EntradaDeCriterio': (
+          entradaDeCriterio.toJson(),
+          EntradaDeCriterio.fromJson,
+        ),
+        'AfirmacionCubierta': (
+          afirmacionCubierta.toJson(),
+          AfirmacionCubierta.fromJson,
+        ),
+        'SuperficieDeVerificacion': (
+          superficie.toJson(),
+          SuperficieDeVerificacion.fromJson,
+        ),
+        'ArtefactoDeRevision': (
+          artefacto.toJson(),
+          ArtefactoDeRevision.fromJson,
+        ),
       };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
@@ -367,6 +425,24 @@ void main() {
   /// —el campo nuevo quedaría en su default en TODAS—.
   const excluyentes = {'ObservedSubject', 'ScopeObservation'};
 
+  /// Rutas cuyo valor por defecto en el JSON **es el dato**, no una pérdida
+  /// silenciosa: la instancia canónica no puede demostrar lo contrario sin
+  /// violar el invariante del tipo que la propia ruta sostiene.
+  ///
+  /// Es la misma idea que ya resuelve `excluyentes` para una clase entera,
+  /// aplicada a una sola ruta: una excepción declarada, con su motivo al
+  /// lado, no un silencio.
+  const rutasExentas = {
+    // `ArtefactoDeRevision.plan`: `plan` y `sinPlanPorque` son excluyentes
+    // por invariante del tipo —uno de los dos siempre es nulo—, y la
+    // instancia canónica elige dejar `sinPlanPorque` con contenido. `plan`
+    // nulo acá no es un campo que se perdió en el viaje: es el que el
+    // invariante obliga a que falte. `sinPlanPorque` sí queda cubierto por
+    // la comprobación general, y demuestra que ese lado del par no viaja
+    // aplastado en silencio.
+    'plan',
+  };
+
   group('la instancia canónica no trae valores por defecto', () {
     // Es la precondición de todo lo demás. Sin esto, un campo aplastado a `''`
     // o a `0` coincide consigo mismo en la ida y vuelta y no lo nota nadie.
@@ -374,8 +450,11 @@ void main() {
       final clase = e.key.split(' · ').first;
       if (excluyentes.contains(clase)) continue;
       test(e.key, () {
+        final enDefecto = valoresPorDefecto(
+          e.value.$1,
+        ).where((ruta) => !rutasExentas.contains(ruta)).toList();
         expect(
-          valoresPorDefecto(e.value.$1),
+          enDefecto,
           isEmpty,
           reason:
               'estos campos salen con su valor por defecto, así que no '

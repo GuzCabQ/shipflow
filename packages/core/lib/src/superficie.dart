@@ -297,6 +297,19 @@ class ArtefactoDeRevision {
         'dos dice dos cosas incompatibles.',
       );
     }
+    // Presente pero en blanco afirma exactamente lo mismo que ausente: un
+    // `sinPlanPorque` de `''` le dice al revisor «no hay motivo», que es lo
+    // que la ausencia ya dice por omisión y lo que este invariante existe
+    // para impedir. Por eso no basta con `!= null`: hay que mirar el
+    // contenido.
+    if ((plan != null && plan!.trim().isEmpty) ||
+        (sinPlanPorque != null && sinPlanPorque!.trim().isEmpty)) {
+      throw ArgumentError(
+        'Un plan o un motivo de ausencia presentes pero en blanco afirman lo '
+        'mismo que su ausencia: exactamente lo que este invariante existe '
+        'para impedir.',
+      );
+    }
     if (intent.trim().isEmpty || alcanceDeLoAfirmado.trim().isEmpty) {
       throw ArgumentError(
         'La intención y el alcance de lo afirmado son lo que un revisor lee '

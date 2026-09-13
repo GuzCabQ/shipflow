@@ -7,4 +7,4 @@
 # falla, y una declaración que quedó vieja —porque el archivo se borró o dejó
 # de estar huérfano— también. Una lista que solo se agranda deja de proteger.
 #
-# Hoy está vacía, y eso es el estado correcto.
+PLAN-superficie-de-verificacion.md  # el plan de implementación de esta rebanada, escrito para quien la ejecuta tarea por tarea, no documentación del sistema para quien lo lee después. El README es la puerta de un lector del repositorio, no del proceso que lo construyó, y por eso no lo enlaza.

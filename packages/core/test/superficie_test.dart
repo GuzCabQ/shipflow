@@ -219,6 +219,15 @@ void main() {
       expect(armar(plan: 'el plan').sinPlanPorque, isNull);
     });
 
+    test('un plan o un motivo presentes pero en blanco se rechazan igual que '
+        'ausentes', () {
+      // Un `sinPlanPorque: ''` afirma por omisión exactamente lo mismo que
+      // su ausencia —que no hacía falta ningún motivo—, que es lo que este
+      // invariante existe para impedir. Lo mismo para `plan`.
+      expect(() => armar(plan: '  '), throwsArgumentError);
+      expect(() => armar(sinPlanPorque: ''), throwsArgumentError);
+    });
+
     test('el alcance de lo afirmado y la intención nunca van en blanco', () {
       expect(() => armar(plan: 'p', alcance: '  '), throwsArgumentError);
       expect(() => armar(plan: 'p', intent: ''), throwsArgumentError);

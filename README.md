@@ -1752,6 +1752,89 @@ monorepo sigue siendo una pregunta abierta, y esto la acota en vez de contestarl
 - Tampoco: el comando de envío, el artefacto de revisión, la superficie de
   verificación, la forja, el presupuesto de corrida ni el corte temprano.
 
+## La superficie de verificación
+
+Todo lo anterior produce diagnósticos, testigos y un veredicto por paso. Nada de
+eso le dice a un revisor humano **qué puede saltear con seguridad y qué
+requiere que mire**. Esta rebanada deriva esa respuesta de una corrida entera
+—entorno, integridad, cascada— en vez de dejar que cada quien la infiera del
+resultado crudo, con una regla que gobierna todo lo demás: nada entra en
+«cubierto» si no hay un control que lo sostenga.
+
+### Cubierto habilita a saltar, así que se restringe por construcción
+
+Un sujeto que aparece en `cubierto` le dice al revisor «no hace falta que
+mires esto». Ese permiso es el más caro que existe en un arnés de
+verificación, así que `AfirmacionCubierta` no tiene un constructor público:
+la única entrada es la fábrica `desde`, y arma el objeto o devuelve nulo, sin
+un tercer camino. Quien compone una corrida no puede ensamblar una afirmación
+cubierta con cualquier afirmación y cualquier testigo — solo puede pedirle a
+la fábrica que decida.
+
+### Un control rojo no cubre ninguno de sus sujetos, y está medido
+
+`AfirmacionCubierta.desde` niega la afirmación cuando el desenlace no es
+`Executed`, cuando el veredicto es rojo, o cuando el testigo no incluye al
+sujeto pedido. La fábrica tiene **cuatro comprobaciones, y solo una es una
+rama de código** — las otras tres son estructurales: la firma de `desde` toma
+el control, la afirmación y el testigo **del mismo objeto**, así que no existe
+una llamada que pueda desalinearlos y atribuirle a un control la afirmación de
+otro. Quien lea el código buscando cuatro `if` va a encontrar uno; los otros
+tres los sostiene el tipo, no una condición. Y el rojo se rechaza por completo
+—no solo el sujeto del diagnóstico— porque está medido que el veredicto es
+global al paso y que un diagnóstico no tiene relación validada con un sujeto
+del testigo: no se sabe cuál lo originó.
+
+### Y un candidato alterado tampoco
+
+Una alteración del candidato no dice cuál de los dos árboles vio cada control
+—el que se fijó o el que quedó después—, así que ningún sujeto se puede dar
+por cubierto aunque la cascada haya corrido entera y en verde. `derivarSuperficie`
+decide esto **antes** de mirar la cascada: con alteraciones, todo lo que la
+cascada haya afirmado queda como criterio, nunca como cobertura. Es el mismo
+argumento que el control rojo, aplicado al árbol en vez de al paso.
+
+### El control declara su afirmación, y su límite
+
+`Verifier` expone `afirmacion`, no un registro aparte: lo que un control
+demuestra cuando ejecuta limpio lo declara el propio control, en el puerto.
+`Afirmacion` exige un límite —`noDemuestra`— tan obligatorio como lo que sí
+demuestra, y ninguno de sus tres campos acepta blanco. Sin ese límite, una
+afirmación le diría al revisor que se saltee algo sin decirle qué queda sin
+verificar, que es el peor fallo que este repositorio ya se cuidó de nombrar en
+otro lado.
+
+### Tres entradas, no una
+
+`derivarSuperficie` no deriva solo de la cascada: toma el desenlace del
+entorno, las alteraciones del candidato y el resultado de la cascada —que
+puede faltar—, porque los dos primeros son hechos que la cascada no conoce y
+que igual vuelven la corrida no concluyente. Derivar solo de la cascada
+publicaba «cubierto» sobre un árbol alterado, el peor fallo que ADR-016
+nombra.
+
+La derivación **también lee la partición del alcance** —`cascada.alcance`—, no
+solo los desenlaces por paso. Una revisión encontró que sin eso un sujeto ajeno
+al stack quedaba invisible para el revisor: ni cubierto ni en criterio, que se
+lee como «nada que mirar» sobre algo que sí se pidió. Y un sujeto no observable
+mezclado con uno verde hacía reventar el invariante de `SuperficieDeVerificacion`
+—no verde, cubierto no vacío, criterio vacío—, porque los desenlaces
+`Skipped` y `Unobservable` solo aparecen cuando **ningún** sujeto es
+utilizable: en cuanto hay uno solo utilizable, todos los pasos ejecutan y
+ningún desenlace nombra a los sujetos ajenos o no observables que quedaron
+afuera. Leer la partición directamente es lo único que los vuelve a nombrar.
+
+### Lo que esta rebanada NO hace
+
+- **No hay `ship`.** Nada arma la solicitud que un humano aprueba; esta
+  rebanada produce el material que esa composición futura necesitaría.
+- **No hay forja.** El artefacto no se publica en ningún lado — se deriva y
+  queda en memoria de quien lo pidió.
+- **No hay composición.** `ArtefactoDeRevision` es un tipo con su fábrica
+  validante y nada más: nadie lo arma todavía a partir de una corrida real de
+  `shipflow verify`. Es un tipo sin productor, y eso va declarado en vez de
+  quedar como un hueco sin nombrar.
+
 ## El falso rojo simétrico
 
 El arnés entero está construido contra un error de dirección: **un verde que
