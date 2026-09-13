@@ -429,18 +429,22 @@ void main() {
   /// silenciosa: la instancia canónica no puede demostrar lo contrario sin
   /// violar el invariante del tipo que la propia ruta sostiene.
   ///
-  /// Es la misma idea que ya resuelve `excluyentes` para una clase entera,
-  /// aplicada a una sola ruta: una excepción declarada, con su motivo al
-  /// lado, no un silencio.
+  /// **Indexado por clase, igual que `excluyentes`.** Una ruta suelta —sin su
+  /// clase al lado— eximiría al campo homónimo de cualquier otra clase que lo
+  /// llegue a tener, y debilitaría la prueba exactamente para el caso que
+  /// existe para cazar: un campo aplastado que coincide consigo mismo sin que
+  /// nadie lo note.
   const rutasExentas = {
-    // `ArtefactoDeRevision.plan`: `plan` y `sinPlanPorque` son excluyentes
-    // por invariante del tipo —uno de los dos siempre es nulo—, y la
-    // instancia canónica elige dejar `sinPlanPorque` con contenido. `plan`
-    // nulo acá no es un campo que se perdió en el viaje: es el que el
-    // invariante obliga a que falte. `sinPlanPorque` sí queda cubierto por
-    // la comprobación general, y demuestra que ese lado del par no viaja
-    // aplastado en silencio.
-    'plan',
+    'ArtefactoDeRevision': {
+      // `plan`: `plan` y `sinPlanPorque` son excluyentes por invariante del
+      // tipo —uno de los dos siempre es nulo—, y la instancia canónica elige
+      // dejar `sinPlanPorque` con contenido. `plan` nulo acá no es un campo
+      // que se perdió en el viaje: es el que el invariante obliga a que
+      // falte. `sinPlanPorque` sí queda cubierto por la comprobación
+      // general, y demuestra que ese lado del par no viaja aplastado en
+      // silencio.
+      'plan',
+    },
   };
 
   group('la instancia canónica no trae valores por defecto', () {
@@ -450,9 +454,10 @@ void main() {
       final clase = e.key.split(' · ').first;
       if (excluyentes.contains(clase)) continue;
       test(e.key, () {
+        final exentas = rutasExentas[clase] ?? const <String>{};
         final enDefecto = valoresPorDefecto(
           e.value.$1,
-        ).where((ruta) => !rutasExentas.contains(ruta)).toList();
+        ).where((ruta) => !exentas.contains(ruta)).toList();
         expect(
           enDefecto,
           isEmpty,

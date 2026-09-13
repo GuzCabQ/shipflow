@@ -1773,19 +1773,30 @@ un tercer camino. Quien compone una corrida no puede ensamblar una afirmación
 cubierta con cualquier afirmación y cualquier testigo — solo puede pedirle a
 la fábrica que decida.
 
+**Y eso es un residuo declarado, no fingido.** Que `desde` sea la única
+entrada lo sostiene el código fuente, no una prueba de este repositorio: desde
+afuera del paquete no hay manera de comprobar que no exista otro constructor
+público, porque Dart no tiene reflexión sin una biblioteca que `core` tiene
+prohibida. Una prueba que afirmara vigilar eso no podría fallar por lo que
+dice mirar, así que no se escribe ninguna — es exactamente el guardia que no
+se puede poner rojo del que habla el resto de este documento, y se prefiere
+declararlo a fingir un control que no puede mirar.
+
 ### Un control rojo no cubre ninguno de sus sujetos, y está medido
 
-`AfirmacionCubierta.desde` niega la afirmación cuando el desenlace no es
-`Executed`, cuando el veredicto es rojo, o cuando el testigo no incluye al
-sujeto pedido. La fábrica tiene **cuatro comprobaciones, y solo una es una
-rama de código** — las otras tres son estructurales: la firma de `desde` toma
-el control, la afirmación y el testigo **del mismo objeto**, así que no existe
-una llamada que pueda desalinearlos y atribuirle a un control la afirmación de
-otro. Quien lea el código buscando cuatro `if` va a encontrar uno; los otros
-tres los sostiene el tipo, no una condición. Y el rojo se rechaza por completo
-—no solo el sujeto del diagnóstico— porque está medido que el veredicto es
-global al paso y que un diagnóstico no tiene relación validada con un sujeto
-del testigo: no se sabe cuál lo originó.
+`AfirmacionCubierta.desde` niega la afirmación con **tres** condiciones —tres
+`if`, tres ramas de código—: el desenlace no es `Executed`, el veredicto es
+rojo, o el testigo no incluye al sujeto pedido. El diseño nombra una cuarta
+comprobación que **no es una rama**: que el control, la afirmación y el
+testigo salgan del mismo desenlace que recibe la llamada, así que no existe
+una segunda llamada que pueda atribuirle a un control la afirmación o el
+testigo de otro. Esa alineación no se comprueba en tiempo de ejecución porque
+no hace falta: la firma no deja construir el caso que la rompería. Quien lea
+el código buscando cuatro `if` va a encontrar tres; el cuarto lo sostiene el
+tipo, no una condición. Y el rojo se rechaza por completo —no solo el sujeto
+del diagnóstico— porque está medido que el veredicto es global al paso y que
+un diagnóstico no tiene relación validada con un sujeto del testigo: no se
+sabe cuál lo originó.
 
 ### Y un candidato alterado tampoco
 
