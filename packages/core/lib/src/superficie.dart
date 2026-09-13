@@ -188,10 +188,14 @@ class SuperficieDeVerificacion {
   final List<AfirmacionCubierta> cubierto;
   final List<EntradaDeCriterio> requiereCriterio;
 
-  /// **Se deriva de la corrida entera, no se copia de la cascada.** Copiarlo
-  /// obligaría a fabricar uno cuando la cascada no corrió, y publicaría el de
-  /// la cascada cuando el candidato se alteró — que es el falso verde que esta
-  /// superficie existe para cerrar.
+  /// **Se deriva de la corrida entera.** No es un reenvío ciego del de la
+  /// cascada: cuando el entorno no se derivó o el candidato se alteró, este
+  /// campo nombra `noConcluyente` aunque la cascada no haya corrido —no hay
+  /// nada que copiar— o haya corrido y dado verde sobre un árbol que ya no es
+  /// el que se fijó —copiarlo sería el falso verde que esta superficie existe
+  /// para cerrar—. Cuando la cascada es la única fuente que queda —entorno
+  /// derivado, candidato intacto— sí **coincide** con `cascada.estado`, y ahí
+  /// es correcto que coincida: ningún otro hecho de la corrida lo contradice.
   final EstadoDeCorrida estado;
 
   SuperficieDeVerificacion({

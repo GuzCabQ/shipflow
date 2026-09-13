@@ -58,6 +58,23 @@ ResultadoDeCascada _cascada(
   desenlaces: desenlaces,
 );
 
+/// Como [_cascada], pero con una [ScopeObservation] propia en vez de una
+/// donde todo sujeto es del stack: es lo que hace falta para reproducir un
+/// alcance mixto —un sujeto usable y uno ajeno, o uno usable y uno no
+/// observable— que `Cascada.correr` nunca produce de por sí, pero que un
+/// `ResultadoDeCascada` armado a mano sí puede representar.
+ResultadoDeCascada _cascadaConAlcance(
+  Map<String, StepOutcome> desenlaces,
+  ScopeObservation alcance,
+) => ResultadoDeCascada(
+  registrados: [
+    for (final id in desenlaces.keys)
+      RegisteredStep(id: id, expectedScope: alcance.usable()),
+  ],
+  alcance: alcance,
+  desenlaces: desenlaces,
+);
+
 final _entornoOk = EntornoDerivado(
   paquetes: 3,
   raices: 1,
@@ -283,4 +300,97 @@ void main() {
       }
     }
   });
+
+  test(
+    'un sujeto ajeno al stack junto a uno verde: en criterio, sin tapar el verde',
+    () {
+      // Con un sujeto usable, `Cascada.correr` nunca produce `Skipped`: el
+      // ajeno queda sin nombrar en cualquier desenlace, y antes de este
+      // arreglo era invisible —ni cubierto ni en criterio—.
+      final alcance = ScopeObservation(
+        requested: const ['lib', 'docs'],
+        observed: [
+          ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+          ObservedSubject(
+            subject: 'docs',
+            ofStack: false,
+            files: 0,
+            reason: 'no es del stack',
+          ),
+        ],
+        unobserved: const [],
+        observedAt: DateTime.utc(2026),
+      );
+      final s = derivarSuperficie(
+        entorno: _entornoOk,
+        alteraciones: const [],
+        cascada: _cascadaConAlcance({
+          'ctrl': Executed(witness: _testigo(['lib']), diagnostics: const []),
+        }, alcance),
+        controles: {'ctrl': _Control('ctrl')},
+      );
+      expect(s.cubierto.single.sujeto, 'lib');
+      final ajeno = s.requiereCriterio.firstWhere(
+        (e) => e.motivo == MotivoDeCriterio.ajenoAlStack,
+      );
+      expect(ajeno.sujeto, 'docs');
+      expect(
+        ajeno.controlId,
+        isNull,
+        reason: 'es un hecho de la corrida, no de un control',
+      );
+      expect(s.estado, EstadoDeCorrida.verde);
+    },
+  );
+
+  test(
+    'un sujeto no observable junto a uno verde: en criterio, y la derivación no lanza',
+    () {
+      // Reproduce el crítico: sin leer `cascada.alcance` directamente, este
+      // caso dejaba `requiereCriterio` vacío con `cubierto` no vacío y
+      // `estado` no verde, y el invariante de `SuperficieDeVerificacion`
+      // reventaba con `ArgumentError`.
+      final alcance = ScopeObservation(
+        requested: const ['lib', 'bin'],
+        observed: [ObservedSubject(subject: 'lib', ofStack: true, files: 1)],
+        unobserved: [UnobservedSubject(subject: 'bin', cause: 'no existe')],
+        observedAt: DateTime.utc(2026),
+      );
+      final s = derivarSuperficie(
+        entorno: _entornoOk,
+        alteraciones: const [],
+        cascada: _cascadaConAlcance({
+          'ctrl': Executed(witness: _testigo(['lib']), diagnostics: const []),
+        }, alcance),
+        controles: {'ctrl': _Control('ctrl')},
+      );
+      expect(s.cubierto.single.sujeto, 'lib');
+      final noObservable = s.requiereCriterio.firstWhere(
+        (e) => e.motivo == MotivoDeCriterio.noSePudoMirar,
+      );
+      expect(noObservable.sujeto, 'bin');
+      expect(noObservable.controlId, isNull);
+      expect(noObservable.detalle, contains('no existe'));
+      expect(s.estado, EstadoDeCorrida.noConcluyente);
+    },
+  );
+
+  test(
+    'sin cascada y sin alteraciones: nadie dio cuenta de la corrida entera',
+    () {
+      // La rama de integridad (alteraciones no vacías) sale ANTES de llegar
+      // acá, así que esta era la única forma de ejercitar el camino
+      // `cascada == null` con alteraciones vacías.
+      final s = derivarSuperficie(
+        entorno: _entornoOk,
+        alteraciones: const [],
+        cascada: null,
+        controles: const {},
+      );
+      expect(s.cubierto, isEmpty);
+      expect(s.requiereCriterio.single.motivo, MotivoDeCriterio.nadieDioCuenta);
+      expect(s.requiereCriterio.single.controlId, isNull);
+      expect(s.estado, EstadoDeCorrida.noConcluyente);
+    },
+  );
 }
