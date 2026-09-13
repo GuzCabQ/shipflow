@@ -18,6 +18,9 @@
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
+/// - **superficie** — qué quedó cubierto y qué requiere criterio humano:
+///   [AfirmacionCubierta], que solo se construye por su fábrica, y
+///   [EntradaDeCriterio] con su [MotivoDeCriterio] cerrado.
 library;
 
 export 'src/alcance.dart';
@@ -28,4 +31,5 @@ export 'src/entorno.dart';
 export 'src/observacion.dart';
 export 'src/puertos.dart';
 export 'src/regla.dart';
+export 'src/superficie.dart';
 export 'src/valores.dart';
