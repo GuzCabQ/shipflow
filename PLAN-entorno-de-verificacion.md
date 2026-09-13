@@ -1,6 +1,12 @@
 # El entorno de verificación del candidato · plan de implementación
 
-> **Para quien ejecute esto:** usá `superpowers:subagent-driven-development` (recomendado) o `superpowers:executing-plans`, tarea por tarea. Los pasos llevan casilla (`- [ ]`) para marcarlos. Si el registro de ejecución se lleva aparte, dejá las casillas sin marcar y decilo acá arriba: el plan anterior aprendió que marcarlas retroactivamente fabrica un registro que nadie llevó.
+> **ESTADO: ejecutado el 12–13/09/2026, inline. Las casillas quedan sin marcar a propósito.**
+>
+> Las once tareas se ejecutaron en orden con `superpowers:executing-plans`, y **el registro es el `git log`**: once commits, uno por tarea, cada uno nombrando lo que encontró. Las sesenta y cinco casillas de abajo dicen «nada hecho» mientras el `README` y el historial dicen que está terminado; **lo cierto es el historial**. Se dejan sin marcar en vez de marcarlas ahora, porque marcarlas al final fabrica un registro de ejecución que nadie llevó paso por paso — es la misma decisión que tomó `PLAN-desenlace-cerrado.md`, y por el mismo motivo.
+>
+> **Lo que este plan no anticipó está en los commits, no acá.** Nueve hallazgos aparecieron al construir, y tres de ellos corrigen al diseño que el plan implementa; el borrador del corpus y `ADR-020` los registran.
+
+> **Para quien ejecute algo así:** usá `superpowers:subagent-driven-development` (recomendado) o `superpowers:executing-plans`, tarea por tarea.
 
 **Objetivo.** Que la cascada corra **dentro** del candidato materializado, con un entorno derivado del propio candidato y comprobado íntegro antes y después, y que ningún subproceso que este repositorio lance herede el entorno del padre.
 
