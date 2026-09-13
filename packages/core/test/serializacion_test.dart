@@ -154,6 +154,32 @@ void main() {
     detalle: 'el destino es absoluto',
   );
 
+  final toolchain = IdentidadDeToolchain(
+    version: QuotedText('SDK version: 3.12.0 (stable)', source: 'toolchain'),
+  );
+
+  final alteracion = AlteracionDelCandidato(
+    ruta: 'tool/x/lockfile',
+    tipo: TipoDeAlteracion.borrada,
+  );
+
+  final derivado = EntornoDerivado(
+    paquetes: 9,
+    raices: 2,
+    toolchain: toolchain,
+  );
+
+  final rechazado = CandidatoRechazado(
+    causa: CausaDeRechazo.dependenciaPathQueEscapa,
+    evidencia: QuotedText('../afuera no queda adentro', source: 'lockfile'),
+  );
+
+  final abortada = DerivacionAbortada(
+    terminacion: Termination.tiempoAgotado,
+    causa: CausaDeAborto.laHerramientaNoRespondio,
+    evidencia: QuotedText('presupuesto agotado', source: 'resolver'),
+  );
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -174,6 +200,17 @@ void main() {
           noMaterializada.toJson(),
           RutaNoMaterializada.fromJson,
         ),
+        'IdentidadDeToolchain': (
+          toolchain.toJson(),
+          IdentidadDeToolchain.fromJson,
+        ),
+        'AlteracionDelCandidato': (
+          alteracion.toJson(),
+          AlteracionDelCandidato.fromJson,
+        ),
+        'EntornoDerivado': (derivado.toJson(), EntornoDerivado.fromJson),
+        'CandidatoRechazado': (rechazado.toJson(), CandidatoRechazado.fromJson),
+        'DerivacionAbortada': (abortada.toJson(), DerivacionAbortada.fromJson),
         'Package': (
           Package(name: 'p', path: 'packages/p', dependsOn: ['core']).toJson(),
           Package.fromJson,

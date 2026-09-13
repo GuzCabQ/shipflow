@@ -386,6 +386,32 @@ abstract interface class PreparedCandidate {
   /// motivo. Nunca se omiten en silencio.
   List<RutaNoMaterializada> get noMaterializadas;
 
+  /// Qué entradas versionadas del candidato dejaron de coincidir con su árbol.
+  ///
+  /// Vacío significa intacto.
+  ///
+  /// **Una ruta nueva cuenta salvo que la política de artefactos del stack la
+  /// declare artefacto.** Derivar el entorno genera archivos, y generarlos es
+  /// su trabajo; pero un archivo de fuente nuevo, un manifiesto nuevo o un
+  /// efecto lateral de un verificador **no** son eso, y la cascada los lee
+  /// igual que a los demás. La primera versión de esta cláusula decía que
+  /// **ningún** archivo nuevo contaba, y con eso un archivo de fuente creado entre la
+  /// derivación y el segundo control dejaba la corrida en rojo, concluyendo
+  /// sobre bytes que el candidato nunca fijó. Está reproducido.
+  ///
+  /// **Lo declarado en [noMaterializadas] tampoco cuenta**, porque el candidato
+  /// lo dejó afuera a sabiendas — pero si alguien escribió algo en esa ruta,
+  /// eso sí cuenta.
+  ///
+  /// Se comprueba **dos veces**, y las dos tienen su motivo: después de derivar
+  /// el entorno, contra que la derivación haya borrado contenido versionado
+  /// —está medido que lo hace—; y después de la cascada, contra que un
+  /// verificador haya escrito en el workspace, que nada le impide.
+  ///
+  /// Una alteración hace la corrida **no concluyente, nunca roja**: no se puede
+  /// afirmar nada sobre un árbol que dejó de ser el que se fijó.
+  Future<List<AlteracionDelCandidato>> alteraciones();
+
   /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**
   ///
   /// Es el primer paso que escribe en el repositorio, y está separado de
@@ -411,6 +437,43 @@ abstract interface class PreparedCandidate {
   /// Borra todo lo temporal. **Idempotente**: se puede llamar dos veces, y hay
   /// que poder llamarla desde un manejador de señal.
   Future<void> dispose();
+}
+
+/// Deja el candidato en condiciones de ser verificado.
+///
+/// **Lo aporta el plugin del stack**, porque qué hace falta para ejecutar es
+/// conocimiento del lenguaje: este paquete no puede saberlo y `orchestration`
+/// no puede verlo.
+///
+/// El entorno se **deriva** del candidato —de lo que el candidato fijó—, nunca
+/// se presta del árbol de trabajo del usuario: prestarlo haría que la cascada
+/// midiera sobre resoluciones que ningún commit contiene.
+///
+/// **Lleva presupuesto porque abre un subproceso**, y recibe los archivos del
+/// alcance porque deriva una vez por cada raíz de resolución que la rebanada
+/// toca: un manifiesto que la rebanada no toca no existe para ella, y derivar
+/// raíces que nadie necesita es pagar por nada el riesgo de una toolchain que
+/// acá está y en el runner no.
+///
+/// **No hay `dispose`**: lo que la derivación escribe vive dentro de
+/// `candidateRoot`, y [PreparedCandidate.dispose] ya borra esa raíz entera. Un
+/// segundo cierre sería redundante o un doble borrado, con un orden
+/// determinante que nada impone.
+///
+/// **Se deriva UNA vez por candidato, y eso es una precondición, no un
+/// detalle.** El rechazo por «el árbol versiona lo que la derivación genera»
+/// mira el disco, que es lo único que la implementación puede mirar: no conoce
+/// git y no debe conocerlo. Después de una derivación exitosa ese disco ya tiene
+/// lo generado, así que una segunda llamada sobre el mismo candidato lo
+/// rechazaría — y tendría razón según lo que puede ver. Quien recomponga una
+/// corrida prepara un candidato nuevo; es lo que hace [PreparedCandidate] con su
+/// raíz temporal.
+abstract interface class VerificationEnvironment {
+  Future<ResultadoDeEntorno> derivar(
+    String candidateRoot, {
+    required List<String> archivos,
+    required Duration presupuesto,
+  });
 }
 
 /// Por donde sale un Pull Request a la forja.

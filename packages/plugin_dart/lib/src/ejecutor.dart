@@ -52,6 +52,13 @@ abstract interface class EjecutorDeProceso {
 
 /// Corre procesos de verdad.
 ///
+/// **El hijo recibe la lista blanca y nada más.** No es una precaución de más:
+/// lo que este ejecutor lanza son herramientas ajenas que a su vez lanzan otras,
+/// y con el entorno heredado un token de la forja llegaba a todas ellas — está
+/// medido. Qué necesita cada herramienta también está medido: el analizador
+/// estático corre con `PATH` solo, porque el mapa de paquetes resuelto lleva
+/// rutas absolutas al cache.
+///
 /// **Residuo declarado: no rastrea descendientes.** Al agotarse el presupuesto
 /// mata el proceso que lanzó, y `Process.start` no permite crear un grupo de
 /// procesos de forma portable desde Dart. Un hijo que ese proceso haya dejado
@@ -60,7 +67,15 @@ abstract interface class EjecutorDeProceso {
 /// ya devolvió. Los pasos lo declaran en su testigo cuando la terminación es
 /// [Termination.tiempoAgotado], para que quede en la evidencia y no acá.
 class EjecutorDelSistema implements EjecutorDeProceso {
-  const EjecutorDelSistema();
+  /// El entorno del proceso padre. **Nulo significa el del proceso**; las
+  /// pruebas le pasan el que quieren, que es la única forma de comprobar qué
+  /// recibe el hijo sin depender del shell de quien corre la suite.
+  final Map<String, String>? _entornoDelPadre;
+
+  const EjecutorDelSistema({Map<String, String>? entornoDelPadre})
+    : _entornoDelPadre = entornoDelPadre;
+
+  Map<String, String> get _padre => _entornoDelPadre ?? Platform.environment;
 
   /// Cuánto se espera, como mucho, a que el proceso muera y sus corrientes
   /// cierren después del disparo. Limpiar no puede colgar la corrida.
@@ -96,6 +111,8 @@ class EjecutorDelSistema implements EjecutorDeProceso {
         ejecutable,
         argumentos,
         workingDirectory: directorio,
+        environment: entornoSaneado(_padre),
+        includeParentEnvironment: false,
       );
     } on ProcessException catch (e) {
       // El caso que ADR-011 nombra primero. Un verde acá sería «no encontró

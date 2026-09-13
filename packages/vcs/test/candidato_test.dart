@@ -25,6 +25,25 @@ class _TodoEsFuente implements ArtifactPolicy {
   bool isEditable(String path) => path.trim().isNotEmpty;
 }
 
+/// Una política que **sí declara artefactos**, para poder distinguir «apareció
+/// algo que el entorno genera» de «apareció código».
+///
+/// Sin ella no se puede probar la diferencia: con una política que llama fuente
+/// a todo, ambos casos se ven igual — y con una que no llama fuente a nada,
+/// también. La política es la autoridad, así que la prueba necesita una que
+/// diga las dos cosas.
+class _ConArtefactos implements ArtifactPolicy {
+  const _ConArtefactos();
+  @override
+  bool isGenerated(String path) => path.endsWith('.g.txt');
+  @override
+  bool isEditable(String path) =>
+      path.trim().isNotEmpty &&
+      !isGenerated(path) &&
+      !path.startsWith('generado/') &&
+      !path.contains('/generado/');
+}
+
 void main() {
   late Directory raiz;
   late RepositorioGit repo;
@@ -152,6 +171,381 @@ void main() {
       final antes = git(['diff', '--cached', '--name-only']);
       await conCandidato(rebanada(['a.txt']), (c) async => null);
       expect(git(['diff', '--cached', '--name-only']), antes);
+    });
+  });
+
+  group('la integridad del candidato se comprueba, no se supone', () {
+    test('un candidato intacto no tiene alteraciones', () async {
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+
+    test('modificado, borrado, +x y un regular donde había enlace', () async {
+      escribir('a.txt', 'dos\n');
+      escribir('b.txt', 'b\n');
+      Link('${raiz.path}/enlace').createSync('a.txt');
+      git(['add', '-A']);
+      git(['commit', '-m', 'con enlace']);
+      escribir('a.txt', 'tres\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/a.txt').writeAsStringSync('otra cosa\n');
+        File('${c.root}/sub/hondo.txt').deleteSync();
+        Process.runSync('chmod', ['755', '${c.root}/b.txt']);
+        Link('${c.root}/enlace').deleteSync();
+        File('${c.root}/enlace').writeAsStringSync('regular\n');
+        final a = {for (final x in await c.alteraciones()) x.ruta: x.tipo};
+        expect(a, {
+          'a.txt': TipoDeAlteracion.modificada,
+          'sub/hondo.txt': TipoDeAlteracion.borrada,
+          'b.txt': TipoDeAlteracion.cambioDeModo,
+          'enlace': TipoDeAlteracion.cambioDeTipo,
+        });
+        return null;
+      });
+    });
+
+    test('un ARTEFACTO nuevo no es una alteración; un archivo de FUENTE '
+        'nuevo SÍ', () async {
+      // **La generalización que costó un review.** La primera versión decía que
+      // ningún archivo nuevo contaba, porque todos serían generados por la
+      // derivación. Es falso: un archivo de fuente creado entre la derivación y
+      // este control queda dentro del alcance que la cascada lee, y la corrida
+      // salía roja concluyendo sobre bytes que el candidato nunca fijó.
+      repo = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _ConArtefactos(),
+      );
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        Directory('${c.root}/generado').createSync();
+        File('${c.root}/generado/mapa.json').writeAsStringSync('{}');
+        File('${c.root}/salida.g.txt').writeAsStringSync('derivado');
+        expect(
+          await c.alteraciones(),
+          isEmpty,
+          reason: 'generar es el trabajo del entorno, no una alteración',
+        );
+
+        File('${c.root}/nuevo.txt').writeAsStringSync('esto es fuente');
+        final a = await c.alteraciones();
+        expect(a.single.ruta, 'nuevo.txt');
+        expect(a.single.tipo, TipoDeAlteracion.agregada);
+        return null;
+      });
+    });
+
+    test('quién decide qué es artefacto es la POLÍTICA, no las exclusiones '
+        'del repositorio', () async {
+      // Con `--exclude-standard`, un archivo que el repositorio excluye quedaría
+      // callado aunque la política lo llame fuente. Serían dos autoridades sobre
+      // la misma pregunta, y la que manda ya está decidida.
+      escribir('.gitignore', 'excluido.txt\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'con exclusiones']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/excluido.txt').writeAsStringSync('el repo lo excluye');
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['excluido.txt']);
+        expect(a.single.tipo, TipoDeAlteracion.agregada);
+        return null;
+      });
+    });
+
+    test('una ruta declarada en noMaterializadas no cuenta como agregada '
+        'cuando el candidato no la recreó', () async {
+      // Sutil: la ruta NO está en el disco, así que no puede aparecer como
+      // nueva. Pero si alguien la escribe, `diff-index` la ve como cambio de
+      // tipo —ya cubierto— y no como agregada. Esta prueba fija que las dos
+      // vías no se pisen y produzcan la misma ruta dos veces.
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      git(['add', '-A']);
+      git(['commit', '-m', 'abs']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/abs').writeAsStringSync('regular\n');
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['abs'], reason: 'una sola vez');
+        expect(a.single.tipo, TipoDeAlteracion.cambioDeTipo);
+        return null;
+      });
+    });
+
+    test('lo declarado en noMaterializadas no es una alteración, los cuatro '
+        'a la vez', () async {
+      // Enlace absoluto, enlace con `..`, destino que no es UTF-8, y submódulo.
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      Link('${raiz.path}/up').createSync('../fuera');
+      git(['add', '-A']);
+      // El destino que no es UTF-8 no se puede escribir como enlace del árbol de
+      // trabajo con una cadena, así que el objeto va directo al índice.
+      // `Process.start` y no `runSync`: hay que mandarle BYTES por la entrada.
+      final p = await Process.start('git', [
+        'hash-object',
+        '-w',
+        '--stdin',
+      ], workingDirectory: raiz.path);
+      p.stdin.add([0xff, 0xfe, 0x2f, 0x78]);
+      await p.stdin.close();
+      final shaMalo = (await utf8.decodeStream(p.stdout)).trim();
+      await p.exitCode;
+      git(['update-index', '--add', '--cacheinfo', '120000,$shaMalo,raro']);
+      git([
+        'update-index',
+        '--add',
+        '--cacheinfo',
+        '160000,4b825dc642cb6eb9a060e54bf8d69288fbee4904,submodulo',
+      ]);
+      git(['commit', '-m', 'lo que no se materializa']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(
+          c.noMaterializadas.map((n) => n.ruta),
+          unorderedEquals(['abs', 'up', 'raro', 'submodulo']),
+        );
+        expect(
+          await c.alteraciones(),
+          isEmpty,
+          reason:
+              'sin restar lo declarado, todo candidato con un enlace absoluto '
+              'sería no concluyente para siempre',
+        );
+        return null;
+      });
+    });
+
+    test('un regular escrito donde el árbol tiene un enlace no materializado '
+        'SÍ es una alteración', () async {
+      Link('${raiz.path}/abs').createSync('/etc/hosts');
+      git(['add', '-A']);
+      git(['commit', '-m', 'abs']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        File('${c.root}/abs').writeAsStringSync('regular\n');
+        final a = await c.alteraciones();
+        expect(a.single.ruta, 'abs');
+        expect(a.single.tipo, TipoDeAlteracion.cambioDeTipo);
+        return null;
+      });
+    });
+
+    test('intacto con clean, smudge y eol=crlf da CERO alteraciones', () async {
+      git(['config', 'filter.marca.clean', 'sed s/SUCIO/LIMPIO/']);
+      git(['config', 'filter.marca.smudge', 'sed s/LIMPIO/SUCIO/']);
+      git(['config', 'core.autocrlf', 'true']);
+      escribir(
+        '.gitattributes',
+        'conmarca.txt filter=marca\ncrlf.txt text eol=crlf\n',
+      );
+      escribir('conmarca.txt', 'esto esta SUCIO\n');
+      escribir('crlf.txt', 'l1\r\nl2\r\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'filtros']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+
+    test('un clean NO idempotente hace «modificada» a un candidato intacto: '
+        'el límite declarado', () async {
+      // **Esta prueba FIJA un límite, no comprueba una capacidad.**
+      // `update-index --refresh` pasa cada archivo por el filtro `clean` antes
+      // de comparar —la traza lo muestra— y la materialización escribe los
+      // bytes del objeto sin `smudge`. Con filtros idempotentes eso cierra en
+      // cero; con uno que no lo es, no hay forma de distinguir «intacto» de
+      // «modificado».
+      //
+      // El límite es de git antes que nuestro: `gitattributes(5)` pide que
+      // `clean → clean` equivalga a `clean`, y un repositorio que lo viola ya ve
+      // sus archivos perpetuamente modificados en `git status`. Si algún día
+      // esto da cero, lo que hay que revisar es la decisión, no el código.
+      git(['config', 'filter.suma.clean', r'sed s/$/x/']);
+      escribir('.gitattributes', 'suma.txt filter=suma\n');
+      escribir('suma.txt', 'base\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'no idempotente']);
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        final a = await c.alteraciones();
+        expect(a.map((x) => x.ruta), ['suma.txt']);
+        expect(a.single.tipo, TipoDeAlteracion.modificada);
+        return null;
+      });
+    });
+
+    test('se puede comprobar dos veces, y también después de crear la '
+        'revisión', () async {
+      // Después de promover, el almacén temporal se borra y el árbol resuelve
+      // desde el repositorio real. Que la comprobación siga funcionando ahí es
+      // lo que permite llamarla antes y después de la cascada.
+      escribir('a.txt', 'dos\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        expect(await c.alteraciones(), isEmpty);
+        await c.createRevision();
+        expect(await c.alteraciones(), isEmpty);
+        return null;
+      });
+    });
+  });
+
+  group('git corre con el entorno saneado', () {
+    late File registro;
+    late File gitFalso;
+
+    setUp(() {
+      // Un `git` que anota qué entorno recibió y después delega en el de
+      // verdad. Es la única forma de comprobar qué llega y qué no sin
+      // depender del shell de quien corre la suite.
+      registro = File('${raiz.path}/entorno-visto.txt');
+      gitFalso = File('${raiz.path}/git-falso.sh')
+        ..writeAsStringSync(
+          '#!/bin/sh\nenv >> "${registro.path}"\nexec git "\$@"\n',
+        );
+      Process.runSync('chmod', ['755', gitFalso.path]);
+    });
+
+    test('el token del padre no llega a git, ni un GIT_DIR hostil', () async {
+      final r = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _TodoEsFuente(),
+        programa: gitFalso.path,
+        entornoDelPadre: {
+          'PATH': Platform.environment['PATH']!,
+          'HOME': Platform.environment['HOME']!,
+          'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
+          'GIT_DIR': '/otro/repositorio/.git',
+        },
+      );
+      escribir('a.txt', 'dos\n');
+      final c = await r.prepareCandidate(rebanada(['a.txt']));
+      await c.dispose();
+
+      final visto = registro.readAsStringSync();
+      expect(visto, isNotEmpty, reason: 'el git falso tiene que haber corrido');
+      expect(visto, isNot(contains('secreto-de-prueba')));
+      expect(
+        visto.split('\n').where((l) => l.startsWith('GIT_DIR=')),
+        isEmpty,
+        reason:
+            'un GIT_DIR del shell del usuario corrompería nuestras '
+            'operaciones sin que nada lo notara',
+      );
+      expect(
+        visto,
+        contains('GIT_INDEX_FILE='),
+        reason: 'las propias de la invocación sí viajan',
+      );
+    });
+
+    test('chmod también corre saneado', () async {
+      escribir('ejecutable.sh', '#!/bin/sh\n');
+      Process.runSync('chmod', ['755', '${raiz.path}/ejecutable.sh']);
+      git(['add', '-A']);
+      git(['commit', '-m', 'con ejecutable']);
+      final chmodFalso = File('${raiz.path}/chmod-falso.sh')
+        ..writeAsStringSync(
+          '#!/bin/sh\nenv >> "${registro.path}"\nexec chmod "\$@"\n',
+        );
+      Process.runSync('chmod', ['755', chmodFalso.path]);
+      final r = RepositorioGit(
+        directorio: raiz.path,
+        politica: const _TodoEsFuente(),
+        programaChmod: chmodFalso.path,
+        entornoDelPadre: {
+          'PATH': Platform.environment['PATH']!,
+          'HOME': Platform.environment['HOME']!,
+          'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
+        },
+      );
+      escribir('ejecutable.sh', '#!/bin/sh\necho x\n');
+      final c = await r.prepareCandidate(rebanada(['ejecutable.sh']));
+      await c.dispose();
+      expect(registro.readAsStringSync(), contains('PATH='));
+      expect(registro.readAsStringSync(), isNot(contains('secreto-de-prueba')));
+    });
+  });
+
+  group('la identidad del autor es la configurada, o no hay commit', () {
+    late Directory hogar;
+
+    setUp(() {
+      // Sin identidad LOCAL: la que se prueba es la global, que es la que el
+      // saneamiento puede perder.
+      git(['config', '--unset', 'user.email']);
+      git(['config', '--unset', 'user.name']);
+      hogar = Directory.systemTemp.createTempSync('hogar_');
+    });
+    tearDown(() => hogar.deleteSync(recursive: true));
+
+    Map<String, String> padre([Map<String, String> extra = const {}]) => {
+      'PATH': Platform.environment['PATH']!,
+      'HOME': hogar.path,
+      ...extra,
+    };
+
+    RepositorioGit con(Map<String, String> p) => RepositorioGit(
+      directorio: raiz.path,
+      politica: const _TodoEsFuente(),
+      entornoDelPadre: p,
+    );
+
+    Future<String> autorDe(RepositorioGit r) async {
+      escribir('a.txt', 'dos\n');
+      final c = await r.prepareCandidate(rebanada(['a.txt']));
+      try {
+        final rev = await c.createRevision();
+        return git(['log', '-1', '--format=%an <%ae>', rev]);
+      } finally {
+        await c.dispose();
+      }
+    }
+
+    test('con la identidad en el hogar', () async {
+      File('${hogar.path}/.gitconfig').writeAsStringSync(
+        '[user]\n\tname = Del Hogar\n\temail = hogar@ejemplo.test\n',
+      );
+      expect(await autorDe(con(padre())), 'Del Hogar <hogar@ejemplo.test>');
+    });
+
+    test(
+      'con la identidad SOLO en XDG, que la lista blanca no lleva',
+      () async {
+        // **Está medido que con PATH+HOME solos git FABRICA el autor**: usa el
+        // usuario del sistema y el hostname. Enumerar por dónde git puede leer
+        // su configuración —XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL— es la misma
+        // carrera que una lista negra, así que la identidad se captura.
+        final xdg = Directory('${hogar.path}/config/git')
+          ..createSync(recursive: true);
+        File('${xdg.path}/config').writeAsStringSync(
+          '[user]\n\tname = Solo XDG\n\temail = xdg@ejemplo.test\n',
+        );
+        expect(
+          await autorDe(
+            con(padre({'XDG_CONFIG_HOME': '${hogar.path}/config'})),
+          ),
+          'Solo XDG <xdg@ejemplo.test>',
+        );
+      },
+    );
+
+    test('sin ninguna identidad, git se niega en vez de inventar una', () async {
+      // La diferencia entre un fallo y un dato falso. Sin `useConfigOnly`, git
+      // no falla: inventa un autor y lo escribe en el historial del usuario.
+      await expectLater(
+        autorDe(con(padre())),
+        throwsA(
+          isA<GitFallo>().having(
+            (e) => e.salida,
+            'salida',
+            contains('identity'),
+          ),
+        ),
+      );
     });
   });
 

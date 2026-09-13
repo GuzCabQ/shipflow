@@ -38,3 +38,9 @@ dev_dependencies:
   # cosa; `plugin_dart` ya usaba el patrón correcto.
   plugin_fake:
     path: ../plugin_fake
+  # Solo la prueba decisiva del entorno de verificación lo importa. `cli` es el
+  # único paquete que ve `vcs` y `plugin_dart` a la vez, y la composición
+  # —preparar, derivar, comprobar, cascada, comprobar— todavía vive en una
+  # prueba porque no hay coordinador productivo. De desarrollo por eso.
+  vcs:
+    path: ../vcs

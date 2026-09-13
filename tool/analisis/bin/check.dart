@@ -22,10 +22,13 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/features.dart';
+import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/element/element.dart';
 
 final List<String> fallos = [];
 
@@ -552,7 +555,233 @@ ArgumentList? _argumentosDe(Expression e, String nombre) {
   return null;
 }
 
-void main(List<String> args) {
+/// Un lanzamiento de proceso, y si cumple la regla del entorno saneado.
+class _Lanzamiento {
+  /// Relativo a la raíz del repositorio.
+  final String archivo;
+
+  /// A qué biblioteca pertenece: el archivo mismo, o el de su `part of`.
+  ///
+  /// **La excepción se cuenta por BIBLIOTECA y no por archivo.** Un `part`
+  /// puede agregar un lanzamiento a la biblioteca exceptuada sin tocar el
+  /// archivo declarado, y entonces la declaración lo taparía.
+  final String biblioteca;
+
+  final int offset;
+
+  /// Los métodos y funciones que lo contienen, de afuera hacia adentro.
+  ///
+  /// **Es el ámbito completo y no solo el más interno**, porque una excepción
+  /// declarada para un método vale también para un ayudante local suyo: la
+  /// captura de identidad lanza desde una función anidada, y mirar solo el nivel
+  /// de adentro leía `leer` donde la declaración dice `_capturarIdentidad`.
+  final List<String> ambito;
+
+  /// Nulo si cumple.
+  final String? problema;
+
+  const _Lanzamiento(
+    this.archivo,
+    this.biblioteca,
+    this.offset,
+    this.ambito,
+    this.problema,
+  );
+
+  /// Lo más interno, para el mensaje.
+  String get donde => ambito.isEmpty ? 'el tope del archivo' : ambito.last;
+}
+
+/// Busca `Process.run`, `Process.runSync` y `Process.start` y comprueba la
+/// SEMÁNTICA de su entorno, no la forma.
+///
+/// La primera versión del diseño pedía que existieran `environment:` e
+/// `includeParentEnvironment: false`. Esto los cumple al pie y no sanea nada:
+///
+///     Process.run(exe, args,
+///         environment: Platform.environment,   // ← cumple la forma
+///         includeParentEnvironment: false);    // ← y filtra CERO
+///
+/// Así que se exige que la expresión de `environment:` sea una llamada a
+/// `entornoSaneado`. **Y a ESA, no a cualquiera que se llame igual.**
+///
+/// La primera versión de este control comparaba el NOMBRE sobre un árbol sin
+/// resolver, y un review lo reprodujo: una función local homónima que devolvía
+/// el entorno del padre intacto pasaba en verde, y el check anunciaba siete
+/// lanzamientos saneados. Comparar nombres es comprobar sintaxis, que es
+/// exactamente lo que este control existe para no hacer.
+///
+/// Ahora se resuelve el elemento y se comprueba **de qué biblioteca viene**:
+/// la función tiene que ser la de `core`, y el lanzamiento, el de la biblioteca
+/// de entrada y salida del SDK.
+///
+/// **Y el lanzamiento se identifica por su ELEMENTO, no por cómo se escribe.**
+/// Una segunda revisión encontró dos formas ordinarias que se escapaban, las dos
+/// con el formateador conforme: un comentario entre la clase y el punto —que el
+/// prefiltro por texto no veía— y una importación con prefijo, donde el destino
+/// escrito no es el nombre de la clase. Ninguna es código raro, y el invariante
+/// afirma cubrir **todo** lanzamiento. Así que no se mira ni el texto del
+/// archivo ni el del destino: se mira de qué clase y de qué biblioteca es el
+/// método que se invoca.
+class _Subprocesos extends RecursiveAstVisitor<void> {
+  _Subprocesos(this.archivo, this.biblioteca);
+
+  final String archivo;
+  final String biblioteca;
+  final List<_Lanzamiento> vistos = [];
+  final List<String> _pila = [];
+
+  /// Los tres métodos de lanzamiento, por nombre. **Es un filtro barato, no la
+  /// identificación**: esa la hace el elemento resuelto.
+  static const _lanzadores = {'run', 'runSync', 'start'};
+
+  /// Cómo se llama la clase que lanza.
+  static const _claseQueLanza = 'Process';
+
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    _pila.add(node.name.lexeme);
+    super.visitMethodDeclaration(node);
+    _pila.removeLast();
+  }
+
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    _pila.add(node.name.lexeme);
+    super.visitFunctionDeclaration(node);
+    _pila.removeLast();
+  }
+
+  /// De dónde viene el símbolo, resuelto. Vacío si no se pudo resolver.
+  static String _bibliotecaDe(Element? e) => e?.library?.uri.toString() ?? '';
+
+  /// La biblioteca donde vive la función de saneamiento.
+  static const _origenDelSaneador = 'package:core/src/entorno.dart';
+
+  /// La biblioteca de `Process`.
+  static const _origenDeProcess = 'dart:io';
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    super.visitMethodInvocation(node);
+    if (node.target == null || !_lanzadores.contains(node.methodName.name)) {
+      return;
+    }
+    // **De qué clase y de qué biblioteca es el método que se invoca.** No cómo
+    // se escribe el destino: la clase escrita a secas, con un comentario en
+    // medio, o a través del prefijo de una importación resuelven las tres a lo
+    // mismo, y eso es lo que hay que preguntar.
+    final metodo = node.methodName.element;
+    final deDondeViene = _bibliotecaDe(metodo);
+    final esLanzamientoDelSdk =
+        metodo?.enclosingElement?.name == _claseQueLanza &&
+        deDondeViene == _origenDeProcess;
+
+    if (!esLanzamientoDelSdk) {
+      // No es un lanzamiento del SDK. **Salvo que se le parezca demasiado**: un
+      // `X.run(...)` donde `X` se llama igual que la clase que lanza y no es la
+      // del SDK deja a este control sin poder decir qué corre. Es un falso
+      // positivo deliberado, y su precio es renombrar una clase; el de la
+      // alternativa es no ver un lanzamiento envuelto en un homónimo.
+      final destino = node.target;
+      final seLlamaIgual =
+          destino is Identifier &&
+          destino.name.split('.').last == _claseQueLanza;
+      if (!seLlamaIgual) return;
+      vistos.add(
+        _Lanzamiento(
+          archivo,
+          biblioteca,
+          node.offset,
+          List<String>.unmodifiable(_pila),
+          '`$_claseQueLanza` acá no es el de la biblioteca de entrada y salida '
+          'del SDK, sino ${deDondeViene.isEmpty ? "un símbolo que no se "
+                    "pudo resolver" : "«$deDondeViene»"}. Este control no puede '
+          'decir qué lanza.',
+        ),
+      );
+      return;
+    }
+
+    final nombrados = {
+      for (final a in node.argumentList.arguments)
+        if (a is NamedExpression) a.name.label.name: a.expression,
+    };
+    final entorno = nombrados['environment'];
+    final hereda = nombrados['includeParentEnvironment'];
+    String? problema;
+    if (entorno is! MethodInvocation ||
+        entorno.methodName.name != 'entornoSaneado') {
+      problema =
+          '`environment:` no es una llamada a `entornoSaneado`'
+          '${entorno == null ? " (no está, así que hereda todo)" : ""}. '
+          'Pasar `Platform.environment` cumple la forma y filtra cero.';
+    } else if (_bibliotecaDe(entorno.methodName.element) !=
+        _origenDelSaneador) {
+      // El caso que un review reprodujo: una homónima que devuelve el entorno
+      // del padre intacto. El nombre coincide; la función no es.
+      final donde = _bibliotecaDe(entorno.methodName.element);
+      problema =
+          'llama a algo llamado `entornoSaneado` que NO es el de `core`: '
+          '${donde.isEmpty ? "no se pudo resolver de dónde viene" : "viene de "
+                    "«$donde»"}. Una homónima que devuelva el entorno del padre '
+          'intacto cumpliría el nombre y filtraría cero.';
+    } else if (hereda is! BooleanLiteral || hereda.value) {
+      problema =
+          'falta `includeParentEnvironment: false` literal: sin él, el '
+          'entorno saneado se SUMA al del padre en vez de reemplazarlo.';
+    }
+    vistos.add(
+      _Lanzamiento(
+        archivo,
+        biblioteca,
+        node.offset,
+        List<String>.unmodifiable(_pila),
+        problema,
+      ),
+    );
+  }
+}
+
+/// ¿Este archivo tiene alguna invocación con la FORMA de un lanzamiento?
+///
+/// **Estructural, no por texto.** El prefiltro buscaba la cadena `Process.` en
+/// el archivo, y una revisión lo reprodujo: un comentario entre la clase y el
+/// punto —sintaxis corriente, que el formateador deja intacta— rompía esa
+/// cadena y el archivo no se resolvía siquiera. Un prefiltro que decide qué
+/// mirar por coincidencia textual decide mal.
+///
+/// Acá se acepta de más a propósito: cualquier invocación de un método con uno
+/// de los tres nombres, sobre cualquier destino. Quién lanza de verdad lo dice
+/// el elemento resuelto; esto solo evita resolver archivos que no pueden
+/// contener un lanzamiento.
+class _PareceLanzamiento extends RecursiveAstVisitor<void> {
+  bool encontrado = false;
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    super.visitMethodInvocation(node);
+    if (node.target != null &&
+        _Subprocesos._lanzadores.contains(node.methodName.name)) {
+      encontrado = true;
+    }
+  }
+}
+
+/// A qué biblioteca pertenece un archivo: él mismo, o el de su `part of`.
+String _bibliotecaDe(CompilationUnit unidad, String rel) {
+  for (final d in unidad.directives) {
+    if (d is PartOfDirective && d.uri != null) {
+      final uri = d.uri!.stringValue;
+      if (uri == null) continue;
+      final corte = rel.lastIndexOf('/');
+      return corte < 0 ? uri : '${rel.substring(0, corte)}/$uri';
+    }
+  }
+  return rel;
+}
+
+Future<void> main(List<String> args) async {
   final raiz = Directory(
     File.fromUri(Platform.script).parent.parent.parent.parent.path,
   );
@@ -574,6 +803,7 @@ void main(List<String> args) {
     'opacidad-declarada': 'opacidad_declarada',
     'puertos-sin-implementacion': 'huecos_declarados',
     'colecciones-inmutables': 'colecciones_copiadas',
+    'subprocesos-con-entorno-saneado': 'entorno_saneado',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
@@ -934,6 +1164,114 @@ void main(List<String> args) {
     );
   }
 
+  // --- 4 · subprocesos con entorno saneado -------------------------------
+  //
+  // Se comprueba SEMÁNTICA, no forma: lo que se exige es la llamada a
+  // `entornoSaneado`, no que el parámetro exista. Ver `_Subprocesos`.
+  final reglaDeEntorno =
+      reglas['subprocesos-con-entorno-saneado'] as Map<String, Object?>?;
+  // biblioteca → el único método donde se admite un lanzamiento sin sanear.
+  final exceptuadas = <String, String>{
+    for (final e
+        in (reglaDeEntorno?['excepciones'] as List<Object?>? ?? const []))
+      (e as Map<String, Object?>)['archivo']! as String: e['metodo']! as String,
+  };
+  final lanzamientos = <_Lanzamiento>[];
+  // **Producción es un conjunto cerrado: `lib/` y `bin/`.** Los `test/` no
+  // entran: las pruebas lanzan `git` y `chmod` a mano, y esa es su forma de
+  // medir qué recibe un hijo.
+  final deProduccion = RegExp(r'^packages/[^/]+/(lib|bin)/');
+  final candidatos = <File>[];
+  for (final f in fuentes(dirPaquetes)) {
+    if (!deProduccion.hasMatch(f.path.substring(raiz.path.length + 1))) {
+      continue;
+    }
+    final parseado = parseFile(
+      path: f.path,
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false,
+    );
+    // Un archivo que no parsea ya lo reportó `clasesDe`: de un árbol parcial no
+    // sale ninguna invocación, y cero se lee igual que «no tenía ninguna».
+    if (parseado.errors.isNotEmpty) continue;
+    final busqueda = _PareceLanzamiento();
+    parseado.unit.accept(busqueda);
+    if (busqueda.encontrado) candidatos.add(f);
+  }
+  if (candidatos.isNotEmpty) {
+    // **Resuelto y no solo parseado**, porque la regla compara la IDENTIDAD de
+    // lo que se invoca, no su nombre: sin resolución, una función local llamada
+    // igual que la de saneamiento pasa en verde — reproducido por un review.
+    //
+    // Se resuelven solo los archivos que mencionan un lanzamiento, que son un
+    // puñado: resolver todo el árbol costaría segundos por nada.
+    final coleccion = AnalysisContextCollection(
+      includedPaths: [dirPaquetes.path],
+    );
+    for (final f in candidatos) {
+      final rel = f.path.substring(raiz.path.length + 1);
+      final ctx = coleccion.contextFor(f.path);
+      final r = await ctx.currentSession.getResolvedUnit(f.path);
+      // **Falla cerrado.** No poder resolver no es no tener lanzamientos: es no
+      // saber, y la regla entera depende de saber de dónde viene cada símbolo.
+      if (r is! ResolvedUnitResult) {
+        fallos.add(
+          '$rel: no se pudo resolver, así que no puedo decir si sus '
+          'lanzamientos de proceso usan el saneador de `core` o una homónima. '
+          'Resolvé las dependencias del workspace antes de correr esto.',
+        );
+        continue;
+      }
+      final v = _Subprocesos(rel, _bibliotecaDe(r.unit, rel));
+      r.unit.accept(v);
+      lanzamientos.addAll(v.vistos);
+    }
+  }
+  final sinSanear = lanzamientos.where((l) => l.problema != null).toList();
+  final porBiblioteca = <String, List<_Lanzamiento>>{};
+  for (final l in sinSanear) {
+    (porBiblioteca[l.biblioteca] ??= []).add(l);
+  }
+  for (final e in porBiblioteca.entries) {
+    final metodo = exceptuadas[e.key];
+    if (metodo == null) {
+      for (final l in e.value) {
+        fallos.add(
+          '${l.archivo}:${l.offset}: lanza un proceso y ${l.problema} '
+          'Un hijo que hereda el entorno recibe el token de la forja y '
+          'cualquier `GIT_*` del shell del usuario.',
+        );
+      }
+      continue;
+    }
+    // La excepción admite EXACTAMENTE uno, y dentro del método declarado.
+    for (final l in e.value.where((l) => !l.ambito.contains(metodo))) {
+      fallos.add(
+        '${l.archivo}:${l.offset}: la excepcion declarada para ${e.key} '
+        'admite un solo lanzamiento sin sanear, dentro de `$metodo`, y este '
+        'está en `${l.donde}`. ${l.problema}',
+      );
+    }
+    final adentro = e.value.where((l) => l.ambito.contains(metodo)).length;
+    if (adentro > 1) {
+      fallos.add(
+        '${e.key}: `$metodo` tiene $adentro lanzamientos sin sanear y la '
+        'excepcion admite uno. Una excepcion que crece en silencio es una '
+        'lista negra.',
+      );
+    }
+  }
+  for (final e in exceptuadas.entries) {
+    if (!(porBiblioteca[e.key]?.any((l) => l.ambito.contains(e.value)) ??
+        false)) {
+      fallos.add(
+        'arquitectura.json: «subprocesos-con-entorno-saneado» exceptua '
+        '`${e.value}` en ${e.key}, y ahi no hay ningun lanzamiento sin '
+        'sanear. La declaracion quedo vieja y taparia al proximo.',
+      );
+    }
+  }
+
   // --- salida -----------------------------------------------------------
   if (fallos.isNotEmpty) {
     stdout.writeln('serializacion: FALLA\n');
@@ -948,6 +1286,8 @@ void main(List<String> args) {
   stdout.writeln(
     'serializacion: ok — $serializables clases serializables '
     'verificadas campo por campo, ${opacos.length} opacas declaradas, '
-    '${huerfanos.length} puertos sin implementación declarados.',
+    '${huerfanos.length} puertos sin implementación declarados, '
+    '${lanzamientos.length} lanzamientos de proceso con entorno saneado '
+    '(${sinSanear.length} exceptuado).',
   );
 }

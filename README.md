@@ -11,7 +11,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ## Estado: fase 2, quinta rebanada. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** 7 de los 26
+`core` existe: **las entidades y los puertos, como tipos.** 8 de los 27
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
 de verdad, con toolchain de verdad.
 
@@ -25,6 +25,8 @@ $ shipflow verify lib
   ok        StaticAnalysis
 verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 ```
+
+**El entorno de verificación se está implementando en esta rama.** El plan, tarea por tarea, está en [PLAN-entorno-de-verificacion.md](PLAN-entorno-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
 
 **El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
 
@@ -85,6 +87,7 @@ la arquitectura y se revisa como tal.
 | `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
 | `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
 | `dependencias-declaradas-se-usan` | Que un pubspec declare una flecha interna que ninguna línea importa | `capas.py` |
+| `subprocesos-con-entorno-saneado` | Que un subproceso **herede** el entorno del padre —el token de la forja, un `GIT_*` del shell— en vez de recibir la lista blanca | `tool/analisis` |
 | `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
 | `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
 | `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
@@ -520,6 +523,7 @@ sola.
 | `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
 | `Verifier` | **dos** reales: los dos primeros pasos | **no hay**, y está declarado |
 | `ChangeSink` | `git` de verdad, sin doble | **no hay**, y está declarado |
+| `VerificationEnvironment` | el resolvedor sobre el candidato, una raíz por vez | **no hay**, y está declarado |
 
 `DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
 uno y los formatos que tiene que leer son varios. La suite corre contra las
@@ -532,6 +536,12 @@ contradijo— ya está cubierto: sus dos pasos difieren en lo que importa, y esa
 divergencia produjo la quinta cláusula del puerto. Falta un `Verifier` falso
 para que `orchestration` pueda probar la cascada sin toolchain; llega con la
 fase que lo necesite.
+
+`VerificationEnvironment` salió con **una real y ningún fake**, por el mismo
+motivo y escrito en el mismo registro: no hay etapa que lo consuma —la
+composición vive en una prueba de `cli`— así que una suite de contrato con una
+sola implementación no contrasta nada, corre la misma lógica dos veces. El fake
+llega con la etapa que lo use.
 
 `ChangeSink` salió igual, con **una real y ningún fake**, y un review lo
 cobró: no por faltarle el fake, sino porque **salió de la lista de puertos
@@ -1273,7 +1283,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 119 sabotajes.**
+y su caso ciego. **El arnés aplica 133 sabotajes.**
 
 ---
 
@@ -1444,6 +1454,303 @@ pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
   mismo motivo que ya estaba declarado: no hay etapa que lo consuma.
 
 ---
+
+## El entorno de verificación se deriva del candidato
+
+El candidato ya fijaba **qué bytes** se verifican. Faltaba lo otro: **con qué se
+ejecutan**. Un árbol recién materializado no trae resolución de dependencias
+—está medido: lo que se genera al resolver no se versiona— así que la cascada no
+podía correr adentro, y correr afuera es medir el árbol de trabajo del usuario,
+que es el problema que el candidato existe para cerrar.
+
+Esta rebanada deriva el entorno **del propio candidato**, comprueba que derivar
+no lo alteró, y saca del camino un defecto latente que nadie había mirado: todo
+subproceso heredaba el entorno del padre.
+
+### Por qué derivar y no prestar
+
+Prestar el entorno del usuario haría que la cascada midiera sobre resoluciones
+que ningún commit contiene: un paquete agregado al árbol de trabajo y no
+commiteado resolvería igual, y el verde diría algo falso sobre lo que se va a
+commitear. Derivar es `pub get --offline --enforce-lockfile` dentro del
+candidato: `--offline` impide salir a buscar lo que el candidato no fijó, y
+`--enforce-lockfile` impide reescribir el lockfile. **El lockfile del candidato
+manda**; si no alcanza, el candidato se rechaza en vez de resolverse otra cosa.
+
+Sacar `--enforce-lockfile` pone rojas dos pruebas, y eso no es casualidad: es el
+sabotaje del estado intermedio, comprobado.
+
+### Resolver borra lo que el candidato versiona, y por eso la integridad se comprueba
+
+La primera versión del diseño afirmaba que bastaba con mirar si existía el
+directorio de lo generado. Es falso, y está reproducido: **pub borra el lockfile
+y el mapa de paquetes de un paquete miembro** cuando ese paquete pasa a
+resolverse desde la raíz del workspace. Si el candidato versiona esos archivos,
+derivar los borra y la cascada verifica un árbol al que le falta contenido que el
+commit sí tiene.
+
+Este repositorio no lo exhibe, y eso es parte del hallazgo: sus cuatro lockfiles
+versionados pertenecen a proyectos que no son miembros, así que sobreviven
+intactos. **Una prueba escrita sobre este árbol nunca lo habría encontrado.**
+
+Así que la integridad se comprueba, y no se le pregunta a nuestro código: se le
+pide a `git`, igual que el grafo de dependencias se le pide a pub. Con un índice
+propio —aparte del que fijó el contenido—, leído del árbol del candidato,
+refrescado contra el disco y comparado. Cada bandera tiene su medición detrás:
+
+| Bandera | Qué pasa sin ella |
+|---|---|
+| `update-index --refresh` | el índice recién leído no tiene información de `stat` y **el árbol entero sale modificado**: cien diferencias falsas |
+| `-q` en el refresco | sale con **1** justo cuando hay algo que reportar, y la costura que exige éxito lo convierte en fallo **antes** de que la comparación lo describa |
+| `--raw` en vez de `--name-status` | aquel **pliega un cambio de modo en una `M`** indistinguible de un cambio de contenido, y la fila «bit ejecutable» era inimplementable |
+
+Y una letra que no sea `M`, `D` ni `T` **falla cerrado**. Con un índice recién
+leído no puede aparecer una `A`, y una `R` solo con detección de renombres, que
+no se pide: si aparece, `git` vio algo que este control no previó, y descartarlo
+sería leer un hueco como un candidato intacto.
+
+### Un archivo nuevo tampoco es siempre inocente
+
+**La primera versión de este control decía que ningún archivo nuevo contaba**, con
+el argumento de que todos serían generados por la derivación. Es falso, y lo
+reprodujo una revisión: la comparación de entradas versionadas **no ve** un
+archivo sin seguimiento, así que un archivo de fuente creado entre la derivación
+y el segundo control quedaba invisible. La cascada lo leía —está dentro del
+alcance que analiza— y la corrida salía **roja**, concluyendo sobre bytes que el
+candidato nunca fijó. Es el falso verde que esta rebanada existe para cerrar,
+abierto por una generalización cómoda.
+
+La corrección no es contar todo archivo nuevo como alteración: **derivar genera
+archivos, y generarlos es su trabajo**. Es preguntarle a quien ya decide eso.
+`ArtifactPolicy` existe desde la fase 2 y el repositorio ya la sostiene, así que
+la regla queda: *una ruta nueva es una alteración salvo que la política la
+declare artefacto*.
+
+Y **sin las exclusiones del repositorio**: usar `--exclude-standard` haría del
+`.gitignore` una segunda autoridad sobre la misma pregunta, callando rutas que la
+política sí considera fuente. La autoridad ya estaba decidida.
+
+### Lo que el candidato declaró no materializar no es una alteración
+
+El candidato no recrea enlaces absolutos, enlaces con `..`, enlaces cuyo destino
+no es UTF-8 ni submódulos, y los declara. Para la comparación esas rutas están en
+el árbol y no en el disco, así que **salen como borradas**: los cuatro casos,
+medidos. Sin restarlas, todo candidato con un enlace absoluto sería no
+concluyente para siempre.
+
+La resta es estrecha: una borradura sobre una ruta declarada no cuenta,
+**cualquier otra cosa sobre ella sí**. Si un verificador escribió un archivo
+regular donde el candidato dejó un hueco a sabiendas, eso es un cambio de tipo, y
+es una alteración.
+
+### Y un límite declarado, en vez de tapado
+
+El refresco del índice **corre el filtro `clean`** sobre cada archivo antes de
+comparar —la traza lo muestra— y la materialización escribe los bytes del objeto
+sin `smudge`. Con filtros idempotentes eso cierra en cero, incluido `eol=crlf`.
+Con un `clean` que no es idempotente, un candidato intacto sale **modificado**, y
+el control no puede distinguir intacto de alterado.
+
+No se compensa comparando bytes a mano: **el límite es de `git` antes que
+nuestro** —`gitattributes(5)` pide que `clean → clean` equivalga a `clean`, y un
+repositorio que lo viola ya ve sus archivos perpetuamente modificados en `git
+status`—. La prueba lo **fija**: si algún día da cero, lo que hay que revisar es
+la decisión, no el código.
+
+### Tres desenlaces, y la línea que los separa
+
+Que el candidato sea defectuoso y que nuestro instrumento no llegue a medir son
+dos hechos distintos, y la primera versión los mezclaba en un solo enum. Es la
+misma confusión que ADR-019 cerró del lado de los pasos: un instrumento roto no
+es un veredicto.
+
+| Desenlace | Qué afirma |
+|---|---|
+| `EntornoDerivado` | se derivó, y lleva cuántos paquetes, cuántas raíces y **la versión de la toolchain citada** |
+| `CandidatoRechazado` | no se puede verificar **por lo que el candidato es** |
+| `DerivacionAbortada` | no se pudo derivar **por lo que pasó al intentarlo**; no dice nada del candidato |
+
+**Todo «no» del resolvedor es un rechazo, no un aborto**, y eso salió de medir:
+el mismo código de salida cubre un cache frío y un SDK desconocido en el
+manifiesto. Distinguirlos exigiría leerle frases a la salida de error, que es el
+parser frágil que este proyecto rechaza en todas partes. La evidencia va citada
+literal, y quien lea la corrida ve lo que la herramienta dijo. Abortar queda para
+lo que el instrumento no llegó a decir: herramienta ausente y presupuesto
+agotado, que la costura de procesos ya distingue.
+
+La versión de la toolchain **no se parsea: se cita**. Un número extraído de una
+frase es un parser más, y lo que hace falta es que el testigo diga con qué se
+midió.
+
+### Una raíz por cada resolución que la rebanada toca
+
+La versión anterior del diseño exigía un único workspace con raíz en el
+candidato, y **eso excluía a este repositorio de verificarse a sí mismo**: tiene
+tres manifiestos fuera del workspace, a propósito. Lo encontró la aprobación del
+diseño, no una prueba, y es exactamente la clase de defecto que una prueba sobre
+este árbol habría encontrado en la primera corrida.
+
+La regla quedó así: se deriva **una vez por raíz de resolución que la rebanada
+toca, y ninguna más**. Un manifiesto que la rebanada no toca no existe para ella.
+
+| La rebanada toca | Raíces | Los demás manifiestos |
+|---|---|---|
+| solo un miembro del workspace | **una**: la raíz, con su lockfile | los otros no se derivan **ni se rechazan** |
+| un miembro **y** el paquete que no es miembro | **dos** | el del fixture sigue sin tocarse |
+| nada que cuelgue de un manifiesto | **cero**, y derivado igual | el testigo lleva la toolchain aunque no haya nada que medir |
+
+«Derivar todas las raíces» parecía la salida obvia y se midió: resolver el
+fixture de Flutter **funciona en esta máquina**, porque acá la herramienta vive
+dentro del SDK de Flutter. En el runner, con un SDK puro, fallaría. Derivar
+raíces que nadie necesita es pagar ese riesgo por nada.
+
+Las raíces se calculan **sin resolver nada**, como función pura sobre rutas y
+manifiestos, y su prueba usa un fixture con **la forma exacta de este
+repositorio**. Un fixture de un solo manifiesto no habría encontrado nada.
+
+### Derivar dos veces rechaza la segunda, y está declarado
+
+El rechazo por «el árbol versiona lo que la derivación genera» mira **el disco**,
+que es lo único que el plugin puede mirar: no conoce `git` y no debe conocerlo.
+Después de derivar, ese disco ya tiene lo generado, así que una segunda llamada
+sobre el mismo candidato lo rechaza — y tiene razón según lo que puede ver.
+
+Es una precondición del puerto, escrita ahí y con su prueba, en vez de algo que
+alguien descubra en producción. Quien recomponga una corrida prepara un candidato
+nuevo, que es lo que el candidato hace con su raíz temporal.
+
+### La lista blanca, y la identidad capturada
+
+Hasta acá, **todo subproceso heredaba el entorno del padre**. Con eso el token de
+la forja llegaba a toda herramienta que lanzáramos y a todo lo que esa
+herramienta lanzara, y un `GIT_DIR` en el shell del usuario podía corromper
+nuestras operaciones sin que nada lo notara. Los dos están medidos.
+
+Una lista negra promete solo sobre lo que alguien enumeró: la variable secreta que
+alguien agregue el mes que viene se filtra sola. Así que el entorno se arma con
+una **lista blanca** —`PATH`, `HOME`, `PUB_CACHE`— más lo que cada invocación
+declara necesitar.
+
+Y con eso se pierde algo que hace falta: **`HOME` no alcanza para la identidad
+del autor**. La primera versión del diseño decía que sí, y se había medido en una
+máquina donde la identidad vive en `~/.gitconfig`. Con la identidad configurada
+**solo** por XDG, `git` no falla: **fabrica** un autor con el usuario del sistema
+y el hostname. Agregar `XDG_CONFIG_HOME` a la lista tampoco cierra el caso,
+porque `git` admite además `GIT_CONFIG_GLOBAL`: enumerar por dónde `git` puede
+leer su configuración es la misma carrera que una lista negra.
+
+Entonces la identidad **se captura**, una vez, con el entorno del padre, y viaja
+como `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. Esa captura es **la única excepción** a la
+regla, y está declarada con su motivo y **contada**: el check admite exactamente
+un lanzamiento sin sanear en esa biblioteca, y un `part` que le agregue otro es
+rojo.
+
+Además va `user.useConfigOnly=true` en **los dos** caminos que commitean, no solo
+en el del candidato: el otro usa `git commit` y tenía el mismo agujero. Sin esa
+opción, `git` no falla cuando no encuentra identidad — inventa una. Es la
+diferencia entre un fallo y un dato falso, y dos caminos que escriben en el
+historial no pueden tener garantías distintas según por dónde se entre.
+
+### La regla comprueba semántica, no forma
+
+La primera versión del diseño proponía exigir que existieran `environment:` e
+`includeParentEnvironment: false`. Eso lo cumple al pie esto, que filtra cero:
+
+```dart
+Process.run(exe, args,
+    environment: Platform.environment,   // ← cumple la regla
+    includeParentEnvironment: false);    // ← y no sanea nada
+```
+
+Así que lo que la regla exige es que la expresión de `environment:` **sea una
+llamada a la función de saneamiento**, derivado del árbol sintáctico, en los tres
+lanzadores. Y la excepción mira el **ámbito completo**, no el nivel más interno:
+el lanzamiento exceptuado vive en una función local del método declarado, y mirar
+solo lo de adentro leía el ayudante donde la declaración dice el método.
+
+El propio check encontró dos cosas al instalarse: que la declaración nombraba un
+método que yo había renombrado —y lo dijo en los dos sentidos, el lanzamiento
+fuera del ámbito **y** la declaración sin nada que exceptuar— y que este README
+afirmaba una cuenta de sabotajes que ya no era la del arnés.
+
+**Y le faltaba la mitad del trabajo**, que encontró una revisión: comparaba el
+**nombre** `entornoSaneado` sobre un árbol sin resolver. Una función local
+llamada igual, que devolvía el entorno del padre intacto, pasaba en verde — y el
+check anunciaba siete lanzamientos saneados. Comparar nombres es comprobar
+sintaxis, que es exactamente lo que este control existe para no hacer.
+
+Ahora el árbol se **resuelve** y se compara la identidad: la función tiene que
+venir de `core`, y el lanzamiento, de la biblioteca de entrada y salida del SDK.
+**No poder resolver un archivo es rojo**: no saber no es no tener lanzamientos.
+
+**Y una segunda revisión encontró que eso todavía no alcanzaba.** La resolución
+era correcta, pero antes había dos filtros sintácticos que decidían **qué
+mirar**, y los dos se esquivaban con sintaxis corriente que el formateador deja
+intacta:
+
+| Forma | Por qué se escapaba |
+|---|---|
+| un comentario entre la clase y el punto | el prefiltro buscaba una cadena de texto en el archivo, y el comentario la parte: **el archivo ni se resolvía** |
+| la clase a través del prefijo de una importación | el destino escrito no es el nombre de la clase, y el visitante salía antes de mirar el símbolo |
+
+Las dos terminaban con código 0 **sin contar siquiera el lanzamiento**. No son
+residuos declarables: son sintaxis ordinaria, y el invariante afirma cubrir
+**todo** lanzamiento.
+
+La corrección es dejar de mirar texto en los dos lados. El prefiltro pasa a ser
+**estructural** —cualquier invocación de un método con uno de los tres nombres,
+sobre cualquier destino— y la identificación la hace el elemento resuelto: **de
+qué clase y de qué biblioteca es el método que se invoca**. Las cinco formas son
+sabotajes permanentes.
+
+Queda un **falso positivo deliberado**: una clase propia que se llame igual que
+la que lanza se reporta igual, porque ahí el control no puede decir qué corre.
+Su precio es renombrarla; el de la alternativa es no ver un lanzamiento envuelto
+en un homónimo.
+
+### La toolchain que no dice su versión no identifica nada
+
+Otro hallazgo de la misma revisión. La atestación comprobaba solo la
+**terminación** del proceso, no su código de salida ni su salida real, así que
+dos casos producían un entorno «derivado»: la herramienta saliendo con código
+distinto de cero, y la herramienta **muda**.
+
+El segundo es el peor. El texto que se arma para poder citar un proceso mudo
+—«sin salida; código 0»— terminaba **siendo la identidad de la toolchain**: una
+cadena nuestra satisfaciendo al constructor que existe para rechazar exactamente
+eso. Ahora la identidad es lo que la herramienta dijo, y si no dijo nada hay un
+aborto con su causa propia, no una identidad fabricada.
+
+### La prueba decisiva
+
+Un error inyectado **solo en el candidato**: la cascada da rojo, los diagnósticos
+apuntan al candidato, el árbol del usuario queda byte a byte igual y sin nada
+generado, y el candidato sigue íntegro después. Y una alteración **después** de la
+cascada hace la corrida no concluyente aunque la cascada haya dado rojo: no se
+puede afirmar ni eso sobre un árbol que dejó de ser el que se fijó.
+
+Sobre este árbol, derivar tarda unos 200 ms y el control de integridad unas
+decenas. **El techo es la aserción; la cifra, el dato**: cuánto cuestan en un
+monorepo sigue siendo una pregunta abierta, y esto la acota en vez de contestarla.
+
+### Lo que esta rebanada NO hace
+
+- **No hay coordinador productivo.** La cascada deriva su estado del desenlace de
+  los pasos y no tiene dónde meter «el entorno no se pudo derivar». La
+  composición —preparar, derivar, comprobar, cascada, comprobar— vive en una
+  prueba de `cli`, que es el único paquete que ve `vcs` y el plugin a la vez. Va
+  declarado en `arquitectura.json` y en la tabla de puertos de más arriba.
+- **No hay implementación falsa del puerto**, y por el mismo motivo que
+  `ChangeSink` no la tiene: sin etapa que lo consuma, una suite de contrato con
+  una sola implementación corre la misma lógica dos veces.
+- **Windows queda rechazado, no pendiente.** Ahí `Process.start` no usa el `PATH`
+  del mapa de entorno para resolver el ejecutable, así que un entorno saneado no
+  gobierna qué binario corre; y el cache de paquetes no se deriva de `HOME`. No se
+  pudo ejecutar acá, así que la fuente es secundaria y va marcada — pero la
+  decisión sí se toma, en vez de dejarla como una pregunta que alguien lea como
+  «probablemente funcione».
+- Tampoco: el comando de envío, el artefacto de revisión, la superficie de
+  verificación, la forja, el presupuesto de corrida ni el corte temprano.
 
 ## El falso rojo simétrico
 
@@ -2275,7 +2582,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 26 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **19 de los 27 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |

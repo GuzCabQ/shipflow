@@ -397,3 +397,94 @@ class RutaNoMaterializada {
         detalle: json['detalle']! as String,
       );
 }
+
+/// Con qué toolchain se derivó el entorno del candidato.
+///
+/// La identidad del contenido nombra el lockfile commiteado, **no todos los
+/// bytes que se ejecutan**: la versión de la herramienta queda afuera, y por
+/// eso se atestigua.
+///
+/// **No se parsea la versión. Se cita.** Un número extraído de una frase es un
+/// parser más, y lo que hace falta es que el testigo diga con qué se midió, no
+/// que alguien compare versiones.
+class IdentidadDeToolchain {
+  final QuotedText version;
+
+  IdentidadDeToolchain({required this.version}) {
+    if (version.content.trim().isEmpty) {
+      throw ArgumentError.value(
+        version,
+        'version',
+        'Una toolchain que no dice qué versión es no identifica nada.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {'version': version.toJson()};
+
+  factory IdentidadDeToolchain.fromJson(Map<String, Object?> json) =>
+      IdentidadDeToolchain(
+        version: QuotedText.fromJson(json['version']! as Map<String, Object?>),
+      );
+}
+
+/// Qué le pasó a una entrada versionada del candidato.
+enum TipoDeAlteracion {
+  modificada,
+  borrada,
+
+  /// El modo cambió —el bit ejecutable, típicamente—.
+  ///
+  /// **Residuo declarado:** la comparación no hashea el árbol de trabajo, así
+  /// que si el contenido cambió A LA VEZ que el modo, se reporta esto y no
+  /// [modificada]. Es una alteración igual, y la corrida es no concluyente
+  /// igual; lo que no se puede es leer el tipo como «solo cambió el modo».
+  cambioDeModo,
+
+  /// Un archivo regular donde el árbol tiene un enlace, o al revés.
+  cambioDeTipo,
+
+  /// Una ruta que **no está en el árbol fijado** y apareció en el candidato.
+  ///
+  /// **No toda ruta nueva cuenta**, pero tampoco ninguna: cuenta la que la
+  /// política de artefactos del stack **no** declara artefacto. Derivar el
+  /// entorno genera archivos, y generarlos es su trabajo; un archivo de fuente
+  /// nuevo, un manifiesto nuevo o un efecto lateral de un verificador **no** son
+  /// eso, y
+  /// la cascada los lee igual que a los demás.
+  agregada,
+}
+
+/// El candidato **dejó de ser el árbol que dice representar**.
+///
+/// Vacío significa intacto. Cubre dos cosas distintas: una entrada versionada
+/// que cambió, y una ruta nueva que la política de artefactos no declara
+/// artefacto — [TipoDeAlteracion.agregada].
+///
+/// **La primera versión decía que ningún archivo nuevo contaba**, porque todos
+/// serían generados por la derivación. Es falso y está reproducido: un archivo
+/// de fuente creado entre la derivación y el segundo control dejaba la corrida en
+/// rojo, concluyendo sobre bytes que el candidato no fijó. Quién decide qué es
+/// artefacto no se sabe acá: es `ArtifactPolicy`.
+class AlteracionDelCandidato {
+  final String ruta;
+  final TipoDeAlteracion tipo;
+
+  AlteracionDelCandidato({required this.ruta, required this.tipo}) {
+    if (ruta.trim().isEmpty) {
+      throw ArgumentError.value(
+        ruta,
+        'ruta',
+        'Una alteración sin ruta no nombra nada.',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {'ruta': ruta, 'tipo': tipo.name};
+
+  factory AlteracionDelCandidato.fromJson(Map<String, Object?> json) =>
+      AlteracionDelCandidato(
+        ruta: json['ruta']! as String,
+        tipo: TipoDeAlteracion.values.byName(json['tipo']! as String),
+      );
+}

@@ -64,6 +64,12 @@ class _CandidatoGit implements PreparedCandidate {
   final Directory _objetos;
   final File _indice;
 
+  /// Un índice **aparte** del de preparación, para el control de integridad.
+  ///
+  /// No se puede reusar el otro: `read-tree` lo sobreescribiría, y ese índice
+  /// es el que fijó qué contenido se está verificando.
+  final File _indiceDeIntegridad;
+
   @override
   final CandidateIdentity identity;
 
@@ -92,6 +98,7 @@ class _CandidatoGit implements PreparedCandidate {
     required Directory temporal,
     required Directory objetos,
     required File indice,
+    required File indiceDeIntegridad,
     required this.identity,
     required this.root,
     required List<String> changedPaths,
@@ -103,6 +110,7 @@ class _CandidatoGit implements PreparedCandidate {
        _temporal = temporal,
        _objetos = objetos,
        _indice = indice,
+       _indiceDeIntegridad = indiceDeIntegridad,
        changedPaths = List.unmodifiable(changedPaths),
        noMaterializadas = List.unmodifiable(noMaterializadas);
 
@@ -161,6 +169,7 @@ class _CandidatoGit implements PreparedCandidate {
     );
     final objetos = Directory('${temporal.path}/objetos');
     final indice = File('${temporal.path}/indice');
+    final indiceDeIntegridad = File('${temporal.path}/indice-integridad');
     final arbol = Directory('${temporal.path}/arbol');
     await objetos.create();
     await arbol.create();
@@ -174,6 +183,7 @@ class _CandidatoGit implements PreparedCandidate {
         temporal: temporal,
         objetos: objetos,
         indice: indice,
+        indiceDeIntegridad: indiceDeIntegridad,
         identity: CandidateIdentity(
           contentRevision: 'pendiente',
           baseRevision: base,
@@ -248,6 +258,7 @@ class _CandidatoGit implements PreparedCandidate {
       temporal: _temporal,
       objetos: _objetos,
       indice: _indice,
+      indiceDeIntegridad: _indiceDeIntegridad,
       identity: CandidateIdentity(
         contentRevision: contenido,
         baseRevision: base,
@@ -355,7 +366,12 @@ class _CandidatoGit implements PreparedCandidate {
       // ejecutable conserva el objeto del archivo y cambia el commit. Sale del
       // árbol, que es justamente por lo que la identidad es un árbol.
       if (entrada.modo == '100755') {
-        final r = await Process.run(_repo.programaChmod, ['755', destino.path]);
+        final r = await Process.run(
+          _repo.programaChmod,
+          ['755', destino.path],
+          environment: entornoSaneado(_repo._padre),
+          includeParentEnvironment: false,
+        );
         if (r.exitCode != 0) {
           throw PromesaIncumplida(
             'materializar $ruta con su bit ejecutable',
@@ -367,6 +383,81 @@ class _CandidatoGit implements PreparedCandidate {
     }
 
     return declaradas;
+  }
+
+  @override
+  Future<List<AlteracionDelCandidato>> alteraciones() async {
+    if (_dispuesto) {
+      throw StateError('El candidato ya se liberó: no hay árbol que comparar.');
+    }
+    // **No se compara byte a byte a mano: se le pide a `git`.** Con un índice
+    // propio, leído del árbol fijado, refrescado contra el disco y comparado.
+    // Los tres comandos están medidos, y cada bandera tiene su motivo:
+    //
+    //  - sin `--refresh`, el índice recién leído no tiene información de `stat`
+    //    y `diff-index` reporta el árbol entero como modificado: cien
+    //    diferencias falsas;
+    //  - **con `-q`**, porque `--refresh` sale con 1 cuando algún archivo
+    //    necesita actualización —es decir, exactamente cuando hay algo que
+    //    reportar—, y `_exigir` convertiría ese 1 en `GitFallo` antes de que el
+    //    `diff-index` alcance a describirlo;
+    //  - **`--raw` y no `--name-status`**, porque aquel pliega un cambio de
+    //    modo en una `M` indistinguible de un cambio de contenido.
+    //
+    // **El almacén temporal solo se nombra mientras existe.** `_promover` lo
+    // borra, y un `GIT_OBJECT_DIRECTORY` que apunta a un directorio que ya no
+    // está hace que `git` conteste «not a git repository» — acusando al
+    // repositorio, que está perfecto. Después de promover, el árbol resuelve
+    // desde el almacén real y no hace falta nombrar ninguno.
+    final entorno = {
+      if (!_promovido) ..._entorno,
+      'GIT_INDEX_FILE': _indiceDeIntegridad.path,
+      'GIT_WORK_TREE': root,
+    };
+    await _repo._exigir([
+      'read-tree',
+      identity.contentRevision,
+    ], entorno: entorno);
+    await _repo._exigir(['update-index', '-q', '--refresh'], entorno: entorno);
+    final crudo = await _repo._exigirBytes([
+      'diff-index',
+      '--raw',
+      '-z',
+      identity.contentRevision,
+    ], entorno: entorno);
+    final declaradas = {for (final n in noMaterializadas) n.ruta};
+    final alteraciones = leerDiffRaw(crudo, declaradas: declaradas);
+
+    // **Y las rutas NUEVAS, que `diff-index` no ve.** Solo informa entradas que
+    // el árbol conoce, así que un archivo sin seguimiento le es invisible: un
+    // archivo de fuente creado entre la derivación y este control dejaba la corrida
+    // concluyendo sobre bytes que el candidato nunca fijó. Reproducido.
+    //
+    // **Sin `--exclude-standard`, a propósito.** Esa bandera haría de las
+    // exclusiones del repositorio una SEGUNDA autoridad sobre qué es artefacto,
+    // callando rutas que la política sí considera fuente. Quién decide eso ya
+    // está decidido: es [ArtifactPolicy], y acá se le pregunta a ella.
+    //
+    // El candidato se materializa desde el árbol, así que al empezar no hay
+    // nada sin seguimiento: todo lo que aparezca acá apareció DESPUÉS, y la
+    // única pregunta es si la política lo declara artefacto.
+    final nuevas = _partirNul(
+      await _repo._exigirBytes([
+        'ls-files',
+        '--others',
+        '-z',
+      ], entorno: entorno),
+    ).map(_comoRuta);
+
+    for (final ruta in nuevas) {
+      if (declaradas.contains(ruta)) continue;
+      if (!_repo.politica.isEditable(ruta)) continue;
+      alteraciones.add(
+        AlteracionDelCandidato(ruta: ruta, tipo: TipoDeAlteracion.agregada),
+      );
+    }
+    alteraciones.sort((a, b) => a.ruta.compareTo(b.ruta));
+    return alteraciones;
   }
 
   @override
@@ -389,14 +480,22 @@ class _CandidatoGit implements PreparedCandidate {
     // condición: si el compare-and-swap se rechaza después, este objeto queda
     // inalcanzable y `git gc` lo recoge. No es daño, y a cambio la revisión ya
     // existe y se puede persistir antes de tocar ninguna referencia.
+    // **La identidad viaja capturada, y `useConfigOnly` la exige.** Sin la
+    // captura, el entorno saneado pierde una identidad que viva en XDG; sin
+    // `useConfigOnly`, `git` no falla al no encontrarla: inventa un autor con
+    // el usuario del sistema y el hostname, y el commit queda en el historial
+    // firmado por alguien que no es. Es la diferencia entre un fallo y un dato
+    // falso.
     return _revision = await _repo._exigir([
+      '-c',
+      'user.useConfigOnly=true',
       'commit-tree',
       identity.contentRevision,
       '-p',
       identity.baseRevision,
       '-m',
       _slice.intent,
-    ]);
+    ], entorno: await _repo._identidadComoEntorno());
   }
 
   @override

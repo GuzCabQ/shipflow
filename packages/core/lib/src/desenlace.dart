@@ -550,3 +550,262 @@ final class LocalInconsistent extends CommitOutcome {
     }
   }
 }
+
+/// Qué pasó al intentar dejar el candidato en condiciones de ser verificado.
+///
+/// **Tres desenlaces, y la línea que los separa.** [CandidatoRechazado] es un
+/// hecho sobre el candidato; [DerivacionAbortada] es un hecho sobre el
+/// instrumento, y no dice nada del candidato. La primera versión del diseño los
+/// mezclaba en un solo enum —«el lockfile no satisface» junto a «falta la
+/// toolchain»—, que es la misma confusión que ADR-019 cerró del lado de los
+/// pasos: un instrumento roto no es un veredicto.
+///
+/// Las dos variantes que no son [EntornoDerivado] hacen la corrida
+/// `noConcluyente`, **nunca roja**.
+sealed class ResultadoDeEntorno {
+  ResultadoDeEntorno();
+
+  /// Con qué se discrimina la variante al volver del JSON.
+  String get kind;
+
+  Map<String, Object?> toJson();
+
+  /// **Recibe el discriminador ya leído, no el mapa.** El verificador de
+  /// serialización deriva las claves de los índices que la propia `fromJson`
+  /// hace sobre su parámetro, y tiene razón en no seguir ayudantes: quien lee
+  /// el JSON tiene que nombrar la clave ahí donde la usa, o un campo puede
+  /// perderse a la vuelta sin que nada lo note.
+  static void _exigirKind(Object? kind, String propio) {
+    if (kind != propio) {
+      throw ArgumentError.value(
+        kind,
+        'kind',
+        'fromJson de «$propio» recibió un discriminador que no es el suyo',
+      );
+    }
+  }
+
+  /// Despacha por [kind]. **Estático y no una factory**, igual que
+  /// [StepOutcome.fromJson]: una factory sería un constructor, y un
+  /// constructor `fromJson` es lo que el verificador lee como «esta clase
+  /// serializa» — que contradiría su declaración de opacidad.
+  ///
+  /// **Un discriminador que no nombra ninguna variante lanza.** Caer en la
+  /// más mansa sería inventar un hecho que nadie afirmó.
+  static ResultadoDeEntorno fromJson(Map<String, Object?> json) =>
+      switch (json['kind']) {
+        'derivado' => EntornoDerivado.fromJson(json),
+        'rechazado' => CandidatoRechazado.fromJson(json),
+        'abortada' => DerivacionAbortada.fromJson(json),
+        final otro => throw FormatException(
+          'ResultadoDeEntorno con kind «$otro», que no es ninguna variante.',
+        ),
+      };
+}
+
+/// El entorno quedó derivado del candidato.
+///
+/// Lleva **hechos contables**, del mismo tipo que «cuántos archivos miró» que
+/// el testigo ya lleva: sin ellos, «derivado» sería una afirmación sin nada que
+/// la respalde.
+final class EntornoDerivado extends ResultadoDeEntorno {
+  @override
+  final String kind = 'derivado';
+
+  /// Entradas de los mapas de paquetes resultantes, sumadas.
+  final int paquetes;
+
+  /// Cuántas raíces de resolución se derivaron. **Cero es legítimo**: un
+  /// candidato cuyos archivos no cuelgan de ningún manifiesto no tiene nada
+  /// que derivar, y eso no lo vuelve defectuoso.
+  final int raices;
+
+  final IdentidadDeToolchain toolchain;
+
+  EntornoDerivado({
+    required this.paquetes,
+    required this.raices,
+    required this.toolchain,
+  }) {
+    if (paquetes < 0 || raices < 0) {
+      throw ArgumentError(
+        'Las cifras del entorno son cuentas: no pueden ser negativas.',
+      );
+    }
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': kind,
+    'paquetes': paquetes,
+    'raices': raices,
+    'toolchain': toolchain.toJson(),
+  };
+
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of EntornoDerivado» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'EntornoDerivado($paquetes paquetes en $raices raíz/raíces)';
+
+  factory EntornoDerivado.fromJson(Map<String, Object?> json) {
+    ResultadoDeEntorno._exigirKind(json['kind'], 'derivado');
+    return EntornoDerivado(
+      paquetes: json['paquetes']! as int,
+      raices: json['raices']! as int,
+      toolchain: IdentidadDeToolchain.fromJson(
+        json['toolchain']! as Map<String, Object?>,
+      ),
+    );
+  }
+}
+
+/// Por qué el candidato no se puede verificar **por lo que es**.
+enum CausaDeRechazo {
+  /// **El resolvedor dijo que no, y no inventamos por qué.** Puede ser el
+  /// lockfile ausente, una resolución inválida, un hash cambiado, un SDK
+  /// incompatible o un cache sin el paquete; no hay protocolo estructurado que
+  /// los distinga —está medido que un SDK desconocido y un cache frío salen con
+  /// el mismo código—, y deducirlo de frases de la salida de error sería
+  /// exactamente el parser frágil que este proyecto rechaza en todas partes. La
+  /// evidencia va citada, literal.
+  pubRechazoLaResolucion,
+
+  /// Una dependencia por ruta resuelve **fuera** del candidato. El lockfile
+  /// identifica la ruta, no lo que hay adentro: nada de eso quedó fijado.
+  dependenciaPathQueEscapa,
+
+  /// El árbol versiona lo que la derivación genera, así que derivar lo
+  /// destruiría. Se detecta **antes** de correr nada.
+  elArbolVersionaLoQueSeGenera,
+}
+
+/// No se puede verificar **por lo que el candidato es**. Es un hecho sobre él.
+final class CandidatoRechazado extends ResultadoDeEntorno {
+  @override
+  final String kind = 'rechazado';
+
+  final CausaDeRechazo causa;
+
+  /// Lo que la herramienta dijo, tal cual. Nunca en blanco: un rechazo sin
+  /// evidencia es una acusación sin prueba.
+  final QuotedText evidencia;
+
+  CandidatoRechazado({required this.causa, required this.evidencia}) {
+    if (evidencia.content.trim().isEmpty) {
+      throw ArgumentError.value(
+        evidencia,
+        'evidencia',
+        'Un rechazo sin evidencia es una acusación sin prueba.',
+      );
+    }
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': kind,
+    'causa': causa.name,
+    'evidencia': evidencia.toJson(),
+  };
+
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of CandidatoRechazado» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'CandidatoRechazado(${causa.name}): ${evidencia.content}';
+
+  factory CandidatoRechazado.fromJson(Map<String, Object?> json) {
+    ResultadoDeEntorno._exigirKind(json['kind'], 'rechazado');
+    return CandidatoRechazado(
+      causa: CausaDeRechazo.values.byName(json['causa']! as String),
+      evidencia: QuotedText.fromJson(
+        json['evidencia']! as Map<String, Object?>,
+      ),
+    );
+  }
+}
+
+/// Por qué el instrumento no llegó a medir.
+///
+/// **Son dos hechos distintos y se nombran distinto**, igual que
+/// [CausaDeNoAplicacion] separa dos motivos que antes viajaban en un campo que
+/// cambiaba de contenido según el caso.
+enum CausaDeAborto {
+  /// La herramienta no estaba, o no llegó a devolver un resultado.
+  laHerramientaNoRespondio,
+
+  /// **La herramienta corrió y no dijo con qué versión.** Salió con un código
+  /// distinto de cero, o no dijo nada en ninguna corriente. Un entorno derivado
+  /// lleva la identidad de la toolchain citada, y sin ella el testigo no puede
+  /// decir con qué se midió — que es lo único que esa identidad existe para
+  /// decir. Fabricar un texto para llenar el campo sería exactamente el dato
+  /// falso que el tipo existe para impedir.
+  laToolchainNoSeIdentifico,
+}
+
+/// No se pudo derivar **por lo que pasó al intentarlo**. No dice nada del
+/// candidato: dice que el instrumento no llegó a medir.
+final class DerivacionAbortada extends ResultadoDeEntorno {
+  @override
+  final String kind = 'abortada';
+
+  /// Cómo terminó la invocación. **[Termination.completa] solo acompaña a
+  /// [CausaDeAborto.laToolchainNoSeIdentifico]**: ahí la herramienta sí corrió
+  /// —terminó del todo— y lo que falló fue lo que dijo.
+  final Termination terminacion;
+
+  final CausaDeAborto causa;
+
+  final QuotedText evidencia;
+
+  DerivacionAbortada({
+    required this.terminacion,
+    required this.causa,
+    required this.evidencia,
+  }) {
+    if ((terminacion == Termination.completa) !=
+        (causa == CausaDeAborto.laToolchainNoSeIdentifico)) {
+      throw ArgumentError(
+        'Una terminación completa solo se aborta porque la toolchain no se '
+        'identificó: ahí la herramienta corrió y lo que falló fue lo que '
+        'dijo. Y si no llegó a responder, su terminación no es completa.',
+      );
+    }
+    if (evidencia.content.trim().isEmpty) {
+      throw ArgumentError.value(
+        evidencia,
+        'evidencia',
+        'Un aborto sin evidencia no dice qué falló.',
+      );
+    }
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': kind,
+    'terminacion': terminacion.name,
+    'causa': causa.name,
+    'evidencia': evidencia.toJson(),
+  };
+
+  /// Legible en un fallo de prueba y en un log. Sin esto, el desenlace de una
+  /// derivación se lee «Instance of DerivacionAbortada» y hay que instrumentar el
+  /// código para averiguar qué pasó.
+  @override
+  String toString() =>
+      'DerivacionAbortada(${causa.name} · ${terminacion.name}): '
+      '${evidencia.content}';
+
+  factory DerivacionAbortada.fromJson(Map<String, Object?> json) {
+    ResultadoDeEntorno._exigirKind(json['kind'], 'abortada');
+    return DerivacionAbortada(
+      terminacion: Termination.values.byName(json['terminacion']! as String),
+      causa: CausaDeAborto.values.byName(json['causa']! as String),
+      evidencia: QuotedText.fromJson(
+        json['evidencia']! as Map<String, Object?>,
+      ),
+    );
+  }
+}

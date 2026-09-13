@@ -339,7 +339,7 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado: hoy no hay etapa que lo consuma —no existe `ship`— asi que no hay nada que probar contra un fake, y una suite de contrato con una sola implementacion no contrasta nada: corre la misma logica dos veces. El fake llega con `ship`, que es la primera etapa que lo va a usar. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado: hoy no hay etapa que lo consuma —no existe `ship`— asi que no hay nada que probar contra un fake, y una suite de contrato con una sola implementacion no contrasta nada: corre la misma logica dos veces. El fake llega con `ship`, que es la primera etapa que lo va a usar. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta. VerificationEnvironment salio en la rebanada del entorno con UNA implementacion real en plugin_dart y NINGUNA falsa, y eso va escrito: no hay etapa que lo consuma —la composicion vive en una prueba de cli—, asi que una suite de contrato con una sola implementacion correria la misma logica dos veces. El fake llega con la etapa que lo use.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -440,6 +440,9 @@
         },
         "VerificationOutcome": {
           "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
+        },
+        "ResultadoDeEntorno": {
+          "por_que": "Misma situacion que StepOutcome y CommitOutcome: es la base de una jerarquia sellada cuyas variantes -EntornoDerivado, CandidatoRechazado, DerivacionAbortada- serializan cada una con su kind, y la base solo despacha fromJson. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear- y dejarlo sin declarar seria la tercera opcion silenciosa que esta regla prohibe."
         }
       },
       "violacion_canonica": {
@@ -641,9 +644,9 @@
       "violaciones_extra": [
         {
           "nombre": "una dependencia de desarrollo sin usar",
-          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note.",
+          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note. El canario era `vcs` y dejo de servir cuando la rebanada del entorno de verificacion le dio a `cli` una prueba que SI lo importa: el sabotaje dejo de sabotear y el arnes lo dijo en la primera corrida. Ahora usa `rules`, que ninguna linea de `cli` importa. Un canario que se vuelve legitimo es un sabotaje perdido, y esta es la clase de deriva que el arnes existe para encontrar.",
           "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  vcs:\n    path: ../vcs\n"
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  rules:\n    path: ../rules\n"
           },
           "debe_mencionar": "desarrollo",
           "requiere_pub_get": true
@@ -679,6 +682,142 @@
           "requiere_pub_get": true
         }
       ]
+    },
+    "subprocesos-con-entorno-saneado": {
+      "enunciado": "Todo subproceso que este repositorio lanza recibe `environment: entornoSaneado(...)` e `includeParentEnvironment: false`. El entorno del padre NO se hereda.",
+      "origen": "Propuesta del entorno de verificacion §8 y §9, aprobada el 12/09/2026. Medido: con el entorno heredado, el token de la forja llega a todo hijo y a todo lo que ese hijo lance; y un GIT_DIR en el shell del usuario corrompe las operaciones de vcs sin que nada lo note.",
+      "tipo": "entorno_saneado",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Pasale `environment: entornoSaneado(padre, propias: {...})` e `includeParentEnvironment: false`. Lo que esa invocacion necesite de mas va en `propias`, nunca heredado.",
+      "por_que": [
+        "Una lista negra promete solo sobre lo que alguien enumero: cualquier",
+        "variable secreta futura se filtra sola. La lista blanca promete lo",
+        "contrario, y esta regla exige que sea la UNICA forma de armar el entorno de",
+        "un proceso.",
+        "",
+        "COMPRUEBA SEMANTICA, NO FORMA. La primera version del diseño pedia que",
+        "existieran `environment:` e `includeParentEnvironment: false`. Esto los",
+        "cumple al pie y no sanea nada:",
+        "",
+        "    Process.run(exe, args,",
+        "        environment: Platform.environment,   // cumple la forma",
+        "        includeParentEnvironment: false);    // y filtra CERO",
+        "",
+        "Asi que lo que se exige es que la expresion de `environment:` SEA una",
+        "llamada a `entornoSaneado`, derivado del arbol sintactico, en los tres",
+        "lanzadores: run, runSync y start.",
+        "",
+        "Y compara IDENTIDAD, no nombre. La primera version miraba el nombre sobre un",
+        "arbol sin resolver, y un review lo reprodujo: una funcion local homonima que",
+        "devolvia el entorno del padre intacto pasaba en verde y el check anunciaba",
+        "siete lanzamientos saneados. Comparar nombres es comprobar sintaxis, que es",
+        "justo lo que este control existe para no hacer.",
+        "",
+        "Y se identifica por ELEMENTO, no por texto. Una segunda revision encontro dos",
+        "formas ordinarias que se escapaban de la version anterior, las dos con el",
+        "formateador conforme: un comentario entre la clase y el punto —que rompia el",
+        "prefiltro textual, asi que el archivo ni se resolvia— y una importacion con",
+        "prefijo, donde el destino escrito no es el nombre de la clase. Un prefiltro",
+        "que decide que mirar por coincidencia de texto decide mal."
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete. El lanzamiento se identifica por su ELEMENTO RESUELTO —de que clase y de que biblioteca es el metodo que se invoca—, no por como se escribe: la clase a secas, con un comentario en medio, o a traves del prefijo de una importacion son la misma llamada. Los test/ NO entran: las pruebas lanzan git y chmod a mano, y esa es su forma de medir que recibe un hijo.",
+        "residuo_declarado": "Lo que NO ve: un alias de la clase (`final p = Process; p.run(...)`) y una funcion que envuelva el lanzamiento recibiendo el entorno de afuera. Lo segundo es lo que hacen las costuras de vcs y de plugin_dart, y por eso la regla se aplica ADENTRO de ellas, donde esta el lanzamiento. PRECONDICION: la resolucion necesita las dependencias del workspace resueltas; si un archivo no resuelve, el check FALLA en vez de saltearlo, porque no poder resolver no es no tener lanzamientos. FALSO POSITIVO DELIBERADO: una clase propia que se llame como la que lanza se reporta igual, porque el control no puede decir que corre; el precio es renombrarla. COSTO DECLARADO: resolver cuesta ~1,5 s por corrida del verificador con el snapshot que usa el arnes de sabotajes, contra ~0,3 s parseando. Se paga: la alternativa es comparar texto, que es lo que dos reviews reprodujeron."
+      },
+      "excepciones": [
+        {
+          "archivo": "packages/vcs/lib/src/repositorio.dart",
+          "metodo": "_identidadComoEntorno",
+          "por_que": "La identidad de git se captura UNA vez con el entorno del padre, antes de sanear. `git config --get` tiene que ver XDG_CONFIG_HOME y GIT_CONFIG_GLOBAL, que la lista blanca no lleva a proposito, y enumerar por donde git puede leer su configuracion es la misma carrera que una lista negra. Medido: con PATH y HOME solos, una identidad que vive en XDG se pierde y git FABRICA el autor. Es un `git config --get` de solo lectura: no corre ganchos ni filtros y no escribe nada. El check admite EXACTAMENTE UN lanzamiento sin sanear en esta biblioteca, dentro de este metodo, y cuenta: un segundo es rojo."
+        }
+      ],
+      "violacion_canonica": {
+        "donde": "packages/vcs/lib/src/_canario_proceso.dart",
+        "contenido": "import 'dart:io';\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n",
+        "debe_mencionar": "entornoSaneado"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "sin environment, hereda todo",
+          "por_que": "El caso mas simple y el que estaba en el arbol antes de esta rebanada: no pasar nada. `environment` ausente significa heredar, y el mensaje tiene que decirlo.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nFuture<void> canario() async {\n  await Process.run('x', const []);\n}\n"
+          },
+          "debe_mencionar": "hereda todo"
+        },
+        {
+          "nombre": "entornoSaneado sin includeParentEnvironment false",
+          "por_que": "Sanear y ADEMAS heredar no sanea: el mapa se SUMA al del padre. Es la mitad del arreglo, que se lee como el arreglo entero.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nimport 'package:core/core.dart';\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(Platform.environment),\n  );\n}\n"
+          },
+          "debe_mencionar": "includeParentEnvironment"
+        },
+        {
+          "nombre": "start y runSync tambien cuentan",
+          "por_que": "Tres lanzadores, no uno. Una regla que mirara solo `run` dejaria abiertos los otros dos, y este repositorio usa los tres.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nvoid canario() {\n  Process.runSync(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n  Process.start(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "entornoSaneado"
+        },
+        {
+          "nombre": "un part suma un lanzamiento a la biblioteca exceptuada",
+          "por_que": "La excepcion admite UN sitio y se cuenta por BIBLIOTECA, no por archivo: un `part` puede agregarle otro sin tocar el archivo declarado, y entonces la declaracion lo taparia. Este canario es un part de repositorio.dart y tiene que salir rojo.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "part of 'repositorio.dart';\n\nFuture<void> canarioDeExcepcion(RepositorioGit r) async {\n  await Process.run(\n    'git',\n    const ['config', '--get', 'user.name'],\n    environment: r._padre,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "excepcion"
+        },
+        {
+          "nombre": "una funcion local llamada entornoSaneado",
+          "por_que": "El caso que reprodujo un review. El nombre coincide y la funcion no es: devuelve el entorno del padre intacto. Sin resolver el elemento, el check pasaba en verde.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nMap<String, String> entornoSaneado(Map<String, String> m) => m;\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(Platform.environment),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "NO es el de `core`"
+        },
+        {
+          "nombre": "un metodo llamado entornoSaneado",
+          "por_que": "Misma falsificacion por otra sintaxis: si el control mirara solo el nombre del metodo invocado, un objeto cualquiera con ese metodo alcanzaria.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nclass Falso {\n  Map<String, String> entornoSaneado(Map<String, String> m) => m;\n}\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: Falso().entornoSaneado(Platform.environment),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "NO es el de `core`"
+        },
+        {
+          "nombre": "una clase local llamada Process",
+          "por_que": "El mismo agujero por el otro lado: si `Process` no es el del SDK, el control cree estar mirando un lanzamiento y esta mirando otra cosa. Un control semantico tiene que saber QUE lanza, no solo como se llama.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'package:core/core.dart';\n\nclass Process {\n  static Future<void> run(\n    String ejecutable,\n    List<String> argumentos, {\n    Map<String, String>? environment,\n    bool? includeParentEnvironment,\n  }) async {}\n}\n\nFuture<void> canario() async {\n  await Process.run(\n    'x',\n    const [],\n    environment: entornoSaneado(const {}),\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "no es el de la biblioteca de entrada y salida"
+        },
+        {
+          "nombre": "un comentario entre la clase y el punto",
+          "por_que": "Sintaxis corriente que el formateador deja intacta, y que rompia el prefiltro textual: el archivo no llegaba ni a resolverse, asi que el lanzamiento no se contaba. Lo reprodujo un review.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io';\n\nFuture<void> canario() async {\n  await Process /* separacion valida */ .run(\n    'x',\n    const [],\n    environment: Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "entornoSaneado"
+        },
+        {
+          "nombre": "la clase que lanza, a traves del prefijo de una importacion",
+          "por_que": "Forma idiomatica. El archivo SI contenia la cadena que el prefiltro buscaba, pero el destino escrito no es el nombre de la clase, y el visitante salia antes de mirar el simbolo resuelto. Lo reprodujo el mismo review.",
+          "archivos": {
+            "packages/vcs/lib/src/_canario_proceso.dart": "import 'dart:io' as io;\n\nFuture<void> canario() async {\n  await io.Process.run(\n    'x',\n    const [],\n    environment: io.Platform.environment,\n    includeParentEnvironment: false,\n  );\n}\n"
+          },
+          "debe_mencionar": "entornoSaneado"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simetrico de la violacion canonica: aquella prueba que el check detecta un EXCESO; este, que detecta una OMISION.",
+        "que": "Un archivo de packages/ que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Los lanzamientos se buscan en el arbol sintactico. De un arbol parcial no sale ninguno, y un archivo que no se pudo leer no tiene subprocesos que revisar — que se lee exactamente igual que no tenerlos.",
+        "debe_mencionar": "no parsea"
+      }
     }
   }
 }
