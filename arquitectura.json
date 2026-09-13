@@ -644,9 +644,9 @@
       "violaciones_extra": [
         {
           "nombre": "una dependencia de desarrollo sin usar",
-          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note.",
+          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note. El canario era `vcs` y dejo de servir cuando la rebanada del entorno de verificacion le dio a `cli` una prueba que SI lo importa: el sabotaje dejo de sabotear y el arnes lo dijo en la primera corrida. Ahora usa `rules`, que ninguna linea de `cli` importa. Un canario que se vuelve legitimo es un sabotaje perdido, y esta es la clase de deriva que el arnes existe para encontrar.",
           "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  vcs:\n    path: ../vcs\n"
+            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  rules:\n    path: ../rules\n"
           },
           "debe_mencionar": "desarrollo",
           "requiere_pub_get": true

@@ -523,6 +523,7 @@ sola.
 | `DiagnosticNormalizer` | **dos** reales, una por herramienta | formato propio, trivial |
 | `Verifier` | **dos** reales: los dos primeros pasos | **no hay**, y está declarado |
 | `ChangeSink` | `git` de verdad, sin doble | **no hay**, y está declarado |
+| `VerificationEnvironment` | el resolvedor sobre el candidato, una raíz por vez | **no hay**, y está declarado |
 
 `DiagnosticNormalizer` tiene dos implementaciones reales y no una: el puerto es
 uno y los formatos que tiene que leer son varios. La suite corre contra las
@@ -535,6 +536,12 @@ contradijo— ya está cubierto: sus dos pasos difieren en lo que importa, y esa
 divergencia produjo la quinta cláusula del puerto. Falta un `Verifier` falso
 para que `orchestration` pueda probar la cascada sin toolchain; llega con la
 fase que lo necesite.
+
+`VerificationEnvironment` salió con **una real y ningún fake**, por el mismo
+motivo y escrito en el mismo registro: no hay etapa que lo consuma —la
+composición vive en una prueba de `cli`— así que una suite de contrato con una
+sola implementación no contrasta nada, corre la misma lógica dos veces. El fake
+llega con la etapa que lo use.
 
 `ChangeSink` salió igual, con **una real y ningún fake**, y un review lo
 cobró: no por faltarle el fake, sino porque **salió de la lista de puertos
@@ -1447,6 +1454,234 @@ pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
   mismo motivo que ya estaba declarado: no hay etapa que lo consuma.
 
 ---
+
+## El entorno de verificación se deriva del candidato
+
+El candidato ya fijaba **qué bytes** se verifican. Faltaba lo otro: **con qué se
+ejecutan**. Un árbol recién materializado no trae resolución de dependencias
+—está medido: lo que se genera al resolver no se versiona— así que la cascada no
+podía correr adentro, y correr afuera es medir el árbol de trabajo del usuario,
+que es el problema que el candidato existe para cerrar.
+
+Esta rebanada deriva el entorno **del propio candidato**, comprueba que derivar
+no lo alteró, y saca del camino un defecto latente que nadie había mirado: todo
+subproceso heredaba el entorno del padre.
+
+### Por qué derivar y no prestar
+
+Prestar el entorno del usuario haría que la cascada midiera sobre resoluciones
+que ningún commit contiene: un paquete agregado al árbol de trabajo y no
+commiteado resolvería igual, y el verde diría algo falso sobre lo que se va a
+commitear. Derivar es `pub get --offline --enforce-lockfile` dentro del
+candidato: `--offline` impide salir a buscar lo que el candidato no fijó, y
+`--enforce-lockfile` impide reescribir el lockfile. **El lockfile del candidato
+manda**; si no alcanza, el candidato se rechaza en vez de resolverse otra cosa.
+
+Sacar `--enforce-lockfile` pone rojas dos pruebas, y eso no es casualidad: es el
+sabotaje del estado intermedio, comprobado.
+
+### Resolver borra lo que el candidato versiona, y por eso la integridad se comprueba
+
+La primera versión del diseño afirmaba que bastaba con mirar si existía el
+directorio de lo generado. Es falso, y está reproducido: **pub borra el lockfile
+y el mapa de paquetes de un paquete miembro** cuando ese paquete pasa a
+resolverse desde la raíz del workspace. Si el candidato versiona esos archivos,
+derivar los borra y la cascada verifica un árbol al que le falta contenido que el
+commit sí tiene.
+
+Este repositorio no lo exhibe, y eso es parte del hallazgo: sus cuatro lockfiles
+versionados pertenecen a proyectos que no son miembros, así que sobreviven
+intactos. **Una prueba escrita sobre este árbol nunca lo habría encontrado.**
+
+Así que la integridad se comprueba, y no se le pregunta a nuestro código: se le
+pide a `git`, igual que el grafo de dependencias se le pide a pub. Con un índice
+propio —aparte del que fijó el contenido—, leído del árbol del candidato,
+refrescado contra el disco y comparado. Cada bandera tiene su medición detrás:
+
+| Bandera | Qué pasa sin ella |
+|---|---|
+| `update-index --refresh` | el índice recién leído no tiene información de `stat` y **el árbol entero sale modificado**: cien diferencias falsas |
+| `-q` en el refresco | sale con **1** justo cuando hay algo que reportar, y la costura que exige éxito lo convierte en fallo **antes** de que la comparación lo describa |
+| `--raw` en vez de `--name-status` | aquel **pliega un cambio de modo en una `M`** indistinguible de un cambio de contenido, y la fila «bit ejecutable» era inimplementable |
+
+Y una letra que no sea `M`, `D` ni `T` **falla cerrado**. Con un índice recién
+leído no puede aparecer una `A`, y una `R` solo con detección de renombres, que
+no se pide: si aparece, `git` vio algo que este control no previó, y descartarlo
+sería leer un hueco como un candidato intacto.
+
+### Lo que el candidato declaró no materializar no es una alteración
+
+El candidato no recrea enlaces absolutos, enlaces con `..`, enlaces cuyo destino
+no es UTF-8 ni submódulos, y los declara. Para la comparación esas rutas están en
+el árbol y no en el disco, así que **salen como borradas**: los cuatro casos,
+medidos. Sin restarlas, todo candidato con un enlace absoluto sería no
+concluyente para siempre.
+
+La resta es estrecha: una borradura sobre una ruta declarada no cuenta,
+**cualquier otra cosa sobre ella sí**. Si un verificador escribió un archivo
+regular donde el candidato dejó un hueco a sabiendas, eso es un cambio de tipo, y
+es una alteración.
+
+### Y un límite declarado, en vez de tapado
+
+El refresco del índice **corre el filtro `clean`** sobre cada archivo antes de
+comparar —la traza lo muestra— y la materialización escribe los bytes del objeto
+sin `smudge`. Con filtros idempotentes eso cierra en cero, incluido `eol=crlf`.
+Con un `clean` que no es idempotente, un candidato intacto sale **modificado**, y
+el control no puede distinguir intacto de alterado.
+
+No se compensa comparando bytes a mano: **el límite es de `git` antes que
+nuestro** —`gitattributes(5)` pide que `clean → clean` equivalga a `clean`, y un
+repositorio que lo viola ya ve sus archivos perpetuamente modificados en `git
+status`—. La prueba lo **fija**: si algún día da cero, lo que hay que revisar es
+la decisión, no el código.
+
+### Tres desenlaces, y la línea que los separa
+
+Que el candidato sea defectuoso y que nuestro instrumento no llegue a medir son
+dos hechos distintos, y la primera versión los mezclaba en un solo enum. Es la
+misma confusión que ADR-019 cerró del lado de los pasos: un instrumento roto no
+es un veredicto.
+
+| Desenlace | Qué afirma |
+|---|---|
+| `EntornoDerivado` | se derivó, y lleva cuántos paquetes, cuántas raíces y **la versión de la toolchain citada** |
+| `CandidatoRechazado` | no se puede verificar **por lo que el candidato es** |
+| `DerivacionAbortada` | no se pudo derivar **por lo que pasó al intentarlo**; no dice nada del candidato |
+
+**Todo «no» del resolvedor es un rechazo, no un aborto**, y eso salió de medir:
+el mismo código de salida cubre un cache frío y un SDK desconocido en el
+manifiesto. Distinguirlos exigiría leerle frases a la salida de error, que es el
+parser frágil que este proyecto rechaza en todas partes. La evidencia va citada
+literal, y quien lea la corrida ve lo que la herramienta dijo. Abortar queda para
+lo que el instrumento no llegó a decir: herramienta ausente y presupuesto
+agotado, que la costura de procesos ya distingue.
+
+La versión de la toolchain **no se parsea: se cita**. Un número extraído de una
+frase es un parser más, y lo que hace falta es que el testigo diga con qué se
+midió.
+
+### Una raíz por cada resolución que la rebanada toca
+
+La versión anterior del diseño exigía un único workspace con raíz en el
+candidato, y **eso excluía a este repositorio de verificarse a sí mismo**: tiene
+tres manifiestos fuera del workspace, a propósito. Lo encontró la aprobación del
+diseño, no una prueba, y es exactamente la clase de defecto que una prueba sobre
+este árbol habría encontrado en la primera corrida.
+
+La regla quedó así: se deriva **una vez por raíz de resolución que la rebanada
+toca, y ninguna más**. Un manifiesto que la rebanada no toca no existe para ella.
+
+| La rebanada toca | Raíces | Los demás manifiestos |
+|---|---|---|
+| solo un miembro del workspace | **una**: la raíz, con su lockfile | los otros no se derivan **ni se rechazan** |
+| un miembro **y** el paquete que no es miembro | **dos** | el del fixture sigue sin tocarse |
+| nada que cuelgue de un manifiesto | **cero**, y derivado igual | el testigo lleva la toolchain aunque no haya nada que medir |
+
+«Derivar todas las raíces» parecía la salida obvia y se midió: resolver el
+fixture de Flutter **funciona en esta máquina**, porque acá la herramienta vive
+dentro del SDK de Flutter. En el runner, con un SDK puro, fallaría. Derivar
+raíces que nadie necesita es pagar ese riesgo por nada.
+
+Las raíces se calculan **sin resolver nada**, como función pura sobre rutas y
+manifiestos, y su prueba usa un fixture con **la forma exacta de este
+repositorio**. Un fixture de un solo manifiesto no habría encontrado nada.
+
+### Derivar dos veces rechaza la segunda, y está declarado
+
+El rechazo por «el árbol versiona lo que la derivación genera» mira **el disco**,
+que es lo único que el plugin puede mirar: no conoce `git` y no debe conocerlo.
+Después de derivar, ese disco ya tiene lo generado, así que una segunda llamada
+sobre el mismo candidato lo rechaza — y tiene razón según lo que puede ver.
+
+Es una precondición del puerto, escrita ahí y con su prueba, en vez de algo que
+alguien descubra en producción. Quien recomponga una corrida prepara un candidato
+nuevo, que es lo que el candidato hace con su raíz temporal.
+
+### La lista blanca, y la identidad capturada
+
+Hasta acá, **todo subproceso heredaba el entorno del padre**. Con eso el token de
+la forja llegaba a toda herramienta que lanzáramos y a todo lo que esa
+herramienta lanzara, y un `GIT_DIR` en el shell del usuario podía corromper
+nuestras operaciones sin que nada lo notara. Los dos están medidos.
+
+Una lista negra promete solo sobre lo que alguien enumeró: la variable secreta que
+alguien agregue el mes que viene se filtra sola. Así que el entorno se arma con
+una **lista blanca** —`PATH`, `HOME`, `PUB_CACHE`— más lo que cada invocación
+declara necesitar.
+
+Y con eso se pierde algo que hace falta: **`HOME` no alcanza para la identidad
+del autor**. La primera versión del diseño decía que sí, y se había medido en una
+máquina donde la identidad vive en `~/.gitconfig`. Con la identidad configurada
+**solo** por XDG, `git` no falla: **fabrica** un autor con el usuario del sistema
+y el hostname. Agregar `XDG_CONFIG_HOME` a la lista tampoco cierra el caso,
+porque `git` admite además `GIT_CONFIG_GLOBAL`: enumerar por dónde `git` puede
+leer su configuración es la misma carrera que una lista negra.
+
+Entonces la identidad **se captura**, una vez, con el entorno del padre, y viaja
+como `GIT_AUTHOR_*`/`GIT_COMMITTER_*`. Esa captura es **la única excepción** a la
+regla, y está declarada con su motivo y **contada**: el check admite exactamente
+un lanzamiento sin sanear en esa biblioteca, y un `part` que le agregue otro es
+rojo.
+
+Además va `user.useConfigOnly=true` en **los dos** caminos que commitean, no solo
+en el del candidato: el otro usa `git commit` y tenía el mismo agujero. Sin esa
+opción, `git` no falla cuando no encuentra identidad — inventa una. Es la
+diferencia entre un fallo y un dato falso, y dos caminos que escriben en el
+historial no pueden tener garantías distintas según por dónde se entre.
+
+### La regla comprueba semántica, no forma
+
+La primera versión del diseño proponía exigir que existieran `environment:` e
+`includeParentEnvironment: false`. Eso lo cumple al pie esto, que filtra cero:
+
+```dart
+Process.run(exe, args,
+    environment: Platform.environment,   // ← cumple la regla
+    includeParentEnvironment: false);    // ← y no sanea nada
+```
+
+Así que lo que la regla exige es que la expresión de `environment:` **sea una
+llamada a la función de saneamiento**, derivado del árbol sintáctico, en los tres
+lanzadores. Y la excepción mira el **ámbito completo**, no el nivel más interno:
+el lanzamiento exceptuado vive en una función local del método declarado, y mirar
+solo lo de adentro leía el ayudante donde la declaración dice el método.
+
+El propio check encontró dos cosas al instalarse: que la declaración nombraba un
+método que yo había renombrado —y lo dijo en los dos sentidos, el lanzamiento
+fuera del ámbito **y** la declaración sin nada que exceptuar— y que este README
+afirmaba una cuenta de sabotajes que ya no era la del arnés.
+
+### La prueba decisiva
+
+Un error inyectado **solo en el candidato**: la cascada da rojo, los diagnósticos
+apuntan al candidato, el árbol del usuario queda byte a byte igual y sin nada
+generado, y el candidato sigue íntegro después. Y una alteración **después** de la
+cascada hace la corrida no concluyente aunque la cascada haya dado rojo: no se
+puede afirmar ni eso sobre un árbol que dejó de ser el que se fijó.
+
+Sobre este árbol, derivar tarda unos 200 ms y el control de integridad unas
+decenas. **El techo es la aserción; la cifra, el dato**: cuánto cuestan en un
+monorepo sigue siendo una pregunta abierta, y esto la acota en vez de contestarla.
+
+### Lo que esta rebanada NO hace
+
+- **No hay coordinador productivo.** La cascada deriva su estado del desenlace de
+  los pasos y no tiene dónde meter «el entorno no se pudo derivar». La
+  composición —preparar, derivar, comprobar, cascada, comprobar— vive en una
+  prueba de `cli`, que es el único paquete que ve `vcs` y el plugin a la vez. Va
+  declarado en `arquitectura.json` y en la tabla de puertos de más arriba.
+- **No hay implementación falsa del puerto**, y por el mismo motivo que
+  `ChangeSink` no la tiene: sin etapa que lo consuma, una suite de contrato con
+  una sola implementación corre la misma lógica dos veces.
+- **Windows queda rechazado, no pendiente.** Ahí `Process.start` no usa el `PATH`
+  del mapa de entorno para resolver el ejecutable, así que un entorno saneado no
+  gobierna qué binario corre; y el cache de paquetes no se deriva de `HOME`. No se
+  pudo ejecutar acá, así que la fuente es secundaria y va marcada — pero la
+  decisión sí se toma, en vez de dejarla como una pregunta que alguien lea como
+  «probablemente funcione».
+- Tampoco: el comando de envío, el artefacto de revisión, la superficie de
+  verificación, la forja, el presupuesto de corrida ni el corte temprano.
 
 ## El falso rojo simétrico
 
