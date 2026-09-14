@@ -70,12 +70,19 @@ class EjecutorDelSistema implements EjecutorDeProceso {
   /// El entorno del proceso padre. **Nulo significa el del proceso**; las
   /// pruebas le pasan el que quieren, que es la única forma de comprobar qué
   /// recibe el hijo sin depender del shell de quien corre la suite.
-  final Map<String, String>? _entornoDelPadre;
+  ///
+  /// **Es [EntornoDelProceso] y no un mapa, y el tipo es el control.** Con un
+  /// mapa crudo, un llamador distraído podía pasar el entorno del padre entero
+  /// —token incluido— y `entornoSaneado` de todos modos lo recortaría a la
+  /// lista blanca; pero el tipo cierra la puerta un paso antes, en la costura
+  /// misma, en vez de confiar en que nadie se salte el saneamiento más abajo.
+  final EntornoDelProceso? _entornoDelPadre;
 
-  const EjecutorDelSistema({Map<String, String>? entornoDelPadre})
+  const EjecutorDelSistema({EntornoDelProceso? entornoDelPadre})
     : _entornoDelPadre = entornoDelPadre;
 
-  Map<String, String> get _padre => _entornoDelPadre ?? Platform.environment;
+  Map<String, String> get _padre =>
+      (_entornoDelPadre ?? EntornoDelProceso(Platform.environment)).paraHijos;
 
   /// Cuánto se espera, como mucho, a que el proceso muera y sus corrientes
   /// cierren después del disparo. Limpiar no puede colgar la corrida.

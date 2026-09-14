@@ -45,13 +45,13 @@ void main() {
 
   test('el ejecutable recibe la lista blanca, y no el token', () async {
     final r = await correr(
-      const EjecutorDelSistema(
-        entornoDelPadre: {
+      EjecutorDelSistema(
+        entornoDelPadre: EntornoDelProceso(const {
           'PATH': '/usr/bin:/bin',
           'HOME': '/home/u',
           'PUB_CACHE': '/home/u/.cache-de-paquetes',
           'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
-        },
+        }),
       ),
     );
     expect(r.terminacion, Termination.completa);
@@ -69,7 +69,9 @@ void main() {
 
   test('sin PUB_CACHE en el padre, el hijo tampoco la tiene', () async {
     final r = await correr(
-      const EjecutorDelSistema(entornoDelPadre: {'PATH': '/usr/bin:/bin'}),
+      EjecutorDelSistema(
+        entornoDelPadre: EntornoDelProceso(const {'PATH': '/usr/bin:/bin'}),
+      ),
     );
     expect(visto(r).containsKey('PUB_CACHE'), isFalse);
     expect(visto(r)['PATH'], '/usr/bin:/bin');
@@ -87,7 +89,9 @@ void main() {
     // corrida y con el mismo intérprete hace la aserción exacta en cualquier
     // máquina, en vez de escribir una lista que envejece sola.
     final soloDelInterprete = visto(
-      await correr(const EjecutorDelSistema(entornoDelPadre: {})),
+      await correr(
+        EjecutorDelSistema(entornoDelPadre: EntornoDelProceso(const {})),
+      ),
     ).keys.toSet();
     expect(
       claves.difference(listaBlanca).difference(soloDelInterprete),

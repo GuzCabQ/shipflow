@@ -1270,4 +1270,48 @@ exec git "$@"
       );
     });
   });
+
+  group('el único lanzamiento sin sanear tampoco ve la credencial', () {
+    late Directory temporal;
+    late File espia;
+
+    setUp(() async {
+      temporal = await Directory.systemTemp.createTemp('vcs-entorno-');
+      espia = File('${temporal.path}/espia.sh');
+      await espia.writeAsString(
+        '#!/bin/sh\nenv > "${temporal.path}/entorno-visto.txt"\nexit 0\n',
+      );
+      await Process.run('chmod', ['+x', espia.path]);
+    });
+
+    tearDown(() async => temporal.delete(recursive: true));
+
+    test('el lanzamiento sin sanear tampoco ve la credencial', () async {
+      // `git config --get` es el único lanzamiento exceptuado de
+      // `entornoSaneado` y recibe el entorno del padre ENTERO. Esta prueba
+      // fija que ese «entero» ya no puede incluir un secreto: reusa la
+      // política declarada arriba —no hace falta una nueva, este caso no mira
+      // qué es fuente— y usa `espia`, no `git`, porque lo único que importa
+      // es qué entorno recibió el proceso, no qué dijo `git config`.
+      final r = RepositorioGit(
+        directorio: temporal.path,
+        politica: politica,
+        programa: espia.path,
+        entornoDelPadre: EntornoDelProceso({
+          // El PATH real, no uno inventado: `env` vive en `/usr/bin` en esta
+          // plataforma y un PATH corto lo dejaría sin encontrarse, que
+          // rompería la prueba por una razón ajena a lo que mide.
+          'PATH': Platform.environment['PATH']!,
+          'SHIPFLOW_GITHUB_TOKEN': 'ghp_no_debe_llegar',
+        }),
+      );
+      await r.identidadCapturadaParaLaPrueba();
+      final visto = await File(
+        '${temporal.path}/entorno-visto.txt',
+      ).readAsString();
+      expect(visto, contains('PATH='));
+      expect(visto, isNot(contains('ghp_no_debe_llegar')));
+      expect(visto, isNot(contains('SHIPFLOW_GITHUB_TOKEN')));
+    });
+  });
 }

@@ -114,7 +114,13 @@ class RepositorioGit implements ChangeSink {
   /// El entorno del proceso padre. **Nulo significa el del proceso**; las
   /// pruebas le pasan el que quieren, que es la única forma de comprobar qué
   /// llega a `git` y qué no sin depender del shell de quien corre la suite.
-  final Map<String, String>? _entornoDelPadre;
+  ///
+  /// **Es [EntornoDelProceso] y no un mapa, y el tipo es el control.** El
+  /// único lanzamiento exceptuado de `entornoSaneado` —`_identidadComoEntorno`,
+  /// más abajo— recibe este entorno ENTERO; con un mapa, «entero» podía traer
+  /// la credencial y nada lo impedía. Con este tipo, lo que sale de acá ya
+  /// pasó por `paraHijos`.
+  final EntornoDelProceso? _entornoDelPadre;
 
   const RepositorioGit({
     required this.directorio,
@@ -122,10 +128,11 @@ class RepositorioGit implements ChangeSink {
     this.programa = 'git',
     this.programaChmod = 'chmod',
     this.detector = const DetectorDeSecretos(),
-    Map<String, String>? entornoDelPadre,
+    EntornoDelProceso? entornoDelPadre,
   }) : _entornoDelPadre = entornoDelPadre;
 
-  Map<String, String> get _padre => _entornoDelPadre ?? Platform.environment;
+  Map<String, String> get _padre =>
+      (_entornoDelPadre ?? EntornoDelProceso(Platform.environment)).paraHijos;
 
   /// **Todo pasa por `--literal-pathspecs`.** Sin eso, `git` lee cada ruta
   /// como un patrón: `*.txt` commitea dos archivos y `:(glob)…` commitea lo
@@ -216,6 +223,17 @@ class RepositorioGit implements ChangeSink {
       'GIT_COMMITTER_EMAIL': correo,
     };
   }
+
+  /// Solo para la suite: la captura de identidad es privada y esta es la
+  /// única forma de comprobar QUÉ entorno recibe el único lanzamiento
+  /// exceptuado de `entornoSaneado`.
+  ///
+  /// **Sin `@visibleForTesting`.** `meta` no es una dependencia declarada de
+  /// `vcs` —solo llega transitiva por el lockfile del workspace— e importarla
+  /// igual deja el análisis marcando «no es una dependencia», que con
+  /// `--fatal-infos` es rojo. El nombre ya dice que es de prueba; eso alcanza.
+  Future<Map<String, String>> identidadCapturadaParaLaPrueba() =>
+      _identidadComoEntorno();
 
   /// Corre `git` y **exige que haya salido bien**. Un código distinto de cero
   /// que se ignora es un cambio que se cree hecho y no está.

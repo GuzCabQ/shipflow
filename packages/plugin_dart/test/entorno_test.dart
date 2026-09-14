@@ -76,7 +76,9 @@ void main() {
     String? cache,
     String programa = 'dart',
   }) => EntornoDart(
-    ejecutor: ejecutor ?? EjecutorDelSistema(entornoDelPadre: padreCon(cache)),
+    ejecutor:
+        ejecutor ??
+        EjecutorDelSistema(entornoDelPadre: EntornoDelProceso(padreCon(cache))),
     programa: programa,
   ).derivar(raiz.path, archivos: archivos, presupuesto: presupuesto);
 
