@@ -352,7 +352,7 @@
         "PullRequestSink": "fase 2, rebanada de la forja · el adapter del proveedor vive en su propio paquete, no en vcs",
         "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "CredentialStore": "fase de `init` · el puerto se partió en la rebanada de la forja: `CredentialSource`, que solo lee, salió de esta lista con UNA implementación real —`FuenteDeEntorno` en cli— y la falsa de plugin_fake. `CredentialStore` agrega escritura y borrado, y sigue sin implementación porque no hay almacenamiento real: una clase que leyera y lanzara en `write`/`delete` sería una capacidad declarada que no existe",
+        "CredentialStore": "fase de `init` · el puerto se partió en la rebanada de la forja: `CredentialSource`, que solo lee, salió de esta lista con UNA implementacion real —`FuenteDeEntorno` en cli— y todavia SIN falsa: la de plugin_fake llega con la suite de contrato de esta misma rebanada, y hasta entonces queda escrito y no disimulado. `CredentialStore` agrega escritura y borrado, y sigue sin implementacion porque no hay almacenamiento real: una clase que leyera y lanzara en `write`/`delete` seria una capacidad declarada que no existe",
         "ReviewSensor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceAuditor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "RuleContributor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
