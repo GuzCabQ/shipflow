@@ -515,10 +515,22 @@ abstract interface class TraceSink {
   Future<void> emit(Trace trace);
 }
 
-/// Guarda y entrega credenciales. **Devuelve [Credential], nunca cadenas**:
-/// el tipo es lo que impide que el secreto termine en una traza (INV-5).
-abstract interface class CredentialStore {
+/// **Entrega** credenciales. Devuelve [Credential], nunca cadenas: el tipo es
+/// lo que impide que el secreto termine en una traza (INV-5).
+///
+/// **Partido de [CredentialStore] a propósito.** Quien solo lee no puede ser
+/// sustituible por el puerto entero sin lanzar en `write` y `delete`, y un
+/// método cuya única implementación es lanzar es una capacidad declarada que no
+/// existe — el diagnóstico que este repositorio ya se hace con los puertos sin
+/// implementación. Partido, `ship` depende de lo que necesita y el
+/// almacenamiento sigue sin existir hasta que alguien lo escriba.
+abstract interface class CredentialSource {
   Future<Credential?> read(String key);
+}
+
+/// Guarda y entrega. **Sigue sin implementación**: llega con `init`, que es la
+/// primera etapa que necesita escribir una credencial.
+abstract interface class CredentialStore implements CredentialSource {
   Future<void> write(String key, Credential value);
   Future<void> delete(String key);
 }
