@@ -9,6 +9,14 @@ import 'package:core/core.dart';
 
 import 'cascada.dart';
 
+/// Cita un diagnóstico para el detalle de una entrada, sin reescribir su
+/// mensaje (INV-6): localización si la trae, regla, y el mensaje entre
+/// comillas tal cual lo dio la herramienta.
+String _citarDiagnostico(Diagnostic d) {
+  final ubicacion = d.line == null ? d.file : '${d.file}:${d.line}';
+  return '$ubicacion · ${d.ruleId} · "${d.message.content}"';
+}
+
 /// Las entradas que nombran cada alteración del candidato.
 ///
 /// **Vive aparte porque se emite en los dos caminos que las pueden ver**: con
@@ -254,31 +262,38 @@ SuperficieDeVerificacion derivarSuperficie({
       // originó. Dejar un sujeto cubierto Y en criterio sería contradictorio
       // para quien decide si saltear.
       //
-      // **Y el hallazgo se emite aunque el testigo no cubra ningún sujeto.**
-      // Los dos `for` recorren `witness.subjects`, así que con la cobertura
-      // vacía los dos no hacían nada y el hallazgo entero se perdía: es lo que
-      // pasa de verdad cuando el formateador corre sobre un archivo que no
-      // parsea —sale con diagnósticos y sin sujetos formateados—, y la
-      // superficie publicaba el residuo y la obligación sin saldar sin decir
-      // en ningún lado que el control había encontrado errores. Que la corrida
-      // quede no concluyente es correcto; perder los errores detectados, no.
-      // Por eso la entrada va **sin sujeto**: nombra el hecho y su control, y
-      // dice que no se pudo atribuir a ninguno. No concede cobertura.
+      // **Y el hallazgo se emite aunque el testigo no cubra ningún sujeto —
+      // y con el contenido de cada diagnóstico, no solo la cuenta.** Antes la
+      // entrada sin sujeto solo decía CUÁNTOS diagnósticos había, y la
+      // entrada por sujeto ni eso: ninguna de las dos nombraba un mensaje,
+      // una regla o una localización. Un revisor sabía que algo había
+      // pasado y no sabía QUÉ. Es lo que pasa de verdad cuando el
+      // formateador corre sobre un archivo que no parsea —sale con
+      // diagnósticos y sin sujetos formateados—, y la superficie publicaba
+      // el residuo y la obligación sin saldar sin decir en ningún lado qué
+      // había encontrado el control. Que la corrida quede no concluyente es
+      // correcto; perder el contenido de lo detectado, no.
+      //
+      // Por eso el hecho es uno solo y se nombra una sola vez, sin sujeto,
+      // **siempre** que haya diagnósticos —haya o no testigo con sujetos—:
+      // ese es el hecho del control, con la localización, la regla y el
+      // mensaje de cada uno. Las entradas por sujeto —que solo se agregan si
+      // el testigo cubre alguno— no lo repiten: repetir los diagnósticos en
+      // cada sujeto insinuaría una atribución que no existe, porque el
+      // veredicto es global al paso.
       case Executed(:final witness, :final diagnostics):
         if (diagnostics.isNotEmpty) {
-          if (witness.subjects.isEmpty) {
-            criterio.add(
-              EntradaDeCriterio(
-                controlId: registro.id,
-                motivo: MotivoDeCriterio.hallazgo,
-                detalle:
-                    'El control encontró ${diagnostics.length} '
-                    'diagnóstico(s) y su testigo no cubre ningún sujeto, así '
-                    'que no se pueden atribuir a ninguno. El hecho es del '
-                    'control, no de un sujeto.',
-              ),
-            );
-          }
+          criterio.add(
+            EntradaDeCriterio(
+              controlId: registro.id,
+              motivo: MotivoDeCriterio.hallazgo,
+              detalle:
+                  'El control encontró ${diagnostics.length} '
+                  'diagnóstico(s), sin atribución a ningún sujeto en '
+                  'particular —el veredicto es global al paso—: '
+                  '${diagnostics.map(_citarDiagnostico).join('; ')}.',
+            ),
+          );
           for (final sujeto in witness.subjects) {
             criterio.add(
               EntradaDeCriterio(

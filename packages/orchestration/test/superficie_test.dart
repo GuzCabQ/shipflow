@@ -561,13 +561,20 @@ void main() {
   });
 
   test(
-    'UN HALLAZGO SIN COBERTURA no desaparece: el control se nombra sin sujeto',
+    'UN HALLAZGO SIN COBERTURA no desaparece: el control se nombra sin sujeto '
+    'CON EL CONTENIDO de cada diagnóstico',
     () {
       // Reproduce el caso real del formateador sobre un archivo que no parsea:
       // sale con diagnósticos y sin ningún sujeto formateado. Las entradas de
       // `hallazgo` se emitían dentro del bucle sobre los sujetos del testigo,
       // así que con la cobertura vacía no se emitía NINGUNA: los motivos eran
       // {residuoGeneral, nadieDioCuenta} y los errores detectados se perdían.
+      //
+      // El arreglo anterior cerró la desaparición y no el vaciamiento: la
+      // entrada que quedó solo decía CUÁNTOS diagnósticos hubo
+      // (`contains('2 diagnóstico')`), y esa prueba pasaba igual si el
+      // mensaje, la regla y la localización de cada uno se perdían. Acá se
+      // comprueba que los tres SOBREVIVEN, de los dos diagnósticos.
       final s = derivarSuperficie(
         entorno: _entornoOk,
         alteraciones: const [],
@@ -579,14 +586,26 @@ void main() {
                 omite: [Omission(reason: 'no se pudo atribuir el faltante')],
               ),
               diagnostics: [
-                for (final l in [1, 2])
-                  Diagnostic(
-                    file: 'lib/roto.fuente',
-                    line: l,
-                    severity: Severity.bloquea,
-                    ruleId: 'no-parsea',
-                    message: QuotedText('no parsea ($l)', source: 'herram'),
+                Diagnostic(
+                  file: 'lib/roto.fuente',
+                  line: 1,
+                  severity: Severity.bloquea,
+                  ruleId: 'no-parsea',
+                  message: const QuotedText(
+                    'Unexpected token (1)',
+                    source: 'herram',
                   ),
+                ),
+                Diagnostic(
+                  file: 'lib/otro.fuente',
+                  line: 7,
+                  severity: Severity.bloquea,
+                  ruleId: 'otra-regla',
+                  message: const QuotedText(
+                    'Unexpected token (2)',
+                    source: 'herram',
+                  ),
+                ),
               ],
             ),
           },
@@ -606,12 +625,85 @@ void main() {
       );
       expect(
         hallazgo.detalle,
-        contains('2 diagnóstico'),
-        reason: 'cuántos hubo, y que no se pudieron atribuir',
+        allOf([
+          contains('lib/roto.fuente:1'),
+          contains('no-parsea'),
+          contains('Unexpected token (1)'),
+          contains('lib/otro.fuente:7'),
+          contains('otra-regla'),
+          contains('Unexpected token (2)'),
+        ]),
+        reason:
+            'la localización, la regla y el mensaje de CADA diagnóstico '
+            'tienen que sobrevivir, no solo la cuenta',
       );
       expect(s.estado, EstadoDeCorrida.noConcluyente);
     },
   );
+
+  test('UN HALLAZGO CON COBERTURA emite el contenido una sola vez, sin '
+      'repetirlo en cada sujeto', () {
+    // La otra rama del mismo defecto: con sujetos cubiertos por el
+    // testigo, la entrada por sujeto decía «El control encontró algo
+    // —bloqueante o no—» sin nombrar un solo diagnóstico. Ahora el hecho
+    // se nombra una vez —sin sujeto, con el contenido— y las entradas por
+    // sujeto solo dicen que no quedan cubiertas, sin repetir los
+    // diagnósticos: repetirlos insinuaría una atribución que no existe.
+    final s = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: const [],
+      cascada: _cascada(
+        {
+          'ctrl': Executed(
+            witness: _testigo(['lib', 'bin']),
+            diagnostics: [
+              Diagnostic(
+                file: 'lib/a.fuente',
+                line: 3,
+                severity: Severity.bloquea,
+                ruleId: 'r-1',
+                message: const QuotedText('mensaje único', source: 'herram'),
+              ),
+            ],
+          ),
+        },
+        ['lib', 'bin'],
+      ),
+      controles: {'ctrl': _Control('ctrl')},
+    );
+    expect(s.cubierto, isEmpty);
+
+    final hallazgos = s.requiereCriterio.where(
+      (e) => e.motivo == MotivoDeCriterio.hallazgo,
+    );
+    // Una sin sujeto, con el contenido, más una por cada sujeto del
+    // testigo: tres en total, no una por sujeto que repita el contenido.
+    expect(hallazgos, hasLength(3));
+
+    final sinSujeto = hallazgos.singleWhere((e) => e.sujeto == null);
+    expect(sinSujeto.controlId, 'ctrl');
+    expect(
+      sinSujeto.detalle,
+      allOf([
+        contains('lib/a.fuente:3'),
+        contains('r-1'),
+        contains('mensaje único'),
+      ]),
+    );
+
+    final porSujeto = hallazgos.where((e) => e.sujeto != null).toList();
+    expect(porSujeto.map((e) => e.sujeto), containsAll(['lib', 'bin']));
+    for (final e in porSujeto) {
+      expect(
+        e.detalle,
+        isNot(contains('mensaje único')),
+        reason:
+            'las entradas por sujeto no repiten los diagnósticos: el '
+            'veredicto es global al paso y no se atribuyen a un sujeto',
+      );
+    }
+    expect(s.estado, EstadoDeCorrida.rojo);
+  });
 
   test('UNA ALTERACIÓN no borra el fallo del instrumento, el ajeno ni el no '
       'observable', () {
