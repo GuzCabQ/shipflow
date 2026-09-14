@@ -39,12 +39,20 @@ List<EntradaDeCriterio> _entradasDeAlteracion(
 /// alteraciones del candidato son hechos que la cascada no conoce, y los dos
 /// vuelven la corrida no concluyente.
 ///
-/// **El orden importa.** Entorno, integridad, cascada: los dos primeros pueden
-/// vaciar `cubierto` entero, así que decidirlos después sería armar una lista
-/// para tirarla. Pero el orden decide **qué se vacía, no qué se nombra**: el
-/// camino del entorno no derivado devuelve temprano y aun así emite las
-/// entradas de alteración, porque un hecho que sale primero no borra al otro
-/// — ver [_entradasDeAlteracion].
+/// **El orden importa, y decide qué se VACÍA, no qué se NOMBRA.** Entorno,
+/// integridad, cascada: los dos primeros pueden vaciar `cubierto` entero, así
+/// que decidirlos después sería armar una lista para tirarla. Pero **invalidar
+/// la cobertura nunca justifica perder una señal**: vaciar `cubierto` y no
+/// nombrar el hecho son cosas distintas, y esta función no descarta ningún
+/// hecho que haya podido ver por el solo motivo de que otro salió primero.
+///
+/// Es una regla de la derivación entera y no de un camino. Nació en el del
+/// entorno no derivado —que devolvía temprano y perdía las alteraciones— y
+/// gobierna por igual al del candidato alterado, que ya no devuelve temprano:
+/// vacía la cobertura y sigue procesando los desenlaces y la partición del
+/// alcance, porque un fallo del instrumento, un sujeto ajeno o uno no
+/// observable son hechos independientes de la alteración. Un revisor que no
+/// los ve no sabe que están.
 ///
 /// [cascada] es nulo cuando **no llegó a correr**, que es lo que pasa cuando el
 /// entorno no se derivó. [controles] mapea id de paso al control, porque el
@@ -97,24 +105,28 @@ SuperficieDeVerificacion derivarSuperficie({
 
   // 2 · La integridad. Una alteración no dice cuál de los dos árboles vio cada
   //     control, así que ninguno se puede dar por cubierto.
-  if (alteraciones.isNotEmpty) {
-    criterio.addAll(_entradasDeAlteracion(alteraciones));
-    if (cascada != null) {
-      for (final registro in cascada.registrados) {
-        for (final sujeto in registro.expectedScope) {
-          criterio.add(
-            EntradaDeCriterio(
-              controlId: registro.id,
-              sujeto: sujeto,
-              motivo: MotivoDeCriterio.candidatoAlterado,
-              detalle:
-                  'No se sabe cuál árbol miró este control, así que lo que '
-                  'haya afirmado no se puede sostener.',
-            ),
-          );
-        }
-      }
-    }
+  //
+  // **Ya no devuelve temprano, y ese era el descarte.** Salir acá dejaba la
+  // superficie con un solo motivo —`candidatoAlterado`— para una corrida donde
+  // además se había roto el instrumento, había un sujeto ajeno al stack y otro
+  // que no se pudo mirar: tres hechos que la alteración no explica y que
+  // desaparecían por haber salido segundos. Lo que la alteración decide es que
+  // NADA queda cubierto y que el estado es no concluyente; el resto de la
+  // corrida se sigue leyendo igual.
+  final candidatoAlterado = alteraciones.isNotEmpty;
+  criterio.addAll(_entradasDeAlteracion(alteraciones));
+
+  // 3 · La cascada. Sin entorno no llega acá; con entorno y sin cascada, la
+  //     corrida no verificó nada y eso es un hecho, no un vacío.
+  if (cascada == null) {
+    criterio.add(
+      EntradaDeCriterio(
+        motivo: MotivoDeCriterio.nadieDioCuenta,
+        detalle:
+            'El entorno se derivó y ningún control corrió, así que nadie '
+            'dio cuenta de nada.',
+      ),
+    );
     return SuperficieDeVerificacion(
       cubierto: const [],
       requiereCriterio: criterio,
@@ -122,20 +134,29 @@ SuperficieDeVerificacion derivarSuperficie({
     );
   }
 
-  // 3 · La cascada. Sin entorno no llega acá; con entorno y sin cascada, la
-  //     corrida no verificó nada y eso es un hecho, no un vacío.
-  if (cascada == null) {
-    return SuperficieDeVerificacion(
-      cubierto: const [],
-      requiereCriterio: [
-        EntradaDeCriterio(
-          motivo: MotivoDeCriterio.nadieDioCuenta,
-          detalle:
-              'El entorno se derivó y ningún control corrió, así que nadie '
-              'dio cuenta de nada.',
-        ),
-      ],
-      estado: EstadoDeCorrida.noConcluyente,
+  // **Una cascada que existe con el registro vacío no es una cascada nula.**
+  // `Cascada([]).correr(...)` observa el alcance, no registra ningún paso y
+  // devuelve la causa `sinVerificadores` con estado no concluyente. La
+  // derivación contemplaba el nulo y no este caso: los dos `for` de abajo no
+  // tienen sobre qué iterar, el libro de obligaciones está vacío porque no hay
+  // paso que las contraiga, y la superficie salía con `requiereCriterio` vacío
+  // — el estado no concluyente sin su explicación, que es justo lo que esta
+  // mitad existe para dar.
+  //
+  // No devuelve temprano: las observaciones de ESE alcance —sujetos ajenos, no
+  // observables— son hechos de la corrida y se nombran más abajo aunque no
+  // haya ningún control que las haya producido.
+  if (cascada.registrados.isEmpty) {
+    final pedido = cascada.alcance.requested;
+    criterio.add(
+      EntradaDeCriterio(
+        motivo: MotivoDeCriterio.nadieDioCuenta,
+        detalle:
+            'La cascada corrió sin ningún control registrado: nadie verificó '
+            'el alcance de esta corrida (${pedido.join(", ")}). No hay '
+            'obligación que quedara sin saldar porque no hay control que la '
+            'contrajera, y eso no es lo mismo que no haber nada que mirar.',
+      ),
     );
   }
 
@@ -183,6 +204,24 @@ SuperficieDeVerificacion derivarSuperficie({
             'otro control.',
       );
     }
+    // Con el candidato alterado, lo que este control haya afirmado no se
+    // sostiene sobre ninguno de los sujetos que tenía a cargo, y eso se dice
+    // sujeto por sujeto. Convive con lo que el desenlace nombre más abajo: las
+    // dos cosas son ciertas a la vez y las dos piden que un humano mire.
+    if (candidatoAlterado) {
+      for (final sujeto in registro.expectedScope) {
+        criterio.add(
+          EntradaDeCriterio(
+            controlId: registro.id,
+            sujeto: sujeto,
+            motivo: MotivoDeCriterio.candidatoAlterado,
+            detalle:
+                'No se sabe cuál árbol miró este control, así que lo que '
+                'haya afirmado no se puede sostener.',
+          ),
+        );
+      }
+    }
     switch (desenlace) {
       // **La bifurcación es «con diagnósticos / sin diagnósticos», no
       // «rojo / verde».** `Executed.verdict` solo mira `Severity.bloquea`, así
@@ -200,12 +239,31 @@ SuperficieDeVerificacion derivarSuperficie({
       // originó. Dejar un sujeto cubierto Y en criterio sería contradictorio
       // para quien decide si saltear.
       //
-      // Los dos `for` son exhaustivos y excluyentes sobre `witness.subjects`,
-      // así que ya no hay un caso —el viejo `noConcluyente`— que no entre en
-      // ninguna rama: con `subjects` vacío los dos no hacen nada, que es lo
-      // mismo que hacían antes.
+      // **Y el hallazgo se emite aunque el testigo no cubra ningún sujeto.**
+      // Los dos `for` recorren `witness.subjects`, así que con la cobertura
+      // vacía los dos no hacían nada y el hallazgo entero se perdía: es lo que
+      // pasa de verdad cuando el formateador corre sobre un archivo que no
+      // parsea —sale con diagnósticos y sin sujetos formateados—, y la
+      // superficie publicaba el residuo y la obligación sin saldar sin decir
+      // en ningún lado que el control había encontrado errores. Que la corrida
+      // quede no concluyente es correcto; perder los errores detectados, no.
+      // Por eso la entrada va **sin sujeto**: nombra el hecho y su control, y
+      // dice que no se pudo atribuir a ninguno. No concede cobertura.
       case Executed(:final witness, :final diagnostics):
         if (diagnostics.isNotEmpty) {
+          if (witness.subjects.isEmpty) {
+            criterio.add(
+              EntradaDeCriterio(
+                controlId: registro.id,
+                motivo: MotivoDeCriterio.hallazgo,
+                detalle:
+                    'El control encontró ${diagnostics.length} '
+                    'diagnóstico(s) y su testigo no cubre ningún sujeto, así '
+                    'que no se pueden atribuir a ninguno. El hecho es del '
+                    'control, no de un sujeto.',
+              ),
+            );
+          }
           for (final sujeto in witness.subjects) {
             criterio.add(
               EntradaDeCriterio(
@@ -219,7 +277,9 @@ SuperficieDeVerificacion derivarSuperficie({
               ),
             );
           }
-        } else {
+        } else if (!candidatoAlterado) {
+          // Con el candidato alterado no se llama a la fábrica: no hay sujeto
+          // que pueda quedar cubierto, y ya se nombró por qué.
           for (final sujeto in witness.subjects) {
             final a = AfirmacionCubierta.desde(
               control: control,
@@ -337,9 +397,12 @@ SuperficieDeVerificacion derivarSuperficie({
     );
   }
 
+  // El estado no es un reenvío del de la cascada cuando el candidato se
+  // alteró: la cascada no sabe que el árbol cambió, así que su verde —o su
+  // rojo— es sobre otra cosa. `cubierto` ya quedó vacío por la misma razón.
   return SuperficieDeVerificacion(
     cubierto: cubierto,
     requiereCriterio: criterio,
-    estado: cascada.estado,
+    estado: candidatoAlterado ? EstadoDeCorrida.noConcluyente : cascada.estado,
   );
 }

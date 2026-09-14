@@ -10,6 +10,12 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:test/test.dart';
 
+// El doble de observador de la suite de la cascada. Se reusa en vez de
+// duplicarlo: el caso de «una cascada sin verificadores» tiene que correr la
+// cascada DE VERDAD —`cascada: null` es otro camino— y para eso hace falta un
+// `ScopeObserver`, que este paquete no puede tomar de ningún plugin.
+import 'cascada_test.dart' show ObservadorDeAlcanceFalso;
+
 final _afirmacion = Afirmacion(
   id: 'ctrl.limpio',
   demuestra: 'que la herramienta no encontró nada',
@@ -516,11 +522,197 @@ void main() {
   });
 
   test(
+    'UN HALLAZGO SIN COBERTURA no desaparece: el control se nombra sin sujeto',
+    () {
+      // Reproduce el caso real del formateador sobre un archivo que no parsea:
+      // sale con diagnósticos y sin ningún sujeto formateado. Las entradas de
+      // `hallazgo` se emitían dentro del bucle sobre los sujetos del testigo,
+      // así que con la cobertura vacía no se emitía NINGUNA: los motivos eran
+      // {residuoGeneral, nadieDioCuenta} y los errores detectados se perdían.
+      final s = derivarSuperficie(
+        entorno: _entornoOk,
+        alteraciones: const [],
+        cascada: _cascada(
+          {
+            'ctrl': Executed(
+              witness: _testigo(
+                const [],
+                omite: [Omission(reason: 'no se pudo atribuir el faltante')],
+              ),
+              diagnostics: [
+                for (final l in [1, 2])
+                  Diagnostic(
+                    file: 'lib/roto.fuente',
+                    line: l,
+                    severity: Severity.bloquea,
+                    ruleId: 'no-parsea',
+                    message: QuotedText('no parsea ($l)', source: 'herram'),
+                  ),
+              ],
+            ),
+          },
+          ['lib'],
+        ),
+        controles: {'ctrl': _Control('ctrl')},
+      );
+      expect(s.cubierto, isEmpty, reason: 'no se concede ninguna cobertura');
+      final hallazgo = s.requiereCriterio.singleWhere(
+        (e) => e.motivo == MotivoDeCriterio.hallazgo,
+      );
+      expect(hallazgo.controlId, 'ctrl');
+      expect(
+        hallazgo.sujeto,
+        isNull,
+        reason: 'el testigo no cubre ninguno: el hecho es del control',
+      );
+      expect(
+        hallazgo.detalle,
+        contains('2 diagnóstico'),
+        reason: 'cuántos hubo, y que no se pudieron atribuir',
+      );
+      expect(s.estado, EstadoDeCorrida.noConcluyente);
+    },
+  );
+
+  test('UNA ALTERACIÓN no borra el fallo del instrumento, el ajeno ni el no '
+      'observable', () {
+    // La rama de integridad devolvía temprano sin procesar los desenlaces ni
+    // la partición del alcance: con esta misma cascada y sin alteraciones
+    // los motivos son cuatro, y con una alteración quedaba solo
+    // {candidatoAlterado}. Tres hechos que la alteración no explica
+    // desaparecían por haber salido segundos.
+    final alcance = ScopeObservation(
+      requested: const ['lib', 'docs', 'bin'],
+      observed: [
+        ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+        ObservedSubject(
+          subject: 'docs',
+          ofStack: false,
+          files: 0,
+          reason: 'no es del stack',
+        ),
+      ],
+      unobserved: [UnobservedSubject(subject: 'bin', cause: 'no existe')],
+      observedAt: DateTime.utc(2026),
+    );
+    ResultadoDeCascada cascada() => _cascadaConAlcance({
+      'roto': Broken(component: 'ctrl', error: 'reventó', context: 'al correr'),
+    }, alcance);
+
+    final sinAlteracion = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: const [],
+      cascada: cascada(),
+      controles: {'roto': _Control('roto')},
+    );
+    final esperados = {
+      MotivoDeCriterio.instrumentoFallo,
+      MotivoDeCriterio.ajenoAlStack,
+      MotivoDeCriterio.noSePudoMirar,
+      MotivoDeCriterio.nadieDioCuenta,
+    };
+    expect(
+      sinAlteracion.requiereCriterio.map((e) => e.motivo).toSet(),
+      esperados,
+      reason: 'la premisa: sin alteración, los cuatro hechos están',
+    );
+
+    final conAlteracion = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: [
+        AlteracionDelCandidato(
+          ruta: 'lib/nuevo.fuente',
+          tipo: TipoDeAlteracion.agregada,
+        ),
+      ],
+      cascada: cascada(),
+      controles: {'roto': _Control('roto')},
+    );
+    expect(
+      conAlteracion.requiereCriterio.map((e) => e.motivo).toSet(),
+      {...esperados, MotivoDeCriterio.candidatoAlterado},
+      reason: 'la alteración AGREGA un hecho; no puede quitar los otros cuatro',
+    );
+    expect(conAlteracion.cubierto, isEmpty);
+    expect(conAlteracion.estado, EstadoDeCorrida.noConcluyente);
+  });
+
+  test('UNA CASCADA SIN VERIFICADORES, corrida de verdad, dice por qué no '
+      'concluyó', () async {
+    // **`Cascada.correr` de verdad, no un `cascada: null`**, que es el otro
+    // camino: acá la cascada SÍ existe, observó el alcance y no registró
+    // ningún paso. Su causa es `sinVerificadores` y su estado no
+    // concluyente; la derivación contemplaba el nulo y no esto, así que
+    // publicaba `requiereCriterio` vacío — el estado sin su explicación.
+    final resultado = await Cascada(
+      const [],
+      observador: ObservadorDeAlcanceFalso(
+        observados: {
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+        },
+      ),
+    ).correr(['lib']);
+    expect(resultado.causas, [CausaNoConcluyente.sinVerificadores]);
+    expect(resultado.estado, EstadoDeCorrida.noConcluyente);
+
+    final s = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: const [],
+      cascada: resultado,
+      controles: const {},
+    );
+    expect(s.cubierto, isEmpty);
+    final entrada = s.requiereCriterio.single;
+    expect(entrada.motivo, MotivoDeCriterio.nadieDioCuenta);
+    expect(entrada.controlId, isNull);
+    expect(
+      entrada.detalle,
+      contains('lib'),
+      reason: 'nombra el alcance que nadie verificó',
+    );
+    expect(s.estado, EstadoDeCorrida.noConcluyente);
+  });
+
+  test('una cascada sin verificadores tampoco descarta lo que se observó del '
+      'alcance', () async {
+    // La entrada que nombra «ningún control verificó» no reemplaza a las
+    // observaciones: un sujeto ajeno al stack en la misma corrida sigue
+    // nombrándose, porque es un hecho de la corrida y no de un control.
+    final resultado = await Cascada(
+      const [],
+      observador: ObservadorDeAlcanceFalso(
+        observados: {
+          'lib': ObservedSubject(subject: 'lib', ofStack: true, files: 1),
+          'docs': ObservedSubject(
+            subject: 'docs',
+            ofStack: false,
+            files: 0,
+            reason: 'no es del stack',
+          ),
+        },
+      ),
+    ).correr(['lib', 'docs']);
+    final s = derivarSuperficie(
+      entorno: _entornoOk,
+      alteraciones: const [],
+      cascada: resultado,
+      controles: const {},
+    );
+    expect(s.requiereCriterio.map((e) => e.motivo).toSet(), {
+      MotivoDeCriterio.nadieDioCuenta,
+      MotivoDeCriterio.ajenoAlStack,
+    });
+  });
+
+  test(
     'sin cascada y sin alteraciones: nadie dio cuenta de la corrida entera',
     () {
-      // La rama de integridad (alteraciones no vacías) sale ANTES de llegar
-      // acá, así que esta era la única forma de ejercitar el camino
-      // `cascada == null` con alteraciones vacías.
+      // El comentario anterior decía que la rama de integridad salía ANTES de
+      // llegar acá y que por eso esta era la única forma de ejercitar el
+      // camino. Ya no sale antes: con alteraciones, este mismo camino agrega
+      // sus entradas Y sigue diciendo que nadie dio cuenta, porque son hechos
+      // distintos. Lo que esta prueba fija es el caso solo, que es donde la
+      // entrada tiene que quedar única.
       final s = derivarSuperficie(
         entorno: _entornoOk,
         alteraciones: const [],
