@@ -183,6 +183,36 @@ void main() {
       );
     });
 
+    test('la reconstrucción RECHAZA un sujeto que su testigo no cubre', () {
+      // El agujero que encontró una revisión: se partía de un documento
+      // válido, se cambiaba solo el sujeto por uno que nadie miró, y
+      // `fromJson` lo aceptaba con un testigo que certifica otra cosa. El
+      // argumento del doc —«no se revalida porque haría falta el control»— es
+      // cierto para la afirmación y el id, y falso para esto: los dos datos
+      // están en el documento.
+      final valido = AfirmacionCubierta.desde(
+        control: _ControlDeclarado('ctrl', _afirmacion),
+        desenlace: _limpio(['lib']),
+        sujeto: 'lib',
+      )!.toJson();
+      expect(
+        () =>
+            AfirmacionCubierta.fromJson({...valido, 'sujeto': 'nunca-mirado'}),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message.toString(),
+            'message',
+            contains('no cubre al sujeto'),
+          ),
+        ),
+      );
+      expect(
+        AfirmacionCubierta.fromJson(valido).sujeto,
+        'lib',
+        reason: 'el documento íntegro sigue reconstruyéndose',
+      );
+    });
+
     test('un desenlace que no es Executed no produce ninguna', () {
       expect(
         AfirmacionCubierta.desde(

@@ -193,9 +193,14 @@ void main() {
     detalle: 'la herramienta no informó este archivo',
   );
 
+  // **El sujeto es uno que el testigo CUBRE.** Decía `'lib'` mientras el
+  // testigo certifica `lib/algo.fuente`: el caso canónico de la ida y vuelta
+  // era exactamente la contradicción que `fromJson` ahora rechaza, y una
+  // revisión lo encontró. Sigue sin ser un valor por defecto, que es lo que
+  // este archivo exige de cada campo.
   final afirmacionCubierta = AfirmacionCubierta.fromJson({
     'controlId': 'FormatCheck',
-    'sujeto': 'lib',
+    'sujeto': 'lib/algo.fuente',
     'afirmacion': afirmacion.toJson(),
     'testigo': testigo.toJson(),
   });

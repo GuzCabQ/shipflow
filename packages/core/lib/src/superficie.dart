@@ -28,18 +28,26 @@ enum MotivoDeCriterio {
   /// Se emite sobre **todos los sujetos del paso**, no solo el del
   /// diagnóstico: el veredicto es global al paso, y está medido que los
   /// diagnósticos no tienen relación validada con los sujetos del testigo.
+  ///
+  /// **Y sobre ninguno cuando el testigo no cubre ninguno**, con la entrada
+  /// sin sujeto: un control puede encontrar algo y no certificar nada —el
+  /// formateador sobre un archivo que no parsea sale con diagnósticos y sin
+  /// sujetos formateados—, y ahí el hallazgo es del control. Recorrer solo los
+  /// sujetos del testigo lo perdía entero.
   hallazgo,
 
   /// El control declaró que no miró ese sujeto.
   declaradoNoMirado,
 
-  /// Nadie dio cuenta. **Dos hechos bajo un motivo**, y va escrito: el libro
+  /// Nadie dio cuenta. **Tres hechos bajo un motivo**, y va escrito: el libro
   /// de obligaciones dejó el sujeto abierto —un control lo tenía en su alcance
-  /// esperado y su testigo no lo cubrió ni lo nombró como omisión—, o el
+  /// esperado y su testigo no lo cubrió ni lo nombró como omisión—; o el
   /// entorno se derivó y **ningún control corrió**, donde no hay libro ni
-  /// sujeto y la entrada va sin los dos. Lo que comparten es lo que el motivo
-  /// nombra: nadie dio cuenta. El detalle de la entrada dice cuál de los dos
-  /// es.
+  /// sujeto y la entrada va sin los dos; o la cascada corrió **sin ningún
+  /// control registrado**, donde sí hay alcance observado y el libro está
+  /// vacío porque no hay paso que contraiga una obligación. Lo que comparten
+  /// es lo que el motivo nombra: nadie dio cuenta. El detalle de la entrada
+  /// dice cuál de los tres es.
   nadieDioCuenta,
 
   /// El sujeto no es de este stack.
@@ -75,7 +83,10 @@ class EntradaDeCriterio {
   /// de ningún control —el entorno, una alteración, un sujeto que nadie tomó—.
   final String? controlId;
 
-  /// Sobre qué sujeto. Nulo cuando el hecho no es de ningún sujeto.
+  /// Sobre qué sujeto. Nulo cuando el hecho no es de ningún sujeto **o no se
+  /// le puede atribuir a ninguno** —un control que encontró algo y no
+  /// certificó nada—. Nulo no significa que no haya nada que mirar: significa
+  /// que lo que hay que mirar no se reduce a un sujeto.
   final String? sujeto;
 
   final MotivoDeCriterio motivo;
@@ -123,12 +134,27 @@ class EntradaDeCriterio {
 /// afirmación cubierta con cualquier afirmación y cualquier testigo; la única
 /// entrada es [desde], que niega la afirmación con **tres** condiciones —tres
 /// `if`, tres ramas de código—: el desenlace no ejecutó, trae algún
-/// diagnóstico, o su testigo no incluye al sujeto pedido. Hay una cuarta cosa
-/// que la vuelve cierta y **no es una rama**: que el control, la afirmación y
-/// el testigo salgan del mismo desenlace que recibe la llamada. Eso lo
-/// sostiene la firma —no hay forma de construir el caso que lo rompería—, no
-/// una condición en tiempo de ejecución. Quien lea el código buscando cuatro
-/// `if` va a encontrar tres.
+/// diagnóstico, o su testigo no incluye al sujeto pedido.
+///
+/// **Qué ata la firma, y qué no.** Lo que [desde] garantiza es que la
+/// afirmación y el testigo salen **del objeto que se le pasa**: la afirmación
+/// es `control.afirmacion` y el testigo es `desenlace.witness`, así que quien
+/// llama no puede sustituir ninguno de los dos por el de otro. Lo que **no**
+/// garantiza es que ese control y ese desenlace vayan juntos: son dos
+/// parámetros independientes, y pasarle el control de un paso con el desenlace
+/// de otro construye una afirmación de un control respaldada por la invocación
+/// de otro. Una versión anterior de este párrafo lo presentaba como una
+/// imposibilidad estructural —«no hay forma de construir el caso que lo
+/// rompería»— y una revisión lo rompió en tres líneas.
+///
+/// **No se cierra en la firma a propósito.** Atarlos de verdad pediría que el
+/// desenlace supiera qué control lo produjo, y ADR-019 decidió lo contrario:
+/// el desenlace no lleva el id del paso. Quien empareja control con desenlace
+/// es la derivación de la superficie, y ahí sí se comprueba: lee el desenlace
+/// del registro por id, exige que el mapa de controles tenga ese id y que el
+/// control declare ese mismo id, y lanza si alguna de las dos no se cumple.
+/// La procedencia depende de que el llamador sea correcto, y eso queda
+/// **declarado** acá en vez de prometido como si lo sostuviera el tipo.
 ///
 /// **Residuo declarado, y sin control que lo sostenga.** Que la única entrada
 /// sea [desde] **no lo verifica nada**: lo sostiene el código fuente, y punto.
@@ -150,12 +176,34 @@ class AfirmacionCubierta {
   final Afirmacion afirmacion;
   final Witness testigo;
 
+  /// **El invariante del tipo: el testigo tiene que cubrir al sujeto.** Va en
+  /// el cuerpo del constructor y no en una sola de las entradas porque es una
+  /// propiedad del objeto, no de un camino: una afirmación cubierta cuyo
+  /// testigo no nombra al sujeto le dice al revisor que puede saltear algo que
+  /// nadie certificó, y eso vale igual venga de la fábrica o de un documento.
+  ///
+  /// Desde [desde] no puede dispararse —ahí la misma condición devuelve nulo
+  /// antes de llegar acá, que es lo que la derivación necesita—; desde
+  /// [AfirmacionCubierta.fromJson] sí, y ahí estaba el agujero: un documento
+  /// con el sujeto cambiado por uno que el testigo no cubre se deserializaba
+  /// sin chistar.
   AfirmacionCubierta._({
     required this.controlId,
     required this.sujeto,
     required this.afirmacion,
     required this.testigo,
-  });
+  }) {
+    if (!testigo.subjects.contains(sujeto)) {
+      throw ArgumentError.value(
+        sujeto,
+        'sujeto',
+        'El testigo de esta afirmación no cubre al sujeto: certifica '
+            '${testigo.subjects.isEmpty ? '(ninguno)' : testigo.subjects.join(", ")}. '
+            'Una afirmación cubierta autoriza a no mirar, y acá el testigo '
+            'que tendría que sostenerla dice otra cosa.',
+      );
+    }
+  }
 
   /// La única entrada. Devuelve nulo cuando **no** se puede afirmar, que es lo
   /// más frecuente:
@@ -166,8 +214,11 @@ class AfirmacionCubierta {
   ///   validada con los sujetos, así que no se sabe cuál lo originó;
   /// - el testigo **no cubre** ese sujeto.
   ///
-  /// La afirmación y el id salen del control, no de quien llama: así no hay
-  /// forma de atribuirle a un control algo que no declara.
+  /// La afirmación y el id salen **del control que se le pasa**, y el testigo
+  /// **del desenlace que se le pasa**: quien llama no puede sustituir ninguno
+  /// de los dos por el de otro objeto. Que ese control y ese desenlace sean
+  /// los de un mismo paso no lo puede comprobar esta fábrica —ver el doc de la
+  /// clase— y lo comprueba la derivación contra el registro de la corrida.
   static AfirmacionCubierta? desde({
     required Verifier control,
     required StepOutcome desenlace,
@@ -204,9 +255,16 @@ class AfirmacionCubierta {
     'testigo': testigo.toJson(),
   };
 
-  /// **Reconstruye lo que ya fue validado**, y por eso no vuelve a validar: el
-  /// documento viene de una corrida donde la fábrica sí corrió. Volver a
-  /// comprobar acá exigiría el control, que un documento no lleva.
+  /// **Revalida lo que el documento alcanza a decidir, y declara el resto.**
+  ///
+  /// - **Sí:** que el testigo cubra al sujeto. Los dos datos están en el
+  ///   documento, así que la contradicción es visible acá y se rechaza — la
+  ///   comprueba el invariante del constructor. Decía «no se revalida nada»
+  ///   y por eso aceptaba un sujeto cambiado por otro que el testigo no
+  ///   nombra: una afirmación que autoriza a saltear algo que nadie certificó.
+  /// - **No:** que la afirmación y el id sean los que ese control declara. Eso
+  ///   sí exigiría el control, que un documento no lleva, y por eso se
+  ///   reconstruye tal cual vino de la corrida donde la fábrica sí corrió.
   factory AfirmacionCubierta.fromJson(Map<String, Object?> json) =>
       AfirmacionCubierta._(
         controlId: json['controlId']! as String,
