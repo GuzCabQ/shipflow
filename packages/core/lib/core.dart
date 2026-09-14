@@ -8,7 +8,8 @@
 ///
 /// - **valores** — enums y objetos de valor, incluidos [QuotedText] y [Witness].
 /// - **entidades** — el dato del dominio.
-/// - **regla** — [Rule] y sus requisitos de instalación.
+/// - **regla** — [Rule] y sus requisitos de instalación, y [Afirmacion]: qué
+///   demuestra un control cuando ejecuta limpio, y qué NO.
 /// - **observación** — trazas y hallazgos inferenciales.
 /// - **desenlace** — el desenlace de un paso: [StepOutcome] sellado, y el
 ///   subconjunto propio [VerificationOutcome] que un verificador devuelve.
@@ -18,6 +19,11 @@
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
+/// - **superficie** — qué quedó cubierto y qué requiere criterio humano:
+///   [AfirmacionCubierta], que solo se construye por su fábrica,
+///   [EntradaDeCriterio] con su [MotivoDeCriterio] cerrado, la
+///   [SuperficieDeVerificacion] que las junta con el estado de la corrida, y
+///   el [ArtefactoDeRevision] que le pone identidad y alcance para publicarla.
 library;
 
 export 'src/alcance.dart';
@@ -28,4 +34,5 @@ export 'src/entorno.dart';
 export 'src/observacion.dart';
 export 'src/puertos.dart';
 export 'src/regla.dart';
+export 'src/superficie.dart';
 export 'src/valores.dart';

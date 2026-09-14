@@ -166,6 +166,14 @@ abstract interface class ScopeObserver {
 ///    mira lo que falta, lo daba por bueno. Lo encontró un review.
 abstract interface class Verifier {
   String get id;
+
+  /// Qué demuestra este control cuando ejecuta limpio, y **qué no**.
+  ///
+  /// Va acá y no en un registro aparte porque el límite lo sostiene quien
+  /// ejecuta. Lo consume la fábrica de `AfirmacionCubierta`, que **no acepta
+  /// una afirmación que no sea la de este control**.
+  Afirmacion get afirmacion;
+
   Future<VerificationOutcome> run(VerificationScope alcance);
 }
 

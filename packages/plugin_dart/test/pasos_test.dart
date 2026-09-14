@@ -608,6 +608,13 @@ final class _ProgramaInestable extends PasoDeCascada {
   String get id => 'ProgramaInestable';
 
   @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'doble.corrio',
+    demuestra: 'que este doble ejecutó',
+    noDemuestra: 'absolutamente nada más: es un doble',
+  );
+
+  @override
   String get programa => 'herramienta-${_lecturas++}';
 
   @override

@@ -41,6 +41,13 @@ const excluidos = [
   // El fixture es el SUJETO sobre el que corre el arnés, no parte del arnés:
   // se verifica solo, con su propia toolchain, en su propio paso de CI.
   'fixtures/',
+  // Andamiaje de quien ejecuta un plan con las skills de `superpowers`
+  // —briefs, informes, diffs de revisión—: `.superpowers/sdd/.gitignore`
+  // ignora todo el árbol, así que nada de ahí llega nunca a un commit. Sin
+  // esta exclusión, Q5 reporta huérfano un archivo que ningún checkout
+  // fresco tiene, y `grafo-huerfanos.txt` tendría que declarar rutas que van
+  // y vienen con cada tarea en vez de con el repositorio.
+  '.superpowers/',
   '.g.dart',
   '.freezed.dart',
   '.mocks.dart',

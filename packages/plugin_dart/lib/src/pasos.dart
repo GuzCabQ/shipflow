@@ -228,6 +228,29 @@ final class PasoDeFormato extends PasoDeCascada {
   String get id => 'FormatCheck';
 
   @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'formato.conforme',
+    // **«Los archivos de fuente que el arnés contó», no «el directorio
+    // entero».** Lo que se le pasa puede ser un directorio, y decir «entero»
+    // prometía más de lo que se mira: el observador de alcance de este stack
+    // NO cuenta lo que cuelga de un componente oculto —una carpeta que empieza
+    // con punto— y eso está medido y documentado en `ObservadorDeAlcanceDart`.
+    // Un archivo mal formateado ahí abajo dejaba el directorio cubierto y sin
+    // criterio, y pidiéndolo explícito aparecían sus diagnósticos. La
+    // afirmación se acota a lo que de verdad se consideró, en vez de ampliar
+    // el escaneo para cumplir una promesa textual que nadie pidió.
+    demuestra:
+        'que los archivos de fuente de este stack que el arnés contó bajo el '
+        'sujeto coinciden con la salida del formateador',
+    noDemuestra:
+        'comportamiento, lógica ni criterios de aceptación; ni nada que '
+        'cuelgue de un componente oculto cuando el sujeto es un directorio: '
+        'el recorrido del alcance salta lo que está debajo de una carpeta que '
+        'empieza con punto, así que un archivo ahí adentro no se contó ni se '
+        'le pasó a la herramienta',
+  );
+
+  @override
   String get programa => 'dart';
 
   @override
@@ -343,6 +366,27 @@ final class PasoDeAnalisis extends PasoDeCascada {
 
   @override
   String get id => 'StaticAnalysis';
+
+  @override
+  Afirmacion get afirmacion => Afirmacion(
+    id: 'analisis.sinBloqueantes',
+    demuestra: 'que el analizador no reportó diagnósticos bloqueantes',
+    // **Lo segundo está medido, no supuesto.** La salida del analizador trae
+    // solo diagnósticos y versión: no lista los archivos que leyó, así que un
+    // sujeto limpio es indistinguible de uno que no se analizó.
+    //
+    // **Y lo tercero es el límite que encontró la revisión final de la
+    // rebanada**: esa misma salida tampoco ata un diagnóstico a un sujeto del
+    // alcance, y un informativo no bloquea — así que «sin bloqueantes» no es
+    // «sin hallazgos», y de un paso que reportó cualquier cosa no se sabe
+    // sobre cuál de sus sujetos la reportó. La superficie de verificación no
+    // le da cobertura a ninguno.
+    noDemuestra:
+        'que haya leído todos los archivos del alcance, ni comportamiento, ni '
+        'a cuál sujeto corresponde un diagnóstico: un informativo no bloquea '
+        'y tampoco se puede atribuir, así que un paso que reportó algo no '
+        'afirma nada sobre ninguno de sus sujetos',
+  );
 
   @override
   String get programa => 'dart';

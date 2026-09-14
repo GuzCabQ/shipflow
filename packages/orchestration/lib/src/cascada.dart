@@ -14,6 +14,14 @@ library;
 
 import 'package:core/core.dart';
 
+/// **`EstadoDeCorrida` se mudó a `core`** y se reexporta desde acá.
+///
+/// Cruzó un puerto: el artefacto de revisión lo lleva, y un puerto de `core`
+/// no puede nombrar un tipo de este paquete —`deps-hacia-core` lo caza—. Se
+/// reexporta para que ningún consumidor cambie sus imports: se midieron 49
+/// referencias en 8 archivos, y ninguna tuvo que tocarse.
+export 'package:core/core.dart' show EstadoDeCorrida;
+
 /// Se lanza cuando un registro de pasos no se puede usar como registro.
 class CascadaNoRegistrable implements Exception {
   final String reason;
@@ -21,26 +29,6 @@ class CascadaNoRegistrable implements Exception {
 
   @override
   String toString() => 'CascadaNoRegistrable: $reason';
-}
-
-/// Cómo terminó una corrida entera. **No es [Verdict]**, y la diferencia es
-/// el punto: un veredicto es de un paso, y una corrida puede terminar por
-/// cosas que no son veredictos de nadie.
-///
-/// Faltan estados que el producto va a necesitar —una detención por
-/// presupuesto agotado (ADR-014)— y **no se declaran todavía**: no hay
-/// presupuestos, y un estado que nada produce es una promesa, no un dato.
-enum EstadoDeCorrida {
-  verde,
-  rojo,
-
-  /// Algo no se pudo observar, o algo quedó sin explicar. Se trata como rojo
-  /// (ADR-011).
-  noConcluyente,
-
-  /// El arnés se rompió. **Distinto de «el cambio no verificó»**: acá no se
-  /// puede afirmar nada sobre el cambio.
-  errorInterno,
 }
 
 /// Un paso tal como quedó registrado **para una corrida dada**: su id y el

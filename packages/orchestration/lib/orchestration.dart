@@ -4,8 +4,10 @@
 /// sistema de tickets, y una regla de arquitectura lo hace cumplir. Por eso la
 /// cascada sabe que sus pasos son `Verifier` y nada más.
 ///
-/// Hoy contiene la cascada. Faltan la política de autonomía, los presupuestos
-/// y el corte temprano, y su ausencia está declarada donde corresponde.
+/// Hoy contiene la cascada y la derivación de la superficie de verificación.
+/// Faltan la política de autonomía, los presupuestos y el corte temprano, y su
+/// ausencia está declarada donde corresponde.
 library;
 
 export 'src/cascada.dart';
+export 'src/superficie.dart';

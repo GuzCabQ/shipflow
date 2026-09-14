@@ -809,3 +809,23 @@ final class DerivacionAbortada extends ResultadoDeEntorno {
     );
   }
 }
+
+/// Cómo terminó una corrida entera. **No es [Verdict]**, y la diferencia es
+/// el punto: un veredicto es de un paso, y una corrida puede terminar por
+/// cosas que no son veredictos de nadie.
+///
+/// Faltan estados que el producto va a necesitar —una detención por
+/// presupuesto agotado (ADR-014)— y **no se declaran todavía**: no hay
+/// presupuestos, y un estado que nada produce es una promesa, no un dato.
+enum EstadoDeCorrida {
+  verde,
+  rojo,
+
+  /// Algo no se pudo observar, o algo quedó sin explicar. Se trata como rojo
+  /// (ADR-011).
+  noConcluyente,
+
+  /// El arnés se rompió. **Distinto de «el cambio no verificó»**: acá no se
+  /// puede afirmar nada sobre el cambio.
+  errorInterno,
+}
