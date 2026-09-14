@@ -154,6 +154,38 @@ void main() {
   );
 
   test(
+    'UN ÚNICO archivo que no parsea: diagnósticos SIN ningún sujeto cubierto',
+    () async {
+      // **La premisa del arreglo de la superficie, medida contra la
+      // herramienta real.** Un desenlace con diagnósticos y con el testigo
+      // vacío no era una hipótesis: es lo que produce el formateador cuando lo
+      // único que se le pide no parsea —informa que no miró NINGÚN archivo, y
+      // el arnés no certifica lo que la herramienta dice no haber mirado—.
+      // Aguas arriba, la derivación emitía sus entradas de hallazgo
+      // recorriendo los sujetos del testigo, así que con esta forma exacta de
+      // desenlace perdía los errores detectados enteros.
+      fuente('roto.dart', 'void main( {\n');
+      final o =
+          await formato().run(await _alcance(raiz.path, ['lib/roto.dart']))
+              as Executed;
+      expect(
+        o.diagnostics,
+        isNotEmpty,
+        reason: 'el control SÍ encontró algo: eso es lo que no se puede perder',
+      );
+      expect(
+        o.witness.subjects,
+        isEmpty,
+        reason:
+            'y no certificó nada: la herramienta informó que no miró ningún '
+            'archivo',
+      );
+      expect(o.verdict, isNot(Verdict.verde));
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  test(
     'el analizador real encuentra un error de tipos y lo pone en rojo',
     () async {
       fuente('malo.dart', 'void main() {\n  String x = 3;\n  print(x);\n}\n');
@@ -225,6 +257,18 @@ void main() {
               as Executed;
       expect(o.verdict, Verdict.verde);
       expect(o.witness.subjects, ['lib/', 'otro']);
+      // **Y el archivo oculto SÍ está mal formateado.** La corrida sale verde
+      // con `otro` certificado, así que la afirmación del paso tiene que decir
+      // que lo oculto queda afuera: decir «el directorio entero» prometía algo
+      // que este mismo fixture falsifica. La exclusión es la esperada —está
+      // medida y documentada en el observador—; lo que se corrigió es lo que
+      // el paso declara demostrar.
+      expect(
+        formato().afirmacion.demuestra,
+        isNot(contains('entero')),
+        reason: 'no se promete el directorio entero, sino lo que se contó',
+      );
+      expect(formato().afirmacion.noDemuestra, contains('oculto'));
     },
     timeout: const Timeout(Duration(minutes: 3)),
   );

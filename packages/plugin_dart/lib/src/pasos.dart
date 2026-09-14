@@ -230,12 +230,24 @@ final class PasoDeFormato extends PasoDeCascada {
   @override
   Afirmacion get afirmacion => Afirmacion(
     id: 'formato.conforme',
-    // «El sujeto», no «el archivo»: lo que se le pasa puede ser un directorio
-    // entero, y ahí la afirmación es sobre todo lo que contiene.
+    // **«Los archivos de fuente que el arnés contó», no «el directorio
+    // entero».** Lo que se le pasa puede ser un directorio, y decir «entero»
+    // prometía más de lo que se mira: el observador de alcance de este stack
+    // NO cuenta lo que cuelga de un componente oculto —una carpeta que empieza
+    // con punto— y eso está medido y documentado en `ObservadorDeAlcanceDart`.
+    // Un archivo mal formateado ahí abajo dejaba el directorio cubierto y sin
+    // criterio, y pidiéndolo explícito aparecían sus diagnósticos. La
+    // afirmación se acota a lo que de verdad se consideró, en vez de ampliar
+    // el escaneo para cumplir una promesa textual que nadie pidió.
     demuestra:
-        'que el sujeto —un archivo o un directorio entero— coincide con la '
-        'salida del formateador',
-    noDemuestra: 'comportamiento, lógica ni criterios de aceptación',
+        'que los archivos de fuente de este stack que el arnés contó bajo el '
+        'sujeto coinciden con la salida del formateador',
+    noDemuestra:
+        'comportamiento, lógica ni criterios de aceptación; ni nada que '
+        'cuelgue de un componente oculto cuando el sujeto es un directorio: '
+        'el recorrido del alcance salta lo que está debajo de una carpeta que '
+        'empieza con punto, así que un archivo ahí adentro no se contó ni se '
+        'le pasó a la herramienta',
   );
 
   @override
