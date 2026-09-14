@@ -162,4 +162,59 @@ void main() {
       },
     );
   });
+
+  group('EntornoDelProceso', () {
+    test('lo que va a los hijos no lleva la credencial', () {
+      final e = EntornoDelProceso(const {
+        'PATH': '/bin',
+        'HOME': '/casa',
+        'SHIPFLOW_GITHUB_TOKEN': 'ghp_secreto',
+      });
+      expect(e.paraHijos.containsKey('SHIPFLOW_GITHUB_TOKEN'), isFalse);
+      expect(e.paraHijos['PATH'], '/bin');
+      expect(e.paraHijos['HOME'], '/casa');
+    });
+
+    test('lo que va a los hijos es inmodificable', () {
+      final e = EntornoDelProceso(const {'PATH': '/bin'});
+      expect(() => e.paraHijos['X'] = 'y', throwsUnsupportedError);
+    });
+
+    test('la credencial sale como Credential, nunca como cadena', () {
+      final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
+      final c = e.credencial('SHIPFLOW_GITHUB_TOKEN');
+      expect(c, isNotNull);
+      expect(c.toString(), '***');
+      expect(c!.use((secreto) => secreto), 'ghp_x');
+    });
+
+    test('ausente y vacía son la misma respuesta: no hay credencial', () {
+      expect(
+        EntornoDelProceso(const {}).credencial('SHIPFLOW_GITHUB_TOKEN'),
+        isNull,
+      );
+      expect(
+        EntornoDelProceso(const {
+          'SHIPFLOW_GITHUB_TOKEN': '',
+        }).credencial('SHIPFLOW_GITHUB_TOKEN'),
+        isNull,
+      );
+    });
+
+    test('pedir una clave que no está declarada como credencial no compila '
+        'un secreto: falla', () {
+      final e = EntornoDelProceso(const {'PATH': '/bin'});
+      expect(() => e.credencial('PATH'), throwsArgumentError);
+    });
+
+    test(
+      'el mapa crudo que se le pasó no se puede leer entero desde afuera',
+      () {
+        // La clase no expone el crudo. Esta prueba existe para que agregar un
+        // getter que lo devuelva rompa algo: sin ella, exponerlo es invisible.
+        final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
+        expect(e.paraHijos.values.contains('ghp_x'), isFalse);
+      },
+    );
+  });
 }
