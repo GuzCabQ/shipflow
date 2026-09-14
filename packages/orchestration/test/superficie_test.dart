@@ -218,6 +218,45 @@ void main() {
     expect(s.estado, EstadoDeCorrida.noConcluyente);
   });
 
+  test(
+    'UN ENTORNO NO DERIVADO CON CASCADA NO NULA hace fallar la derivación',
+    () {
+      // Sin entorno derivado la cascada no pudo correr: una `cascada` no nula
+      // en este camino es una composición contradictoria, del mismo tipo que
+      // un paso registrado sin control en el mapa. Antes se descartaba en
+      // silencio -el `return` temprano ni siquiera la miraba-.
+      expect(
+        () => derivarSuperficie(
+          entorno: CandidatoRechazado(
+            causa: CausaDeRechazo.pubRechazoLaResolucion,
+            evidencia: const QuotedText(
+              'sin archivo de bloqueo',
+              source: 'resolver',
+            ),
+          ),
+          alteraciones: const [],
+          cascada: _cascada(
+            {
+              'ctrl': Executed(
+                witness: _testigo(['lib']),
+                diagnostics: const [],
+              ),
+            },
+            ['lib'],
+          ),
+          controles: {'ctrl': _Control('ctrl')},
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message.toString(),
+            'message',
+            contains('no se derivó'),
+          ),
+        ),
+      );
+    },
+  );
+
   test('UN CANDIDATO ALTERADO vacía «cubierto», aunque la cascada dé verde', () {
     // El falso verde que la enmienda cierra: la cascada no se entera de que el
     // árbol cambió, y publicar «cubierto» le diría al revisor que se saltee lo

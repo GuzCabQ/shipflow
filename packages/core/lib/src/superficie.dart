@@ -131,10 +131,15 @@ class EntradaDeCriterio {
 /// Un sujeto que un control demostró, con el testigo que lo sostiene.
 ///
 /// **No se ensambla a mano.** Un constructor público dejaría armar una
-/// afirmación cubierta con cualquier afirmación y cualquier testigo; la única
-/// entrada es [desde], que niega la afirmación con **tres** condiciones —tres
-/// `if`, tres ramas de código—: el desenlace no ejecutó, trae algún
-/// diagnóstico, o su testigo no incluye al sujeto pedido.
+/// afirmación cubierta con cualquier afirmación y cualquier testigo; hay
+/// **dos** entradas públicas de construcción, y ninguna es ese constructor:
+/// [desde], para construir desde una corrida, que niega la afirmación con
+/// **tres** condiciones —tres `if`, tres ramas de código—: el desenlace no
+/// ejecutó, trae algún diagnóstico, o su testigo no incluye al sujeto pedido;
+/// y [AfirmacionCubierta.fromJson], para reconstruir desde un documento, que
+/// no puede repetir esas tres —un documento no trae el desenlace ni el
+/// control con los que evaluarlas— y en su lugar revalida lo que sí puede
+/// comprobar con los datos a mano: ver el doc de [fromJson].
 ///
 /// **Qué ata la firma, y qué no.** Lo que [desde] garantiza es que la
 /// afirmación y el testigo salen **del objeto que se le pasa**: la afirmación
@@ -156,14 +161,15 @@ class EntradaDeCriterio {
 /// La procedencia depende de que el llamador sea correcto, y eso queda
 /// **declarado** acá en vez de prometido como si lo sostuviera el tipo.
 ///
-/// **Residuo declarado, y sin control que lo sostenga.** Que la única entrada
-/// sea [desde] **no lo verifica nada**: lo sostiene el código fuente, y punto.
-/// Desde afuera del paquete no hay manera de comprobar que no exista otro
-/// constructor público —solo de comprobar que el que se usó funciona— porque
-/// eso pediría reflexión, y este paquete no puede importar la biblioteca que la
-/// trae. Una prueba que dijera vigilarlo no podría fallar por lo que dice
-/// mirar, así que no se escribe ninguna: se prefiere el residuo escrito a un
-/// guardia que no puede ponerse rojo.
+/// **Residuo declarado, y sin control que lo sostenga.** Que las únicas
+/// entradas sean [desde] y [AfirmacionCubierta.fromJson] **no lo verifica
+/// nada**: lo sostiene el código fuente, y punto. Desde afuera del paquete no
+/// hay manera de comprobar que no exista un tercer constructor público —solo
+/// de comprobar que los dos que se usan funcionan— porque eso pediría
+/// reflexión, y este paquete no puede importar la biblioteca que la trae. Una
+/// prueba que dijera vigilarlo no podría fallar por lo que dice mirar, así
+/// que no se escribe ninguna: se prefiere el residuo escrito a un guardia que
+/// no puede ponerse rojo.
 ///
 /// Una versión anterior de este párrafo decía que lo sostenía una regla de
 /// arquitectura. **Era falso** —esa regla se decidió no instalar, justamente
@@ -295,6 +301,17 @@ class SuperficieDeVerificacion {
   /// para cerrar—. Cuando la cascada es la única fuente que queda —entorno
   /// derivado, candidato intacto— sí **coincide** con `cascada.estado`, y ahí
   /// es correcto que coincida: ningún otro hecho de la corrida lo contradice.
+  ///
+  /// **Y con una alteración, este campo pierde información: no distingue por
+  /// qué la cascada no cuenta.** Con el candidato alterado, `noConcluyente` se
+  /// publica igual si la cascada dio verde, dio rojo o **se rompió el
+  /// instrumento** —`EstadoDeCorrida.errorInterno`—: los tres colapsan al
+  /// mismo valor acá. El hecho de que el arnés se haya roto no desaparece de
+  /// la superficie entera —sigue nombrado en `requiereCriterio` con el motivo
+  /// `instrumentoFallo`, que es lo que ADR-016 exige—, pero este campo por sí
+  /// solo no lo dice: un código de salida que se gobernara solo por `estado`
+  /// no podría distinguir «no concluyó porque el árbol cambió» de «no
+  /// concluyó porque el arnés reventó».
   final EstadoDeCorrida estado;
 
   SuperficieDeVerificacion({

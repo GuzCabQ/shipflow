@@ -77,6 +77,21 @@ SuperficieDeVerificacion derivarSuperficie({
   // 1 · El entorno. Si no se derivó, no hay nada más que mirar: la cascada no
   //     corrió, y lo que haya en disco no se verificó contra nada.
   if (entorno is! EntornoDerivado) {
+    // **Sin entorno derivado, la cascada no pudo haber corrido.** Que
+    // [cascada] venga no nulo en este camino es una composición
+    // contradictoria de quien arma la corrida —igual que un id registrado sin
+    // control en `controles`, más abajo—, no un hecho de la corrida: se lanza
+    // en vez de descartarse en silencio.
+    if (cascada != null) {
+      throw ArgumentError.value(
+        cascada,
+        'cascada',
+        'El entorno no se derivó, así que ningún control llegó a correr: no '
+            'puede haber un `ResultadoDeCascada` que mostrar. Quien compone '
+            'la corrida pasó una `cascada` no nula junto con un entorno no '
+            'derivado, y esa combinación es contradictoria.',
+      );
+    }
     final evidencia = switch (entorno) {
       CandidatoRechazado(:final causa, :final evidencia) =>
         '${causa.name}: ${evidencia.content}',

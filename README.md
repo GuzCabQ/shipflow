@@ -1806,6 +1806,27 @@ sujeto al testigo está entera en el documento, y la correspondencia entre la
 afirmación, el id y el control que los declara no, porque un documento no
 lleva el control.
 
+**La segunda condición decía «el veredicto es rojo», y así se escapaba un
+hallazgo entero de la superficie.** `Executed.verdict` solo mira los
+diagnósticos que bloquean, así que un paso que reportó un informativo salía
+**verde** y sus sujetos quedaban cubiertos: `estado: verde · cubierto: 1 ·
+criterio: 0` para una corrida donde el arnés sí había encontrado algo. Es
+alcanzable desde una corrida real —un informativo del analizador se normaliza
+a la severidad que solo reporta—, y la superficie le decía al revisor que podía
+saltear ese sujeto. Lo cerró la revisión final de la rama, extendiendo la regla
+que ya estaba en vez de agregar una tercera rama: **cualquier** diagnóstico,
+bloqueante o no, deja el paso sin cobertura y manda todos sus sujetos a
+criterio con el motivo `hallazgo`. El argumento es el mismo que ya sostenía el
+rechazo del rojo y no depende de la severidad: con un informativo tampoco se
+sabe cuál sujeto lo originó, y dejar un sujeto cubierto **y** en criterio sería
+contradictorio para quien está decidiendo si mirarlo.
+
+El chequeo del veredicto **desapareció en vez de acumularse**, porque el nuevo
+lo subsume: `rojo` exige un diagnóstico que bloquea —y eso es un diagnóstico—,
+y `noConcluyente` exige un testigo sin sujetos, que la tercera condición ya
+rechaza. Dejarlo habría sido una condición incapaz de decidir nada: otro
+guardia que no se puede poner rojo.
+
 ### Qué ata la firma de `desde`, y qué no
 
 Este documento decía que `desde` hacía imposible combinar un control con el
@@ -1827,27 +1848,6 @@ dos falla —las dos comprobaciones tienen su prueba—. La procedencia depende 
 que el llamador sea correcto, y eso queda **declarado** en vez de prometido
 como si lo sostuviera el tipo: es el mismo criterio con el que esta rebanada ya
 declara el residuo de `desde` como única entrada.
-
-**La segunda condición decía «el veredicto es rojo», y así se escapaba un
-hallazgo entero de la superficie.** `Executed.verdict` solo mira los
-diagnósticos que bloquean, así que un paso que reportó un informativo salía
-**verde** y sus sujetos quedaban cubiertos: `estado: verde · cubierto: 1 ·
-criterio: 0` para una corrida donde el arnés sí había encontrado algo. Es
-alcanzable desde una corrida real —un informativo del analizador se normaliza
-a la severidad que solo reporta—, y la superficie le decía al revisor que podía
-saltear ese sujeto. Lo cerró la revisión final de la rama, extendiendo la regla
-que ya estaba en vez de agregar una tercera rama: **cualquier** diagnóstico,
-bloqueante o no, deja el paso sin cobertura y manda todos sus sujetos a
-criterio con el motivo `hallazgo`. El argumento es el mismo que ya sostenía el
-rechazo del rojo y no depende de la severidad: con un informativo tampoco se
-sabe cuál sujeto lo originó, y dejar un sujeto cubierto **y** en criterio sería
-contradictorio para quien está decidiendo si mirarlo.
-
-El chequeo del veredicto **desapareció en vez de acumularse**, porque el nuevo
-lo subsume: `rojo` exige un diagnóstico que bloquea —y eso es un diagnóstico—,
-y `noConcluyente` exige un testigo sin sujetos, que la tercera condición ya
-rechaza. Dejarlo habría sido una condición incapaz de decidir nada: otro
-guardia que no se puede poner rojo.
 
 ### Y un candidato alterado tampoco
 
