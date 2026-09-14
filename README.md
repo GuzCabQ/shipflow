@@ -1789,17 +1789,44 @@ declararlo a fingir un control que no puede mirar.
 
 `AfirmacionCubierta.desde` niega la afirmación con **tres** condiciones —tres
 `if`, tres ramas de código—: el desenlace no es `Executed`, el desenlace trae
-**algún diagnóstico**, o el testigo no incluye al sujeto pedido. El diseño
-nombra una cuarta comprobación que **no es una rama**: que el control, la
-afirmación y el testigo salgan del mismo desenlace que recibe la llamada, así
-que no existe una segunda llamada que pueda atribuirle a un control la
-afirmación o el testigo de otro. Esa alineación no se comprueba en tiempo de
-ejecución porque no hace falta: la firma no deja construir el caso que la
-rompería. Quien lea el código buscando cuatro `if` va a encontrar tres; el
-cuarto lo sostiene el tipo, no una condición. Y el hallazgo se rechaza por
-completo —no solo el sujeto del diagnóstico— porque está medido que el
-veredicto es global al paso y que un diagnóstico no tiene relación validada
-con un sujeto del testigo: no se sabe cuál lo originó.
+**algún diagnóstico**, o el testigo no incluye al sujeto pedido. Y el hallazgo
+se rechaza por completo —no solo el sujeto del diagnóstico— porque está medido
+que el veredicto es global al paso y que un diagnóstico no tiene relación
+validada con un sujeto del testigo: no se sabe cuál lo originó.
+
+Hay una cuarta comprobación, y **no está en la fábrica**: el testigo tiene que
+cubrir al sujeto vale también para la reconstrucción desde un documento, así
+que es un invariante del tipo y vive en el cuerpo de su constructor. Desde
+`desde` no puede dispararse —ahí la misma condición devuelve nulo, que es lo
+que la derivación necesita—; desde `AfirmacionCubierta.fromJson` sí, y ahí
+estaba el agujero que encontró una revisión: un documento con el sujeto
+cambiado por uno que el testigo no nombra se deserializaba sin chistar.
+`fromJson` **revalida lo comprobable y declara el resto**: la pertenencia del
+sujeto al testigo está entera en el documento, y la correspondencia entre la
+afirmación, el id y el control que los declara no, porque un documento no
+lleva el control.
+
+### Qué ata la firma de `desde`, y qué no
+
+Este documento decía que `desde` hacía imposible combinar un control con el
+testigo de otro, y **era falso**: una revisión lo rompió en tres líneas,
+pasándole el control de un paso junto al desenlace de otro. Lo que la firma sí
+garantiza es que la afirmación y el id salen **del control que se le pasa**, y
+el testigo **del desenlace que se le pasa**: quien llama no puede sustituir
+ninguno de los dos por el de otro objeto. Lo que no garantiza es que ese
+control y ese desenlace sean de un mismo paso, porque son dos parámetros
+independientes.
+
+**No se cierra en la firma a propósito.** Atarlos pediría que el desenlace
+supiera qué control lo produjo, y ADR-019 decidió lo contrario: el desenlace no
+lleva el id del paso. Quien empareja control con desenlace es
+`derivarSuperficie`, y ahí sí se comprueba contra el registro de la corrida:
+lee el desenlace por el id del paso registrado, exige que el mapa de controles
+tenga ese id y que el control declare ese mismo id, y lanza si alguna de las
+dos falla —las dos comprobaciones tienen su prueba—. La procedencia depende de
+que el llamador sea correcto, y eso queda **declarado** en vez de prometido
+como si lo sostuviera el tipo: es el mismo criterio con el que esta rebanada ya
+declara el residuo de `desde` como única entrada.
 
 **La segunda condición decía «el veredicto es rojo», y así se escapaba un
 hallazgo entero de la superficie.** `Executed.verdict` solo mira los
@@ -1830,6 +1857,15 @@ por cubierto aunque la cascada haya corrido entera y en verde. `derivarSuperfici
 decide esto **antes** de mirar la cascada: con alteraciones, todo lo que la
 cascada haya afirmado queda como criterio, nunca como cobertura. Es el mismo
 argumento que el control con hallazgos, aplicado al árbol en vez de al paso.
+
+**Pero decidir la cobertura antes no es dejar de leer el resto.** Ese camino
+devolvía temprano, sin procesar los desenlaces ni la partición del alcance: con
+una alteración, una corrida donde además se rompió el instrumento, había un
+sujeto ajeno al stack y otro que no se pudo mirar salía con un único motivo
+—`candidatoAlterado`— y los otros tres hechos desaparecían. Hoy vacía
+`cubierto`, fija el estado en no concluyente y **sigue**: los fallos, las
+omisiones, los ajenos y los no observables son hechos independientes de la
+alteración, y un revisor que no los ve no sabe que están.
 
 Y **la alteración se nombra aunque el entorno se haya caído antes**. Ese camino
 devuelve temprano —sin entorno no hay cascada de la cual derivar nada— y durante
@@ -1869,6 +1905,33 @@ mezclado con uno verde hacía reventar el invariante de `SuperficieDeVerificacio
 utilizable: en cuanto hay uno solo utilizable, todos los pasos ejecutan y
 ningún desenlace nombra a los sujetos ajenos o no observables que quedaron
 afuera. Leer la partición directamente es lo único que los vuelve a nombrar.
+
+### Invalidar la cobertura nunca justifica perder una señal
+
+Es la regla que gobierna la derivación entera, y se escribió cuatro veces
+porque cuatro veces se había aplicado a un camino en vez de a la regla: **vaciar
+`cubierto` y no nombrar el hecho son cosas distintas**. `requiereCriterio` es la
+mitad que existe para nombrar todo lo que un humano SÍ tiene que mirar, así que
+un hecho que la derivación pudo ver no se descarta porque otro haya salido
+primero. Lo que un camino decide es qué se vacía, no qué se nombra.
+
+- **Un hallazgo sin cobertura sigue siendo un hallazgo.** Las entradas de
+  `hallazgo` se emitían recorriendo los sujetos del testigo, así que un control
+  con diagnósticos y sin ningún sujeto certificado no emitía ninguna. No es un
+  caso de laboratorio: el formateador sobre un archivo que no parsea informa
+  que no miró ningún archivo y reporta los errores de parseo, y la superficie
+  publicaba el residuo y la obligación abierta **sin decir en ningún lado que
+  el control había encontrado errores**. Hoy emite una entrada **sin sujeto**,
+  con el control y cuántos diagnósticos hubo, diciendo que no se pudieron
+  atribuir. Sin conceder cobertura, obviamente.
+- **Una cascada que existe con el registro vacío no es una cascada nula.**
+  `Cascada([]).correr(…)` observa el alcance, no registra ningún paso y sale con
+  la causa `sinVerificadores`. La derivación contemplaba `cascada == null` y no
+  esto: los bucles por paso no tienen sobre qué iterar y el libro de
+  obligaciones está vacío porque no hay control que las contraiga, así que el
+  revisor recibía el estado no concluyente **sin su explicación**. Hoy se nombra
+  que nadie verificó ese alcance, y las observaciones de ese mismo alcance
+  —ajenos, no observables— se siguen nombrando igual.
 
 ### Lo que esta rebanada NO hace
 
