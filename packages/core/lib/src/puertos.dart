@@ -19,6 +19,7 @@ import 'entidades.dart';
 import 'credencial.dart';
 import 'desenlace.dart';
 import 'observacion.dart';
+import 'publicacion.dart';
 import 'regla.dart';
 import 'valores.dart';
 
@@ -492,14 +493,18 @@ abstract interface class VerificationEnvironment {
 /// terminar con el primero hecho y el segundo no.
 ///
 /// **Quién es la forja no se sabe acá.** GitHub, GitLab o lo que sea vive en
-/// su propio adapter, igual que el stack vive en su plugin.
+/// su propio adapter, igual que el stack vive en su plugin. El
+/// repositorio/remoto pertenece a la configuración inyectada de ese adapter,
+/// no a la solicitud.
+///
+/// **Devuelve el desenlace; no lanza por un fallo remoto.** Con un `String` y
+/// una excepción no había forma de representar «el push salió y el PR no», ni
+/// de distinguir una respuesta perdida de un rechazo — y confundirlas hace que
+/// el reintento cree un segundo PR.
 abstract interface class PullRequestSink {
-  /// Abre el PR y devuelve dónde quedó.
-  Future<String> open(
-    PullRequestSlice slice, {
-    required String branch,
-    required String base,
-  });
+  /// Abre el PR y devuelve dónde quedó. **Idempotente**: repetirla con la
+  /// misma solicitud no crea un segundo pull request.
+  Future<PublicationOutcome> open(PullRequestRequest request);
 }
 
 /// El árbol de trabajo: leer, escribir, y saber si está sucio.
