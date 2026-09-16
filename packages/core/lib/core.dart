@@ -16,6 +16,9 @@
 /// - **credencial** — [Credential], el único tipo que no serializa.
 /// - **entorno** — [entornoSaneado], la lista blanca con la que se lanza
 ///   todo subproceso.
+/// - **publicación** — el desenlace de la publicación: [PublicationOutcome]
+///   sellado, con `retryable`, [EstadoDeEntrega] y [AccionSiguiente]
+///   derivados de la variante y su [CausaDePublicacion].
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
@@ -32,6 +35,7 @@ export 'src/desenlace.dart';
 export 'src/entidades.dart';
 export 'src/entorno.dart';
 export 'src/observacion.dart';
+export 'src/publicacion.dart';
 export 'src/puertos.dart';
 export 'src/regla.dart';
 export 'src/superficie.dart';

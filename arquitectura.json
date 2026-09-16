@@ -443,6 +443,18 @@
         },
         "ResultadoDeEntorno": {
           "por_que": "Misma situacion que StepOutcome y CommitOutcome: es la base de una jerarquia sellada cuyas variantes -EntornoDerivado, CandidatoRechazado, DerivacionAbortada- serializan cada una con su kind, y la base solo despacha fromJson. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear- y dejarlo sin declarar seria la tercera opcion silenciosa que esta regla prohibe."
+        },
+        "PublicationOutcome": {
+          "por_que": "Es la base de la jerarquia sellada del desenlace de la publicacion: sin campo propio, despacha fromJson por kind hacia las siete variantes concretas -PullRequestOpen, PullRequestMerged, PullRequestClosed, PushFailed, PushUnknown, PullRequestFailed, PullRequestUnknown-, que serializan cada una por su lado. Misma situacion que StepOutcome y ResultadoDeEntorno."
+        },
+        "PublicacionUtilizable": {
+          "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio: agrupa PullRequestOpen y PullRequestMerged, que comparten la validacion de que la URL no puede venir en blanco pero declaran su propio campo url -un getter abstracto en la base, no un campo, para que el verificador de serializacion derive los campos de cada variante concreta y no de lo que hereda- y su propio toJson/fromJson discriminados por kind."
+        },
+        "PublicacionNoUtilizable": {
+          "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio, para lo que no dejo un PR utilizable confirmado: PullRequestClosed y las cuatro variantes de PublicacionConCausa serializan cada una por su lado."
+        },
+        "PublicacionConCausa": {
+          "por_que": "Refinamiento sellado de PublicacionNoUtilizable sin campo propio: agrupa PushFailed, PushUnknown, PullRequestFailed y PullRequestUnknown, que comparten causa y safeReason -causa es un getter abstracto en la base, no un campo, por el mismo motivo que PublicacionUtilizable.url- y cada una declara su propio campo causa y su propio toJson/fromJson discriminados por kind."
         }
       },
       "violacion_canonica": {

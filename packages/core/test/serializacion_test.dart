@@ -419,6 +419,36 @@ void main() {
           artefacto.toJson(),
           ArtefactoDeRevision.fromJson,
         ),
+        'PullRequestOpen': (
+          PullRequestOpen(url: 'https://forja.ejemplo/o/r/pull/1').toJson(),
+          PullRequestOpen.fromJson,
+        ),
+        'PullRequestMerged': (
+          PullRequestMerged(url: 'https://forja.ejemplo/o/r/pull/2').toJson(),
+          PullRequestMerged.fromJson,
+        ),
+        'PullRequestClosed': (
+          PullRequestClosed(url: 'https://forja.ejemplo/o/r/pull/3').toJson(),
+          PullRequestClosed.fromJson,
+        ),
+        'PushFailed': (
+          PushFailed(causa: CausaDePublicacion.red).toJson(),
+          PushFailed.fromJson,
+        ),
+        'PushUnknown': (
+          PushUnknown(causa: CausaDePublicacion.desconocida).toJson(),
+          PushUnknown.fromJson,
+        ),
+        'PullRequestFailed': (
+          PullRequestFailed(
+            causa: CausaDePublicacion.rechazoDeLaForja,
+          ).toJson(),
+          PullRequestFailed.fromJson,
+        ),
+        'PullRequestUnknown': (
+          PullRequestUnknown(causa: CausaDePublicacion.autenticacion).toJson(),
+          PullRequestUnknown.fromJson,
+        ),
       };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
