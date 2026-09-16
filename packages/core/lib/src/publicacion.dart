@@ -1,6 +1,9 @@
 /// El desenlace de la publicación: el efecto remoto de una corrida.
 library;
 
+import 'desenlace.dart';
+import 'superficie.dart';
+
 /// Por qué no se pudo publicar. **Cerrada**, y de acá sale `safeReason`: la
 /// excepción externa NO se copia nunca, porque puede traer la credencial
 /// adentro.
@@ -318,4 +321,74 @@ final class PullRequestClosed extends PublicacionNoUtilizable {
     PublicationOutcome._exigirKind(json['kind'], 'prCerrado');
     return PullRequestClosed(url: json['url']! as String);
   }
+}
+
+/// Antes del commit. **No tiene revisión porque todavía no existe.**
+class PullRequestDraft {
+  final String runId;
+  final String branch;
+  final String base;
+  final ArtefactoDeRevision artefacto;
+
+  PullRequestDraft({
+    required this.runId,
+    required this.branch,
+    required this.base,
+    required this.artefacto,
+  });
+
+  /// **Derivado.** El artefacto ya lleva la intención de la rebanada; llevarla
+  /// también acá serían dos cadenas independientes para una cosa, y la que el
+  /// adapter eligiera decidiría qué lee el revisor.
+  String get intent => artefacto.intent;
+}
+
+/// Después del commit.
+class PullRequestRequest {
+  /// Lo que antecede al título cuando la superficie no está verde. **Es una
+  /// constante y no un literal suelto**: el adapter la necesita para truncar
+  /// sin comerse la advertencia.
+  static const prefijoIncompleto = '[verificación incompleta] ';
+
+  final PullRequestDraft draft;
+
+  /// El commit al que la rama va a apuntar.
+  final String revision;
+
+  /// **El árbol del commit tiene que ser el contenido que vieron los
+  /// controles.** No se puede derivar uno del otro —uno es commit y el otro es
+  /// árbol—, así que la relación se exige acá, que es lo que queda cuando la
+  /// derivación no está disponible. Si discreparan, el cuerpo afirmaría
+  /// verificación sobre contenido que el PR no contiene, y el revisor no
+  /// tendría desde dónde notarlo.
+  PullRequestRequest({
+    required this.draft,
+    required this.revision,
+    required String arbolDeLaRevision,
+  }) {
+    final esperado = draft.artefacto.candidato.contentRevision;
+    if (arbolDeLaRevision != esperado) {
+      throw ArgumentError.value(
+        arbolDeLaRevision,
+        'arbolDeLaRevision',
+        'El commit «$revision» lleva un árbol que no es el que se expuso a los '
+            'controles («$esperado»). Publicar así afirmaría verificación sobre '
+            'contenido que el pull request no contiene.',
+      );
+    }
+  }
+
+  /// **Derivado, no asignable.** Con dos campos independientes se construye
+  /// `artefacto: noConcluyente, incompleto: false`, y el adapter omite la
+  /// advertencia obligatoria.
+  bool get incompleto =>
+      draft.artefacto.superficie.estado != EstadoDeCorrida.verde;
+
+  /// **También derivado.** Un título es texto con la misma propiedad que el
+  /// cuerpo: «✅ verificado» en un título es una afirmación sobre la corrida, y
+  /// quien la escriba no es quien la puede sostener. El adapter lo trunca al
+  /// límite de su proveedor; la advertencia va adelante para que el truncado
+  /// no se la coma.
+  String get titulo =>
+      incompleto ? '$prefijoIncompleto${draft.intent}' : draft.intent;
 }

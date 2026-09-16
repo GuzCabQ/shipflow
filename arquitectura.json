@@ -455,6 +455,12 @@
         },
         "PublicacionConCausa": {
           "por_que": "Refinamiento sellado de PublicacionNoUtilizable sin campo propio: agrupa PushFailed, PushUnknown, PullRequestFailed y PullRequestUnknown, que comparten causa y safeReason -causa es un getter abstracto en la base, no un campo, por el mismo motivo que PublicacionUtilizable.url- y cada una declara su propio campo causa y su propio toJson/fromJson discriminados por kind."
+        },
+        "PullRequestDraft": {
+          "por_que": "Es la composicion IN-PROCESS de antes del commit: no tiene revision porque todavia no existe. Su unico dato propio es el ArtefactoDeRevision que ya serializa por su lado; runId, branch y base son coordenadas que compone quien arma la corrida, en el mismo proceso que las usa para commitear. Serializar ademas el borrador crearia una segunda fuente de la intencion -que ya vive en artefacto.intent-, exactamente el hecho repetido que esta rebanada existe para cerrar."
+        },
+        "PullRequestRequest": {
+          "por_que": "Es la composicion IN-PROCESS de despues del commit, consumida por el adapter de la forja en la misma corrida que la construye. Lo que se persiste es el PublicationOutcome que resulta de publicarla, no la solicitud: serializarla ademas duplicaria por una segunda ruta la relacion entre revision y arbolDeLaRevision que su constructor ya exige una sola vez, y que es la razon de ser del tipo -si esa relacion viajara como dos campos independientes en vez de validarse una vez en memoria, un documento reconstruido podria discrepar sin que nada lo note."
         }
       },
       "violacion_canonica": {

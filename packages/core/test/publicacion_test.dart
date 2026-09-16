@@ -95,4 +95,86 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  group('el borrador y la solicitud', () {
+    ArtefactoDeRevision artefacto({
+      required EstadoDeCorrida estado,
+      String arbol = 'arbol-1',
+    }) => ArtefactoDeRevision(
+      superficie: SuperficieDeVerificacion(
+        cubierto: const [],
+        requiereCriterio: const [],
+        estado: estado,
+      ),
+      candidato: CandidateIdentity(
+        contentRevision: arbol,
+        baseRevision: 'base-1',
+      ),
+      intent: 'sostener el arnés',
+      plan: null,
+      sinPlanPorque: 'no hay elementos de trabajo',
+      alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
+    );
+
+    PullRequestDraft borrador(EstadoDeCorrida estado) => PullRequestDraft(
+      runId: 'corrida-1',
+      branch: 'rama',
+      base: 'develop',
+      artefacto: artefacto(estado: estado),
+    );
+
+    test('la intención no se repite: sale del artefacto', () {
+      expect(borrador(EstadoDeCorrida.verde).intent, 'sostener el arnés');
+    });
+
+    test('el commit tiene que llevar el árbol que vieron los controles', () {
+      expect(
+        () => PullRequestRequest(
+          draft: borrador(EstadoDeCorrida.verde),
+          revision: 'commit-1',
+          arbolDeLaRevision: 'OTRO-arbol',
+        ),
+        throwsArgumentError,
+        reason: 'si no, el cuerpo afirma sobre contenido que el PR no tiene',
+      );
+    });
+
+    test('con el árbol correcto, construye', () {
+      final s = PullRequestRequest(
+        draft: borrador(EstadoDeCorrida.verde),
+        revision: 'commit-1',
+        arbolDeLaRevision: 'arbol-1',
+      );
+      expect(s.revision, 'commit-1');
+      expect(s.incompleto, isFalse);
+    });
+
+    test('incompleto se deriva del estado, y no hay dónde escribirlo', () {
+      for (final estado in EstadoDeCorrida.values) {
+        final s = PullRequestRequest(
+          draft: borrador(estado),
+          revision: 'commit-1',
+          arbolDeLaRevision: 'arbol-1',
+        );
+        expect(s.incompleto, estado != EstadoDeCorrida.verde);
+      }
+    });
+
+    test('el título se deriva, y cuando está incompleto lo dice', () {
+      final verde = PullRequestRequest(
+        draft: borrador(EstadoDeCorrida.verde),
+        revision: 'c',
+        arbolDeLaRevision: 'arbol-1',
+      );
+      expect(verde.titulo, 'sostener el arnés');
+
+      final rojo = PullRequestRequest(
+        draft: borrador(EstadoDeCorrida.noConcluyente),
+        revision: 'c',
+        arbolDeLaRevision: 'arbol-1',
+      );
+      expect(rojo.titulo, startsWith(PullRequestRequest.prefijoIncompleto));
+      expect(rojo.titulo, contains('sostener el arnés'));
+    });
+  });
 }
