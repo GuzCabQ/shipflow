@@ -1,0 +1,18 @@
+name: forge
+description: >-
+  El adapter de la forja: por donde sale el pull request. Quién es la forja
+  vive acá y en ningún otro paquete.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.0
+
+resolution: workspace
+
+# Sin `dependencies:` a propósito. `deps-hacia-core.permitidas` ya declara
+# `forge → core`, así que la arquitectura no cambia agregándola; pero
+# `dependencias-declaradas-se-usan` exige que toda dependencia declarada se
+# importe, y la biblioteca de este paquete todavía no importa nada. Su propia
+# `alternativa` es literal: "la dependencia vuelve en el mismo commit que la
+# importe" — eso ocurre en la tarea siguiente, junto con el módulo del empuje.

@@ -481,7 +481,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 15 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 16 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |

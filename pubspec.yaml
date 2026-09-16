@@ -29,4 +29,5 @@ workspace:
   - packages/agents
   - packages/plugin_dart
   - packages/plugin_fake
+  - packages/forge
   - packages/cli

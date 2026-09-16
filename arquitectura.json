@@ -58,6 +58,9 @@
         "plugin_fake": [
           "core"
         ],
+        "forge": [
+          "core"
+        ],
         "cli": [
           "core",
           "orchestration",
@@ -65,7 +68,8 @@
           "rules",
           "agents",
           "plugin_dart",
-          "plugin_fake"
+          "plugin_fake",
+          "forge"
         ]
       },
       "violacion_canonica": {
