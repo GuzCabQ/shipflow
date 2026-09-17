@@ -12,6 +12,18 @@ enum CausaDePublicacion {
   autenticacion,
   permisos,
   rechazoDeLaForja,
+
+  /// El canal por el que iba a viajar la credencial no la protege: la URL
+  /// configurada no es `https`. **La credencial NO se envió** — es lo único
+  /// que distingue esta causa de [autenticacion], y confundirlas sería
+  /// decirle a quien lee que su token fue rechazado cuando nunca salió de
+  /// este proceso.
+  ///
+  /// No es reintentable: el mismo canal vuelve a estar en claro la próxima
+  /// vez. Lo que hace falta es corregir la configuración, y por eso su
+  /// [AccionSiguiente] es propia y no [AccionSiguiente.reintentarPublicacion].
+  configuracionInsegura,
+
   desconocida,
 }
 
@@ -27,6 +39,14 @@ enum AccionSiguiente {
   ninguna,
   reintentarPublicacion,
   corregirPermisos,
+
+  /// Hay que corregir la CONFIGURACIÓN antes de volver a intentar. Distinta
+  /// de [corregirPermisos] —que es sobre la credencial— y de
+  /// [reintentarPublicacion] —que promete que el mismo intento puede salir
+  /// bien—: acá el mismo intento vuelve a fallar igual hasta que alguien
+  /// cambie lo que está configurado.
+  corregirConfiguracion,
+
   entregaNuevaExplicita,
 }
 
@@ -193,16 +213,37 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
     CausaDePublicacion.permisos =>
       'la credencial no alcanza para esta operación',
     CausaDePublicacion.rechazoDeLaForja => 'la forja rechazó la operación',
+    // **No nombra la URL.** La URL que se rechazó es justamente la que iba a
+    // llevar la credencial adjunta; copiarla acá sería filtrar el secreto por
+    // el único texto de este archivo que se publica.
+    CausaDePublicacion.configuracionInsegura =>
+      'el canal configurado no es https, así que la credencial no se envió',
     CausaDePublicacion.desconocida => 'no se pudo determinar la causa',
   };
 
+  /// **No es `causa != permisos`.** Dos causas no se arreglan reintentando, y
+  /// escribirlo como una negación de una sola dejaba que la próxima causa
+  /// nueva naciera reintentable por omisión.
   @override
-  bool get retryable => causa != CausaDePublicacion.permisos;
+  bool get retryable => switch (causa) {
+    CausaDePublicacion.permisos => false,
+    CausaDePublicacion.configuracionInsegura => false,
+    CausaDePublicacion.red ||
+    CausaDePublicacion.autenticacion ||
+    CausaDePublicacion.rechazoDeLaForja ||
+    CausaDePublicacion.desconocida => true,
+  };
 
   @override
-  AccionSiguiente get nextAction => causa == CausaDePublicacion.permisos
-      ? AccionSiguiente.corregirPermisos
-      : AccionSiguiente.reintentarPublicacion;
+  AccionSiguiente get nextAction => switch (causa) {
+    CausaDePublicacion.permisos => AccionSiguiente.corregirPermisos,
+    CausaDePublicacion.configuracionInsegura =>
+      AccionSiguiente.corregirConfiguracion,
+    CausaDePublicacion.red ||
+    CausaDePublicacion.autenticacion ||
+    CausaDePublicacion.rechazoDeLaForja ||
+    CausaDePublicacion.desconocida => AccionSiguiente.reintentarPublicacion,
+  };
 }
 
 /// El `git push` falló.

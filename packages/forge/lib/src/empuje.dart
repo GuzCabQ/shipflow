@@ -18,6 +18,51 @@ final class NoEmpujado extends ResultadoDeEmpuje {
   const NoEmpujado(this.desenlace);
 }
 
+/// ¿Se le puede adjuntar la credencial a este destino sin que viaje en claro?
+///
+/// **Valida, no declara.** Los DOS canales que llevan el secreto fuera de este
+/// proceso —el `userinfo` de la URL del `git push` y el encabezado
+/// `Authorization` del cliente de la API— arman su destino a partir de una
+/// cadena que produce la raíz de composición, no este paquete. Con `http://`
+/// el token viaja legible para cualquiera que esté en el camino, y ninguna
+/// prosa lo impide: por eso lo impide esta función, que los dos llaman ANTES
+/// de adjuntar nada.
+///
+/// **La excepción, decidida y no dejada por las dudas: `http` sobre
+/// loopback.** Un destino de loopback —`127.0.0.0/8`, `::1`, o el nombre
+/// `localhost`— no sale de la máquina: no hay «camino» donde interceptarlo, y
+/// exigirle TLS obligaría a cada suite que levanta un `HttpServer` local a
+/// montar un certificado propio, con lo que el control terminaría probándose
+/// contra un montaje que no es el de producción. Es la misma excepción que
+/// hace RFC 8252 §8.3 para el redirect de loopback de OAuth, y por el mismo
+/// motivo.
+///
+/// **Residuo declarado de esa excepción:** el nombre `localhost` se acepta por
+/// su TEXTO, no por la dirección a la que resuelva. Un `/etc/hosts` que lo
+/// apunte a una máquina remota haría viajar el token en claro y esta función
+/// no lo vería. Resolverlo acá significaría hacer DNS dentro de una validación
+/// sincrónica, y el resultado seguiría sin ser el que use el subproceso `git`,
+/// que resuelve por su cuenta cuando se conecta: la comprobación sería una
+/// segunda resolución, no la misma.
+///
+/// **Lo que tampoco pasa: un esquema que no sea `http` ni `https`.** Un remoto
+/// `ssh://` o `git@host:org/repo.git` no se rechaza por inseguro sino porque
+/// [EmpujeAislado] adjunta la credencial en el `userinfo`, que ahí no
+/// significa nada: quien empuja por SSH se autentica con su clave y no
+/// necesita esta credencial en absoluto. Llegar acá con uno de esos es una
+/// configuración equivocada, no un canal que haya que tolerar.
+bool esCanalSeguroParaLaCredencial(String url) {
+  final uri = Uri.tryParse(url);
+  // Una URL que ni siquiera parsea no puede declararse segura: no mirar no es
+  // lo mismo que no encontrar nada.
+  if (uri == null) return false;
+  if (uri.scheme == 'https') return true;
+  if (uri.scheme != 'http') return false;
+  if (uri.host == 'localhost') return true;
+  final direccion = InternetAddress.tryParse(uri.host);
+  return direccion != null && direccion.isLoopback;
+}
+
 /// Empuja una revisión a una rama del remoto **sin entregarle la credencial a
 /// ningún programa del usuario**.
 ///
@@ -66,6 +111,18 @@ class EmpujeAislado {
     required String revision,
     required String rama,
   }) async {
+    // ANTES de crear nada y antes de tocar la credencial: con un remoto que
+    // no es `https` el secreto viajaría en claro en el `userinfo`. Es un
+    // desenlace cerrado y no una excepción —el llamador de `empujar` es
+    // `SalidaDePrDeGitHub.open`, y `PullRequestSink` declara que `open` no
+    // lanza por un fallo remoto—, y no nombra la URL: es justamente la que
+    // iba a llevar el secreto adjunto.
+    if (!esCanalSeguroParaLaCredencial(urlDelRemoto)) {
+      return NoEmpujado(
+        PushFailed(causa: CausaDePublicacion.configuracionInsegura),
+      );
+    }
+
     final sinGanchos = await Directory.systemTemp.createTemp('forge-ganchos-');
     try {
       final destino = credencial.use(

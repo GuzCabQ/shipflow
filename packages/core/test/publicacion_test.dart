@@ -40,6 +40,26 @@ void main() {
     );
     expect(PullRequestOpen(url: 'u').nextAction, AccionSiguiente.ninguna);
     expect(PullRequestMerged(url: 'u').nextAction, AccionSiguiente.ninguna);
+    // El canal inseguro NO se arregla reintentando —la URL sigue siendo la
+    // misma— ni corrigiendo permisos: lo que hay que cambiar es lo que está
+    // configurado.
+    expect(
+      PushFailed(causa: CausaDePublicacion.configuracionInsegura).nextAction,
+      AccionSiguiente.corregirConfiguracion,
+    );
+  });
+
+  test('un canal inseguro no es reintentable, y su razón no dice que la '
+      'credencial fue rechazada', () {
+    // La distinción importa porque el modo de fallo contrario es
+    // TRANQUILIZADOR: decir «la credencial no fue aceptada» sobre un token
+    // que nunca salió de este proceso le reporta al usuario un problema de
+    // su token cuando el problema es de la configuración.
+    final r = PushFailed(causa: CausaDePublicacion.configuracionInsegura);
+    expect(r.retryable, isFalse);
+    expect(r.deliveryStatus, EstadoDeEntrega.incompletaNoReintentable);
+    expect(r.safeReason, contains('https'));
+    expect(r.safeReason, isNot(contains('no fue aceptada')));
   });
 
   test('permisos no es reintentable y el cerrado tampoco', () {
@@ -89,11 +109,54 @@ void main() {
     );
   });
 
-  test('cada fromJson rechaza un discriminador ajeno', () {
+  test('cada fromJson rechaza un discriminador ajeno: las SIETE', () {
+    // Era una tabla de una fila con nombre de tabla: cubría `PullRequestOpen`
+    // y nada más, y `_exigirKind` se llama POR SEPARADO en cada una de las
+    // siete `fromJson` — borrarlo de las otras seis no rompía nada. El
+    // precio de ese hueco es una variante que se deserializa como otra sin
+    // que nada se entere.
+    final variantes =
+        <String, PublicationOutcome Function(Map<String, Object?>)>{
+          'prAbierto': PullRequestOpen.fromJson,
+          'prFusionado': PullRequestMerged.fromJson,
+          'prCerrado': PullRequestClosed.fromJson,
+          'pushFallo': PushFailed.fromJson,
+          'pushDesconocido': PushUnknown.fromJson,
+          'prFallo': PullRequestFailed.fromJson,
+          'prDesconocido': PullRequestUnknown.fromJson,
+        };
     expect(
-      () => PullRequestOpen.fromJson(const {'kind': 'merged', 'url': 'u'}),
-      throwsArgumentError,
+      variantes,
+      hasLength(7),
+      reason:
+          'si nace una octava variante y esta tabla no crece, la tabla '
+          'vuelve a prometer «cada fromJson» cubriendo menos',
     );
+
+    for (final entrada in variantes.entries) {
+      // Un discriminador que es de OTRA variante, no uno inventado: el caso
+      // inventado ya lo cubre la prueba de arriba, y el que de verdad
+      // confunde una variante con otra es éste.
+      final ajeno = entrada.key == 'prAbierto' ? 'prFusionado' : 'prAbierto';
+      // El mismo cuerpo para todas: las que llevan `url` lo encuentran, las
+      // que llevan `causa` también, y ninguna falla por un campo faltante
+      // antes de llegar a mirar el discriminador —que es lo que se prueba.
+      final cuerpo = <String, Object?>{
+        'url': 'https://forja/pr/1',
+        'causa': CausaDePublicacion.red.name,
+      };
+
+      expect(
+        () => entrada.value({...cuerpo, 'kind': ajeno}),
+        throwsArgumentError,
+        reason:
+            'la fromJson de «${entrada.key}» aceptó el discriminador '
+            '«$ajeno», que es de otra variante',
+      );
+      // Control positivo, en la misma vuelta: sin esto, una `fromJson` que
+      // lanzara SIEMPRE pasaría la aserción de arriba.
+      expect(entrada.value({...cuerpo, 'kind': entrada.key}).kind, entrada.key);
+    }
   });
 
   group('el borrador y la solicitud', () {

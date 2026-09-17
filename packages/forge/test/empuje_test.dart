@@ -79,8 +79,36 @@ void main() {
       rama: 'rebanada-1',
     );
 
-    // El remoto vio la credencial: llegó por el canal que elegimos.
-    expect(autorizaciones.whereType<String>(), isNotEmpty);
+    // El remoto vio LA credencial, no una cualquiera. La aserción vieja
+    // —«llegó algún encabezado»— pasaba en verde con el secreto reemplazado
+    // por una constante en `_conCredencial`: lo único que exigía era que
+    // `git` hubiera mandado ALGO. Acá se decodifica el `Basic` y se exige
+    // que adentro esté ESTE secreto.
+    //
+    // Se afirma sobre booleanos y cifras, nunca sobre la lista decodificada:
+    // si esto falla, `package:test` imprime el valor `Actual`, y sobre la
+    // lista cruda eso es el secreto en la consola y en el log de CI — la
+    // misma disciplina que sostiene `safeReason` en el resto del archivo.
+    final basicos = autorizaciones
+        .whereType<String>()
+        .where((a) => a.startsWith('Basic '))
+        .map((a) => utf8.decode(base64.decode(a.substring('Basic '.length))))
+        .toList();
+    expect(
+      basicos.length,
+      greaterThan(0),
+      reason: 'el remoto no recibió ningún `Basic`: la credencial no llegó',
+    );
+    expect(
+      basicos.every((b) => b.contains('ghp_secreto')),
+      isTrue,
+      reason:
+          'llegó un `Basic`, pero no lleva el secreto que se le pasó a '
+          '`empujar`. Con una constante en lugar del secreto, la forja real '
+          'contestaría 401 y el desenlace diría «la credencial no fue '
+          'aceptada»: un bug nuestro reportado como un problema del token '
+          'del usuario.',
+    );
 
     // Y nadie más la vio.
     expect(
@@ -152,6 +180,61 @@ void main() {
     // causa cerrada.
     expect(jsonEncode(r.desenlace.toJson()), isNot(contains(secreto)));
     expect(r.desenlace.toString(), isNot(contains(secreto)));
+  });
+
+  test('un remoto que no es https se rechaza antes de lanzar git', () async {
+    // `_conCredencial` mete el secreto en el `userinfo` sin mirar el
+    // esquema: con `http://` contra un host que no es loopback, el token
+    // viaja en claro. Nadie produce hoy esa URL —la raíz de composición es
+    // de la rebanada de `ship`— y por eso ninguna revisión por tarea lo vio.
+    //
+    // El espía es el control de que el rechazo ocurre ANTES del lanzamiento:
+    // si `git` —o cualquier programa— llegara a correr, dejaría su rastro.
+    final espia = File('${temporal.path}/espia-esquema.sh');
+    await espia.writeAsString(
+      '#!/bin/sh\ntouch "${temporal.path}/se-lanzo"\nexit 0\n',
+    );
+    await Process.run('chmod', ['+x', espia.path]);
+
+    final empuje = EmpujeAislado(
+      directorio: '${temporal.path}/trabajo',
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': '${temporal.path}/casa',
+      }),
+      programa: espia.path,
+    );
+
+    const secreto = 'ghp_no_debe_viajar_en_claro';
+    final r = await empuje.empujar(
+      urlDelRemoto: 'http://forja.invalido/duenio/repo.git',
+      credencial: const Credential(secreto, label: 'SHIPFLOW_GITHUB_TOKEN'),
+      revision: 'HEAD',
+      rama: 'rebanada-1',
+    );
+
+    expect(r, isA<NoEmpujado>());
+    expect((r as NoEmpujado).desenlace, isA<PushFailed>());
+    expect(
+      (r.desenlace as PushFailed).causa,
+      CausaDePublicacion.configuracionInsegura,
+    );
+    expect(
+      r.desenlace.retryable,
+      isFalse,
+      reason: 'el mismo canal vuelve a estar en claro la próxima vez',
+    );
+    expect(
+      File('${temporal.path}/se-lanzo').existsSync(),
+      isFalse,
+      reason: 'el rechazo tiene que ocurrir ANTES de lanzar nada',
+    );
+    // Ni la URL rechazada ni el secreto aparecen en ningún texto que salga.
+    expect(jsonEncode(r.desenlace.toJson()), isNot(contains(secreto)));
+    expect(
+      (r.desenlace as PushFailed).safeReason,
+      isNot(contains('forja.invalido')),
+    );
   });
 
   test('la forja que responde 403 clasifica como permisos', () async {

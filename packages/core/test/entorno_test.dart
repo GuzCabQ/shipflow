@@ -207,14 +207,23 @@ void main() {
       expect(() => e.credencial('PATH'), throwsArgumentError);
     });
 
-    test(
-      'el mapa crudo que se le pasó no se puede leer entero desde afuera',
-      () {
-        // La clase no expone el crudo. Esta prueba existe para que agregar un
-        // getter que lo devuelva rompa algo: sin ella, exponerlo es invisible.
-        final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
-        expect(e.paraHijos.values.contains('ghp_x'), isFalse);
-      },
-    );
+    test('`paraHijos` no reenvía el valor de una clave declarada como '
+        'credencial', () {
+      // **El título dice lo que la prueba afirma, y nada más.** Se llamaba
+      // «el mapa crudo que se le pasó no se puede leer entero desde afuera»,
+      // y eso no es lo que mira: mira `paraHijos`. En este lenguaje no se
+      // puede probar la AUSENCIA de un getter sin reflexión, así que ese control
+      // no existe —y un título que promete cobertura que no hay es lo que le
+      // dice al próximo revisor que eso ya está mirado—.
+      //
+      // **Lo que sí lo sostiene, y no es esta prueba:** que `_crudo` sea
+      // privado lo comprueba el compilador en cada llamador de fuera de la
+      // biblioteca, y que la clase no lo serialice lo comprueba la regla
+      // `opacidad-declarada`. Agregar un getter público que devuelva el
+      // crudo no lo caza nada de eso: queda declarado acá como residuo, y
+      // como revisión humana.
+      final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
+      expect(e.paraHijos.values.contains('ghp_x'), isFalse);
+    });
   });
 }

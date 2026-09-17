@@ -119,6 +119,35 @@ PullRequestRequest solicitudConCriterio() => _solicitud(
   ),
 );
 
+// Las dos listas vacías a la vez: es la única forma de que el cuerpo muestre
+// los DOS textos de lista vacía en la misma corrida, que es lo que hace falta
+// para poder decir cuál va bajo qué sección.
+PullRequestRequest solicitudSinNadaQueMostrar() =>
+    _solicitud(_artefacto(estado: EstadoDeCorrida.verde));
+
+// La entrada CON sujeto va primera en la lista de entrada, a propósito: si
+// `_sinSujetoPrimero` devolviera las entradas tal cual —o si invirtiera sus
+// dos `where`—, el cuerpo saldría en este mismo orden, y la prueba de abajo
+// lo nota. Con la lista ya ordenada «como corresponde», las tres mutaciones
+// de `_sinSujetoPrimero` quedarían verdes.
+PullRequestRequest solicitudConSujetoYSinSujeto() => _solicitud(
+  _artefacto(
+    estado: EstadoDeCorrida.noConcluyente,
+    requiereCriterio: [
+      EntradaDeCriterio(
+        controlId: 'formateador',
+        sujeto: 'lib/uno',
+        motivo: MotivoDeCriterio.declaradoNoMirado,
+        detalle: 'El control declaró que no miró este archivo.',
+      ),
+      EntradaDeCriterio(
+        motivo: MotivoDeCriterio.entornoNoDerivado,
+        detalle: 'El entorno no se derivó, así que la cascada nunca corrió.',
+      ),
+    ],
+  ),
+);
+
 PullRequestRequest solicitudIncompletaConIntencionLarga() => _solicitud(
   _artefacto(
     estado: EstadoDeCorrida.noConcluyente,
@@ -176,6 +205,92 @@ void main() {
     expect(
       cuerpo.indexOf('## Qué quedó cubierto'),
       lessThan(cuerpo.indexOf('## Qué requiere criterio humano')),
+    );
+  });
+
+  test('cada afirmación cubierta muestra lo que DEMUESTRA y lo que NO', () {
+    // El commit que agregó este render se llama «El render de lo cubierto
+    // muestra la afirmación, no solo el control», y era exactamente lo que
+    // ninguna prueba sostenía: reemplazar el `writeln` por uno que escribiera
+    // solo `- **${'\$'}{c.sujeto}**` dejaba la suite en verde. `demuestra` y
+    // `noDemuestra` son lo que ADR-016 regula en esta sección —lo que
+    // habilita a un revisor a saltar—, así que se afirma sobre la LÍNEA
+    // entera y no sobre una palabra suelta.
+    final cuerpo = cuerpoDeGitHub(solicitudVerde());
+    expect(
+      cuerpo,
+      contains(
+        '- **lib** (control `formateador`, afirmación `formato.conforme`): '
+        'coincide con la salida del formateador. No demuestra: '
+        'comportamiento, lógica ni criterios.',
+      ),
+    );
+  });
+
+  test('el texto de lista vacía de cada sección va bajo SU sección', () {
+    // Intercambiar los dos textos de lista vacía es un cambio de dos líneas
+    // que ninguna prueba notaba, y el resultado es un cuerpo que, bajo «Qué
+    // requiere criterio humano», le dice al revisor que ningún sujeto quedó
+    // cubierto. Por eso se afirma sobre el TRAMO de cada sección y no sobre
+    // el cuerpo entero: buscar las dos cadenas en el cuerpo completo pasa
+    // igual con los textos cambiados de lugar.
+    final cuerpo = cuerpoDeGitHub(solicitudSinNadaQueMostrar());
+    final inicioCubierto = cuerpo.indexOf('## Qué quedó cubierto');
+    final inicioCriterio = cuerpo.indexOf('## Qué requiere criterio humano');
+    expect(inicioCubierto, greaterThanOrEqualTo(0));
+    expect(inicioCriterio, greaterThan(inicioCubierto));
+
+    final seccionCubierto = cuerpo.substring(inicioCubierto, inicioCriterio);
+    final seccionCriterio = cuerpo.substring(inicioCriterio);
+
+    expect(
+      seccionCubierto,
+      contains('Ningún sujeto quedó cubierto en esta corrida.'),
+    );
+    expect(
+      seccionCriterio,
+      contains('Nada quedó pendiente de criterio humano en esta corrida.'),
+    );
+    expect(
+      seccionCubierto,
+      isNot(contains('Nada quedó pendiente de criterio humano')),
+    );
+    expect(seccionCriterio, isNot(contains('Ningún sujeto quedó cubierto')));
+  });
+
+  test('la entrada con sujeto lo muestra en el sufijo, y va DESPUÉS de las '
+      'que no tienen ninguno', () {
+    // Esto no es cobertura suelta. La corrección del hallazgo crítico de la
+    // tarea 10 se justifica POR ESCRITO, en el doc comment de
+    // `_nombreDeMotivo`: dice que la prosa del motivo no necesita nombrar al
+    // sujeto porque «la entrada que sí tiene sujeto ya lo muestra por
+    // separado, en el sufijo `— sujeto ...` que arma
+    // `_escribirLoQueRequiereCriterio`». Hasta acá ningún fixture construía
+    // una `EntradaDeCriterio` con `sujeto:`, así que la justificación de un
+    // arreglo crítico se apoyaba en un mecanismo que no probaba nadie.
+    final cuerpo = cuerpoDeGitHub(solicitudConSujetoYSinSujeto());
+
+    expect(
+      cuerpo,
+      contains(
+        '- **el control declaró que no lo miró** — sujeto `lib/uno` — '
+        'control `formateador`: El control declaró que no miró este archivo.',
+      ),
+      reason: 'el sufijo del sujeto es lo que sostiene esa justificación',
+    );
+
+    final sinSujeto = cuerpo.indexOf('**el entorno no se derivó**');
+    final conSujeto = cuerpo.indexOf('**el control declaró que no lo miró**');
+    expect(sinSujeto, greaterThanOrEqualTo(0));
+    expect(conSujeto, greaterThanOrEqualTo(0));
+    expect(
+      sinSujeto,
+      lessThan(conSujeto),
+      reason:
+          'las entradas sin sujeto hablan de la corrida entera y preceden a '
+          'las que nombran una: la lista de entrada las trae al revés a '
+          'propósito, así que si `_sinSujetoPrimero` no reordena —o '
+          'reordena al revés— esto tiene que ponerse rojo',
     );
   });
 

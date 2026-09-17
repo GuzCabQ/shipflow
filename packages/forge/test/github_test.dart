@@ -5,18 +5,39 @@ import 'package:core/core.dart';
 import 'package:forge/forge.dart';
 import 'package:test/test.dart';
 
+/// El secreto que esta suite le da a la salida. Es una constante y no un
+/// literal repetido para que la aserción sobre el encabezado pueda exigir
+/// ESTE secreto y no una cadena cualquiera: con `_autenticar` reemplazado por
+/// un `Bearer` de relleno, la prueba tiene que ponerse roja.
+const secretoDePrueba = 'ghp_x';
+
 void main() {
   late HttpServer api;
   late List<Map<String, Object?>> prsExistentes;
   int creados = 0;
   bool cortarLaRespuestaDelPost = false;
 
+  /// Lo que el servidor VIO llegar, pedido por pedido: el método y el
+  /// encabezado `Authorization` tal cual. Sin esto, la única parte del
+  /// camino de la credencial que llega hasta la forja —el encabezado que
+  /// arma `_autenticar`— no la mira nadie: borrar esa llamada dejaba la
+  /// suite entera en verde, y el modo de fallo en producción es
+  /// TRANQUILIZADOR (la forja contesta 401 y eso se traduce a «la credencial
+  /// no fue aceptada», o sea que un bug nuestro se le reporta al usuario
+  /// como un problema de su token).
+  final pedidosVistos = <({String metodo, String? autorizacion})>[];
+
   setUp(() async {
     prsExistentes = [];
     creados = 0;
     cortarLaRespuestaDelPost = false;
+    pedidosVistos.clear();
     api = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     api.listen((p) async {
+      pedidosVistos.add((
+        metodo: p.method,
+        autorizacion: p.headers.value(HttpHeaders.authorizationHeader),
+      ));
       if (p.method == 'GET') {
         p.response
           ..statusCode = 200
@@ -85,16 +106,20 @@ void main() {
   SalidaDePrDeGitHub construirSalida(
     int puerto, {
     Duration presupuestoDeRed = SalidaDePrDeGitHub.presupuestoDeRedPorDefecto,
+    Uri? baseDeLaApi,
+    CredentialSource? credenciales,
   }) => SalidaDePrDeGitHub(
     configuracion: ConfiguracionDeGitHub(
       duenio: 'duenio',
       repositorio: 'repo',
-      baseDeLaApi: Uri.parse('http://127.0.0.1:$puerto'),
+      baseDeLaApi: baseDeLaApi ?? Uri.parse('http://127.0.0.1:$puerto'),
       urlDelRemoto: 'http://127.0.0.1:$puerto/duenio/repo.git',
     ),
-    credenciales: _CredencialFija(
-      const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
-    ),
+    credenciales:
+        credenciales ??
+        _CredencialFija(
+          const Credential(secretoDePrueba, label: 'SHIPFLOW_GITHUB_TOKEN'),
+        ),
     // `true` sale con 0 sin hacer nada: esta suite prueba la API, no el
     // push, y el push ya tiene su propia suite bajo este mismo directorio.
     // Se resuelve por `PATH` —no por una ruta absoluta— porque esa ruta
@@ -237,6 +262,103 @@ void main() {
     expect(await salida.open(solicitud()), isA<PullRequestUnknown>());
   });
 
+  test('cada pedido a la forja lleva la credencial en el encabezado '
+      'Authorization', () async {
+    // La mutación que esta prueba existe para romper es BORRAR la llamada a
+    // `_autenticar` —cualquiera de las dos—. Sin ella la suite entera seguía
+    // en 858/858: ningún servidor de prueba leía los encabezados, así que el
+    // único tramo del camino de la credencial que llega hasta la forja no lo
+    // sostenía nada, mientras el doc comment de `_autenticar` prometía que
+    // «nunca la interpola fuera de `Credential.use`».
+    final salida = construirSalida(api.port);
+    expect(await salida.open(solicitud()), isA<PullRequestOpen>());
+
+    expect(
+      pedidosVistos.map((p) => p.metodo),
+      containsAll(<String>['GET', 'POST']),
+      reason:
+          'esta prueba solo cubre las dos llamadas a `_autenticar` si los '
+          'dos pedidos llegaron de verdad',
+    );
+    for (final p in pedidosVistos) {
+      expect(
+        p.autorizacion,
+        'Bearer $secretoDePrueba',
+        reason:
+            'el pedido ${p.metodo} llegó sin el encabezado con el secreto '
+            'que corresponde. Sin él la forja contesta 401 y el desenlace '
+            'dice «la credencial no fue aceptada»: un bug nuestro '
+            'reportado como un problema del token del usuario.',
+      );
+    }
+  });
+
+  test('sin credencial no se toca la red, y es PushFailed y no '
+      'PullRequestFailed', () async {
+    // El README hace un punto explícito de esta distinción —«nada remoto
+    // ocurrió en absoluto»— y hasta ahora nadie la probaba: cambiar la rama
+    // a `PullRequestFailed` no rompía nada.
+    final salida = construirSalida(api.port, credenciales: _SinCredencial());
+    final r = await salida.open(solicitud());
+
+    expect(r, isA<PushFailed>());
+    expect((r as PushFailed).causa, CausaDePublicacion.autenticacion);
+    expect(
+      pedidosVistos,
+      isEmpty,
+      reason: 'sin credencial no se toca la red: no hay con qué autenticar',
+    );
+    expect(creados, 0);
+  });
+
+  test('una base de la API que no es https se rechaza antes de mandar el '
+      'Bearer', () async {
+    // `_autenticar` pone `Bearer <token>` sin mirar el esquema: con `http://`
+    // contra un host que no es loopback el token viaja legible. Nadie
+    // produce hoy esa URL —la raíz de composición es de la rebanada de
+    // `ship`— y por eso ninguna revisión por tarea lo vio.
+    final salida = construirSalida(
+      api.port,
+      baseDeLaApi: Uri.parse('http://api.forja.invalido'),
+    );
+    final r = await salida.open(solicitud());
+
+    expect(r, isA<PushFailed>());
+    expect((r as PushFailed).causa, CausaDePublicacion.configuracionInsegura);
+    expect(r.retryable, isFalse, reason: 'el mismo canal falla igual mañana');
+    expect(r.nextAction, AccionSiguiente.corregirConfiguracion);
+    expect(
+      r.safeReason,
+      isNot(contains('forja.invalido')),
+      reason: 'la URL rechazada es la que iba a llevar el secreto adjunto',
+    );
+    expect(pedidosVistos, isEmpty);
+    expect(creados, 0);
+  });
+
+  test('una base de la API https NO se rechaza: la validación mira el '
+      'esquema, no rechaza todo', () {
+    // El control negativo de la anterior. Sin esto, una validación que
+    // devolviera `false` siempre pasaría la prueba de arriba y rompería la
+    // publicación entera sin que nada lo notara — salvo por las pruebas de
+    // loopback, que son la excepción declarada y no el caso de producción.
+    expect(
+      esCanalSeguroParaLaCredencial('https://api.github.com'),
+      isTrue,
+      reason: 'https es el canal que la validación existe para exigir',
+    );
+    expect(esCanalSeguroParaLaCredencial('http://api.forja.invalido'), isFalse);
+    // La excepción declarada en el doc comment de la función, probada como
+    // tal y no dada por sentada.
+    expect(esCanalSeguroParaLaCredencial('http://127.0.0.1:8080/x'), isTrue);
+    expect(esCanalSeguroParaLaCredencial('http://[::1]:8080/x'), isTrue);
+    expect(esCanalSeguroParaLaCredencial('http://localhost:8080/x'), isTrue);
+    // Ni un remoto de SSH ni una cadena que no parsea pasan por seguros.
+    expect(esCanalSeguroParaLaCredencial('ssh://git@forja/x.git'), isFalse);
+    expect(esCanalSeguroParaLaCredencial('git@forja:duenio/x.git'), isFalse);
+    expect(esCanalSeguroParaLaCredencial('http://[no es una url'), isFalse);
+  });
+
   test('un PR fusionado devuelve URL; uno cerrado da incompleto no '
       'reintentable', () async {
     prsExistentes.add({
@@ -277,4 +399,11 @@ class _CredencialFija implements CredentialSource {
 
   @override
   Future<Credential?> read(String key) async => _credencial;
+}
+
+/// Una `CredentialSource` que no tiene la clave. Es lo que devuelve
+/// `FuenteDeEntorno` cuando la variable no está en el entorno.
+class _SinCredencial implements CredentialSource {
+  @override
+  Future<Credential?> read(String key) async => null;
 }

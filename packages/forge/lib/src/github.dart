@@ -47,9 +47,17 @@ class ConfiguracionDeGitHub {
 ///
 /// Va en el cuerpo y no en el título porque el título se trunca (ver
 /// `PullRequestRequest.titulo`). Lleva su propio `formatVersion` —del
-/// marcador, no de ningún otro formato del repositorio— para poder cambiar
-/// esta línea sin que la búsqueda deje de encontrar los pull requests que ya
-/// la llevan con la forma vieja.
+/// marcador, no de ningún otro formato del repositorio— para poder
+/// DISTINGUIR una forma de otra el día que esta línea cambie.
+///
+/// **Lo que ese campo NO hace hoy, y hay que decirlo porque la diferencia es
+/// de comportamiento:** no existe ninguna ruta que lea una versión distinta
+/// de la actual. La búsqueda es `cuerpoDelPr.contains(marcador)` con el
+/// marcador que produce ESTA función (ver [SalidaDePrDeGitHub._buscarExistente]),
+/// así que subir a `formatVersion=2` dejaría de encontrar todos los pull
+/// requests que llevan la forma vieja. Quien suba la versión tiene que
+/// escribir esa ruta —buscar por cada forma conocida, no solo por la
+/// actual— o aceptar que el corte pierde a los anteriores.
 String marcadorEstable(PullRequestRequest solicitud) =>
     '<!-- shipflow:pr formatVersion=1 '
     'runId=${solicitud.draft.runId} revision=${solicitud.revision} -->';
@@ -107,6 +115,23 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       // todavía no se intentó nada de lo que hace específicamente a un pull
       // request — nada remoto ocurrió en absoluto.
       return PushFailed(causa: CausaDePublicacion.autenticacion);
+    }
+
+    // Con una `baseDeLaApi` que no es `https`, el `Bearer <token>` que arma
+    // `_autenticar` viaja legible: el encabezado se cifra o no según el
+    // esquema de la URL, y quien produce esa URL es la raíz de composición,
+    // no este adapter. Se valida acá —una vez, antes del primer pedido— y no
+    // adentro de `_autenticar`, porque las DOS URLs que este archivo arma
+    // salen de la misma `baseDeLaApi`: validarla una vez cubre la búsqueda y
+    // la creación, y deja un solo lugar donde mirar.
+    //
+    // Es `PushFailed` por el mismo motivo que la rama de arriba: nada remoto
+    // ocurrió en absoluto, ni siquiera se abrió un socket, así que todavía no
+    // se intentó nada que haga específicamente a un pull request. Y el
+    // desenlace no nombra la URL — es justamente la que iba a llevar la
+    // credencial adjunta.
+    if (!esCanalSeguroParaLaCredencial(configuracion.baseDeLaApi.toString())) {
+      return PushFailed(causa: CausaDePublicacion.configuracionInsegura);
     }
 
     final cliente = _crearCliente();
