@@ -2798,11 +2798,13 @@ proceso una sola vez, en la raíz de composición, y expone `paraHijos`: un
 derivado que nunca lleva las claves de `clavesDeCredencial`. Antes de esta
 rebanada cada costura que lanzaba un subproceso tenía que acordarse de excluir
 el token por su cuenta —una lista negra repetida en cada lanzador—; ahora
-`RepositorioGit`, el candidato de `vcs` y `EmpujeAislado` de `forge` reciben
-todos el mismo tipo `EntornoDelProceso` en vez de un `Map` crudo, así que lo
-que baja hacia `entornoSaneado(...)` ya pasó por `paraHijos` antes de que el
-lanzamiento exista. **El tipo es el control**, no una convención que cada
-lector tiene que recordar.
+`RepositorioGit` (en `vcs`) y `EmpujeAislado` (en `forge`) reciben
+`EntornoDelProceso` en vez de un `Map` crudo, así que lo que baja hacia
+`entornoSaneado(...)` ya pasó por `paraHijos` antes de que el lanzamiento
+exista. El candidato de `vcs` no tiene un campo propio de ese tipo —guarda un
+`RepositorioGit` y llega al entorno saneado a través suyo—, así que la
+garantía le alcanza indirecta, no como tercer receptor directo. **El tipo es
+el control**, no una convención que cada lector tiene que recordar.
 
 Eso alcanza también al único lanzamiento que `subprocesos-con-entorno-saneado`
 exceptúa: `_identidadComoEntorno`, en `RepositorioGit`, corre `git config --get`
@@ -2929,11 +2931,24 @@ olvido:
   acá.** Son §12 y §13 de la propuesta.
 - **El código de salida `6` no se emite.** `packages/cli/lib/src/salida.dart`
   no se toca en esta rebanada.
-- **La raíz de composición todavía no arma un `EntornoDelProceso` real**: el
-  respaldo de las tres costuras que lo reciben se construye, en las pruebas,
-  a partir de `Platform.environment` directo, que es lo que hace que el
-  invariante valga aunque nadie inyecte. Quien componga `ship` va a capturarlo
-  una vez, en la raíz, y pasarlo hacia abajo.
+- **La raíz de composición todavía no arma un `EntornoDelProceso` real y lo
+  pasa hacia abajo.** Las tres costuras no comparten un único mecanismo acá,
+  y hace falta decirlo por separado: `RepositorioGit._padre` y
+  `EjecutorDelSistema._padre` (`packages/plugin_dart/lib/src/ejecutor.dart`)
+  tienen, cada uno, el respaldo `_entornoDelPadre ?? EntornoDelProceso(Platform.environment)`
+  —el parámetro es opcional porque cada uno tiene un llamador real que no
+  inyecta nada: `cascadaPorDefecto`, en `packages/cli/lib/src/verify.dart`,
+  construye `EjecutorDelSistema()` así, y es el mismo `shipflow verify` que
+  este README muestra al principio. `EmpujeAislado.entornoDelPadre`, en
+  `forge`, no tiene respaldo ninguno —es `required` y no nulable—, porque no
+  tiene ningún llamador que no inyecte: ahí olvidarlo no es un valor por
+  defecto silencioso, es un error de compilación. Lo que las tres comparten,
+  y lo que cierra el agujero que esta rebanada vino a cerrar, no es el
+  respaldo —que dos tienen y una no— sino el **tipo**: ninguna de las tres
+  acepta un `Map<String, String>` crudo, así que ningún llamador, inyecte o
+  no, puede colarles el entorno del padre sin pasar por `paraHijos`. Quien
+  componga `ship` va a capturar el entorno real una vez, en la raíz, e
+  inyectarlo en las tres, en vez de dejar que alguna caiga en su respaldo.
 
 ## Qué prometen estas fases y todavía no cumplen
 
