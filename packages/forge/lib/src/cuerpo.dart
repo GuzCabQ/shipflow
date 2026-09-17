@@ -80,9 +80,13 @@ void _escribirLoQueQuedoCubierto(
     buffer.writeln('Ningún sujeto quedó cubierto en esta corrida.');
   } else {
     for (final c in cubierto) {
+      // `afirmacion.id` no es `controlId`: un control puede declarar más de
+      // una afirmación el día que tenga evidencia por sujeto, así que las
+      // dos identidades se muestran, no solo la del control.
       buffer.writeln(
-        '- **${c.sujeto}** (`${c.controlId}`): ${c.afirmacion.demuestra}. '
-        'No demuestra: ${c.afirmacion.noDemuestra}.',
+        '- **${c.sujeto}** (control `${c.controlId}`, afirmación '
+        '`${c.afirmacion.id}`): ${c.afirmacion.demuestra}. No demuestra: '
+        '${c.afirmacion.noDemuestra}.',
       );
     }
   }
