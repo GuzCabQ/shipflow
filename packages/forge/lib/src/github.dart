@@ -70,14 +70,24 @@ class SalidaDePrDeGitHub implements PullRequestSink {
   final HttpClient Function() _crearCliente;
   final Duration _presupuestoDeRed;
 
-  /// **30 segundos por pedido**, no por toda la llamada a [open]. Es
-  /// generoso para una respuesta HTTP de un solo pedido —búsqueda o
-  /// creación— contra una API remota: cubre una lentitud de red real sin
-  /// acercarse al presupuesto de la corrida entera, que se mide en minutos.
-  /// Un valor más corto arriesgaba falsos `unknown` en una red simplemente
-  /// lenta; uno más largo dejaba la corrida completa esperando por un solo
-  /// pedido colgado casi tanto como si no hubiera límite. Inyectable para
-  /// que la prueba del vencimiento no tenga que esperar treinta segundos.
+  /// **30 segundos por pedido**, no por toda la llamada a [open]. Cubre las
+  /// TRES fases en las que un pedido puede quedarse esperando para
+  /// siempre: conectar (`HttpClient.connectionTimeout`, para el extremo que
+  /// descarta el `SYN` en silencio — un firewall, una ruta muerta, una IP
+  /// que no contesta), recibir la respuesta (`close()`) y leer el cuerpo.
+  /// Es el mismo valor para las tres a propósito: son la misma pregunta
+  /// —¿el otro lado contestó a tiempo?— hecha en tres momentos distintos
+  /// del mismo pedido, y no hay motivo para que uno tolere una espera
+  /// distinta de otro.
+  ///
+  /// Treinta segundos es generoso para una respuesta HTTP de un solo
+  /// pedido —búsqueda o creación— contra una API remota: cubre una
+  /// lentitud de red real sin acercarse al presupuesto de la corrida
+  /// entera, que se mide en minutos. Un valor más corto arriesgaba falsos
+  /// `unknown` en una red simplemente lenta; uno más largo dejaba la
+  /// corrida completa esperando por un solo pedido colgado casi tanto como
+  /// si no hubiera límite. Inyectable para que la prueba del vencimiento
+  /// no tenga que esperar treinta segundos.
   static const presupuestoDeRedPorDefecto = Duration(seconds: 30);
 
   SalidaDePrDeGitHub({
@@ -101,6 +111,13 @@ class SalidaDePrDeGitHub implements PullRequestSink {
     }
 
     final cliente = _crearCliente();
+    // La fase de CONEXIÓN no la cubre `.timeout(...)` sobre `close()`: para
+    // cuando esa llamada existe, la conexión ya se estableció. Un extremo
+    // que descarta el `SYN` en silencio —firewall, ruta muerta, IP que no
+    // contesta— cuelga adentro de `getUrl`/`postUrl`, antes de que haya
+    // nada que envolver en `.timeout(...)`. `connectionTimeout` es el
+    // límite que `HttpClient` ya trae para esa fase específica.
+    cliente.connectionTimeout = _presupuestoDeRed;
     try {
       final PublicationOutcome? existente;
       try {
@@ -230,12 +247,14 @@ class SalidaDePrDeGitHub implements PullRequestSink {
           .join()
           .timeout(_presupuestoDeRed);
     } on Object {
-      // Ni excepción, ni socket cortado, ni tiempo agotado dicen si el POST
-      // llegó a crear el PR del otro lado — un `TimeoutException` de
-      // `.timeout(...)` cae en este mismo `catch`, igual que cualquier otra
-      // excepción de red. Reportarlo como `failed` haría que quien reintenta
-      // abra un segundo pull request; `unknown` es lo que lo manda de nuevo
-      // por la búsqueda idempotente en vez de por una creación ciega.
+      // Ni excepción, ni socket cortado, ni tiempo agotado —en cualquiera
+      // de sus tres fases— dicen si el POST llegó a crear el PR del otro
+      // lado. Un `TimeoutException` de `.timeout(...)` y un
+      // `SocketException` del `connectionTimeout` de [cliente] caen los
+      // dos en este mismo `catch`, igual que cualquier otra excepción de
+      // red. Reportarlo como `failed` haría que quien reintenta abra un
+      // segundo pull request; `unknown` es lo que lo manda de nuevo por la
+      // búsqueda idempotente en vez de por una creación ciega.
       return PullRequestUnknown(causa: CausaDePublicacion.red);
     }
 
