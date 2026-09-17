@@ -6,3 +6,5 @@
 /// molestia del mapa — `vcs` es local y funciona sin red, `forge` es remoto y
 /// necesita credencial, y confundirlos es lo que ADR-014 prohíbe.
 library;
+
+export 'src/empuje.dart';
