@@ -7,5 +7,6 @@
 /// necesita credencial, y confundirlos es lo que ADR-014 prohíbe.
 library;
 
+export 'src/cuerpo.dart';
 export 'src/empuje.dart';
 export 'src/github.dart';

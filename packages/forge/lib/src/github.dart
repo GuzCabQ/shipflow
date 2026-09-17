@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'cuerpo.dart';
 import 'empuje.dart';
 
 /// La clave del entorno bajo la que viaja el token de GitHub. Es la misma que
@@ -40,9 +41,9 @@ class ConfiguracionDeGitHub {
 ///
 /// **Vive acá y no en quien arma el cuerpo del PR**, porque es
 /// [SalidaDePrDeGitHub] quien la busca — la clave de una búsqueda pertenece a
-/// quien busca. La tarea que arma el cuerpo completo del PR (`cuerpoDeGitHub`,
-/// que todavía no existe) va a llamar a esta misma función para incluir la
-/// línea, así que esta declaración no se mueve cuando esa tarea llegue.
+/// quien busca. `cuerpoDeGitHub`, en el módulo vecino que arma el cuerpo,
+/// llama a esta misma función para incluir la línea, así que la búsqueda y el
+/// render comparten una única fuente para la clave.
 ///
 /// Va en el cuerpo y no en el título porque el título se trunca (ver
 /// `PullRequestRequest.titulo`). Lleva su propio `formatVersion` —del
@@ -55,14 +56,12 @@ String marcadorEstable(PullRequestRequest solicitud) =>
 
 /// La salida real: por acá sale un pull request de verdad.
 ///
-/// **El cuerpo que arma [open] hoy es SOLO [marcadorEstable].** No es el
-/// diseño final — es apenas lo que esta tarea necesita para que la búsqueda
-/// idempotente tenga algo verificable en qué apoyarse, sin depender de la
-/// tarea que todavía no existe. La tarea siguiente reemplaza esa línea única
-/// por el render completo del artefacto y sigue llamando a [marcadorEstable]
-/// para no duplicar la clave de la búsqueda. Quien lea este archivo antes de
-/// que esa tarea llegue no debe leer el cuerpo mínimo de acá como la forma
-/// definitiva del cuerpo de un PR.
+/// **El título y el cuerpo que arma [open] son `tituloDeGitHub` y
+/// `cuerpoDeGitHub`**, en el módulo vecino que arma el cuerpo: la única pieza
+/// que conoce la sintaxis de GitHub —la alerta `> [!WARNING]`, el límite de
+/// 256 caracteres del título—. Este archivo solo llama a esa función y a
+/// [marcadorEstable] para la búsqueda idempotente; no arma sintaxis de
+/// proveedor por su cuenta.
 class SalidaDePrDeGitHub implements PullRequestSink {
   final ConfiguracionDeGitHub configuracion;
   final CredentialSource credenciales;
@@ -233,10 +232,10 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       pedido.headers.contentType = ContentType.json;
       pedido.write(
         jsonEncode({
-          'title': request.titulo,
+          'title': tituloDeGitHub(request),
           'head': request.draft.branch,
           'base': request.draft.base,
-          'body': marcadorEstable(request),
+          'body': cuerpoDeGitHub(request),
         }),
       );
       final respuesta = await pedido.close().timeout(_presupuestoDeRed);
