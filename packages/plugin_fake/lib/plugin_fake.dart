@@ -18,4 +18,5 @@ library;
 export 'src/alcance.dart';
 export 'src/normalizador.dart';
 export 'src/politica_de_artefactos.dart';
+export 'src/publicacion.dart';
 export 'src/topologia.dart';

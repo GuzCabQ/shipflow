@@ -44,3 +44,10 @@ dev_dependencies:
   # prueba porque no hay coordinador productivo. De desarrollo por eso.
   vcs:
     path: ../vcs
+  # La suite de contrato de `PullRequestSink` corre la implementación real
+  # —`SalidaDePrDeGitHub`— contra un servidor local, igual que la prueba de
+  # `forge` en la que se apoya. Nadie en `lib/` ni en `bin/` la importa: no hay
+  # `ship` todavía que la haga productiva, así que es de desarrollo por lo
+  # mismo que `vcs` y `plugin_fake`.
+  forge:
+    path: ../forge
