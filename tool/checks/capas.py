@@ -193,6 +193,7 @@ CIEGO_FIJO = {
     "colecciones-inmutables": "archivo_ilegible",
     "dependencias-declaradas-se-usan": "grafo_indisponible",
     "subprocesos-con-entorno-saneado": "archivo_ilegible",
+    "forja-en-su-adapter": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {

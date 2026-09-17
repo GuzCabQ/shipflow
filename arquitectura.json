@@ -353,7 +353,6 @@
         "AgentRunner": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "HookInstaller": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextProjector": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "PullRequestSink": "fase 2, rebanada de la forja · el adapter del proveedor vive en su propio paquete, no en vcs",
         "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "CredentialStore": "fase de `init` · el puerto se partio en la rebanada de la forja: `CredentialSource`, que solo lee, salio de esta lista con UNA implementacion real —`FuenteDeEntorno` en cli— y todavia SIN falsa: la de plugin_fake llega con la suite de contrato de esta misma rebanada, y hasta entonces queda escrito y no disimulado. `CredentialStore` agrega escritura y borrado, y sigue sin implementacion porque no hay almacenamiento real: una clase que leyera y lanzara en `write`/`delete` seria una capacidad declarada que no existe",
@@ -838,6 +837,91 @@
         "que": "Un archivo de packages/ que no parsea.",
         "como": "archivo_ilegible",
         "por_que_ciega": "Los lanzamientos se buscan en el arbol sintactico. De un arbol parcial no sale ninguno, y un archivo que no se pudo leer no tiene subprocesos que revisar — que se lee exactamente igual que no tenerlos.",
+        "debe_mencionar": "no parsea"
+      }
+    },
+    "forja-en-su-adapter": {
+      "enunciado": "Quién es la forja lo sabe `packages/forge/` y ningún otro paquete: ni su nombre de marca, ni su host, ni un `HttpClient` instanciado por fuera de su adapter.",
+      "origen": "Propuesta del entorno de verificacion §10, enmienda `365cfc1`.",
+      "tipo": "forja_en_su_adapter",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Si algo necesita hablar por HTTP con la forja, ese código vive en `packages/forge`, detrás de `PullRequestSink`. El resto del árbol recibe un puerto, nunca el proveedor.",
+      "por_que": [
+        "«El adapter del proveedor vive en su propio paquete» es una",
+        "intención escrita hasta que algo la comprueba. El día que a",
+        "alguien le convenga poner una alerta con sintaxis de GitHub en un",
+        "componente neutral —o instanciar un `HttpClient` para no esperar",
+        "a que `forge` tenga el método que hace falta—, nada se entera:",
+        "compila, pasa `dart analyze`, y el acoplamiento queda escrito en un",
+        "lugar que nadie audita.",
+        "",
+        "Y es un acoplamiento CARO de deshacer más tarde. El día que",
+        "haya un segundo proveedor, lo que esté afuera del adapter es",
+        "exactamente lo que hay que desenredar —cada mención dispersa es",
+        "un sitio más a encontrar, entender y migrar. Una regla que lo",
+        "impide desde el día uno cuesta mucho menos que esa migración.",
+        "",
+        "NO SE RESUELVE EL ÁRBOL. El primer criterio —un identificador",
+        "`HttpClient`— se deriva SIN resolverlo. Resolver ya le costó a",
+        "`subprocesos-con-entorno-saneado` que el job de arquitectura pasara",
+        "de ~3 a ~11-12 minutos contra un límite de 20; una segunda regla",
+        "resolviendo lo empujaría al límite, y acá la ganancia es menor:",
+        "el universo ya está acotado por RUTA, que es lo que la regla dura",
+        "de CLAUDE.md exige —el prefiltro nunca decide qué archivos se",
+        "miran, eso lo decide la ruta. FALSO POSITIVO DELIBERADO, la misma",
+        "decisión que ya toma `_Subprocesos` con `Process`: una clase",
+        "propia que se llame `HttpClient` se reporta igual, porque sin",
+        "resolver no se puede decir cuál es. El precio es renombrarla."
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete MENOS forge. Los test/ NO entran: igual que en `subprocesos-con-entorno-saneado`, una prueba de integración necesita poder fijar el comportamiento contra la forma real del proveedor —una URL, un cuerpo de PR dorado— para poder decir que el adapter hace lo que promete, y esa mención en una prueba no es la fuga que esta regla existe para cazar: es la vara con la que se mide `forge`. Tampoco entra la prosa —comentarios y doc comments—, en NINGUNO de los dos criterios: `puertos.dart` explica HOY, en un doc comment, que `core` no sabe si la forja es GitHub, GitLab o lo que sea, nombrando ambas A PROPÓSITO para decir que NINGUNA vive ahí. Cazar esa explicación sería castigar la documentación que sostiene el propio invariante.",
+        "residuo_declarado": "El primer criterio no resuelve el árbol (ver `por_que`): un alias (`final C = HttpClient;`) no se ve, y una clase LOCAL llamada `HttpClient` se reporta igual que la del SDK —el mismo residuo, con el mismo precio, que ya declara `subprocesos-con-entorno-saneado`. El segundo criterio es TEXTUAL sobre código, nunca sobre prosa, y busca dos agujas exactas: el nombre de marca `GitHub` —con esa capitalización— y el host `github.com`. Caza una regresión LITERAL y no una promesa equivalente escrita con otras palabras —«la forja principal»—, ni un host que no lleve el nombre en su texto —un espejo corporativo en un dominio propio—. Por la misma razón, una mención de marca en OTRA capitalización —`GITHUB`, dentro de una constante de entorno como `SHIPFLOW_GITHUB_TOKEN` en `entorno.dart`— tampoco se ve: no es sintaxis del proveedor, es el nombre de una variable de entorno, y ESE residuo ya lo acepta el origen `365cfc1`. Los headers y el vocabulario de superficie del proveedor —`X-GitHub-Api-Version`, la alerta `> [!WARNING]`— tampoco se cazan por sí solos si el archivo no nombra también a la forja o su host: es el mismo residuo inferencial que ya declara `sin-api-de-modelo` para un cliente HTTP genérico apuntado a un valor de configuración. README, `arquitectura.json` y los planes de `.superpowers/` hablan LEGÍTIMAMENTE de la forja por fuera de este universo: quedan afuera por RUTA, no por una excepción de contenido —ninguno vive bajo `packages/*/lib` o `packages/*/bin`."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_forja.dart",
+        "contenido": "const cuerpoDelCanario =\n    '> [!WARNING]\\n'\n    'Revisá el pull request en GitHub antes de mergear.';\n",
+        "debe_mencionar": "forge"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "HttpClient fuera de forge",
+          "por_que": "El primer criterio, en el paquete que más cerca está de necesitar red algún día: si `orchestration` instancia su propio cliente HTTP en vez de pedirle el trabajo a `forge`, el día del segundo proveedor hay que desenredar DOS lugares que hablan con la red, no uno.",
+          "archivos": {
+            "packages/orchestration/lib/_canario_forja.dart": "import 'dart:io';\n\nHttpClient construir() => HttpClient();\n"
+          },
+          "debe_mencionar": "HttpClient"
+        },
+        {
+          "nombre": "el host, sin el nombre del proveedor",
+          "por_que": "El segundo criterio por su otra aguja. Una URL puede delatar a la forja sin decir su nombre de marca en ningún lado, y el residuo declarado dice que ESTO sí se cubre —a diferencia de un host que no lleve el nombre en su propio texto.",
+          "archivos": {
+            "packages/cli/lib/_canario_forja.dart": "const apiDeLaForja = 'https://github.com/api/v3';\n"
+          },
+          "debe_mencionar": "github.com"
+        },
+        {
+          "nombre": "en bin/ y no en lib/",
+          "por_que": "Una regla que mirara solo `lib/` dejaría abierto el ejecutable, que es justo donde es cómodo escribir un atajo. Mismo canario que la violación canónica, bajo `bin/`.",
+          "archivos": {
+            "packages/cli/bin/_canario_forja.dart": "const cuerpoDelCanario =\n    '> [!WARNING]\\n'\n    'Revisá el pull request en GitHub antes de mergear.';\n"
+          },
+          "debe_mencionar": "forge"
+        },
+        {
+          "nombre": "el proveedor en código, pegado al final de un comentario",
+          "por_que": "El canario que exige la regla dura de este repositorio sobre alcance mudo: el segundo criterio tiene un atajo declarado —la prosa no cuenta— y ese atajo necesita un canario que viva DENTRO del universo y JUSTO en el borde de lo que excluye, no lejos de él. Si el cálculo del rango de un comentario se pasara de largo por un solo carácter, se comería el primer byte del código que sigue, y una mención real quedaría leída como si fuera parte del comentario: un falso negativo mudo, no una alarma. Este archivo pone la mención inmediatamente después del `*/` que cierra el comentario, sin espacio de por medio, para que el check solo pase si excluye EXACTAMENTE el comentario y ni un carácter más.",
+          "archivos": {
+            "packages/core/lib/src/_canario_forja_borde.dart": "/* nota */const nombreLegible = 'GitHub';\n"
+          },
+          "debe_mencionar": "GitHub"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simétrico de `violacion_canonica`: aquélla prueba que el check detecta un EXCESO; éste, que detecta una OMISIÓN.",
+        "que": "Un archivo de packages/ que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Los dos criterios se derivan del árbol sintáctico y del texto que el parser reconoce. De un árbol parcial no sale ningún `HttpClient`, y del texto que el parser no pudo tokenizar no se puede saber qué es comentario y qué es código —un archivo que no se pudo leer se lee exactamente igual que uno sin ninguna mención al proveedor.",
         "debe_mencionar": "no parsea"
       }
     }

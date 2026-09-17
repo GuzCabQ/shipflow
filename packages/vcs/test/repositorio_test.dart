@@ -634,7 +634,8 @@ exec git "$@"
     const muestras = <String, String>{
       'una clave privada': '-----BEGIN RSA PRIVATE KEY-----',
       'una clave de acceso de AWS': 'AKIAIOSFODNN7EXAMPLE',
-      'un token de GitHub': 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB',
+      'un token de acceso personal de una forja':
+          'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB',
       'un token de Slack': 'xoxb-1234567890-abcdefghij',
       'una clave de API de Google': 'AIzaSyA0123456789abcdefghijklmnopqrstuv',
       'una clave secreta de Stripe': 'sk_live_0123456789abcdefghij',

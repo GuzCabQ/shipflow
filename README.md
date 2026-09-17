@@ -11,7 +11,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ## Estado: fase 2, quinta rebanada. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** 9 de los 28
+`core` existe: **las entidades y los puertos, como tipos.** 10 de los 28
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
 de verdad, con toolchain de verdad.
 
@@ -100,13 +100,14 @@ la arquitectura y se revisa como tal.
 | `puertos-sin-implementacion` | Que una superficie de puertos vacía se lea como un sistema que hace esas cosas | `tool/analisis` |
 | `colecciones-inmutables` | Que un invariante se pueda romper **después** de construir el objeto, mutando la lista que se le pasó | `tool/analisis` |
 | `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
+| `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué las cinco últimas necesitan otro motor
+### Por qué las seis últimas necesitan otro motor
 
 Se derivan del **árbol sintáctico** de `core`, no de su texto. Es la misma
 lección que ya pagó `capas.py` con el grafo de dependencias: parsear a mano
@@ -1287,7 +1288,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 133 sabotajes.**
+y su caso ciego. **El arnés aplica 142 sabotajes.**
 
 ---
 
@@ -2789,7 +2790,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 28 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **18 de los 28 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |

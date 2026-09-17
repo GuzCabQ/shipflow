@@ -116,7 +116,14 @@ class DetectorDeSecretos {
       _leeDeEnv,
     ),
     _Patron(
-      'un token de GitHub',
+      // Sin nombrar la forja: reconoce la FORMA del token —el prefijo
+      // `gh[pousr]_` que usa el proveedor configurado HOY— sin decir cuál
+      // es. Nombrarla acá sería la fuga exacta que `forja-en-su-adapter`
+      // existe para prohibir. Este prefijo es del proveedor actual, no
+      // genérico entre proveedores: el día que `forge` cambie de
+      // proveedor, este patrón hay que revisarlo junto con el resto del
+      // adapter, igual que cualquier otro detalle de superficie suyo.
+      'un token de acceso personal de una forja',
       RegExp(r'\bgh[pousr]_[A-Za-z0-9]{36,}\b'),
       _leeDeEnv,
     ),
