@@ -108,24 +108,41 @@ aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué las seis últimas necesitan otro motor
+### Por qué siete de estas reglas necesitan otro motor
 
-Todas necesitan un **parser de verdad**, no un `grep`. Es la misma lección que
-ya pagó `capas.py` con el grafo de dependencias: parsear a mano devuelve cero
+**Siete, y no son un bloque contiguo de la tabla:** las seis últimas más
+`subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
+fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
+
+Lo único que las siete comparten es la razón: **ninguna se puede derivar
+leyendo el archivo como texto plano.** Es la misma lección que ya pagó
+`capas.py` con el grafo de dependencias: parsear a mano devuelve cero
 resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
-*"está todo bien"*. Los campos de una clase se le piden al analizador. Su
-paquete está **fuera del `workspace:`** a propósito: ninguna regla de capas
-debería tener que hacerle una excepción a su propio verificador.
+*"está todo bien"*. Su paquete está **fuera del `workspace:`** a propósito:
+ninguna regla de capas debería tener que hacerle una excepción a su propio
+verificador.
 
-**Las cinco primeras se derivan del árbol sintáctico de `core`.** La sexta,
-`forja-en-su-adapter`, no: su universo es `lib/` y `bin/` de **todos** los
-paquetes menos `forge` —no `core`—, y de sus dos criterios solo el primero
-—un identificador `HttpClient`— sale del árbol. El segundo es **textual**
-(`String.indexOf` sobre el contenido del archivo), y lo único que le pide al
-parser es el stream de tokens con el que descarta los comentarios: la prosa que
-nombra a la forja para explicar que no vive ahí no es la fuga que la regla
-persigue. Ese criterio textual está declarado en
-[`arquitectura.json`](arquitectura.json), con su residuo.
+**Lo que mira cada una no es lo mismo, y agruparlas bajo «se derivan del árbol
+sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
+
+- `serializacion-sin-perdida`, `opacidad-declarada` y `colecciones-inmutables`
+  — y solo estas tres — se derivan del árbol sintáctico de `packages/core/lib`.
+- `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
+  implementa lo busca en todos los paquetes**: una implementación que viviera
+  solo en `core` no es la pregunta que responde.
+- `subprocesos-con-entorno-saneado` mira `lib/` y `bin/` de cada paquete, y es
+  la única que además **resuelve** la identidad de `Process` contra el SDK en
+  vez de conformarse con el nombre.
+- `forja-en-su-adapter` mira `lib/` y `bin/` de cada paquete **menos `forge`**,
+  y de sus dos criterios solo el primero sale del árbol: el segundo es
+  **textual** sobre el contenido del archivo, y lo único que le pide al parser
+  es el stream de tokens con el que descarta los comentarios.
+- `grafo-derivado` mira el repositorio entero, `.dart` **y `.md`**: los `.dart`
+  por sus directivas en el árbol, pero las aristas de cita de los `.md` salen
+  de la **prosa**, no de ningún árbol.
+
+Los residuos de cada criterio están en
+[`arquitectura.json`](arquitectura.json), no acá.
 
 ---
 
@@ -2895,7 +2912,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Nueve hechos que esta rebanada deja escritos porque son límites reales, no
+Once hechos que esta rebanada deja escritos porque son límites reales, no
 trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -2951,6 +2968,20 @@ trabajo pendiente con fecha:
   el resultado seguiría sin ser el que use el `git` que se lanza después, que
   resuelve por su cuenta al conectarse: sería una segunda resolución, no la
   misma.
+- **`PushUnknown` y `PullRequestUnknown` admiten la causa
+  `configuracionInsegura`, y esa combinación diría «no sé si llegó» sobre una
+  credencial que nunca salió del proceso.** Hoy no la produce ningún sitio —los
+  dos rechazos son `PushFailed`— y el tipo no la impide: `causa` es un getter
+  de `PublicacionConCausa`, así que **toda** causa cabe en **toda** variante con
+  causa. Es la misma forma que ya admitía `permisos` —un `PushUnknown` por
+  permisos tampoco significa nada—, o sea un hueco previo un poco más ancho, no
+  uno nuevo. Cerrarlo pide partir el enum por variante, que es un cambio de
+  dominio y no de esta rebanada.
+- **El ida y vuelta por JSON de `configuracionInsegura` no lo fija ninguna
+  prueba.** Viaja por `name`/`byName` como cualquier otro valor del enum, así
+  que funciona por construcción y no por cobertura: si alguien cambiara esa
+  serialización a índices, lo cazaría la prueba «un enum viaja por nombre, no
+  por índice» de `core`, que no nombra este valor en particular.
 - **`capas.py` no compara el árbol de paquetes que describe la sección
   `## Estructura` de este README contra `packages/` real.** Es una enumeración
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,

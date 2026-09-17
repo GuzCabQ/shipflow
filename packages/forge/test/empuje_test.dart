@@ -182,14 +182,20 @@ void main() {
     expect(r.desenlace.toString(), isNot(contains(secreto)));
   });
 
-  test('un remoto que no es https se rechaza antes de lanzar git', () async {
+  test('un remoto que no es https se rechaza antes de tocar la credencial y '
+      'antes de lanzar git', () async {
     // `_conCredencial` mete el secreto en el `userinfo` sin mirar el
     // esquema: con `http://` contra un host que no es loopback, el token
     // viaja en claro. Nadie produce hoy esa URL —la raíz de composición es
     // de la rebanada de `ship`— y por eso ninguna revisión por tarea lo vio.
     //
-    // El espía es el control de que el rechazo ocurre ANTES del lanzamiento:
-    // si `git` —o cualquier programa— llegara a correr, dejaría su rastro.
+    // DOS controles, porque el doc comment promete dos cosas distintas y el
+    // espía de proceso solo sostiene una: que el rechazo ocurre antes del
+    // LANZAMIENTO. Mover la validación a después de `credencial.use(...)` y
+    // antes de `Process.run` sobreviviría a ese espía solo, aunque el
+    // comentario diga «antes de tocar la credencial». La credencial espía
+    // cierra esa segunda mitad: anota si alguien llegó a desenvolver el
+    // secreto.
     final espia = File('${temporal.path}/espia-esquema.sh');
     await espia.writeAsString(
       '#!/bin/sh\ntouch "${temporal.path}/se-lanzo"\nexit 0\n',
@@ -206,9 +212,10 @@ void main() {
     );
 
     const secreto = 'ghp_no_debe_viajar_en_claro';
+    final credencial = _CredencialEspia(secreto);
     final r = await empuje.empujar(
       urlDelRemoto: 'http://forja.invalido/duenio/repo.git',
-      credencial: const Credential(secreto, label: 'SHIPFLOW_GITHUB_TOKEN'),
+      credencial: credencial,
       revision: 'HEAD',
       rama: 'rebanada-1',
     );
@@ -228,6 +235,15 @@ void main() {
       File('${temporal.path}/se-lanzo').existsSync(),
       isFalse,
       reason: 'el rechazo tiene que ocurrir ANTES de lanzar nada',
+    );
+    expect(
+      credencial.desenvuelta,
+      isFalse,
+      reason:
+          'el rechazo tiene que ocurrir ANTES de tocar la credencial, que es '
+          'lo que promete el comentario de `empujar`: con la validación '
+          'movida a después de `credencial.use(...)` el secreto ya estaría '
+          'interpolado en una URL que nadie va a usar',
     );
     // Ni la URL rechazada ni el secreto aparecen en ningún texto que salga.
     expect(jsonEncode(r.desenlace.toJson()), isNot(contains(secreto)));
@@ -388,6 +404,23 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
           'hijo (PATH, HOME).',
     );
   });
+}
+
+/// Una [Credential] que anota si alguien llegó a desenvolver el secreto.
+///
+/// No hay otra forma de observarlo: `use` es el único acceso al secreto —ese
+/// es el punto del tipo— y no deja rastro por su cuenta. Con esto, «no se
+/// tocó la credencial» es una aserción y no una promesa de un comentario.
+class _CredencialEspia extends Credential {
+  bool desenvuelta = false;
+
+  _CredencialEspia(super.secreto) : super(label: 'SHIPFLOW_GITHUB_TOKEN');
+
+  @override
+  T use<T>(T Function(String secreto) f) {
+    desenvuelta = true;
+    return super.use(f);
+  }
 }
 
 /// Los NOMBRES de las variables que volcó `env`, sin sus valores.

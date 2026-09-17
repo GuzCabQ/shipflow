@@ -22,6 +22,16 @@ enum CausaDePublicacion {
   /// No es reintentable: el mismo canal vuelve a estar en claro la próxima
   /// vez. Lo que hace falta es corregir la configuración, y por eso su
   /// [AccionSiguiente] es propia y no [AccionSiguiente.reintentarPublicacion].
+  ///
+  /// **Residuo declarado, y previo a esta causa:** [causa] es un getter de
+  /// [PublicacionConCausa], así que TODA causa cabe en TODA variante con
+  /// causa — incluidas [PushUnknown] y [PullRequestUnknown]. Un
+  /// `PushUnknown(causa: configuracionInsegura)` diría «no sé si llegó» sobre
+  /// una credencial que nunca salió del proceso. Hoy no lo produce ningún
+  /// sitio —los dos rechazos son [PushFailed]— y es la misma forma que ya
+  /// admitía [permisos]: un `PushUnknown` por permisos tampoco significa
+  /// nada. Cerrarlo pide partir el enum por variante, que es un cambio de
+  /// dominio.
   configuracionInsegura,
 
   desconocida,
