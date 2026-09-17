@@ -2936,10 +2936,13 @@ olvido:
   y hace falta decirlo por separado: `RepositorioGit._padre` y
   `EjecutorDelSistema._padre` (`packages/plugin_dart/lib/src/ejecutor.dart`)
   tienen, cada uno, el respaldo `_entornoDelPadre ?? EntornoDelProceso(Platform.environment)`
-  —el parámetro es opcional porque cada uno tiene un llamador real que no
-  inyecta nada: `cascadaPorDefecto`, en `packages/cli/lib/src/verify.dart`,
-  construye `EjecutorDelSistema()` así, y es el mismo `shipflow verify` que
-  este README muestra al principio. `EmpujeAislado.entornoDelPadre`, en
+  —el parámetro es opcional por eso—, pero el respaldo se ejerce distinto en
+  cada uno: `EjecutorDelSistema` sí tiene un llamador real que no inyecta,
+  `cascadaPorDefecto` (`packages/cli/lib/src/verify.dart`), que construye
+  `EjecutorDelSistema()` así y es el mismo `shipflow verify` que este README
+  muestra al principio; `RepositorioGit` todavía no tiene ninguno en
+  producción —hoy solo se construye desde pruebas—, porque quien lo compondría
+  ahí es `ship`, que no existe. `EmpujeAislado.entornoDelPadre`, en
   `forge`, no tiene respaldo ninguno —es `required` y no nulable—, porque no
   tiene ningún llamador que no inyecte: ahí olvidarlo no es un valor por
   defecto silencioso, es un error de compilación. Lo que las tres comparten,
