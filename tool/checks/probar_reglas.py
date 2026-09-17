@@ -264,6 +264,13 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "homonima en el ORIGEN de la resolucion",
         "dos puertos homonimos con la MISMA herencia",
     },
+    "forja-en-su-adapter": {
+        "HttpClient fuera de forge",
+        "el host, sin el nombre del proveedor",
+        "en bin/ y no en lib/",
+        "el proveedor en código, pegado al final de un comentario",
+        "el proveedor en un comentario que es lo último del archivo",
+    },
 }
 
 
@@ -410,11 +417,24 @@ def casos() -> list[dict]:
         for extra in REGLAS[rid].get("violaciones_extra", []):
             archivos = dict(extra["archivos"])
             declarar = extra.get("declarar_sin_implementacion")
+            # **`espera` es la excepción, no la regla.** Por defecto una extra
+            # ESPERA FALLA y `debe_mencionar` es obligatorio —sigue siendo
+            # `extra["debe_mencionar"]`, sin `.get`, para que a una extra común
+            # que se olvide de declararlo no le quede un `None` mudo: revienta
+            # acá, en la construcción, y no como un caso que "pasó" sin haber
+            # comprobado nada. Solo una extra que declara `"espera": "pasa"` — un
+            # CONTROL NEGATIVO, del mismo tipo que ya usan las exclusiones y
+            # exenciones más abajo en este archivo — puede quedarse sin él: ahí no
+            # hay nada que el check tenga que decir, porque se espera que no diga
+            # nada.
+            espera = extra.get("espera", "falla")
             caso = {
                 "nombre": f"{rid} · {extra['nombre']}",
                 "archivos": archivos,
                 "pub_get": extra.get("requiere_pub_get", False),
-                "menciona": extra["debe_mencionar"],
+                "menciona": extra.get("debe_mencionar") if espera == "pasa"
+                else extra["debe_mencionar"],
+                "espera": espera,
                 "probar_grafo": del_grafo,
                 # **Se lee del JSON.** La primera vez quedó sin copiar acá: la
                 # extra declaraba `regenerar_grafo` y el caso se montaba sin él,

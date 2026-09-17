@@ -910,11 +910,19 @@
         },
         {
           "nombre": "el proveedor en código, pegado al final de un comentario",
-          "por_que": "El canario que exige la regla dura de este repositorio sobre alcance mudo: el segundo criterio tiene un atajo declarado —la prosa no cuenta— y ese atajo necesita un canario que viva DENTRO del universo y JUSTO en el borde de lo que excluye, no lejos de él. Si el cálculo del rango de un comentario se pasara de largo por un solo carácter, se comería el primer byte del código que sigue, y una mención real quedaría leída como si fuera parte del comentario: un falso negativo mudo, no una alarma. Este archivo pone la mención inmediatamente después del `*/` que cierra el comentario, sin espacio de por medio, para que el check solo pase si excluye EXACTAMENTE el comentario y ni un carácter más.",
+          "por_que": "El canario que exige la regla dura de este repositorio sobre alcance mudo: el segundo criterio tiene un atajo declarado —la prosa no cuenta— y ese atajo necesita un canario que viva DENTRO del universo y JUSTO en el borde de lo que excluye, no lejos de él. Si el cálculo del rango de un comentario se pasara de largo por un solo carácter, se comería el primer byte del código que sigue, y una mención real quedaría leída como si fuera parte del comentario: un falso negativo mudo, no una alarma. `GitHub` empieza en el carácter EXACTO donde termina el comentario —offset 10, el mismo `comentario.end` que calcula `_rangosDeComentarios`—, sin ningún carácter de por medio: el check solo pasa si excluye EXACTAMENTE el comentario y ni uno más.",
           "archivos": {
-            "packages/core/lib/src/_canario_forja_borde.dart": "/* nota */const nombreLegible = 'GitHub';\n"
+            "packages/core/lib/src/_canario_forja_borde.dart": "/* nota */GitHub() => 0;\n"
           },
           "debe_mencionar": "GitHub"
+        },
+        {
+          "nombre": "el proveedor en un comentario que es lo último del archivo",
+          "por_que": "CONTROL NEGATIVO, simétrico del anterior: cubre el bug real que encontró la ronda de arreglo 1 en `_rangosDeComentarios`. El recorrido de tokens cortaba ANTES de mirar los `precedingComments` que cuelgan del propio token EOF, así que un comentario que es LO ÚLTIMO del archivo —sin ningún token real después— nunca entraba en la lista de rangos excluidos, y una mención de la forja ahí se leía como código en vez de como prosa. Este archivo no tiene ninguna mención en código, solo en un comentario final: con el fix puesto tiene que pasar limpio; si alguien revierte el fix, este archivo empieza a dispararse solo, sin que haga falta ningún otro cambio.",
+          "archivos": {
+            "packages/core/lib/_canario_forja_cola.dart": "// Menciona a GitHub, pero es lo último del archivo: no hay ningún\n// token real después de este comentario.\n"
+          },
+          "espera": "pasa"
         }
       ],
       "caso_ciego": {
