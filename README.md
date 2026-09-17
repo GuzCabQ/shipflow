@@ -110,12 +110,22 @@ primero que hizo cuando se agregaron las tres reglas nuevas.
 
 ### Por qué las seis últimas necesitan otro motor
 
-Se derivan del **árbol sintáctico** de `core`, no de su texto. Es la misma
-lección que ya pagó `capas.py` con el grafo de dependencias: parsear a mano
-devuelve cero resultados ante una sintaxis que el parser no reconoce, y cero se
-lee igual que *"está todo bien"*. Los campos de una clase se le piden al
-analizador. Su paquete está **fuera del `workspace:`** a propósito: ninguna
-regla de capas debería tener que hacerle una excepción a su propio verificador.
+Todas necesitan un **parser de verdad**, no un `grep`. Es la misma lección que
+ya pagó `capas.py` con el grafo de dependencias: parsear a mano devuelve cero
+resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
+*"está todo bien"*. Los campos de una clase se le piden al analizador. Su
+paquete está **fuera del `workspace:`** a propósito: ninguna regla de capas
+debería tener que hacerle una excepción a su propio verificador.
+
+**Las cinco primeras se derivan del árbol sintáctico de `core`.** La sexta,
+`forja-en-su-adapter`, no: su universo es `lib/` y `bin/` de **todos** los
+paquetes menos `forge` —no `core`—, y de sus dos criterios solo el primero
+—un identificador `HttpClient`— sale del árbol. El segundo es **textual**
+(`String.indexOf` sobre el contenido del archivo), y lo único que le pide al
+parser es el stream de tokens con el que descarta los comentarios: la prosa que
+nombra a la forja para explicar que no vive ahí no es la fuga que la regla
+persigue. Ese criterio textual está declarado en
+[`arquitectura.json`](arquitectura.json), con su residuo.
 
 ---
 
@@ -2829,6 +2839,22 @@ dos mecanismos gobiernan superficies distintas y hace falta vaciar las dos. La
 credencial viaja en el `userinfo` de la URL de destino, de un solo uso, nunca
 en el entorno del proceso.
 
+**Y los dos canales que llevan la credencial exigen `https`, validado.** El
+`userinfo` del `git push` y el `Authorization: Bearer` del cliente de la API
+salen los dos de una URL que produce la raíz de composición —que no existe
+todavía—, y con `http://` el token viaja en claro por los dos.
+`esCanalSeguroParaLaCredencial` (`packages/forge/lib/src/empuje.dart`) lo
+rechaza **antes** de adjuntar nada, con un desenlace cerrado —`PushFailed` con
+causa `configuracionInsegura`, que no es reintentable y no nombra la URL
+rechazada— y no con una excepción que se escape del puerto. La causa es propia
+y no `autenticacion` a propósito: decir «la credencial no fue aceptada» sobre
+un token que nunca salió del proceso le reporta al usuario un problema de su
+token cuando el problema es de la configuración. **Excepción decidida y
+declarada:** `http` sobre loopback (`127.0.0.0/8`, `::1`, `localhost`) se
+acepta —no sale de la máquina, y exigirle TLS obligaría a cada suite que
+levanta un `HttpServer` local a montar un certificado propio, con lo que el
+control terminaría probándose contra un montaje que no es el de producción.
+
 ### El desenlace de publicar es una jerarquía sellada, no dos enums que se puedan combinar mal
 
 `PublicationOutcome` (`packages/core/lib/src/publicacion.dart`) reemplaza lo
@@ -2848,7 +2874,11 @@ respuesta perdida se reporta como `failed` y un reintento crea un segundo PR.
 La búsqueda idempotente de `SalidaDePrDeGitHub` —por revisión, rama base y el
 marcador estable que `cuerpo.dart` también usa para renderizar— es lo que le
 permite a un reintento después de `unknown` encontrar el PR que sí se llegó a
-crear, en vez de abrir otro.
+crear, en vez de abrir otro. **Mientras el reintento traiga el mismo `runId`:**
+el marcador lo lleva adentro, así que un reintento con un `runId` nuevo no
+encuentra el PR de la corrida anterior y abre uno segundo. Quien componga el
+reintento tiene que reusar el `runId` de la corrida que quedó en `unknown` —es
+de la rebanada de `ship`— y esa atadura hoy no la sostiene ningún control.
 
 ### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
 
@@ -2865,7 +2895,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Ocho hechos que esta rebanada deja escritos porque son límites reales, no
+Nueve hechos que esta rebanada deja escritos porque son límites reales, no
 trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -2913,6 +2943,14 @@ trabajo pendiente con fecha:
   Antes de esta rebanada esa forma solo la tenían los casos escritos a mano en
   Python; acá cubre el fix de `_rangosDeComentarios` que hace que un comentario
   al final del archivo no se lea como código.
+- **La excepción de loopback del canal de la credencial se acepta por el
+  TEXTO del host, no por la dirección a la que resuelve.** `localhost` pasa
+  porque se llama así; un `/etc/hosts` que lo apunte a una máquina remota haría
+  viajar el token en claro y `esCanalSeguroParaLaCredencial` no lo vería.
+  Resolverlo ahí significaría hacer DNS dentro de una validación sincrónica, y
+  el resultado seguiría sin ser el que use el `git` que se lanza después, que
+  resuelve por su cuenta al conectarse: sería una segunda resolución, no la
+  misma.
 - **`capas.py` no compara el árbol de paquetes que describe la sección
   `## Estructura` de este README contra `packages/` real.** Es una enumeración
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
