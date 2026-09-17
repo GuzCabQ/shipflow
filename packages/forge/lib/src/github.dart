@@ -68,13 +68,26 @@ class SalidaDePrDeGitHub implements PullRequestSink {
   final CredentialSource credenciales;
   final EmpujeAislado empuje;
   final HttpClient Function() _crearCliente;
+  final Duration _presupuestoDeRed;
+
+  /// **30 segundos por pedido**, no por toda la llamada a [open]. Es
+  /// generoso para una respuesta HTTP de un solo pedido —búsqueda o
+  /// creación— contra una API remota: cubre una lentitud de red real sin
+  /// acercarse al presupuesto de la corrida entera, que se mide en minutos.
+  /// Un valor más corto arriesgaba falsos `unknown` en una red simplemente
+  /// lenta; uno más largo dejaba la corrida completa esperando por un solo
+  /// pedido colgado casi tanto como si no hubiera límite. Inyectable para
+  /// que la prueba del vencimiento no tenga que esperar treinta segundos.
+  static const presupuestoDeRedPorDefecto = Duration(seconds: 30);
 
   SalidaDePrDeGitHub({
     required this.configuracion,
     required this.credenciales,
     required this.empuje,
     HttpClient Function()? clienteHttp,
-  }) : _crearCliente = clienteHttp ?? HttpClient.new;
+    Duration presupuestoDeRed = presupuestoDeRedPorDefecto,
+  }) : _crearCliente = clienteHttp ?? HttpClient.new,
+       _presupuestoDeRed = presupuestoDeRed;
 
   @override
   Future<PublicationOutcome> open(PullRequestRequest request) async {
@@ -160,8 +173,11 @@ class SalidaDePrDeGitHub implements PullRequestSink {
     );
     final pedido = await cliente.getUrl(uri);
     _autenticar(pedido, credencial);
-    final respuesta = await pedido.close();
-    final cuerpo = await utf8.decoder.bind(respuesta).join();
+    final respuesta = await pedido.close().timeout(_presupuestoDeRed);
+    final cuerpo = await utf8.decoder
+        .bind(respuesta)
+        .join()
+        .timeout(_presupuestoDeRed);
     final lista = jsonDecode(cuerpo) as List<Object?>;
     final marcador = marcadorEstable(request);
 
@@ -206,24 +222,37 @@ class SalidaDePrDeGitHub implements PullRequestSink {
           'body': marcadorEstable(request),
         }),
       );
-      final respuesta = await pedido.close();
+      final respuesta = await pedido.close().timeout(_presupuestoDeRed);
       codigo = respuesta.statusCode;
       tipoDeContenido = respuesta.headers.contentType;
-      cuerpoDeLaRespuesta = await utf8.decoder.bind(respuesta).join();
+      cuerpoDeLaRespuesta = await utf8.decoder
+          .bind(respuesta)
+          .join()
+          .timeout(_presupuestoDeRed);
     } on Object {
-      // Ni excepción ni socket cortado dicen si el POST llegó a crear el PR
-      // del otro lado. Reportarlo como `failed` haría que quien reintenta
+      // Ni excepción, ni socket cortado, ni tiempo agotado dicen si el POST
+      // llegó a crear el PR del otro lado — un `TimeoutException` de
+      // `.timeout(...)` cae en este mismo `catch`, igual que cualquier otra
+      // excepción de red. Reportarlo como `failed` haría que quien reintenta
       // abra un segundo pull request; `unknown` es lo que lo manda de nuevo
       // por la búsqueda idempotente en vez de por una creación ciega.
       return PullRequestUnknown(causa: CausaDePublicacion.red);
     }
 
     if (tipoDeContenido?.mimeType != 'application/json') {
-      // La forja real contesta este endpoint en JSON, tanto si crea el PR
-      // como si lo rechaza. Una respuesta que no lo es —un `200` en blanco,
-      // la página de un proxy intermedio— no es un desenlace de GitHub que
-      // este cliente sepa leer: es el mismo cuadro que una conexión cortada
-      // a mitad de camino, y no hay código de estado que la vuelva confiable.
+      // **No es una defensa contra una conexión cortada a mitad de trama**:
+      // eso ya termina en una excepción, y la atrapa el `catch` de arriba.
+      // Esto es otra cosa: la forja real contesta este endpoint en JSON
+      // tanto si crea el PR como si lo rechaza, así que una respuesta
+      // sintácticamente completa que NO lo es no vino de GitHub tal como
+      // este cliente lo conoce — es la página de un balanceador, de un
+      // proxy o de un WAF intermedio, con SU PROPIO código de estado, que
+      // puede coincidir por accidente con uno de los que sí clasificamos
+      // (un `403` de un WAF no es un `403` de GitHub) y llevar a una causa
+      // que no es la real. No hay código de estado ajeno a GitHub que este
+      // cliente pueda clasificar con confianza, así que se declara
+      // `unknown` en vez de inventar una causa sobre una respuesta que no
+      // es la que se estaba esperando.
       return PullRequestUnknown(causa: CausaDePublicacion.red);
     }
 
@@ -237,7 +266,17 @@ class SalidaDePrDeGitHub implements PullRequestSink {
           return PullRequestUnknown(causa: CausaDePublicacion.red);
         }
         return PullRequestOpen(url: url);
-      } on FormatException {
+      } on Object {
+        // No alcanza con `FormatException`: un `201` con `Content-Type:
+        // application/json` y un cuerpo que es JSON válido pero de otra
+        // forma —una lista, `null`, un `html_url` que no es texto— no
+        // lanza `FormatException` al decodificar. `jsonDecode(...) as
+        // Map<String, Object?>` y `data['html_url'] as String?` lanzan
+        // `TypeError` en esos casos, y el puerto declara que `open` nunca
+        // lanza por un fallo remoto. Es, además, exactamente la misma
+        // incertidumbre que el brief pide tratar como `unknown`: un `201`
+        // dice que el servidor creó algo, y su cuerpo no siendo el
+        // esperado no vuelve falso ese `201`.
         return PullRequestUnknown(causa: CausaDePublicacion.red);
       }
     }
