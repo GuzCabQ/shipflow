@@ -153,6 +153,32 @@ void main() {
     expect(cuerpo, contains('el entorno no se derivó'));
   });
 
+  test('el motivo «nadie dio cuenta» no le agrega un sujeto que no tiene', () {
+    // Ronda de arreglo 1: la entrada de `solicitudConCriterio()` con este
+    // motivo se construye SIN sujeto —tal como dos de los tres hechos que
+    // agrupa `MotivoDeCriterio.nadieDioCuenta` no lo tienen—, así que la
+    // prosa del motivo no puede decir «de este sujeto»: sería afirmar que
+    // el fallo es acotado cuando el propio caso de esta prueba demuestra
+    // que es de la corrida entera. Es una prueba sobre la PROSA del
+    // motivo, no sobre el `detalle` — la anterior podía pasar aunque la
+    // prosa mintiera, porque el `detalle` de la prueba de arriba también
+    // contiene las mismas palabras clave por su cuenta.
+    final cuerpo = cuerpoDeGitHub(solicitudConCriterio());
+    expect(cuerpo, contains('**nadie dio cuenta**'));
+    expect(cuerpo, isNot(contains('nadie dio cuenta de')));
+  });
+
+  test('lo cubierto va antes de lo que requiere criterio', () {
+    // ADR-016 regula este orden puntual, no solo que la advertencia preceda
+    // a lo verde: invertir las dos llamadas dentro de `cuerpoDeGitHub` es un
+    // cambio de una línea que ninguna otra prueba de este archivo detecta.
+    final cuerpo = cuerpoDeGitHub(solicitudConCriterio());
+    expect(
+      cuerpo.indexOf('## Qué quedó cubierto'),
+      lessThan(cuerpo.indexOf('## Qué requiere criterio humano')),
+    );
+  });
+
   test('el marcador estable es la última línea y lleva runId y revisión', () {
     final cuerpo = cuerpoDeGitHub(solicitudVerde());
     final ultima = cuerpo.trimRight().split('\n').last;
@@ -174,6 +200,24 @@ void main() {
       final titulo = tituloDeGitHub(larga);
       expect(titulo.length, lessThanOrEqualTo(256));
       expect(titulo, startsWith(PullRequestRequest.prefijoIncompleto));
+    },
+  );
+
+  test(
+    'la intención completa está en el cuerpo aunque el título se trunque',
+    () {
+      // El JSON de la corrida es local y `git` lo ignora: el cuerpo del PR
+      // es la única superficie donde un revisor remoto puede leer algo que
+      // no entró en el título. Sin esto, una intención larga se perdía a
+      // mitad de camino y no había dónde leerla entera.
+      final larga = solicitudIncompletaConIntencionLarga();
+      final intencionCompleta = 'x' * 400;
+      expect(
+        tituloDeGitHub(larga).length,
+        lessThan(intencionCompleta.length),
+        reason: 'esta prueba solo tiene sentido si el título SÍ se trunca',
+      );
+      expect(cuerpoDeGitHub(larga), contains(intencionCompleta));
     },
   );
 }

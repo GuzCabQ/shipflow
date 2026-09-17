@@ -43,14 +43,50 @@ String tituloDeGitHub(PullRequestRequest solicitud) {
 }
 
 /// Cómo se lee, en el cuerpo del PR, cada motivo por el que algo requiere
-/// criterio humano. **Traduce el nombre del enum, no lo resume**: cada rama
-/// nombra la misma categoría que documenta `MotivoDeCriterio`, para que la
-/// entrada completa (motivo + `detalle`) se lea sin tener que abrir el código
-/// fuente de `core`.
+/// criterio humano. **Traduce el nombre del enum, no lo resume, y no le
+/// agrega alcance que el motivo no tiene.**
+///
+/// La ronda de arreglo 1 encontró exactamente ese segundo error en
+/// [MotivoDeCriterio.nadieDioCuenta]: decía «nadie dio cuenta de este
+/// sujeto», y el doc comment de ese valor, en `core`, dice que dos de sus
+/// tres hechos **no tienen sujeto en absoluto** — el
+/// entorno derivado sin ningún control que corriera, o la cascada corrida sin
+/// ningún control registrado. Agregarle «de este sujeto» encogía un fallo de
+/// la corrida entera a uno acotado a un sujeto puntual: exactamente la
+/// traducción tranquilizadora que este archivo existe para no escribir. La
+/// entrada que sí tiene sujeto ya lo muestra por separado, en el sufijo
+/// `— sujeto \`...\`` que arma [_escribirLoQueRequiereCriterio]; esta prosa no
+/// necesita nombrarlo de nuevo, y nombrarlo aquí sería afirmar que siempre
+/// hay uno.
+///
+/// **Las diez ramas, comparadas una por una contra su doc comment en esta
+/// ronda de arreglo** (el de cada valor de [MotivoDeCriterio], en `core`):
+/// - `hallazgo`: el doc dice que se emite sobre todos los sujetos del paso, o
+///   sobre ninguno. «El control encontró algo» no afirma ni una cosa ni la
+///   otra, así que no contradice ningún caso — sin cambios.
+/// - `declaradoNoMirado`: el doc mismo dice «ese sujeto» — a diferencia de
+///   `nadieDioCuenta`, acá el sujeto es parte de la definición, no un agregado
+///   de esta traducción — sin cambios.
+/// - `nadieDioCuenta`: **el único con un error real.** Decía «nadie dio
+///   cuenta de este sujeto»; el doc nombra tres hechos y dos de los tres no
+///   tienen sujeto — corregido a «nadie dio cuenta», sin calificador.
+/// - `ajenoAlStack`: el doc dice «el sujeto no es de este stack» — siempre
+///   hay sujeto en la propia definición — sin cambios.
+/// - `noSePudoMirar`, `instrumentoFallo`: la prosa ya calca el doc casi
+///   palabra por palabra — sin cambios.
+/// - `intentoIncompleto`: paráfrasis («no terminó» por «no llegó a
+///   terminar»), mismo alcance que el doc — sin cambios.
+/// - `residuoGeneral`: el doc dice «no ata a ningún sujeto» y la prosa lo
+///   conserva tal cual — sin cambios.
+/// - `entornoNoDerivado`: el doc habla de la cascada entera, nunca de «este
+///   sujeto» — «el entorno no se derivó» no le agrega alcance — sin cambios.
+/// - `candidatoAlterado`: el doc dice que **ningún** sujeto se puede dar por
+///   cubierto — «el candidato se alteró» tampoco nombra un sujeto puntual —
+///   sin cambios.
 String _nombreDeMotivo(MotivoDeCriterio motivo) => switch (motivo) {
   MotivoDeCriterio.hallazgo => 'el control encontró algo',
   MotivoDeCriterio.declaradoNoMirado => 'el control declaró que no lo miró',
-  MotivoDeCriterio.nadieDioCuenta => 'nadie dio cuenta de este sujeto',
+  MotivoDeCriterio.nadieDioCuenta => 'nadie dio cuenta',
   MotivoDeCriterio.ajenoAlStack => 'el sujeto no es de este stack',
   MotivoDeCriterio.noSePudoMirar => 'no se pudo establecer qué era',
   MotivoDeCriterio.intentoIncompleto => 'el control empezó y no terminó',
@@ -130,6 +166,16 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
   final buffer = StringBuffer();
 
   buffer.writeln(artefacto.alcanceDeLoAfirmado);
+  buffer.writeln();
+
+  // El título trunca la intención al límite de GitHub (ver
+  // `tituloDeGitHub`); acá va completa siempre. Sin esto, un título largo
+  // dejaba la intención sin ningún lugar donde el revisor remoto pudiera
+  // leerla entera — el JSON de la corrida es local y `git` lo ignora, así
+  // que el cuerpo del PR es la única superficie que le queda.
+  buffer.writeln('## Intención');
+  buffer.writeln();
+  buffer.writeln(artefacto.intent);
   buffer.writeln();
 
   if (solicitud.incompleto) {
