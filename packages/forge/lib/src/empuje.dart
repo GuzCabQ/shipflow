@@ -92,6 +92,18 @@ class EmpujeAislado {
         );
       } on ProcessException {
         // No se pudo ni lanzar `git`. No sabemos si algo salió.
+        //
+        // **Esta excepción no se nombra, no se loguea, no se relanza y no se
+        // encadena — nunca.** `ProcessException.arguments` es la lista de
+        // argumentos con la que se intentó lanzar el proceso, y acá `destino`
+        // —la URL con la credencial en el `userinfo`— es uno de ellos. Su
+        // propio `toString()` los interpola verbatim: `"Command: $executable
+        // $args"`, tal como documenta esa clase en la biblioteca estándar de
+        // entrada y salida. Agregar el mensaje a un log, a una traza o a una
+        // causa de una excepción propia filtraría el secreto por el único
+        // canal de este archivo que no es `Credential`. Lo único que sale de
+        // este `catch` es una causa cerrada, igual que en el resto del
+        // archivo.
         return NoEmpujado(PushUnknown(causa: CausaDePublicacion.desconocida));
       }
       if (r.exitCode == 0) return const Empujado();
@@ -100,6 +112,19 @@ class EmpujeAislado {
       await sinGanchos.delete(recursive: true);
     }
   }
+
+  /// Solo para la suite: `_causaDe` es privada, y esta es la forma de probar
+  /// el clasificador contra salidas de `git` que son costosas o difíciles de
+  /// provocar de verdad con un servidor de prueba (un 403 se reproduce fácil;
+  /// un rechazo por no ser fast-forward necesita un remoto que ya avanzó).
+  ///
+  /// **Sin `@visibleForTesting`.** `meta` no es una dependencia declarada de
+  /// `forge` —solo llegaría transitiva por el lockfile del workspace— e
+  /// importarla igual deja el análisis marcando «no es una dependencia», que
+  /// con `--fatal-infos` es rojo. El nombre ya dice que es de prueba; eso
+  /// alcanza, igual que en `RepositorioGit.identidadCapturadaParaLaPrueba`.
+  static CausaDePublicacion causaDeParaLaPrueba(String stderr) =>
+      _causaDe(stderr);
 
   /// Mete la credencial en el `userinfo` de la URL. **No se registra en
   /// ningún lado**: es un destino de un solo uso, no un remoto configurado.
