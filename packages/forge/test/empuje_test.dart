@@ -255,12 +255,69 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
     final visto = await File(
       '${temporal.path}/entorno-visto.txt',
     ).readAsString();
-    expect(visto, contains('PATH='));
-    expect(visto, contains('HOME='));
-    expect(visto, isNot(contains('ghp_no_debe_llegar_al_hijo')));
-    expect(visto, isNot(contains('ghp_del_push')));
-    expect(visto, isNot(contains('SHIPFLOW_GITHUB_TOKEN')));
-    expect(visto, isNot(contains('UNA_VARIABLE_QUE_NO_ES_LISTA_BLANCA')));
-    expect(visto, isNot(contains('no_debe_llegar_al_hijo')));
+    // Se afirma sobre el CONJUNTO DE NOMBRES, nunca sobre `visto` crudo. Dos
+    // motivos, y los dos importan acá:
+    //
+    // 1. Si `includeParentEnvironment` se pusiera en `true`, el hijo
+    //    heredaría además el entorno real de quien corre la suite. Ninguna
+    //    de las cadenas que este archivo conoce de antemano (el secreto, la
+    //    variable inventada) existe en ESE entorno, así que buscarlas con
+    //    `contains` pasaría en verde igual — es el mismo agujero que esta
+    //    ronda vino a cerrar. Lo que sí cambia con la herencia real es la
+    //    FORMA del conjunto: pasa de {PATH, HOME} más el residuo de
+    //    plataforma de abajo, a varias decenas de nombres del sistema. Por
+    //    eso se afirma el conjunto, no una búsqueda de texto.
+    // 2. Si esta prueba falla, `package:test` imprime el valor `Actual`
+    //    completo. Sobre `visto` crudo eso es el entorno entero del hijo,
+    //    token incluido, en la consola y en el log de CI — la misma
+    //    disciplina que sostiene `safeReason` en el resto del archivo.
+    //    `nombres` son solo claves, nunca valores: un fallo acá nombra qué
+    //    variable no debía estar, sin repetir su contenido.
+    final nombres = _nombresDelEntorno(visto);
+
+    // Medido en esta plataforma (macOS, con `/bin/sh` invocando `env`): el
+    // proceso recibe exactamente `PATH` y `HOME` —lo que pasa la lista
+    // blanca de `entornoSaneado`— más `PWD`, `SHLVL` y `_`, que no vienen de
+    // `environment:` sino que los agrega el propio intérprete de la
+    // línea de comandos (`PWD`/`SHLVL`) y el comando `env` (`_`) al
+    // arrancar. Es un residuo del mecanismo de espionaje, no de lo que
+    // `empujar` construye. Si CI —que corre en Linux— agrega alguna otra
+    // variable propia del `sh` de esa plataforma, esta lista tiene que
+    // crecer con esa medición, nunca borrarse para que la prueba pase.
+    const residuoDeLaPlataforma = {'PWD', 'SHLVL', '_'};
+    const listaBlanca = {'PATH', 'HOME'};
+    final permitidos = {...listaBlanca, ...residuoDeLaPlataforma};
+
+    expect(
+      nombres.difference(permitidos),
+      isEmpty,
+      reason:
+          'el hijo recibió variables fuera de la lista blanca esperada '
+          '(más el residuo de plataforma ya medido y declarado). Esto pasa '
+          'si `includeParentEnvironment` se puso en `true`, o si '
+          '`entornoSaneado` dejó de aplicarse en el lanzamiento.',
+    );
+    expect(
+      nombres.containsAll(listaBlanca),
+      isTrue,
+      reason:
+          'faltan de la lista blanca variables que sí deberían llegar al '
+          'hijo (PATH, HOME).',
+    );
   });
+}
+
+/// Los NOMBRES de las variables que volcó `env`, sin sus valores.
+///
+/// **No parte por `\n` a secas.** `env` separa una variable de la siguiente
+/// con un salto de línea, pero el VALOR de una variable puede contener saltos
+/// de línea propios — una línea de continuación no tiene la forma
+/// `NOMBRE=...`, así que no cuenta como una variable nueva. Partir a secas
+/// convertiría cada línea de un valor multilínea en un nombre falso.
+Set<String> _nombresDelEntorno(String textoDeEnv) {
+  final patronDeNombre = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)=');
+  return {
+    for (final linea in const LineSplitter().convert(textoDeEnv))
+      if (patronDeNombre.firstMatch(linea) case final m?) m.group(1)!,
+  };
 }
