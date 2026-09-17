@@ -32,7 +32,7 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **La superficie de verificación se está implementando en esta rama.** Ver [La superficie de verificación](#la-superficie-de-verificación). El plan, tarea por tarea, está en [PLAN-superficie-de-verificacion.md](PLAN-superficie-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
 
-**La forja y el aislamiento de la credencial se están implementando en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); el adapter de la forja y su suite de contrato son tareas posteriores de este mismo plan.
+**La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien va a llamar a `PullRequestSink.open` de verdad, es la rebanada siguiente.
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
@@ -71,13 +71,14 @@ dart test packages/orchestration              # el registro de pasos y la cuenta
 dart test packages/vcs                        # la rama y el commit, contra git de verdad
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
+dart test packages/forge                      # push aislado, cliente de GitHub, búsqueda idempotente
 dart analyze --fatal-infos
 dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
 
-**Son 15 pasos y `capas.py` lo verifica contra el workflow**, comando por
+**Son 16 pasos y `capas.py` lo verifica contra el workflow**, comando por
 comando: un paso borrado de CI, o neutralizado con un `if:` o un
 `continue-on-error`, pone el check en rojo.
 
@@ -2783,6 +2784,157 @@ cada paquete, los tests y los `bin/`. Corregido el criterio, los huérfanos son
 > veinte violaciones el primer día, lo que suele estar mal es la regla.**
 > Declarar las veinte la desactiva sin borrarla.
 
+## La forja y el aislamiento de la credencial
+
+Le da a `ship` —que todavía no existe— dos cosas que necesita antes de poder
+publicar algo: un desenlace tipado para lo que le pasa a un pull request, y la
+garantía de que el token que lo abre no se filtra por ningún subproceso que
+este repositorio lance en el camino.
+
+### El token sale del entorno en un solo sitio, y por tipo
+
+`EntornoDelProceso` (`packages/core/lib/src/entorno.dart`) captura el mapa del
+proceso una sola vez, en la raíz de composición, y expone `paraHijos`: un
+derivado que nunca lleva las claves de `clavesDeCredencial`. Antes de esta
+rebanada cada costura que lanzaba un subproceso tenía que acordarse de excluir
+el token por su cuenta —una lista negra repetida en cada lanzador—; ahora
+`RepositorioGit`, el candidato de `vcs` y `EmpujeAislado` de `forge` reciben
+todos el mismo tipo `EntornoDelProceso` en vez de un `Map` crudo, así que lo
+que baja hacia `entornoSaneado(...)` ya pasó por `paraHijos` antes de que el
+lanzamiento exista. **El tipo es el control**, no una convención que cada
+lector tiene que recordar.
+
+Eso alcanza también al único lanzamiento que `subprocesos-con-entorno-saneado`
+exceptúa: `_identidadComoEntorno`, en `RepositorioGit`, corre `git config --get`
+con el entorno del padre sin sanear —porque necesita ver `XDG_CONFIG_HOME` y
+`GIT_CONFIG_GLOBAL`, que la lista blanca no lleva a propósito—. Antes de esta
+rebanada esa excepción se sostenía porque no había nada secreto en el entorno
+que ver; ahora que sí lo hay, la excepción sigue admitiendo un único
+lanzamiento sin sanear en esa biblioteca —el arnés lo cuenta y un segundo es
+rojo—, pero el entero que recibe ya es el que entregó `EntornoDelProceso`, así
+que tampoco puede traer el token: la garantía la sostiene el tipo, no una
+revisión manual de cada excepción.
+
+### El push no le entrega el token a ningún programa del usuario
+
+`EmpujeAislado` (`packages/forge/lib/src/empuje.dart`) lanza su propio
+`git push` con dos `-c`: `core.hooksPath` apuntado a un directorio temporal
+vacío —que frena todos los ganchos del usuario— y `credential.helper=`, que
+resetea la cadena de helpers **entera**, no solo la que este repositorio
+configuró. Medido: sin el segundo, el helper del usuario corre igual —dos
+veces— y ve el entorno completo, aunque `core.hooksPath` ya esté puesto; los
+dos mecanismos gobiernan superficies distintas y hace falta vaciar las dos. La
+credencial viaja en el `userinfo` de la URL de destino, de un solo uso, nunca
+en el entorno del proceso.
+
+### El desenlace de publicar es una jerarquía sellada, no dos enums que se puedan combinar mal
+
+`PublicationOutcome` (`packages/core/lib/src/publicacion.dart`) reemplaza lo
+que hubieran sido dos enums independientes —uno para el `push`, otro para el
+pull request— porque ese par admite el producto cartesiano: `push: failed,
+pullRequest: succeeded` no significa nada, y `succeeded` a secas no
+distinguía un PR abierto de uno fusionado o de uno cerrado. Son **siete
+variantes**: `PullRequestOpen`, `PullRequestMerged` (utilizables),
+`PullRequestClosed`, `PushFailed`, `PushUnknown`, `PullRequestFailed` y
+`PullRequestUnknown` (no utilizables). `retryable`, `deliveryStatus` y
+`nextAction` no son campos: se derivan de la variante y, en las que fallan, de
+`CausaDePublicacion`. `safeReason` nunca copia la excepción externa —que puede
+traer el secreto adentro—, porque sale de esa causa cerrada.
+
+`unknown` no es un lujo: sin distinguir «falló» de «no sé si llegó», una
+respuesta perdida se reporta como `failed` y un reintento crea un segundo PR.
+La búsqueda idempotente de `SalidaDePrDeGitHub` —por revisión, rama base y el
+marcador estable que `cuerpo.dart` también usa para renderizar— es lo que le
+permite a un reintento después de `unknown` encontrar el PR que sí se llegó a
+crear, en vez de abrir otro.
+
+### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
+
+`PullRequestRequest` exige, en su constructor, que el árbol del commit al que
+apunta la rama sea el mismo que `draft.artefacto.candidato.contentRevision` —el
+contenido que la superficie de verificación certificó—. `incompleto` y
+`titulo` son derivados de `draft.artefacto.superficie.estado`, no campos
+asignables: con dos campos independientes se puede construir `artefacto:
+noConcluyente, incompleto: false`, y el título omitiría la advertencia
+obligatoria de ADR-016. El render de la sintaxis de GitHub —la alerta
+`> [!WARNING]`, el límite de 256 caracteres del título, el comentario HTML del
+marcador— vive en `packages/forge/lib/src/cuerpo.dart`, y en ningún paquete que
+otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
+
+### Residuos declarados
+
+Ocho hechos que esta rebanada deja escritos porque son límites reales, no
+trabajo pendiente con fecha:
+
+- **La clasificación de la causa de un `push` fallido mira el texto del
+  `stderr` de nuestro propio hijo.** Es un universo acotado por construcción
+  —el mensaje lo escribe `git`, no un tercero—, y lo que `_causaDe` no
+  reconoce cae en `desconocida`, que es reintentable: el precio de errar es un
+  reintento de más, nunca una publicación que se lea como completa.
+- **`/proc/<pid>/cmdline` deja ver el argv de nuestro propio `git`** —y con él,
+  la credencial en la URL— en Linux. Es limitación de ambiente, no un fallo
+  propio: a diferencia de entregarle el token a un programa que el usuario
+  eligió y que nosotros ejecutamos —lo que `core.hooksPath` y
+  `credential.helper=` existen para impedir—, esto es el propio proceso que
+  lanzamos, visible por un mecanismo del sistema operativo que no está bajo
+  nuestro control.
+- **El segundo criterio de `forja-en-su-adapter` es textual**: caza el nombre
+  o el host de la forja como texto fuera de `packages/forge/`, y eso caza una
+  regresión **literal** —alguien pegó `github.com` o `GitHub` donde no debía—,
+  no una promesa equivalente escrita con otras palabras. Una mención que
+  evitara esas palabras exactas no la vería.
+- **La atadura entre la revisión del pull request y el árbol que vieron los
+  controles es una invariante entre dos parámetros, no una verdad sobre
+  git.** `core` no tiene entrada ni salida, así que el constructor de
+  `PullRequestRequest` exige que el árbol que el llamador afirma sea el que
+  vieron los controles, pero no puede abrir el commit para comprobarlo por su
+  cuenta. Quien componga `revision` y `arbolDeLaRevision` a partir de un
+  repositorio real tiene que hacer que las dos nazcan de la misma operación
+  de git, y eso es trabajo de la rebanada de `ship`, no de esta.
+- **La fase de conexión del `POST` no tiene prueba automatizada**, aislada de
+  la del `GET`. Las dos URLs de `SalidaDePrDeGitHub` salen del mismo
+  `baseDeLaApi`, y no se puede apuntar solo una a un host muerto sin cambiar
+  la forma de la configuración. Se verificó a mano, contra una dirección no
+  ruteable, que el `connectionTimeout` también cubre esa fase; no hay un test
+  en el árbol que lo repita.
+- **`CredentialSource` salió de `sin_implementacion` con una real
+  —`FuenteDeEntorno`— y una falsa —`FuenteDeCredencialFalsa`— pero sin suite de
+  contrato propia.** La pregunta de si le hace falta una quedó abierta:
+  `FuenteDeEntorno` rechaza con `ArgumentError` una clave que
+  `clavesDeCredencial` no declaró, y `FuenteDeCredencialFalsa`, configurada
+  con un mapa directo, no tiene ningún equivalente. Si esa cláusula es del
+  contrato del puerto o es propia de leer de un entorno de proceso real es lo
+  que falta decidir antes de poder escribir esa suite.
+- **El campo `"espera": "pasa"` de `violaciones_extra`, en la regla
+  `forja-en-su-adapter`, es la primera vez que el JSON declarativo del arnés
+  expresa un control negativo** —un caso que tiene que pasar, no fallar—.
+  Antes de esta rebanada esa forma solo la tenían los casos escritos a mano en
+  Python; acá cubre el fix de `_rangosDeComentarios` que hace que un comentario
+  al final del archivo no se lea como código.
+- **`capas.py` no compara el árbol de paquetes que describe la sección
+  `## Estructura` de este README contra `packages/` real.** Es una enumeración
+  que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
+  pero nada además de una revisión humana lo sostiene.
+
+### Lo que esta rebanada NO hace
+
+Queda para la rebanada de `ship`, y está declarado para que nadie lo lea como
+olvido:
+
+- **Nadie llama a `PullRequestSink.open` todavía.** La composición vive en las
+  pruebas de contrato; `ship` es quien la va a hacer productiva.
+- **`--retry-publication` no existe.** El desenlace ya sabe decir
+  `retryable`; el comando que lo consume es de la rebanada siguiente.
+- **`ShipOutcome`, `EstadoPublicable` y `CausaDeNoIntento` no se construyen
+  acá.** Son §12 y §13 de la propuesta.
+- **El código de salida `6` no se emite.** `packages/cli/lib/src/salida.dart`
+  no se toca en esta rebanada.
+- **La raíz de composición todavía no arma un `EntornoDelProceso` real**: el
+  respaldo de las tres costuras que lo reciben se construye, en las pruebas,
+  a partir de `Platform.environment` directo, que es lo que hace que el
+  invariante valga aunque nadie inyecte. Quien componga `ship` va a capturarlo
+  una vez, en la raíz, y pasarlo hacia abajo.
+
 ## Qué prometen estas fases y todavía no cumplen
 
 Declararlo es obligación de cada fase, y viene de una lección concreta: una
@@ -2827,6 +2979,7 @@ packages/
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
   plugin_fake     los fakes de los puertos que ya tienen contrato
+  forge           el adapter de la forja: push aislado, cliente de GitHub · solo ve a core
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py
