@@ -61,24 +61,13 @@ void main() {
 
   test('la credencial llega al remoto y no al código del usuario', () async {
     final casa = '${temporal.path}/casa';
-    // Simula lo que pasaría si quien llama reusara el entorno del proceso
-    // entero como `entornoDelPadre` en vez de separar la credencial primero:
-    // el seam tiene que despojarla igual, antes de que `entornoSaneado` la
-    // vea.
-    final entorno = EntornoDelProceso({
-      'PATH': Platform.environment['PATH']!,
-      'HOME': casa,
-      'SHIPFLOW_GITHUB_TOKEN': 'ghp_del_entorno_del_padre',
-    });
     final empuje = EmpujeAislado(
       directorio: '${temporal.path}/trabajo',
-      entornoDelPadre: entorno,
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': casa,
+      }),
     );
-
-    // Reafirma en el propio seam de `forge` lo que ya prueba la suite de
-    // `entornoSaneado` en `packages/core/test`: `paraHijos` deja la
-    // credencial afuera antes de que `entornoSaneado` la vea acá.
-    expect(entorno.paraHijos.containsKey('SHIPFLOW_GITHUB_TOKEN'), isFalse);
 
     final r = await empuje.empujar(
       urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
@@ -223,4 +212,55 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
       );
     },
   );
+
+  test('el lanzamiento del push no entrega al hijo nada fuera de la lista '
+      'blanca', () async {
+    // Mismo patrón que el grupo «el único lanzamiento sin sanear tampoco ve
+    // la credencial» de la suite de `RepositorioGit` en `vcs`: en vez de
+    // `git`,
+    // un espía que vuelca su propio entorno. Esto observa lo que
+    // `Process.run` recibió de verdad en `environment:`, así que si
+    // alguien sacara el `entornoSaneado(...)` del call site y pasara
+    // `entornoDelPadre.paraHijos` directo, esta prueba lo notaría: esa
+    // variable de más no viene de la credencial —`paraHijos` ya la
+    // despoja— sino de una que la lista blanca de `entornoSaneado` no deja
+    // pasar y `paraHijos` sí reenviaría.
+    final espia = File('${temporal.path}/espia.sh');
+    await espia.writeAsString(
+      '#!/bin/sh\nenv > "${temporal.path}/entorno-visto.txt"\nexit 0\n',
+    );
+    await Process.run('chmod', ['+x', espia.path]);
+
+    final empuje = EmpujeAislado(
+      directorio: '${temporal.path}/trabajo',
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': '${temporal.path}/casa',
+        'SHIPFLOW_GITHUB_TOKEN': 'ghp_no_debe_llegar_al_hijo',
+        'UNA_VARIABLE_QUE_NO_ES_LISTA_BLANCA': 'no_debe_llegar_al_hijo',
+      }),
+      programa: espia.path,
+    );
+
+    await empuje.empujar(
+      urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+      credencial: const Credential(
+        'ghp_del_push',
+        label: 'SHIPFLOW_GITHUB_TOKEN',
+      ),
+      revision: 'HEAD',
+      rama: 'rebanada-1',
+    );
+
+    final visto = await File(
+      '${temporal.path}/entorno-visto.txt',
+    ).readAsString();
+    expect(visto, contains('PATH='));
+    expect(visto, contains('HOME='));
+    expect(visto, isNot(contains('ghp_no_debe_llegar_al_hijo')));
+    expect(visto, isNot(contains('ghp_del_push')));
+    expect(visto, isNot(contains('SHIPFLOW_GITHUB_TOKEN')));
+    expect(visto, isNot(contains('UNA_VARIABLE_QUE_NO_ES_LISTA_BLANCA')));
+    expect(visto, isNot(contains('no_debe_llegar_al_hijo')));
+  });
 }
