@@ -8,3 +8,4 @@
 library;
 
 export 'src/empuje.dart';
+export 'src/github.dart';
