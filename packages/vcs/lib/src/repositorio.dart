@@ -70,6 +70,28 @@ class PromesaIncumplida implements Exception {
   String toString() => 'PromesaIncumplida: se pidió $sePidio; quedó $quedo';
 }
 
+/// El commit existe y el índice quedó sin sincronizar.
+///
+/// **La revisión va como campo y no solo en el mensaje.** Antes esto salía
+/// como una `PromesaIncumplida` con dos `String`, y la revisión vivía
+/// interpolada en el texto: quien recuperara la corrida tenía que parsear un
+/// mensaje para saber qué comprobar. Un dato que solo existe dentro de una
+/// oración no es un dato.
+class IndiceDesincronizado implements Exception {
+  /// El commit que sí se creó.
+  final String revision;
+
+  /// Qué quedó mal, en las palabras de `git`.
+  final String detalle;
+
+  const IndiceDesincronizado(this.revision, this.detalle);
+
+  @override
+  String toString() =>
+      'IndiceDesincronizado: la revisión $revision se creó y el índice quedó '
+      'sin sincronizar. $detalle';
+}
+
 class RepositorioGit implements ChangeSink {
   /// La raíz del repositorio sobre el que se trabaja.
   final String directorio;
@@ -729,11 +751,10 @@ class RepositorioGit implements ChangeSink {
     // estado parcial se nombra entero, con la revisión adentro.
     final sincronizado = await _git(['reset', '--quiet', '--', ...rutas]);
     if (sincronizado.exitCode != 0) {
-      throw PromesaIncumplida(
-        'dejar el índice al día con el commit $revision',
-        'la revisión $revision creada y el índice sin sincronizar en '
-            '${rutas.join(", ")}: '
-            '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
+      throw IndiceDesincronizado(
+        revision,
+        'en ${rutas.join(", ")}: '
+        '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
       );
     }
     return revision;

@@ -108,6 +108,36 @@ void main() {
     String intent = 'porque sí',
   }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
 
+  /// Un repositorio cuyo `reset` posterior al commit siempre falla.
+  ///
+  /// **Inyectado por la costura de [RepositorioGit.programa], no producido
+  /// por el repositorio de prueba real.** No hay forma conocida de hacer que
+  /// un `git reset --quiet` sobre un commit que se acaba de crear falle por
+  /// sí solo sin corromper el repositorio de un modo que rompería la
+  /// premisa del resto de la prueba (el commit tiene que haber salido bien).
+  /// Es el mismo mecanismo que usan las pruebas de la toolchain ausente: se
+  /// reemplaza `git` por un envoltorio que deja pasar todo salvo la
+  /// operación que hace falta ver fallar. Lo que esto NO demuestra es que un
+  /// fallo real de `reset` —disco lleno, permisos, lo que sea— pase por este
+  /// mismo `if`; solo que, si pasa por acá, sale como [IndiceDesincronizado]
+  /// con la revisión como dato.
+  RepositorioGit repositorioConIndiceQueFalla() {
+    final falso = envoltorio('git-reset-roto', r'''#!/bin/sh
+if [ "$2" = "reset" ]; then exit 91; fi
+exec git "$@"
+''');
+    escribir('a.txt', 'cambio\n');
+    return RepositorioGit(
+      directorio: raiz.path,
+      politica: politica,
+      programa: falso,
+    );
+  }
+
+  /// La rebanada que acompaña a [repositorioConIndiceQueFalla]: toca
+  /// exactamente el archivo que ese repositorio deja modificado.
+  final rebanadaDePrueba = rebanada(['a.txt']);
+
   group('la rama', () {
     test('se crea si no existe', () async {
       await repo.useBranch('shipflow/algo');
@@ -968,24 +998,15 @@ exec git "$@"
       // Son dos efectos distintos: la revisión existe y el índice quedó
       // desincronizado. El `reset` usaba la llamada que NO lanza, así que
       // `apply` devolvía la revisión como si todo hubiera salido bien.
-      final falso = envoltorio('git-reset-roto', r'''#!/bin/sh
-if [ "$2" = "reset" ]; then exit 91; fi
-exec git "$@"
-''');
-      escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(
-        directorio: raiz.path,
-        politica: politica,
-        programa: falso,
-      );
       await expectLater(
-        torcido.apply(rebanada(['a.txt'])),
+        repositorioConIndiceQueFalla().apply(rebanadaDePrueba),
         throwsA(
-          isA<PromesaIncumplida>()
-              .having((e) => e.quedo, 'nombra la revisión', contains('creada'))
+          isA<IndiceDesincronizado>()
+              .having((e) => e.revision, 'revisión', hasLength(40))
+              .having((e) => e.detalle, 'detalle', contains('a.txt'))
               .having(
-                (e) => e.quedo,
-                'y qué quedó sin hacer',
+                (e) => e.toString(),
+                'el mensaje',
                 contains('sin sincronizar'),
               ),
         ),
@@ -995,6 +1016,23 @@ exec git "$@"
         'porque sí',
         reason: 'el commit se hizo, y no se deshace: eso salió bien',
       );
+    });
+
+    test('el índice sin sincronizar lleva la revisión como DATO', () async {
+      // El mensaje sigue existiendo y sigue siendo útil; lo que no puede pasar
+      // es que sea el único lugar donde está la revisión.
+      try {
+        await repositorioConIndiceQueFalla().apply(rebanadaDePrueba);
+        fail('se esperaba IndiceDesincronizado');
+      } on IndiceDesincronizado catch (e) {
+        expect(e.revision, matches(RegExp(r'^[0-9a-f]{40}$')));
+        expect(e.detalle, isNotEmpty);
+        expect(
+          e.toString(),
+          contains(e.revision),
+          reason: 'el texto sigue nombrándola, además del campo',
+        );
+      }
     });
 
     test('un archivo cuyo nombre empieza con espacio no se corrompe', () async {

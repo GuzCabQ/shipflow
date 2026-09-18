@@ -13,12 +13,22 @@ part of 'repositorio.dart';
 /// Existe con nombre propio porque el llamador tiene que poder distinguirla de
 /// un fallo del commit: acá el cambio está en la rama y no se deshace. Viaja
 /// dentro de [LocalInconsistent], que es lo que la vuelve inolvidable.
-class IndiceDesincronizado implements Exception {
+///
+/// **Privada, y con un nombre distinto del `IndiceDesincronizado` público de
+/// `repositorio.dart`.** Nunca se lanza —solo arma el texto de `detalle` para
+/// [LocalInconsistent], que ya tiene su propia `revision` tipada— así que no
+/// necesita ser parte de la superficie del archivo. El nombre público quedó
+/// libre para la excepción que sí viaja como tal desde `apply`.
+class _IndiceDesincronizadoDelCandidato implements Exception {
   final String revision;
   final List<String> rutas;
   final String salida;
 
-  const IndiceDesincronizado(this.revision, this.rutas, this.salida);
+  const _IndiceDesincronizadoDelCandidato(
+    this.revision,
+    this.rutas,
+    this.salida,
+  );
 
   @override
   String toString() => 'IndiceDesincronizado($revision): $salida';
@@ -568,7 +578,7 @@ class _CandidatoGit implements PreparedCandidate {
     if (sincronizado.exitCode != 0) {
       return LocalInconsistent(
         revision: revision,
-        detalle: IndiceDesincronizado(
+        detalle: _IndiceDesincronizadoDelCandidato(
           revision,
           _rutas,
           '${sincronizado.stdout}${sincronizado.stderr}'.trim(),
