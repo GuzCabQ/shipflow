@@ -831,4 +831,53 @@ class RepositorioGit implements ChangeSink {
   /// Si el árbol tiene cambios sin commitear.
   Future<bool> get sucio async =>
       (await _exigir(['status', '--porcelain'])).isNotEmpty;
+
+  /// Si `git` ignora [ruta]. **La pregunta es para `git`, no para el disco.**
+  ///
+  /// Que un `.gitignore` EXISTA no dice que APLIQUE: una regla de negación más
+  /// abajo en el mismo archivo, o un `core.excludesFile` que declare otro,
+  /// pueden dejarlo sin efecto sobre esta ruta en particular. `check-ignore`
+  /// es la misma máquina que decide qué entra en un commit; volver a
+  /// implementar la resolución de patrones para responder esto a mano sería
+  /// otra fuente de verdad que puede divergir de la real.
+  ///
+  /// **Sin `--literal-pathspecs`.** El resto de esta clase lo antepone
+  /// siempre —ver [_git]— porque sin él `git` lee una ruta como un patrón.
+  /// Acá no hace falta y no se puede: `check-ignore` no toma pathspecs, toma
+  /// nombres de archivo, y de hecho RECHAZA esa bandera con un error fatal —
+  /// está medido. No hay pathspec que sanear porque este comando no tiene esa
+  /// noción; por eso este lanzamiento no pasa por [_git] y arma el suyo.
+  ///
+  /// El código de salida de `check-ignore` ES la respuesta: `0` ignorada, `1`
+  /// no ignorada. Cualquier otro código es un fallo de la herramienta —no una
+  /// tercera respuesta— y se lanza como tal, igual que el resto de los
+  /// lanzamientos de esta clase.
+  Future<bool> rutaIgnorada(String ruta) async {
+    final args = ['check-ignore', '--quiet', '--', ruta];
+    final ProcessResult r;
+    try {
+      r = await Process.run(
+        programa,
+        args,
+        workingDirectory: directorio,
+        environment: entornoSaneado(_padre),
+        includeParentEnvironment: false,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+    } on ProcessException catch (e) {
+      throw GitFallo(
+        '$programa ${args.join(" ")}',
+        -1,
+        '${e.message} (${e.executable})',
+      );
+    }
+    if (r.exitCode == 0) return true;
+    if (r.exitCode == 1) return false;
+    throw GitFallo(
+      '$programa ${args.join(" ")}',
+      r.exitCode,
+      '${r.stdout}${r.stderr}'.trim(),
+    );
+  }
 }

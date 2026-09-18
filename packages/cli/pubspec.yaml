@@ -14,10 +14,11 @@ resolution: workspace
 # **Lo que se declara acá es lo que se USA, no lo que está permitido.**
 #
 # `arquitectura.json` permite que `cli` vea también `vcs`, `rules` y `agents`:
-# eso es la arquitectura, y no cambia. Pero ningún archivo de `lib/`, `bin/` ni
-# `test/` los importa —`rules` y `agents` son stubs de dos líneas, y `vcs` no
-# tiene consumidor porque `ship` no existe—, así que declararlos acá afirmaba un
-# uso que no hay. La flecha vuelve en el mismo commit que la use.
+# eso es la arquitectura, y no cambia. Pero ningún archivo de `lib/` ni `bin/`
+# importa a `rules` ni a `agents` —son stubs de dos líneas—, así que
+# declararlos acá afirmaría un uso que no hay. `vcs` sí se declara: la flecha
+# vuelve en este mismo commit, que es el que la usa —`ship/gitignore.dart`
+# pregunta con `RepositorioGit` si `git` ignora la ruta de una corrida—.
 dependencies:
   core:
     path: ../core
@@ -29,6 +30,8 @@ dependencies:
   path: ^1.9.0
   plugin_dart:
     path: ../plugin_dart
+  vcs:
+    path: ../vcs
 
 # Las suites de contrato viven acá, así que la dependencia es real y se declara.
 # `core` no puede hacer lo mismo —`nucleo-sin-externas` le prohíbe TODA
@@ -42,16 +45,10 @@ dev_dependencies:
   # cosa; `plugin_dart` ya usaba el patrón correcto.
   plugin_fake:
     path: ../plugin_fake
-  # Solo la prueba decisiva del entorno de verificación lo importa. `cli` es el
-  # único paquete que ve `vcs` y `plugin_dart` a la vez, y la composición
-  # —preparar, derivar, comprobar, cascada, comprobar— todavía vive en una
-  # prueba porque no hay coordinador productivo. De desarrollo por eso.
-  vcs:
-    path: ../vcs
   # La suite de contrato de `PullRequestSink` corre la implementación real
   # —`SalidaDePrDeGitHub`— contra un servidor local, igual que la prueba de
   # `forge` en la que se apoya. Nadie en `lib/` ni en `bin/` la importa: no hay
   # `ship` todavía que la haga productiva, así que es de desarrollo por lo
-  # mismo que `vcs` y `plugin_fake`.
+  # mismo que `plugin_fake`.
   forge:
     path: ../forge

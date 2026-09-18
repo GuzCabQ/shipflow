@@ -16,6 +16,7 @@ export 'src/corrida.dart';
 export 'src/credenciales.dart';
 export 'src/salida.dart';
 export 'src/ship/entrada.dart';
+export 'src/ship/gitignore.dart';
 export 'src/ship/preflight.dart';
 export 'src/uso.dart';
 export 'src/verify.dart';
