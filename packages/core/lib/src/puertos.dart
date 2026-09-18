@@ -435,6 +435,11 @@ abstract interface class PreparedCandidate {
   /// **No escribe ningún objeto.** Es una lectura contra el par de
   /// revisiones que [identity] ya fijó.
   ///
+  /// **Revisa líneas agregadas de un diff, y eso es un límite declarado, no
+  /// un descuido.** Lo que el diff declara binario queda afuera: cualquier
+  /// implementación de este puerto hereda esa misma zona ciega, o tiene que
+  /// decir explícitamente que la cierra distinto.
+  ///
   /// **[createRevision] vuelve a escanear, y eso no es la misma garantía
   /// repetida.** Esta operación cierra la ventana entre preparar el
   /// candidato y mostrarlo; la de [createRevision] cierra la que queda entre

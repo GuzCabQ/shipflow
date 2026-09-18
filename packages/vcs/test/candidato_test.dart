@@ -82,6 +82,27 @@ void main() {
     '--batch-check=%(objectname)',
   ]).split('\n').where((l) => l.trim().isNotEmpty).toSet();
 
+  /// Qué objetos sueltos tiene el almacén **temporal** del candidato, por
+  /// ruta relativa dentro de `objetos`.
+  ///
+  /// **Se deriva de `c.root`**, que es la única ruta que el puerto expone:
+  /// `objetos` es carpeta hermana de `arbol` bajo el mismo directorio
+  /// temporal —está anotado donde se crean, en `_CandidatoGit.preparar`—, así
+  /// que restar `/arbol` y sumar `/objetos` llega ahí sin que
+  /// `PreparedCandidate` tenga que declarar su almacén. Es la misma
+  /// derivación que usa [ensuciarElArbolDelCandidato], y es lo que permite
+  /// comprobar que un paso NO escribe sin inventar un espía que el puerto no
+  /// tiene con qué sostener.
+  Set<String> objetosDelAlmacenTemporal(PreparedCandidate c) {
+    final objetos = Directory('${Directory(c.root).parent.path}/objetos');
+    if (!objetos.existsSync()) return {};
+    return objetos
+        .listSync(recursive: true)
+        .whereType<File>()
+        .map((f) => f.path.substring(objetos.path.length))
+        .toSet();
+  }
+
   /// Corrompe, por fuera del candidato, el objeto que el árbol fijado usa
   /// para [archivo] — sin pasar por ninguna costura del candidato.
   ///
@@ -1218,27 +1239,25 @@ void main() {
 
     test('el escaneo se puede pedir SIN escribir ningún objeto', () async {
       escribir('a.txt', clave);
-      final antes = objetosDelRepo();
-      final cabeza = git(['rev-parse', 'HEAD']);
       await conCandidato(rebanada(['a.txt']), (c) async {
+        // **Contra el almacén TEMPORAL, no el real.** `exigirSinSecretos`
+        // nunca promueve, así que comprobar solo el almacén real no
+        // distinguiría este paso de una implementación futura que sí
+        // escribiera objetos sueltos ahí adentro — la aserción pasaría
+        // igual, y el nombre de esta prueba mentiría. Listar `objetos` antes
+        // y después es lo que de verdad puede ponerse rojo si eso pasa.
+        final antes = objetosDelAlmacenTemporal(c);
         await expectLater(
           c.exigirSinSecretos(),
           throwsA(isA<SecretoEnLaRebanada>()),
         );
+        expect(
+          objetosDelAlmacenTemporal(c),
+          antes,
+          reason: 'el paso 5 no escribe en el almacén temporal del candidato',
+        );
         return null;
       });
-      // No hay forma de espiar la escritura de objetos en el almacén
-      // temporal desde el puerto: `PreparedCandidate` no expone su almacén,
-      // y no hay ningún ayudante de espionaje ya instalado en este archivo.
-      // La comprobación equivalente y disponible es la que el resto del
-      // archivo ya usa para la misma afirmación sobre `createRevision`: el
-      // almacén REAL no gana ningún objeto, y `HEAD` no se mueve.
-      expect(
-        objetosDelRepo().difference(antes),
-        isEmpty,
-        reason: 'el paso 5 no promueve ni commitea nada',
-      );
-      expect(git(['rev-parse', 'HEAD']), cabeza);
     });
 
     test('createRevision SIGUE escaneando: la ventana no la cubre el paso '

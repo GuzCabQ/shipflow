@@ -177,6 +177,11 @@ class _CandidatoGit implements PreparedCandidate {
     final temporal = await Directory.systemTemp.createTemp(
       'shipflow-candidato-',
     );
+    // **`objetos` y `arbol` son hermanos, bajo el mismo `temporal`.** No es
+    // solo geometría interna: `candidato_test` deriva esta ruta a partir de
+    // `root` (que es `arbol.path`) para llegar al almacén temporal sin que el
+    // puerto tenga que exponerlo. Mover `objetos` de acá sin tocar esa
+    // prueba la deja fallando con un mensaje que señala exactamente esto.
     final objetos = Directory('${temporal.path}/objetos');
     final indice = File('${temporal.path}/indice');
     final indiceDeIntegridad = File('${temporal.path}/indice-integridad');
