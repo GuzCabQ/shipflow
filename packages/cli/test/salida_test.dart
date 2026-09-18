@@ -185,4 +185,107 @@ void main() {
       expect(err.toString(), contains('→ hacé esto'));
     });
   });
+
+  group('Codigo.deShip', () {
+    test('la tabla de §12, fila por fila', () {
+      final esperado = <int, ShipOutcome>{
+        0: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.previewOnly,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+        1: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.secretDetected,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+        2: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.verificationGate,
+          verificacion: EstadoDeCorrida.noConcluyente,
+        ),
+        3: ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
+        6: ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushUnknown(causa: CausaDePublicacion.red),
+          verificacion: EstadoPublicable.verde,
+        ),
+        70: ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
+      };
+      for (final fila in esperado.entries) {
+        expect(Codigo.deShip(fila.value), fila.key, reason: fila.value.kind);
+      }
+    });
+
+    test('confirmationMissing sale 0, y con un secreto sale 1', () {
+      expect(
+        Codigo.deShip(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.confirmationMissing,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        0,
+      );
+      expect(
+        Codigo.deShip(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.secretDetected,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('la compuerta lleva el código del estado que la cerró', () {
+      for (final par in {
+        EstadoDeCorrida.rojo: 1,
+        EstadoDeCorrida.noConcluyente: 2,
+        EstadoDeCorrida.errorInterno: 70,
+      }.entries) {
+        expect(
+          Codigo.deShip(
+            ShipOutcome.noIntentadoParaLaPrueba(
+              causa: CausaDeNoIntento.verificationGate,
+              verificacion: par.key,
+            ),
+          ),
+          par.value,
+          reason: par.key.name,
+        );
+      }
+    });
+
+    test('Publicado lleva el código de su verificación', () {
+      for (final par in {
+        EstadoPublicable.verde: 0,
+        EstadoPublicable.rojo: 1,
+        EstadoPublicable.noConcluyente: 2,
+      }.entries) {
+        expect(
+          Codigo.deShip(
+            ShipOutcome.publicadoParaLaPrueba(
+              pr: PullRequestOpen(url: 'https://forja/pr/1'),
+              verificacion: par.key,
+            ),
+          ),
+          par.value,
+          reason: par.key.name,
+        );
+      }
+    });
+
+    test('la entrega incompleta sale 6 AUNQUE la verificación sea roja', () {
+      // Deliberado: `1` dice «el cambio no verificó» y `6` dice «el efecto
+      // remoto no se completó», y la segunda es la que decide qué hacer
+      // después. El precio está declarado: el estado viaja en `verdict` y en
+      // `data`, no en el código.
+      expect(
+        Codigo.deShip(
+          ShipOutcome.publicacionIncompletaParaLaPrueba(
+            remoto: PullRequestUnknown(causa: CausaDePublicacion.red),
+            verificacion: EstadoPublicable.rojo,
+          ),
+        ),
+        6,
+      );
+    });
+  });
 }

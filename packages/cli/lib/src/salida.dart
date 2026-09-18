@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 
 /// Versión del esquema de salida. **Va en cada documento y en cada evento.**
@@ -37,7 +38,28 @@ abstract final class Codigo {
   static const exito = 0;
   static const fallaDeVerificacion = 1;
   static const noConcluyente = 2;
+
+  /// Una detención por una precondición declarada que dejó de valer.
+  ///
+  /// **No es error de configuración** —nada está mal configurado—, **no es
+  /// error interno** —nada se corrompió—, y no describe la verificación. Es la
+  /// forma del circuit breaker.
+  static const detencionDeclarada = 3;
+
+  /// Falta configuración o credencial, y se dice cuál. **Cero escrituras.**
+  ///
+  /// Se clasifica por fase: una credencial ausente o rechazada en el preflight
+  /// es `4`; expirada o rechazada después del commit es
+  /// [entregaIncompleta], porque ahí sí hay trabajo local que quedó hecho.
+  static const errorDeConfiguracion = 4;
+
   static const errorDeUso = 5;
+
+  /// El trabajo local se completó y el efecto remoto no.
+  ///
+  /// Rama, commit y artefactos existen; **no hay un pull request abierto
+  /// utilizable confirmado**.
+  static const entregaIncompleta = 6;
 
   /// El arnés se rompió. **Nunca es un resultado del pipeline.**
   static const errorInterno = 70;
@@ -50,7 +72,69 @@ abstract final class Codigo {
     EstadoDeCorrida.noConcluyente => noConcluyente,
     EstadoDeCorrida.errorInterno => errorInterno,
   };
+
+  /// El código que le corresponde a un desenlace de `ship`. Es una función
+  /// total: **una variante nueva no compila** hasta que alguien decida su
+  /// código.
+  ///
+  /// Es el mismo criterio de [deCorrida], sobre un dominio cerrado más grande.
+  static int deShip(ShipOutcome desenlace) => switch (desenlace) {
+    NoIntentado(causa: CausaDeNoIntento.previewOnly) => exito,
+    NoIntentado(causa: CausaDeNoIntento.confirmationMissing) => exito,
+    NoIntentado(causa: CausaDeNoIntento.secretDetected) => fallaDeVerificacion,
+    NoIntentado(
+      causa: CausaDeNoIntento.verificationGate,
+      :final verificacion,
+    ) =>
+      deCorrida(verificacion),
+    NoAplicado() => detencionDeclarada,
+    LocalInconsistente() => errorInterno,
+    Publicado(:final verificacion) => deCorrida(verificacion.comoCorrida),
+    // **`6` gana sobre el estado, y es deliberado.** Los dos códigos responden
+    // preguntas distintas: `1` dice «el cambio no verificó» y `6` dice «el
+    // efecto remoto no se completó», y la segunda es la que decide qué hacer
+    // después. Un `1` acá mandaría a arreglar el código a alguien que además
+    // tiene una rama empujada sin pull request, y el reintento que esa
+    // situación pide no saldría de ningún lado. El precio: el estado de
+    // verificación no viaja en el código de esta variante, solo en `verdict`
+    // y en `data`.
+    PublicacionIncompleta() => entregaIncompleta,
+  };
 }
+
+/// Qué hacer después de un desenlace de `ship`.
+///
+/// **Se deriva, como el código.** Una acción escrita a mano en cada sitio de
+/// retorno diverge del desenlace en cuanto alguien agrega una variante; acá la
+/// exhaustividad del `switch` la ata.
+String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
+  NoIntentado(causa: CausaDeNoIntento.previewOnly) => null,
+  NoIntentado(causa: CausaDeNoIntento.confirmationMissing) =>
+    'Volvé a correrlo con --yes para autorizar la escritura.',
+  NoIntentado(causa: CausaDeNoIntento.secretDetected) =>
+    'Sacá el secreto del cambio y leelo del entorno por el proveedor de '
+        'configuración.',
+  NoIntentado(causa: CausaDeNoIntento.verificationGate, :final verificacion)
+      when verificacion == EstadoDeCorrida.errorInterno =>
+    'Se rompió un paso del arnés, no la verificación del cambio. Revisá la '
+        'corrida antes de volver a intentar; --allow-incomplete no autoriza '
+        'esto.',
+  NoIntentado(causa: CausaDeNoIntento.verificationGate) =>
+    'Arreglá lo que la verificación señaló, o autorizá publicarla incompleta '
+        'con --allow-incomplete.',
+  NoAplicado(:final headObservado) =>
+    'La rama avanzó a $headObservado. Volvé a correr ship: el candidato se '
+        'reconstruye sobre el HEAD nuevo. No sirve --retry-publication: no hay '
+        'entrega que recuperar.',
+  LocalInconsistente(:final revision) =>
+    'El commit $revision existe y el índice quedó sin sincronizar. Reparalo '
+        'y después --retry-publication, que comprueba que el índice ya '
+        'coincide antes de publicar.',
+  Publicado() => null,
+  PublicacionIncompleta() =>
+    'shipflow ship --retry-publication <runId>. No se creará otro commit ni '
+        'un segundo pull request.',
+};
 
 /// El veredicto tal como lo lee un consumidor automático.
 ///
@@ -106,12 +190,14 @@ class ResultEnvelope {
   /// Inventarle uno sería afirmar algo sobre un cambio que nadie miró. El código
   /// de salida lleva ese dato, y va en el mismo documento.
   ///
-  /// **El `3` no está en esa lista y no es un olvido.** `docs/14` lo declara
-  /// —detención declarada: presupuesto agotado, circuit breaker o criterio no
-  /// verificable— y **todavía no tiene productor**: la etapa que lo produciría
-  /// no está construida. Este comentario decía que la lista lo cubría, lo que
-  /// describía la superficie documentada como si fuera la implementada. Son dos
-  /// cosas distintas y hay que decir cuál se está nombrando.
+  /// **El `3` no está en esa lista, y ya tiene productor: [Codigo.deShip]
+  /// lo devuelve para [NoAplicado].** Lo que sigue sin cubrir esa lista es el
+  /// veredicto: nadie arma todavía un `String` de veredicto para un
+  /// [ShipOutcome], así que un consumidor que reciba `3` lo sabe por el
+  /// código de salida y por `data`, no por `verdict`. Este comentario decía
+  /// que la lista cubría todo lo que el arnés produce, lo que describía la
+  /// superficie documentada como si fuera la implementada. Son dos cosas
+  /// distintas y hay que decir cuál se está nombrando.
   final String? verdict;
 
   /// Qué hacer a continuación. Toda salida que no sea verde tiene que poder

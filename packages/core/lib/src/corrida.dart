@@ -34,6 +34,14 @@ enum EstadoPublicable {
     EstadoDeCorrida.noConcluyente => EstadoPublicable.noConcluyente,
     EstadoDeCorrida.errorInterno => null,
   };
+
+  /// El estado de corrida equivalente. **Total y sin pérdida**: los tres
+  /// publicables son estados de corrida.
+  EstadoDeCorrida get comoCorrida => switch (this) {
+    EstadoPublicable.verde => EstadoDeCorrida.verde,
+    EstadoPublicable.rojo => EstadoDeCorrida.rojo,
+    EstadoPublicable.noConcluyente => EstadoDeCorrida.noConcluyente,
+  };
 }
 
 /// Por qué una corrida no intentó publicar.
