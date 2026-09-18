@@ -23,15 +23,23 @@ const _result = ResultEnvelope(
   data: {},
 );
 
-/// **Todos** los [ShipOutcome] construibles, no una muestra.
+/// Las cinco variantes de [ShipOutcome]: las causas y los estados completos,
+/// los cuerpos remotos por muestra.
 ///
 /// `Codigo.deShip` y `accionDe` son funciones totales sobre el tipo cerrado, y
 /// las dos pruebas que las cubren afirman propiedades sobre el dominio ENTERO
 /// —«seis códigos», «ningún código distinto de cero se queda mudo»—. Con una
 /// muestra elegida a mano, una variante nueva se quedaría fuera de la lista y
 /// las dos afirmaciones seguirían en verde cubriendo menos de lo que dicen.
-/// Acá lo único escrito a mano son los cuerpos de las clases de publicación;
-/// las causas y los estados salen de `values`.
+/// Por eso las causas y los estados salen de `values` y no de una lista.
+///
+/// **Los cuerpos remotos NO están completos, y no hace falta que lo estén**:
+/// hay dos de los cinco [PublicacionNoUtilizable] y un solo valor de
+/// [CausaDePublicacion]. Ni el código ni la acción de un [ShipOutcome] miran
+/// adentro del desenlace remoto —lo que miran es de qué lado del corte
+/// utilizable/no utilizable cae—, así que agregar los otros tres cuerpos
+/// repetiría filas sin ejercitar una rama más. Los dos
+/// [PublicacionUtilizable] sí están los dos, porque son dos.
 List<ShipOutcome> todosLosDesenlaces() => [
   for (final causa in CausaDeNoIntento.values)
     for (final estado in EstadoDeCorrida.values)
@@ -336,10 +344,10 @@ void main() {
   });
 
   group('accionDe', () {
-    // Esta función pública de ocho ramas y siete mensajes no la referenciaba
-    // nada en el árbol fuera de su declaración, y el README afirmaba que su
-    // propia suite la ejercitaba. Reemplazar el cuerpo entero por `=> null`
-    // dejaba las 1061 pruebas en verde.
+    // Esta función pública —nueve ramas y siete mensajes cuando se la
+    // encontró— no la referenciaba nada en el árbol, y el README afirmaba que
+    // su propia suite la ejercitaba. Reemplazar el cuerpo entero por
+    // `=> null` dejaba las 1061 pruebas en verde.
 
     test('el switch cubre las CINCO variantes, y ninguna lanza', () {
       final desenlaces = todosLosDesenlaces();

@@ -108,11 +108,12 @@ abstract final class Codigo {
 /// retorno diverge del desenlace en cuanto alguien agrega una variante; acá la
 /// exhaustividad del `switch` la ata.
 ///
-/// **Nulo exactamente donde [Codigo.deShip] devuelve [Codigo.exito].** Es lo
-/// que [ResultEnvelope.nextAction] promete: toda salida que no sea verde tiene
-/// que poder decir qué hacer. Al revés no vale, y no tiene por qué: una salida
-/// `0` puede igual tener algo que decir —`confirmationMissing` sale `0` y
-/// sugiere `--yes`—, porque la promesa es que ninguna salida no-verde se quede
+/// **Nulo SOLO donde [Codigo.deShip] devuelve [Codigo.exito]**, que es una
+/// implicación en un sentido y no un bicondicional: si el código no es cero,
+/// hay acción. Es lo que [ResultEnvelope.nextAction] promete — toda salida que
+/// no sea verde tiene que poder decir qué hacer. Al revés **es falso**, y no
+/// tiene por qué valer: `confirmationMissing` sale `0` y devuelve igual el
+/// mensaje de `--yes`. La promesa es que ninguna salida no-verde se quede
 /// muda, no que ninguna verde hable.
 String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
   NoIntentado(causa: CausaDeNoIntento.previewOnly) => null,
@@ -225,9 +226,14 @@ class ResultEnvelope {
   /// decirlo: es la misma exigencia que INV-8 le hace a una regla que bloquea.
   ///
   /// Para un [ShipOutcome] eso lo cumple [accionDe], y lo cumple entero: es
-  /// nulo exactamente cuando [Codigo.deShip] devuelve [Codigo.exito]. La
-  /// versión anterior no lo cumplía y no lo decía — un [Publicado] con la
-  /// verificación en rojo salía `1` sin acción siguiente.
+  /// nulo **solo donde** [Codigo.deShip] devuelve [Codigo.exito]. **Solo
+  /// donde, no exactamente donde**: la implicación va en un sentido —si el
+  /// código no es cero, hay acción— y el otro sentido es falso, porque
+  /// `confirmationMissing` sale `0` y devuelve igual el mensaje de `--yes`.
+  /// Afirmar el bicondicional sería prometer más de lo que el control tiene, y
+  /// es lo único que la suite puede comprobar. La versión anterior no cumplía
+  /// ni la implicación y no lo decía — un [Publicado] con la verificación en
+  /// rojo salía `1` sin acción siguiente.
   final String? nextAction;
 
   final Map<String, Object?> data;

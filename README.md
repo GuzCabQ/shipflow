@@ -3522,12 +3522,13 @@ variante**, solo en `verdict` y en `data`.
 
 `accionDe` deriva, con el mismo mecanismo, qué hacer a continuación: la
 exhaustividad del `switch` sobre `ShipOutcome` ata la acción al desenlace, así
-que una variante nueva tampoco compila sin decidir su mensaje. **Es nula
-exactamente donde `Codigo.deShip` devuelve `0`**, que es lo que
-`ResultEnvelope.nextAction` promete: toda salida que no sea verde tiene que
-poder decir qué hacer. Al revés no vale ni tiene por qué —`confirmationMissing`
-sale `0` y sugiere `--yes`—, porque la promesa es que ninguna salida no-verde
-se quede muda, no que ninguna verde hable.
+que una variante nueva tampoco compila sin decidir su mensaje. **Es nula solo
+donde `Codigo.deShip` devuelve `0`** —una implicación en un sentido, no un
+bicondicional—, que es lo que `ResultEnvelope.nextAction` promete: toda salida
+que no sea verde tiene que poder decir qué hacer. Al revés **es falso**, y no
+tiene por qué valer: `confirmationMissing` sale `0` y devuelve igual el mensaje
+de `--yes`. La promesa es que ninguna salida no-verde se quede muda, no que
+ninguna verde hable.
 
 Las dos funciones derivadas no coincidían, y solo se veía poniéndolas juntas:
 `Codigo.deShip(Publicado(verificacion: rojo))` daba `1` y `accionDe` de ese
@@ -3689,8 +3690,8 @@ medias sin detalle no dice qué hay que reparar.
   `ShipOutcome` entero en `packages/core/test/corrida_test.dart`. Un tipo sin
   productor es exactamente lo que este repositorio declara en vez de
   disimular. **Esta frase decía «hoy solo los ejercitan sus propias suites» y
-  para `accionDe` era falsa**: esa función pública de ocho ramas y siete
-  mensajes no la referenciaba nada en el árbol fuera de su declaración, ni
+  para `accionDe` era falsa**: esa función pública —nueve ramas y siete
+  mensajes cuando se la encontró— no la referenciaba nada en el árbol, ni
   siquiera una prueba, y reemplazar su cuerpo entero por `=> null` dejaba la
   suite completa en verde. Nombrar el archivo en vez de decir «su propia
   suite» es lo que vuelve comprobable la afirmación.

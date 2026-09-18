@@ -526,8 +526,16 @@ void main() {
           PullRequestUnknown.fromJson,
         ),
         'NoIntentado': (
+          // **`verificationGate`, no `secretDetected`.** Con el secreto, esta
+          // instancia canónica era una combinación que no produce nada:
+          // `derivar` chequea el arnés roto en el paso 1, ANTES del secreto,
+          // así que con `errorInterno` lo que sale es la compuerta. Es la
+          // misma clase que el documento canónico de más arriba, con el
+          // agravante de que el ruling de las cuatro causas existe justamente
+          // para que «compuerta con arnés roto» sea la fila ALCANZABLE. Los
+          // dos campos siguen sin ser el valor por omisión de nada.
           ShipOutcome.noIntentadoParaLaPrueba(
-            causa: CausaDeNoIntento.secretDetected,
+            causa: CausaDeNoIntento.verificationGate,
             verificacion: EstadoDeCorrida.errorInterno,
           ).toJson(),
           NoIntentado.fromJson,

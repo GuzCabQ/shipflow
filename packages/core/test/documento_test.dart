@@ -291,6 +291,16 @@ void main() {
     expect(vuelta.toJson(), ida.toJson());
   });
 
+  test('un estado que nadie declaró se rechaza como FormatException', () {
+    // `values.byName` lanzaba `ArgumentError`, tres líneas arriba de la
+    // comprobación de coherencia que sí lanza `FormatException`: dos familias
+    // para una sola condición, adentro del mismo método. Quien lea un
+    // documento tendría que atrapar las dos para no dejar pasar ninguna.
+    final json = Map<String, Object?>.from(preparado().toJson())
+      ..['estado'] = 'unEstadoQueNadieDeclaro';
+    expect(() => DocumentoDeCorrida.fromJson(json), throwsFormatException);
+  });
+
   test('un formatVersion que no conocemos NO se lee', () {
     final json = Map<String, Object?>.from(preparado().toJson())
       ..['formatVersion'] = 99;

@@ -16,6 +16,27 @@ enum EstadoDelDocumento {
   localInconsistent,
 }
 
+/// Lee un [EstadoDelDocumento] por su nombre, y **lanza [FormatException]** si
+/// no hay ninguno con ese nombre.
+///
+/// `values.byName` lanza `ArgumentError`, que es la familia de «me pasaron mal
+/// un argumento», no la de «este JSON no se puede leer». El agujero estaba
+/// cerrado igual —ese documento sí se rechazaba— pero por un tipo distinto del
+/// que usa el resto de esta lectura: la versión anterior mezclaba las dos
+/// familias adentro del mismo método, con `byName` tres líneas arriba de la
+/// comprobación de coherencia que sí lanza `FormatException`. Dos familias
+/// para una sola condición obligan a quien lea un documento a atrapar las dos
+/// para no dejar pasar ninguna.
+EstadoDelDocumento _estadoPorNombre(Object? leido) {
+  for (final estado in EstadoDelDocumento.values) {
+    if (estado.name == leido) return estado;
+  }
+  throw FormatException(
+    'El documento de la corrida dice estado «$leido», que no es ninguno de: '
+    '${EstadoDelDocumento.values.map((e) => e.name).join(", ")}.',
+  );
+}
+
 class DocumentoDeCorrida {
   /// **Del documento, no del envelope de salida.** Son dos contratos con
   /// ciclos de vida distintos.
@@ -66,7 +87,7 @@ class DocumentoDeCorrida {
   /// cerrarlo.
   ///
   /// **[NoIntentado] devuelve nulo, y no es un olvido.** Es el único desenlace
-  /// que no afirma ningún estado de este documento: sus cinco causas se
+  /// que no afirma ningún estado de este documento: sus cuatro causas se
   /// resuelven ANTES del CAS —así está ordenada [ShipOutcome.derivar]—, o sea
   /// antes de que exista la revisión candidata sin la cual este documento no
   /// se puede escribir. Un documento con un desenlace [NoIntentado] adentro
@@ -218,7 +239,7 @@ class DocumentoDeCorrida {
       );
     }
     final crudo = json['desenlace'];
-    final estado = EstadoDelDocumento.values.byName(json['estado']! as String);
+    final estado = _estadoPorNombre(json['estado']);
     final desenlace = crudo == null
         ? null
         : ShipOutcome.fromJson(Map<String, Object?>.from(crudo as Map));
