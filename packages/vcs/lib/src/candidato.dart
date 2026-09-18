@@ -31,7 +31,7 @@ class _IndiceDesincronizadoDelCandidato implements Exception {
   );
 
   @override
-  String toString() => 'IndiceDesincronizado($revision): $salida';
+  String toString() => '_IndiceDesincronizadoDelCandidato($revision): $salida';
 }
 
 /// La rebanada trae un secreto, así que no se commitea.

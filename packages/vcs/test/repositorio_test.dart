@@ -108,6 +108,13 @@ void main() {
     String intent = 'porque sí',
   }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
 
+  /// Lo que el `git` falso de [repositorioConIndiceQueFalla] escribe en
+  /// `stderr` antes de fallar. **Con nombre propio para poder afirmar que
+  /// llega hasta `detalle`** — sin esto, la salida (real o falsa) de `git`
+  /// nunca se ve obligada a atravesar el campo, y un `detalle` que ignorara
+  /// lo que `git` dijo pasaría la prueba igual.
+  const quejaDelGitFalso = 'fatal: el índice simulado no se escribe';
+
   /// Un repositorio cuyo `reset` posterior al commit siempre falla.
   ///
   /// **Inyectado por la costura de [RepositorioGit.programa], no producido
@@ -120,11 +127,11 @@ void main() {
   /// operación que hace falta ver fallar. Lo que esto NO demuestra es que un
   /// fallo real de `reset` —disco lleno, permisos, lo que sea— pase por este
   /// mismo `if`; solo que, si pasa por acá, sale como [IndiceDesincronizado]
-  /// con la revisión como dato.
+  /// con la revisión como dato y con lo que `git` dijo, dentro de `detalle`.
   RepositorioGit repositorioConIndiceQueFalla() {
-    final falso = envoltorio('git-reset-roto', r'''#!/bin/sh
-if [ "$2" = "reset" ]; then exit 91; fi
-exec git "$@"
+    final falso = envoltorio('git-reset-roto', '''#!/bin/sh
+if [ "\$2" = "reset" ]; then echo '$quejaDelGitFalso' >&2; exit 91; fi
+exec git "\$@"
 ''');
     escribir('a.txt', 'cambio\n');
     return RepositorioGit(
@@ -1005,6 +1012,11 @@ exec git "$@"
               .having((e) => e.revision, 'revisión', hasLength(40))
               .having((e) => e.detalle, 'detalle', contains('a.txt'))
               .having(
+                (e) => e.detalle,
+                'con lo que git dijo de verdad, no solo el prefijo estático',
+                contains(quejaDelGitFalso),
+              )
+              .having(
                 (e) => e.toString(),
                 'el mensaje',
                 contains('sin sincronizar'),
@@ -1050,6 +1062,31 @@ exec git "$@"
           'HEAD',
         ]).split('\u0000').where((s) => s.isNotEmpty),
         [' a.txt'],
+      );
+    });
+  });
+
+  group('IndiceDesincronizado valida sus campos', () {
+    // El mismo criterio que su análogo `LocalInconsistent`
+    // (`packages/core/lib/src/desenlace.dart`): sin esto,
+    // `IndiceDesincronizado('', '')` se construía sin quejarse, y era
+    // exactamente el defecto que esta clase existe para cerrar —una
+    // revisión que no es un dato real— con la interpolación cambiada por
+    // una cadena vacía.
+    test(
+      'sin revisión no se construye: el commit existe y hay que repararlo',
+      () {
+        expect(
+          () => IndiceDesincronizado('', 'x'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('sin detalle no se construye: no diría qué reparar', () {
+      expect(
+        () => IndiceDesincronizado('d' * 40, ' '),
+        throwsA(isA<ArgumentError>()),
       );
     });
   });

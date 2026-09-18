@@ -77,6 +77,14 @@ class PromesaIncumplida implements Exception {
 /// interpolada en el texto: quien recuperara la corrida tenía que parsear un
 /// mensaje para saber qué comprobar. Un dato que solo existe dentro de una
 /// oración no es un dato.
+///
+/// **Valida como su análogo `LocalInconsistent`**
+/// (`packages/core/lib/src/desenlace.dart`), con el mismo argumento: el
+/// commit existe, así que sin su revisión nadie puede repararlo, y un estado
+/// a medias sin detalle no dice qué hay que reparar. Sin esto,
+/// `IndiceDesincronizado('', '')` se construía sin quejarse — el mismo
+/// defecto que esta clase existe para cerrar, con la revisión reemplazada por
+/// una cadena vacía en vez de estar interpolada en un mensaje.
 class IndiceDesincronizado implements Exception {
   /// El commit que sí se creó.
   final String revision;
@@ -84,7 +92,22 @@ class IndiceDesincronizado implements Exception {
   /// Qué quedó mal, en las palabras de `git`.
   final String detalle;
 
-  const IndiceDesincronizado(this.revision, this.detalle);
+  IndiceDesincronizado(this.revision, this.detalle) {
+    if (revision.trim().isEmpty) {
+      throw ArgumentError.value(
+        revision,
+        'revision',
+        'El commit existe: sin su revisión nadie puede repararlo.',
+      );
+    }
+    if (detalle.trim().isEmpty) {
+      throw ArgumentError.value(
+        detalle,
+        'detalle',
+        'Un estado a medias sin detalle no dice qué hay que reparar.',
+      );
+    }
+  }
 
   @override
   String toString() =>
@@ -753,7 +776,7 @@ class RepositorioGit implements ChangeSink {
     if (sincronizado.exitCode != 0) {
       throw IndiceDesincronizado(
         revision,
-        'en ${rutas.join(", ")}: '
+        'En ${rutas.join(", ")}: '
         '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
       );
     }
