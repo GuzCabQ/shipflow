@@ -340,20 +340,26 @@ bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
 /// La forma canónica de un OID: **minúsculas**, que es lo que imprime git y lo
 /// que devuelven las forjas.
 ///
-/// **Y solo toca lo que ES un OID completo.** Cualquier otra cadena vuelve
-/// intacta, y eso no es prudencia: `CandidateIdentity` declara su
-/// representación OPACA para el dominio —un doble puede identificar el
-/// contenido como se le ocurra, con mayúsculas que signifiquen algo—, así que
-/// bajar de caso a ciegas podría fundir dos identidades distintas en una. Lo
-/// que esta función sabe es una sola cosa, y la sabe el dominio desde que
-/// existe [esOidCompleto]: dos escrituras de un mismo OID nombran el mismo
-/// objeto de git.
+/// **Se aplica en un solo lugar: `PullRequestRequest.revision`.** Ese campo
+/// DECLARA ser un OID completo de git —el constructor lanza si no lo es—, así
+/// que llevarlo a minúsculas no interpreta nada: elige una de las dos
+/// escrituras del mismo objeto, que es lo único que el dominio sabe desde que
+/// existe [esOidCompleto].
 ///
-/// **Residuo declarado:** una identidad opaca que por casualidad tenga la
-/// forma de un OID —40 o 64 caracteres hexadecimales— y además distinga
-/// mayúsculas caería en esta canonicalización. Es una representación que
-/// nadie usa hoy; distinguirla pediría un tipo que diga si la identidad es un
-/// OID o no, que es un cambio de dominio y no de esta ronda.
+/// **Y no se aplica a ninguna identidad opaca.** Durante una ronda esta
+/// función se aplicó también a [CandidateIdentity], adivinando por el largo
+/// —40 o 64 caracteres hexadecimales— que la cadena era un OID. Una identidad
+/// opaca con esa forma y con mayúsculas entraba de un modo y salía de otro:
+/// una transformación silenciosa del dato de un puerto, que contradice el ida
+/// y vuelta sin pérdida que exige ADR-002 y la opacidad que ese tipo declara.
+/// Si hace falta una identidad de git con semántica propia, se introduce un
+/// tipo que lo diga; la semántica no se infiere del largo de un `String`.
+///
+/// **Y solo toca lo que ES un OID completo.** Cualquier otra cadena vuelve
+/// intacta: su llamador valida inmediatamente después y reporta en la queja lo
+/// que escribió quien la compuso. Bajar la caja a ciegas acá dejaría a mano una
+/// función que transforma cualquier cadena, que es exactamente la superficie
+/// que el párrafo anterior costó.
 String canonicalizarOid(String revision) =>
     esOidCompleto(revision) ? revision.toLowerCase() : revision;
 
@@ -380,34 +386,32 @@ String canonicalizarOid(String revision) =>
 /// ningún control lo haya mirado entero. Eso lo acota cada afirmación, y solo
 /// hasta los sujetos de su propio testigo.
 class CandidateIdentity {
-  /// Qué contenido se expuso a la cascada. **Canónico si es un OID completo**
-  /// —ver el constructor—; cualquier otra representación queda tal cual.
+  /// Qué contenido se expuso a la cascada. **Tal cual se lo escribió**: es la
+  /// representación del adapter, y este tipo no la lee.
   final String contentRevision;
 
   /// Sobre qué base se construyó. Es la condición del commit: si la rama se
-  /// movió, el cambio no se aplica. Con la misma canonicalización que
-  /// [contentRevision].
+  /// movió, el cambio no se aplica. **También literal**, por lo mismo.
   final String baseRevision;
 
-  /// **Lo único que este constructor le hace al valor: llevarlo a la forma
-  /// canónica CUANDO es un OID completo.**
+  /// **Lo único que este constructor le hace al valor: nada.** Rechaza el
+  /// blanco —que no identifica nada— y guarda lo que recibió, carácter por
+  /// carácter.
   ///
-  /// La opacidad de arriba sigue en pie: `canonicalizarOid` deja intacta toda
-  /// cadena que no sea un OID, así que un doble que identifique el contenido
-  /// con cualquier otra representación —mayúsculas incluidas— conserva sus
-  /// identidades exactamente como las escribió.
-  ///
-  /// Hace falta porque esta identidad se COMPARA contra un árbol que llega por
-  /// otra frontera: `PullRequestRequest` exige que el árbol del commit sea
-  /// este mismo valor, y con las dos escrituras de un mismo OID circulando, esa
-  /// comparación afirmaba que el commit llevaba un árbol que los controles no
-  /// vieron. Canonicalizar en las dos fronteras deja la comparación literal,
-  /// que es lo que tiene que ser.
+  /// **Por qué no canonicaliza.** Durante una ronda sí lo hizo: los dos campos
+  /// pasaban por `canonicalizarOid`, que baja a minúsculas toda cadena de 40 o
+  /// 64 caracteres hexadecimales. Eso adivina por el largo una semántica que
+  /// este tipo declara NO tener —la representación es opaca, y un doble puede
+  /// usar una donde la caja signifique algo—, y rompe dos cosas escritas: el
+  /// ida y vuelta sin pérdida que ADR-002 le exige a todo tipo de puerto
+  /// —`ABCDEF…` entraba y salía `abcdef…`— y la propuesta aceptada, que dice
+  /// que `core` no sabe si el identificador es un árbol, un SHA u otra cosa.
+  /// Si mañana hace falta una identidad de git con semántica propia, se
+  /// introduce un tipo que lo diga.
   CandidateIdentity({
-    required String contentRevision,
-    required String baseRevision,
-  }) : contentRevision = canonicalizarOid(contentRevision),
-       baseRevision = canonicalizarOid(baseRevision) {
+    required this.contentRevision,
+    required this.baseRevision,
+  }) {
     if (contentRevision.trim().isEmpty || baseRevision.trim().isEmpty) {
       throw ArgumentError(
         'Una identidad de candidato en blanco no identifica nada.',

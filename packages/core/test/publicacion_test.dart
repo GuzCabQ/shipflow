@@ -241,61 +241,22 @@ void main() {
       );
     });
 
-    test('el árbol escrito en otra caja es el MISMO árbol, y construye', () {
-      // **El hallazgo de la ronda 6.** La ronda anterior canonicalizó la
-      // revisión y dejó esta guarda, dos líneas más abajo, comparando literal
-      // entre dos OIDs. Con el árbol del commit escrito en mayúsculas y el
-      // `contentRevision` del candidato en minúsculas —el mismo árbol— el
-      // constructor lanzaba afirmando que el commit lleva un árbol que los
-      // controles no vieron. Es falso, y corta la publicación entera.
-      final arbolEnMinuscula = oidSha1;
-      final arbolEnMayuscula = oidSha1.toUpperCase();
-
-      // El candidato en minúscula, el parámetro en mayúscula…
-      expect(
-        PullRequestRequest(
-          draft: PullRequestDraft(
-            runId: 'corrida-1',
-            branch: 'rama',
-            base: 'develop',
-            artefacto: artefacto(
-              estado: EstadoDeCorrida.verde,
-              arbol: arbolEnMinuscula,
-            ),
-          ),
-          revision: oidSha256,
-          arbolDeLaRevision: arbolEnMayuscula,
-        ).revision,
-        oidSha256,
-      );
-
-      // …y al revés, que es el caso que una canonicalización puesta en un solo
-      // lado dejaría roto.
-      expect(
-        PullRequestRequest(
-          draft: PullRequestDraft(
-            runId: 'corrida-1',
-            branch: 'rama',
-            base: 'develop',
-            artefacto: artefacto(
-              estado: EstadoDeCorrida.verde,
-              arbol: arbolEnMayuscula,
-            ),
-          ),
-          revision: oidSha256,
-          arbolDeLaRevision: arbolEnMinuscula,
-        ).revision,
-        oidSha256,
-      );
-    });
-
-    test('dos árboles DISTINTOS siguen sin construir, y una identidad opaca '
-        'conserva su caja', () {
-      // Los dos controles negativos de la canonicalización del árbol.
+    test('la comparación del árbol es LITERAL, y la identidad del candidato '
+        'conserva lo que le escribieron', () {
+      // **El hallazgo de la ronda 7.** La ronda anterior canonicalizó los DOS
+      // lados de esta comparación: el parámetro acá y los dos campos de
+      // `CandidateIdentity`, adivinando por el largo —40 o 64 caracteres
+      // hexadecimales— que la cadena era un OID de git. Eso le puso semántica
+      // a un tipo que declara no tenerla, y le costó a `CandidateIdentity` la
+      // serialización sin pérdida que ADR-002 exige.
       //
+      // Lo que queda es la comparación literal, y alcanza bajo el contrato de
+      // hoy: los dos lados salen del adapter de git, que imprime el OID en
+      // minúsculas.
+
       // Uno: dos OIDs distintos siguen siendo distintos — sin esto, una
-      // comparación que devolviera «iguales» siempre pasaría la prueba de
-      // arriba y borraría la guarda entera.
+      // comparación que devolviera «iguales» siempre borraría la guarda
+      // entera.
       expect(
         () => PullRequestRequest(
           draft: borrador(EstadoDeCorrida.verde),
@@ -307,8 +268,7 @@ void main() {
 
       // Dos: `CandidateIdentity` declara su representación OPACA, y un doble
       // puede identificar el contenido con una cadena donde la caja signifique
-      // algo. `canonicalizarOid` solo toca lo que ES un OID completo, así que
-      // «arbol-A» y «arbol-a» siguen siendo dos identidades distintas.
+      // algo. «arbol-A» y «arbol-a» son dos identidades distintas.
       expect(
         () => PullRequestRequest(
           draft: PullRequestDraft(
@@ -328,21 +288,61 @@ void main() {
             'bajar de caja a ciegas fundiría dos identidades opacas distintas '
             'en una',
       );
+
+      // Tres: y una identidad que POR CASUALIDAD tiene forma de OID no es una
+      // excepción a lo anterior. Es el caso que la canonicalización trataba
+      // distinto por el largo de la cadena.
+      //
+      // **Las dos direcciones, y cada una cuida un lado.** Con el candidato en
+      // mayúsculas, quien vuelva a canonicalizar adentro de
+      // `CandidateIdentity` hace coincidir los dos valores y este caso deja de
+      // lanzar. Con el candidato en minúsculas y el parámetro en mayúsculas,
+      // el que vuelva a canonicalizar el parámetro acá hace lo mismo. Una sola
+      // dirección dejaría un lado sin cubrir.
+      for (final (arbolDelCandidato, arbolDelParametro) in [
+        (oidSha1.toUpperCase(), oidSha1),
+        (oidSha1, oidSha1.toUpperCase()),
+      ]) {
+        expect(
+          () => PullRequestRequest(
+            draft: PullRequestDraft(
+              runId: 'corrida-1',
+              branch: 'rama',
+              base: 'develop',
+              artefacto: artefacto(
+                estado: EstadoDeCorrida.verde,
+                arbol: arbolDelCandidato,
+              ),
+            ),
+            revision: oidSha256,
+            arbolDeLaRevision: arbolDelParametro,
+          ),
+          throwsArgumentError,
+          reason:
+              'la comparación es literal: quien componga la solicitud escribe '
+              'el árbol como lo escribió el candidato',
+        );
+      }
+
+      // Y los dos campos del candidato vuelven tal cual entraron, tengan o no
+      // forma de OID.
       expect(
         CandidateIdentity(
           contentRevision: 'arbol-A',
           baseRevision: 'base-B',
         ).contentRevision,
         'arbol-A',
-        reason: 'lo que no es un OID vuelve intacto',
+      );
+      final hexEnMayusculas = CandidateIdentity(
+        contentRevision: oidSha1.toUpperCase(),
+        baseRevision: oidSha256.toUpperCase(),
       );
       expect(
-        CandidateIdentity(
-          contentRevision: oidSha1.toUpperCase(),
-          baseRevision: oidSha256.toUpperCase(),
-        ).contentRevision,
-        oidSha1,
-        reason: 'lo que sí es un OID queda en la forma canónica',
+        [hexEnMayusculas.contentRevision, hexEnMayusculas.baseRevision],
+        [oidSha1.toUpperCase(), oidSha256.toUpperCase()],
+        reason:
+            'la representación es opaca: el largo de un String no dice que '
+            'sea un OID de git',
       );
     });
 

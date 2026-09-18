@@ -22,9 +22,10 @@
 /// - **identidad de un objeto de git** — [esOidCompleto], la única definición
 ///   de qué es una revisión empujable, que el dominio exige al construir la
 ///   solicitud y el adapter vuelve a exigir antes de lanzar el proceso; y
-///   [canonicalizarOid], que la lleva a una sola escritura en cada frontera
-///   que recibe una. Viven con [CandidateIdentity], que es la otra frontera
-///   que recibe un OID.
+///   [canonicalizarOid], que la lleva a una sola escritura donde el campo
+///   DECLARA ser un OID —hoy, solo `PullRequestRequest.revision`—. No se
+///   aplica a [CandidateIdentity]: esa identidad es opaca y se conserva
+///   literal.
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.

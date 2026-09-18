@@ -3025,8 +3025,7 @@ revisión con el árbol y no la revisión misma, así que `revision: ''` se
 construía sin una queja.
 
 Ahora lo exigen **las dos fronteras**, y no es una duplicación: `esOidCompleto`
-(`packages/core/lib/src/entidades.dart`, con la identidad del candidato, que es
-la otra frontera que recibe un OID) es un invariante de construcción en
+(`packages/core/lib/src/entidades.dart`) es un invariante de construcción en
 el dominio —el constructor lanza— y una precondición de ejecución en el
 adapter —`empujar` devuelve `PushFailed` con causa `revisionInvalida`, un
 desenlace cerrado y no una excepción, **antes de lanzar ningún proceso**—. La
@@ -3040,8 +3039,8 @@ se aceptan porque el repositorio puede ser de cualquiera de las dos, y también
 las mayúsculas: medido con `git cat-file -t`, git resuelve el mismo objeto, así
 que rechazarlas sería afirmar que un OID válido no lo es.
 
-**Y aceptar dos escrituras no es dejarlas circular: los OID se canonicalizan a
-minúsculas en cada frontera que recibe uno.** El defecto está reproducido: con la
+**Y aceptar dos escrituras no es dejarlas circular: la revisión se canonicaliza
+a minúsculas en la frontera del dominio.** El defecto está reproducido: con la
 solicitud trayendo el OID en mayúsculas y el pull request que ya existía
 teniéndolo en minúsculas, la búsqueda idempotente —que comparaba literal contra
 el `sha` de la forja— no lo encontraba y salía a crear un SEGUNDO pull request,
@@ -3053,22 +3052,32 @@ respuesta es un dato ajeno y se lee a esa misma forma antes de comparar: que la
 forja de hoy lo mande en minúsculas es su costumbre, no un contrato que este
 cliente pueda exigir.
 
-**Y la revisión no era la única comparación literal entre OIDs.** Dos líneas más
-abajo, el mismo constructor exige que el árbol del commit sea
-`candidato.contentRevision`, y esa comparación seguía siendo textual: con el
-árbol escrito en una forma y el del candidato en la otra —el MISMO árbol— el
-constructor lanzaba afirmando que el commit lleva un árbol que los controles no
-vieron, que es falso y corta la publicación. Ahora `CandidateIdentity` y el
-parámetro del árbol pasan los dos por `canonicalizarOid`, así que la comparación
-vuelve a ser literal entre dos formas canónicas.
+**Y la canonicalización llega hasta ahí, y no más lejos.** Dos líneas más abajo,
+el mismo constructor exige que el árbol del commit sea
+`candidato.contentRevision`, y esa comparación es **literal**. Una ronda la
+canonicalizó también —y con ella los dos campos de `CandidateIdentity`— para que
+el mismo árbol escrito en dos cajas dejara de parecer dos árboles distintos. El
+arreglo costó más de lo que arreglaba: `canonicalizarOid` decide por el LARGO de
+la cadena —40 o 64 caracteres hexadecimales—, y `CandidateIdentity` declara su
+representación **opaca**, así que una identidad con esa forma y con mayúsculas
+entraba `ABCDEF…` y salía `abcdef…`. Eso es transformar en silencio el dato de
+un puerto: rompe el ida y vuelta sin pérdida que **ADR-002** le exige a estos
+tipos, y contradice la propuesta aceptada, que dice que `core` no sabe si el
+identificador es un árbol, un SHA u otra representación.
 
-`canonicalizarOid` **solo toca lo que ES un OID completo**, y eso no es
-prudencia: `CandidateIdentity` declara su representación opaca para el dominio
-—un doble puede identificar el contenido como quiera, con mayúsculas que
-signifiquen algo—, así que bajar de caso a ciegas podría fundir dos identidades
-distintas en una. Lo que esa función sabe es lo único que el dominio sabe desde
-que existe `esOidCompleto`: dos escrituras de un mismo OID nombran el mismo
-objeto de git.
+Lo que queda es la comparación literal, y **alcanza bajo el contrato de hoy**:
+los dos lados salen del adapter de git, que imprime el OID en minúsculas. Quien
+componga la solicitud con el árbol escrito de otra forma que el
+`contentRevision` del candidato recibe una queja en la frontera, no una
+publicación torcida. Y el día que haga falta una identidad de git con semántica
+propia —capaz de decir «esto es un OID» y comparar como tal— se introduce un
+tipo que lo diga: la semántica **no se infiere del largo de un `String`**.
+
+`canonicalizarOid` queda entonces con un solo llamador, `PullRequestRequest`
+sobre `revision`, que es el campo que sí declara ser un OID completo de git —el
+constructor lanza si no lo es—. Lo que esa función sabe es lo único que el
+dominio sabe desde que existe `esOidCompleto`: dos escrituras de un mismo OID
+nombran el mismo objeto de git.
 
 ### La búsqueda idempotente mira todas las páginas, y lee el código antes que el cuerpo
 
@@ -3362,13 +3371,27 @@ no trabajo pendiente con fecha:
   `## Estructura` de este README contra `packages/` real.** Es una enumeración
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
   pero nada además de una revisión humana lo sostiene.
+- **El control de ida y vuelta de ADR-002 no ve un constructor que normalice lo
+  que recibe.** Casi todas sus instancias canónicas arrancan de
+  `unaInstancia.toJson()`, o sea de un objeto ya construido: la normalización
+  ocurre antes de la primera serialización y las dos mitades de la igualdad
+  quedan transformadas por igual. Es lo que dejó en verde la canonicalización
+  de `CandidateIdentity` durante una ronda entera, y es una propiedad del
+  control, no de esa clase. Hoy ningún tipo serializable de `core` normaliza
+  —medido: el único constructor que transforma su entrada es
+  `PullRequestRequest.revision`, y ese tipo no serializa—, y las dos entradas
+  que parten de un JSON escrito a mano son las únicas inmunes. Cerrarlo pide
+  que cada instancia canónica sea un JSON literal, que es trabajo aparte.
 
-- **Una identidad opaca del candidato que tenga la forma de un OID completo
-  —40 o 64 caracteres hexadecimales— y además distinga mayúsculas caería en la
-  canonicalización.** `CandidateIdentity` declara opaca su representación, y
-  `canonicalizarOid` respeta esa opacidad para todo lo demás: lo que no es un
-  OID vuelve intacto. Distinguir esa coincidencia pediría un tipo que diga si
-  la identidad es un OID o no, que es un cambio de dominio.
+- **El árbol del commit se compara literal contra `contentRevision`, así que el
+  MISMO objeto de git escrito en otra caja se rechaza.** No es un descuido: la
+  representación del candidato es opaca —`core` no sabe si es un árbol, un SHA
+  u otra cosa—, y canonicalizarla por el largo de la cadena fue exactamente el
+  defecto de la ronda 7. Alcanza bajo el contrato de hoy porque los dos lados
+  salen del adapter de git, que imprime el OID en minúsculas; lo que nadie
+  sostiene es que un compositor futuro escriba el árbol en la misma caja que el
+  candidato. Cerrarlo pide un tipo que declare «esto es un OID de git», no una
+  inferencia sobre un `String`.
 - **Una URL escrita al desnudo en un dato de la corrida se muestra como enlace
   en el cuerpo del pull request.** El Markdown de la forja la convierte, y eso
   no se neutraliza escapando puntuación. Entra en el mismo criterio que deja

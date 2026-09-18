@@ -575,18 +575,24 @@ class PullRequestRequest {
             'empuja nada: BORRA la rama del remoto.',
       );
     }
-    // **El árbol también entra por una frontera, y también se canonicaliza.**
-    // La primera versión de este arreglo canonicalizó la revisión y dejó esta
-    // comparación literal dos líneas más abajo: con el árbol escrito en una
-    // forma y `contentRevision` en la otra —el MISMO árbol—, el constructor
-    // lanzaba afirmando que el commit lleva un árbol que los controles no
-    // vieron, que es falso y corta la publicación. El otro lado de la
-    // comparación ya viene canónico de [CandidateIdentity], así que acá
-    // alcanza con canonicalizar lo que llega por este parámetro y la
-    // comparación vuelve a ser literal entre dos formas canónicas.
-    final arbolCanonico = canonicalizarOid(arbolDeLaRevision);
+    // **Y esta comparación es LITERAL, a diferencia de la de arriba.** No es
+    // un olvido: el otro lado es `CandidateIdentity.contentRevision`, que
+    // declara su representación OPACA —`core` no sabe si es un árbol, un SHA u
+    // otra cosa—, y bajarle la caja a ciegas fundiría dos identidades opacas
+    // distintas en una. Una ronda intentó canonicalizar los dos lados y el
+    // costo fue peor: `CandidateIdentity` dejó de serializar sin pérdida,
+    // contra ADR-002.
+    //
+    // Que alcance con la comparación literal es una propiedad DEL CONTRATO DE
+    // HOY, y hay que decirla: los dos lados salen del mismo adapter de git,
+    // que imprime el OID en minúsculas. Quien componga esta solicitud con un
+    // árbol escrito de otra forma que el `contentRevision` del candidato
+    // recibe una queja, y la corrige en su llamador. El día que haga falta una
+    // identidad de git con semántica propia —capaz de decir «esto es un OID» y
+    // comparar como tal— se introduce un tipo que lo diga; la semántica no se
+    // infiere del largo de un `String`.
     final esperado = draft.artefacto.candidato.contentRevision;
-    if (arbolCanonico != esperado) {
+    if (arbolDeLaRevision != esperado) {
       throw ArgumentError.value(
         arbolDeLaRevision,
         'arbolDeLaRevision',
