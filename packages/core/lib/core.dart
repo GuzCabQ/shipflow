@@ -14,6 +14,9 @@
 /// - **desenlace** — el desenlace de un paso: [StepOutcome] sellado, y el
 ///   subconjunto propio [VerificationOutcome] que un verificador devuelve.
 /// - **corrida** — [ShipOutcome], el desenlace de una corrida de `ship`.
+/// - **documento** — [DocumentoDeCorrida], el documento autoritativo que
+///   persiste una corrida y permite recuperarla si el proceso muere a mitad,
+///   con sus transiciones validadas en [EstadoDelDocumento].
 /// - **credencial** — [Credential], el único tipo que no serializa.
 /// - **entorno** — [entornoSaneado], la lista blanca con la que se lanza
 ///   todo subproceso.
@@ -41,6 +44,7 @@ export 'src/alcance.dart';
 export 'src/corrida.dart';
 export 'src/credencial.dart';
 export 'src/desenlace.dart';
+export 'src/documento.dart';
 export 'src/entidades.dart';
 export 'src/entorno.dart';
 export 'src/observacion.dart';

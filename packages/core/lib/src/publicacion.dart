@@ -437,6 +437,13 @@ final class PullRequestClosed extends PublicacionNoUtilizable {
 }
 
 /// Antes del commit. **No tiene revisión porque todavía no existe.**
+///
+/// **Serializa.** El documento autoritativo de la corrida —`DocumentoDeCorrida`—
+/// lo lleva adentro para poder reconstruir la solicitud de pull request
+/// después de una interrupción, sin volver a correr la cascada de
+/// verificación. Antes de esta rebanada estaba declarado opaco en
+/// `arquitectura.json`: nadie necesitaba que cruzara un límite de proceso, y
+/// ahora sí.
 class PullRequestDraft {
   /// Identifica la corrida. **No puede contener `<!--`, `-->` ni saltos de
   /// línea**, y el invariante vive acá y no en el render — ver el constructor.
@@ -501,6 +508,32 @@ class PullRequestDraft {
   /// también acá serían dos cadenas independientes para una cosa, y la que el
   /// adapter eligiera decidiría qué lee el revisor.
   String get intent => artefacto.intent;
+
+  Map<String, Object?> toJson() => {
+    'runId': runId,
+    'branch': branch,
+    'base': base,
+    'artefacto': artefacto.toJson(),
+  };
+
+  /// **`factory`, no un método estático.** Mismo motivo que
+  /// `DocumentoDeCorrida.fromJson`: el verificador de serialización deriva
+  /// las claves de un `ConstructorDeclaration` con ese nombre, y esta clase
+  /// no es una base sellada —no hay tensión con «un factory acá se lee como
+  /// serializa»— así que el patrón de las otras clases concretas de `core`
+  /// (`ArtefactoDeRevision`, `SuperficieDeVerificacion`) aplica igual.
+  ///
+  /// El documento de la corrida necesita reconstruir este borrador **sin
+  /// volver a correr la cascada**, y esto es lo que se lo permite.
+  factory PullRequestDraft.fromJson(Map<String, Object?> json) =>
+      PullRequestDraft(
+        runId: json['runId']! as String,
+        branch: json['branch']! as String,
+        base: json['base']! as String,
+        artefacto: ArtefactoDeRevision.fromJson(
+          Map<String, Object?>.from(json['artefacto']! as Map),
+        ),
+      );
 }
 
 /// Después del commit.

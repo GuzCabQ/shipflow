@@ -272,6 +272,25 @@ void main() {
     alcanceDeLoAfirmado: 'propiedades de herramienta, nada de comportamiento',
   );
 
+  final draft = PullRequestDraft(
+    runId: 'corrida-para-el-documento',
+    branch: 'rama-de-la-corrida',
+    base: 'develop',
+    artefacto: artefacto,
+  );
+
+  final desenlaceDelDocumento = ShipOutcome.localInconsistenteParaLaPrueba(
+    revision: 'f' * 40,
+  );
+
+  final documento =
+      DocumentoDeCorrida.preparado(revision: 'e' * 40, draft: draft)
+          .avanzarA(EstadoDelDocumento.committed)
+          .avanzarA(
+            EstadoDelDocumento.publicationComplete,
+            desenlace: desenlaceDelDocumento,
+          );
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -530,6 +549,8 @@ void main() {
           ).toJson(),
           PublicacionIncompleta.fromJson,
         ),
+        'PullRequestDraft': (draft.toJson(), PullRequestDraft.fromJson),
+        'DocumentoDeCorrida': (documento.toJson(), DocumentoDeCorrida.fromJson),
       };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
@@ -561,6 +582,12 @@ void main() {
       // silencio.
       'plan',
     },
+    // El mismo `plan` nulo de arriba, visto desde el JSON anidado de cada
+    // envoltorio que lleva un `ArtefactoDeRevision` adentro: la ruta cambia
+    // con el prefijo, pero el motivo —y el campo que sí queda cubierto,
+    // `sinPlanPorque`— es el mismo.
+    'PullRequestDraft': {'artefacto.plan'},
+    'DocumentoDeCorrida': {'draft.artefacto.plan'},
   };
 
   group('la instancia canónica no trae valores por defecto', () {
