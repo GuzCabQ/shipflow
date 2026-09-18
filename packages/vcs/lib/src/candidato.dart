@@ -482,7 +482,12 @@ class _CandidatoGit implements PreparedCandidate {
     // llamador se acuerde de preguntar: `apply` la cumple adentro, y este
     // camino tiene que cumplirla igual o `ChangeSink` pasa a tener dos
     // garantías distintas según por dónde se entre.
-    await _exigirSinSecretos();
+    //
+    // **Se escanea de nuevo aunque el llamador ya haya pedido
+    // [exigirSinSecretos] antes de esto.** Esta es la comprobación que cierra
+    // la ventana entre lo que se mostró y lo que se commitea; confiar en la
+    // anterior sería confiar en que nadie se salteó un paso.
+    await exigirSinSecretos();
 
     await _promover();
 
@@ -593,11 +598,25 @@ class _CandidatoGit implements PreparedCandidate {
   /// del candidato.**
   ///
   /// El diff se deriva de `baseRevision` y `contentRevision` —un objeto, no dos
-  /// lecturas del árbol— así que acá no hay ventana entre lo que se inspecciona
-  /// y lo que se commitea. Lo que **no** cubre es el árbol entero: el detector
-  /// revisa las líneas agregadas de un diff, y lo que `git` declara binario
-  /// queda afuera por límite declarado.
-  Future<void> _exigirSinSecretos() async {
+  /// lecturas del árbol— así que en una sola llamada no hay ventana entre lo
+  /// que se inspecciona y lo que esa llamada ve. Lo que **no** cubre es el
+  /// árbol entero: el detector revisa las líneas agregadas de un diff, y lo
+  /// que `git` declara binario queda afuera por límite declarado.
+  ///
+  /// **Pública, y pensada para pedirse dos veces por corrida.** El diseño la
+  /// pone antes de la previsualización: sin esto, una corrida sin confirmar
+  /// se comporta como una previsualización, nunca llega a [createRevision], y
+  /// el secreto no se ve nunca — la previsualización informa `0` y da la
+  /// impresión de que no hay nada que corregir. `createRevision` la sigue
+  /// llamando también, y eso no es la misma garantía repetida: entre que
+  /// esto se pide y que el commit se hace puede pasar cualquier cosa que la
+  /// orquestación haga con el candidato, y esa ventana —la que queda entre
+  /// mostrar y commitear— no la tapa haber preguntado antes de mostrar.
+  @override
+  Future<void> exigirSinSecretos() async {
+    if (_dispuesto) {
+      throw StateError('El candidato ya se liberó: no hay diff que escanear.');
+    }
     for (final ruta in _rutas) {
       final diff = await _repo._exigir([
         'diff',

@@ -82,6 +82,67 @@ void main() {
     '--batch-check=%(objectname)',
   ]).split('\n').where((l) => l.trim().isNotEmpty).toSet();
 
+  /// Corrompe, por fuera del candidato, el objeto que el árbol fijado usa
+  /// para [archivo] — sin pasar por ninguna costura del candidato.
+  ///
+  /// **Es la única manera de que la prueba observe la ventana que
+  /// `createRevision` tiene que cerrar por su cuenta.** El par
+  /// `baseRevision`/`contentRevision` que diffea `exigirSinSecretos` es fijo
+  /// desde que `prepareCandidate` devuelve: pedirle el escaneo dos veces al
+  /// mismo candidato, sin más, da siempre el mismo resultado. Para que la
+  /// segunda lectura vea algo que la primera no vio hace falta que algo
+  /// escriba sobre el almacén temporal por fuera del candidato — y eso es
+  /// exactamente lo que este ayudante simula, reescribiendo a mano el objeto
+  /// suelto que `git` ya escribió ahí.
+  ///
+  /// **Un objeto suelto no lleva ninguna verificación de que su contenido
+  /// coincida con su nombre.** `git` la aplica en `fsck`, no al leer con
+  /// `cat-file` o `diff`: por eso alcanza con reemplazar los bytes del
+  /// archivo en disco, sin tocar el árbol que lo referencia.
+  void ensuciarElArbolDelCandidato(
+    PreparedCandidate c,
+    String archivo,
+    String contenidoConSecreto,
+  ) {
+    final objetos = Directory('${Directory(c.root).parent.path}/objetos');
+    final almacenReal = () {
+      final relativo = git(['rev-parse', '--git-path', 'objects']);
+      return relativo.startsWith('/') ? relativo : '${raiz.path}/$relativo';
+    }();
+    final entorno = {
+      ...Platform.environment,
+      'GIT_OBJECT_DIRECTORY': objetos.path,
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES': almacenReal,
+    };
+    final listado = Process.runSync(
+      'git',
+      ['ls-tree', c.identity.contentRevision, '--', archivo],
+      workingDirectory: raiz.path,
+      environment: entorno,
+    );
+    if (listado.exitCode != 0) {
+      throw StateError('ls-tree ${listado.exitCode}: ${listado.stderr}');
+    }
+    final sha = (listado.stdout as String).trim().split(RegExp(r'\s+'))[2];
+    final objeto = File(
+      '${objetos.path}/${sha.substring(0, 2)}/${sha.substring(2)}',
+    );
+    expect(
+      objeto.existsSync(),
+      isTrue,
+      reason:
+          'el blob de $archivo tiene que vivir en el almacén temporal para '
+          'que este ayudante lo pueda corromper',
+    );
+    final cuerpo = utf8.encode(contenidoConSecreto);
+    final crudo = [...utf8.encode('blob ${cuerpo.length}\u0000'), ...cuerpo];
+    // `git` escribe los objetos sueltos de solo lectura. Se borra y se
+    // recrea en vez de sobreescribir: reabrir el mismo archivo con el modo
+    // que `git` le puso falla con «permiso denegado».
+    objeto.deleteSync();
+    objeto.writeAsBytesSync(ZLibEncoder().convert(crudo));
+  }
+
   setUp(() {
     raiz = Directory.systemTemp.createTempSync('candidato_');
     repo = RepositorioGit(
@@ -1145,6 +1206,53 @@ void main() {
         () => repo.apply(rebanada(['b.txt'])),
         throwsA(isA<SecretoEnLaRebanada>()),
       );
+    });
+  });
+
+  group('el escaneo se puede pedir antes de escribir nada', () {
+    // El diseño lo pone en el paso 5, antes de la previsualización: mientras
+    // el único escaneo viviera dentro de `createRevision` —el paso 11—, una
+    // corrida sin `--yes` se comportaba como una previsualización, nunca
+    // llegaba ahí, y el secreto no aparecía nunca.
+    const clave = 'const k = "AKIAIOSFODNN7EXAMPLE";\n';
+
+    test('el escaneo se puede pedir SIN escribir ningún objeto', () async {
+      escribir('a.txt', clave);
+      final antes = objetosDelRepo();
+      final cabeza = git(['rev-parse', 'HEAD']);
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        await expectLater(
+          c.exigirSinSecretos(),
+          throwsA(isA<SecretoEnLaRebanada>()),
+        );
+        return null;
+      });
+      // No hay forma de espiar la escritura de objetos en el almacén
+      // temporal desde el puerto: `PreparedCandidate` no expone su almacén,
+      // y no hay ningún ayudante de espionaje ya instalado en este archivo.
+      // La comprobación equivalente y disponible es la que el resto del
+      // archivo ya usa para la misma afirmación sobre `createRevision`: el
+      // almacén REAL no gana ningún objeto, y `HEAD` no se mueve.
+      expect(
+        objetosDelRepo().difference(antes),
+        isEmpty,
+        reason: 'el paso 5 no promueve ni commitea nada',
+      );
+      expect(git(['rev-parse', 'HEAD']), cabeza);
+    });
+
+    test('createRevision SIGUE escaneando: la ventana no la cubre el paso '
+        '5', () async {
+      escribir('a.txt', 'limpio\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        await c.exigirSinSecretos(); // pasa: todavía no hay secreto
+        ensuciarElArbolDelCandidato(c, 'a.txt', clave);
+        await expectLater(
+          c.createRevision(),
+          throwsA(isA<SecretoEnLaRebanada>()),
+        );
+        return null;
+      });
     });
   });
 

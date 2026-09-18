@@ -421,6 +421,28 @@ abstract interface class PreparedCandidate {
   /// afirmar nada sobre un árbol que dejó de ser el que se fijó.
   Future<List<AlteracionDelCandidato>> alteraciones();
 
+  /// Escanea el diff entre `identity.baseRevision` y `identity.contentRevision`
+  /// en busca de secretos, y se niega con la misma causa tipada que
+  /// [createRevision] si encuentra alguno.
+  ///
+  /// **Se puede pedir después de materializar y antes de escribir nada.** Es
+  /// lo que le permite a una previsualización ver un secreto: si el único
+  /// escaneo viviera dentro de [createRevision], una corrida sin confirmar se
+  /// comporta como una previsualización, nunca llega ahí, y el secreto no
+  /// aparece nunca — la previsualización informa cero hallazgos y da la
+  /// impresión de que no hay nada que corregir.
+  ///
+  /// **No escribe ningún objeto.** Es una lectura contra el par de
+  /// revisiones que [identity] ya fijó.
+  ///
+  /// **[createRevision] vuelve a escanear, y eso no es la misma garantía
+  /// repetida.** Esta operación cierra la ventana entre preparar el
+  /// candidato y mostrarlo; la de [createRevision] cierra la que queda entre
+  /// mostrarlo y commitear, y esa ventana no la cubre haber preguntado antes:
+  /// depender de eso convertiría la garantía del commit en una que solo vale
+  /// si el llamador se acordó de pedir esta operación primero.
+  Future<void> exigirSinSecretos();
+
   /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**
   ///
   /// Es el primer paso que escribe en el repositorio, y está separado de
@@ -431,7 +453,10 @@ abstract interface class PreparedCandidate {
   /// recuperar no tendría identidad que consultar. Como crear un commit no
   /// mueve nada, hacerlo antes no tiene efecto observable.
   ///
-  /// **Se niega si la rebanada trae un secreto**, antes de escribir nada.
+  /// **Se niega si la rebanada trae un secreto**, antes de escribir nada —
+  /// vuelve a llamar a [exigirSinSecretos] aunque el llamador ya la haya
+  /// pedido, porque la ventana que esta comprobación cierra es la que queda
+  /// entre mostrar y commitear, y ninguna llamada anterior la cubre.
   ///
   /// Idempotente: llamarla dos veces devuelve la misma revisión.
   Future<String> createRevision();
