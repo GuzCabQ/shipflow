@@ -215,6 +215,33 @@ void main() {
       expect((r as NoIntentado).causa, CausaDeNoIntento.secretDetected);
     });
 
+    test('el secreto le gana a la compuerta por estado, y --allow-incomplete '
+        'no compra saltarlo', () {
+      // Las dos pruebas de arriba usan el `verde` por omisión, así que
+      // nunca ejercitan el chequeo 3 (la compuerta): no distinguen esta
+      // precedencia de la contraria. Acá el estado SÍ dispara la compuerta
+      // —rojo o no concluyente, con y sin `--allow-incomplete`— y el
+      // secreto tiene que seguir ganando: la bandera autoriza publicar con
+      // un estado incompleto, no autoriza ignorar un secreto.
+      for (final estado in [
+        EstadoDeCorrida.rojo,
+        EstadoDeCorrida.noConcluyente,
+      ]) {
+        for (final autoriza in [false, true]) {
+          final r = derivar(
+            verificacion: estado,
+            huboSecreto: true,
+            autorizaIncompleto: autoriza,
+          );
+          expect(
+            (r as NoIntentado).causa,
+            CausaDeNoIntento.secretDetected,
+            reason: '${estado.name} · autorizaIncompleto=$autoriza',
+          );
+        }
+      }
+    });
+
     test('la compuerta le gana a la confirmación que falta', () {
       final r = derivar(verificacion: EstadoDeCorrida.rojo, seConfirmo: false);
       expect((r as NoIntentado).causa, CausaDeNoIntento.verificationGate);
