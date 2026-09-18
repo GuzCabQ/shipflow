@@ -89,35 +89,74 @@ void main() {
       }
     });
 
-    test('cada fromJson rechaza un discriminador ajeno', () {
-      final ajenos = <String, ShipOutcome>{
-        for (final caso in <ShipOutcome>[
-          ShipOutcome.noIntentadoParaLaPrueba(
-            causa: CausaDeNoIntento.previewOnly,
-            verificacion: EstadoDeCorrida.verde,
-          ),
-          ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
-          ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
-          ShipOutcome.publicadoParaLaPrueba(
-            pr: PullRequestOpen(url: 'https://forja/pr/3'),
-            verificacion: EstadoPublicable.verde,
-          ),
-          ShipOutcome.publicacionIncompletaParaLaPrueba(
-            remoto: PushFailed(causa: CausaDePublicacion.permisos),
-            verificacion: EstadoPublicable.verde,
-          ),
-        ])
-          caso.kind: caso,
+    test('cada fromJson rechaza un discriminador ajeno: las CINCO', () {
+      // Llamar solo a `ShipOutcome.fromJson` no prueba nada de las cinco
+      // fábricas concretas: con un `kind` que no nombra ninguna variante, el
+      // rechazo ocurre en el `switch` de la base, ANTES de que se ejecute el
+      // `_exigirKind` de cualquier fábrica. Borrar `_exigirKind` de las cinco
+      // dejaba una versión anterior de esta prueba en verde igual. Mismo
+      // hueco, y mismo arreglo, que `publicacion_test.dart` ya cerró para
+      // `PublicationOutcome` — «cada fromJson rechaza un discriminador
+      // ajeno: las SIETE»: acá se llama a la fábrica de CADA variante por su
+      // nombre, nunca al despachador de la base.
+      final variantes = <String, ShipOutcome Function(Map<String, Object?>)>{
+        'noIntentado': NoIntentado.fromJson,
+        'noAplicado': NoAplicado.fromJson,
+        'localInconsistente': LocalInconsistente.fromJson,
+        'publicado': Publicado.fromJson,
+        'publicacionIncompleta': PublicacionIncompleta.fromJson,
       };
-      expect(ajenos, hasLength(5), reason: 'los kind tienen que ser distintos');
-      for (final entrada in ajenos.entries) {
-        final impostor = Map<String, Object?>.from(entrada.value.toJson())
-          ..['kind'] = 'otro-kind';
+      expect(
+        variantes,
+        hasLength(5),
+        reason:
+            'si nace una sexta variante y esta tabla no crece, la tabla '
+            'vuelve a prometer «cada fromJson» cubriendo menos',
+      );
+
+      // El cuerpo legítimo de CADA variante, con su propio `kind`. Cada
+      // fábrica exige su `kind` antes de mirar cualquier otro campo, así que
+      // alcanza con que el cuerpo sea válido para SU PROPIA fromJson.
+      final cuerpos = <String, Map<String, Object?>>{
+        'noIntentado': ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.previewOnly,
+          verificacion: EstadoDeCorrida.verde,
+        ).toJson(),
+        'noAplicado': ShipOutcome.noAplicadoParaLaPrueba(
+          headObservado: 'a' * 40,
+        ).toJson(),
+        'localInconsistente': ShipOutcome.localInconsistenteParaLaPrueba(
+          revision: 'b' * 40,
+        ).toJson(),
+        'publicado': ShipOutcome.publicadoParaLaPrueba(
+          pr: PullRequestOpen(url: 'https://forja/pr/3'),
+          verificacion: EstadoPublicable.verde,
+        ).toJson(),
+        'publicacionIncompleta': ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushFailed(causa: CausaDePublicacion.permisos),
+          verificacion: EstadoPublicable.verde,
+        ).toJson(),
+      };
+
+      for (final entrada in variantes.entries) {
+        final propio = entrada.key;
+        // Un discriminador que es de OTRA variante, no uno inventado: el
+        // caso inventado ya lo cubre «un kind desconocido no se adivina», y
+        // el que de verdad confunde una variante con otra es éste.
+        final ajeno = propio == 'noIntentado' ? 'noAplicado' : 'noIntentado';
+        final cuerpoAjeno = Map<String, Object?>.from(cuerpos[propio]!)
+          ..['kind'] = ajeno;
+
         expect(
-          () => ShipOutcome.fromJson(impostor),
+          () => entrada.value(cuerpoAjeno),
           throwsFormatException,
-          reason: entrada.key,
+          reason:
+              'la fromJson de «$propio» aceptó el discriminador «$ajeno», '
+              'que es de otra variante',
         );
+        // Control positivo, en la misma vuelta: sin esto, una `fromJson` que
+        // lanzara SIEMPRE pasaría la aserción de arriba.
+        expect(entrada.value(cuerpos[propio]!).kind, propio);
       }
     });
 
