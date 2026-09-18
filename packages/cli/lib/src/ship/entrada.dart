@@ -20,9 +20,14 @@ class EntradaDeShip {
   final String? intent;
 
   /// Los archivos declarados con `--file`. Vacía cuando la selección viene
-  /// de `--slice`: resolver esa rebanada en archivos es de la tarea
-  /// siguiente, que todavía no existe.
+  /// de `--slice`, y ahí es `rutaDeLaRebanada` la que tiene el dato.
   final List<String> archivos;
+
+  /// La ruta declarada con `--slice`, **sin leer**. Nula cuando la selección
+  /// vino de `--file`. Leerla y resolverla en `archivos` es de la tarea
+  /// siguiente, que todavía no existe: este intérprete no toca disco, y por
+  /// eso sus pruebas son baratas.
+  final String? rutaDeLaRebanada;
 
   final String? branch;
   final String? base;
@@ -33,6 +38,7 @@ class EntradaDeShip {
   EntradaDeShip({
     required this.intent,
     required List<String> archivos,
+    required this.rutaDeLaRebanada,
     required this.branch,
     required this.base,
     required this.dryRun,
@@ -59,12 +65,20 @@ EntradaDeShip interpretarShip(List<String> args) {
   final archivos = <String>[];
   final desconocidas = <String>[];
 
+  // La misma guardia que ya protege a las banderas booleanas —no comerse el
+  // argumento siguiente— hacía falta acá también. Sin ella, `--intent
+  // --file a.txt` le daba `--file` a `--intent` como valor y culpaba a
+  // `a.txt` de ser una bandera desconocida: el mensaje mandaba a buscar el
+  // problema donde no estaba. Un valor no puede ser, a su vez, una bandera:
+  // ninguna ruta ni ninguna intención empieza con `--`.
   String valorDe(int indiceDeBandera, String bandera) {
     final indiceDeValor = indiceDeBandera + 1;
-    if (indiceDeValor >= args.length) {
+    final sinValor =
+        indiceDeValor >= args.length || args[indiceDeValor].startsWith('--');
+    if (sinValor) {
       throw UsoInvalido(
         '$bandera necesita un valor',
-        'Pasá $bandera seguido del valor.',
+        'Pasá $bandera seguido de un valor que no sea otra bandera.',
       );
     }
     return args[indiceDeValor];
@@ -150,6 +164,7 @@ EntradaDeShip interpretarShip(List<String> args) {
   return EntradaDeShip(
     intent: intent,
     archivos: archivos,
+    rutaDeLaRebanada: slice,
     branch: branch,
     base: base,
     dryRun: dryRun,

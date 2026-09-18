@@ -78,4 +78,38 @@ void main() {
       throwsA(isA<UsoInvalido>()),
     );
   });
+
+  test('una bandera con valor tampoco se come la bandera siguiente', () {
+    // El mismo agujero que la prueba anterior cierra para las booleanas
+    // —no comerse el argumento siguiente— hacía falta acá: sin la guardia,
+    // `--file` se tragaba a `--branch` como nombre de archivo y `--branch`
+    // se quedaba sin valor, las dos cosas en silencio.
+    expect(
+      () => interpretarShip(['--intent', '--file', 'a.txt']),
+      throwsA(
+        isA<UsoInvalido>().having(
+          (e) => e.reason,
+          'reason',
+          contains('--intent'),
+        ),
+      ),
+      reason:
+          'el mensaje tiene que nombrar la bandera sin valor, no culpar '
+          'al valor que se le escapó',
+    );
+    expect(
+      () => interpretarShip(['--file', '--branch', '--intent', 'x']),
+      throwsA(isA<UsoInvalido>()),
+    );
+  });
+
+  test('--slice deja la ruta y no los archivos; --file, al revés', () {
+    final porSlice = interpretarShip(['--slice', 'e.json']);
+    expect(porSlice.rutaDeLaRebanada, 'e.json');
+    expect(porSlice.archivos, isEmpty);
+
+    final porFile = interpretarShip(['--intent', 'x', '--file', 'a.txt']);
+    expect(porFile.rutaDeLaRebanada, isNull);
+    expect(porFile.archivos, ['a.txt']);
+  });
 }
