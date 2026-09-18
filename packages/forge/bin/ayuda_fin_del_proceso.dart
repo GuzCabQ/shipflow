@@ -11,17 +11,25 @@
 /// Nadie lo compone en ningún flujo: lo único que lo invoca son las suites de
 /// este paquete, bajo `packages/forge/test/`.
 ///
-/// **Dos modos, porque son dos salidas distintas del proceso hacia afuera** y
-/// las dos tenían el mismo defecto: un futuro abandonado que deja algo
-/// abierto. `empuje` corre un `empujar` contra el programa que se le pase;
-/// `forja` corre un `open` contra una URL que contesta encabezados y nunca
-/// cierra el cuerpo. En los dos casos **vuelve de `main` sin llamar a
-/// `exit`**, igual que el ejecutable del comando bajo
-/// `packages/cli/bin/`, que fija `exitCode` y vuelve a propósito. Esa es toda la gracia: un proceso
+/// **Tres modos.** Los dos primeros miden CUÁNDO TERMINA este proceso, que son
+/// dos salidas distintas hacia afuera con el mismo defecto: un futuro
+/// abandonado que deja algo abierto. `empuje` corre un `empujar` contra el
+/// programa que se le pase; `forja` corre un `open` contra una URL que
+/// contesta encabezados y nunca cierra el cuerpo. El tercero, `memoria`, mide
+/// otra propiedad del proceso y por el mismo motivo: **cuánta memoria retiene
+/// un `empujar` contra un hijo locuaz**. `ProcessInfo.currentRss` es del
+/// proceso ENTERO, y la suite corre sus archivos en isolates que comparten
+/// uno: medirlo desde adentro sería medir también lo que reserven las otras
+/// suites. Acá el proceso hace una cosa sola.
+///
+/// En los tres casos **vuelve de `main` sin llamar a `exit`**, igual que el
+/// ejecutable del comando bajo `packages/cli/bin/`, que fija `exitCode` y
+/// vuelve a propósito. Esa es toda la gracia de los dos primeros: un proceso
 /// que vuelve de `main` sigue vivo mientras le quede trabajo pendiente —una
 /// suscripción a una tubería, por ejemplo—, así que CUÁNDO TERMINA ESTE
 /// PROCESO es la medición que la suite no puede hacer desde adentro de sí
-/// misma.
+/// misma. Lo del tercero es lo mismo un paso más allá: qué RETIENE este
+/// proceso tampoco se puede medir desde adentro de un proceso compartido.
 library;
 
 import 'dart:io';
@@ -34,7 +42,12 @@ Future<void> main(List<String> argumentos) async {
   final desenlace = switch (modo) {
     'empuje' => await _medirElEmpuje(argumentos.sublist(1)),
     'forja' => await _medirLaForja(argumentos.sublist(1)),
-    _ => throw ArgumentError.value(modo, 'modo', 'no es «empuje» ni «forja»'),
+    'memoria' => await _medirLaMemoria(argumentos.sublist(1)),
+    _ => throw ArgumentError.value(
+      modo,
+      'modo',
+      'no es «empuje», «forja» ni «memoria»',
+    ),
   };
 
   // El tipo del desenlace. No sale nada más: lo que se mide afuera es cuánto
@@ -62,6 +75,42 @@ Future<Object> _medirElEmpuje(List<String> argumentos) async {
     revision: revision,
     rama: 'rebanada-1',
   );
+}
+
+/// Cuánta memoria retiene un `empujar` contra un hijo que escribe muchísimo.
+///
+/// **Se mide acá y no en la suite porque `ProcessInfo.currentRss` es del
+/// proceso entero.** Este programa no hace nada más, así que el crecimiento
+/// que imprime es del drenaje y de nada más; en la suite, los isolates de los
+/// otros archivos comparten el proceso y su ruido entra en la misma cifra.
+///
+/// Imprime `crecimiento=<bytes>` antes de la línea del desenlace. El umbral lo
+/// pone quien lo invoca: acá no se decide nada, se mide.
+Future<Object> _medirLaMemoria(List<String> argumentos) async {
+  final [directorio, programa] = argumentos;
+
+  final empuje = EmpujeAislado(
+    directorio: directorio,
+    entornoDelPadre: EntornoDelProceso({
+      'PATH': Platform.environment['PATH'] ?? '',
+    }),
+    programa: programa,
+    presupuesto: const Duration(seconds: 60),
+  );
+
+  final antes = ProcessInfo.currentRss;
+  final desenlace = await empuje.empujar(
+    // Loopback, que es lo que `esCanalSeguroParaLaCredencial` admite sin TLS;
+    // el programa que se lanza no habla con nadie, así que este destino no se
+    // usa. Y la revisión es un OID completo de verdad, porque `empujar` lo
+    // exige antes de lanzar nada.
+    urlDelRemoto: 'http://127.0.0.1:1/x.git',
+    credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+    revision: 'a4e66d50d152b67d451a9028fd1cf54c71e18e79',
+    rama: 'rebanada-1',
+  );
+  stdout.writeln('crecimiento=${ProcessInfo.currentRss - antes}');
+  return desenlace;
 }
 
 /// El camino de la red: un `open` contra una URL que manda encabezados y no

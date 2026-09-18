@@ -99,8 +99,27 @@ String _truncarPorRunes(String texto, int maximoEnUnidades) {
 }
 
 // ---------------------------------------------------------------------------
-// EL RENDER SEGURO: un dato que este archivo no escribió no puede cambiar la
-// ESTRUCTURA del cuerpo.
+// EL RENDER SEGURO: un dato que este archivo no escribió no puede enterrar lo
+// obligatorio, ni falsificar una sección, ni descuadrar el ítem donde vive, ni
+// meter un enlace o una imagen en el cuerpo.
+//
+// **Eso es lo que promete, y se enuncia por extensión a propósito.** La
+// versión anterior de esta cabecera decía que el dato «no puede cambiar la
+// estructura», y prometía de más: neutralizaba lo que ENTIERRA —el comentario
+// HTML, la cerca de código— y lo que abre bloque al principio de un renglón,
+// pero dejaba pasar el énfasis y los enlaces a mitad de línea. Con
+// `sujeto: 'a**b'` la negrita del ítem quedaba descuadrada, y con
+// `detalle: '![](http://atacante/x.png)'` el cuerpo llevaba una imagen remota
+// —o sea una baliza que dispara cuando el revisor abre la página—. Un enlace y
+// una imagen SON estructura, así que esta ronda los agregó a la
+// neutralización en vez de acotar la promesa.
+//
+// **Lo que sigue afuera, declarado:** el Markdown de la forja convierte en
+// enlace una URL escrita al desnudo —`http://…` en medio del texto— y eso no
+// se puede neutralizar escapando puntuación. Un enlace que el revisor tiene
+// que CLICKEAR no entierra nada, no falsifica ninguna sección y no dispara
+// solo; la diferencia con la imagen es justamente esa, y es la que hace que
+// una entre y la otra no.
 //
 // **El defecto que esto cierra, reproducido por el autor:** con
 // `intent: '<!--'`, la intención abría un comentario HTML y la advertencia
@@ -144,6 +163,13 @@ String _truncarPorRunes(String texto, int maximoEnUnidades) {
 ///   hasta el siguiente — otra forma de enterrar lo de abajo.
 /// - La tilde hace lo mismo que el acento grave con `~~~`, que es la segunda
 ///   forma de cerca que Markdown reconoce.
+/// - El asterisco y el guion bajo abren énfasis: un dato con `**` adentro
+///   descuadra la negrita del ítem que lo contiene, y entonces el cuerpo
+///   muestra en negrita algo que no es lo que este archivo marcó.
+/// - Los corchetes abren un enlace y —con un `!` delante— una imagen. Una
+///   imagen remota en el cuerpo es una baliza: se pide sola cuando el revisor
+///   abre la página. Neutralizado el corchete, los paréntesis que vienen
+///   detrás son texto y no hace falta tocarlos.
 ///
 /// GitHub decodifica estas entidades al renderizar, así que el revisor lee el
 /// carácter tal como venía en el dato; lo que no puede es actuar como
@@ -154,24 +180,33 @@ const _entidades = {
   '>': '&gt;',
   '`': '&#96;',
   '~': '&#126;',
+  '*': '&#42;',
+  '_': '&#95;',
+  '[': '&#91;',
+  ']': '&#93;',
 };
 
-final _neutralizables = RegExp(r'[&<>`~]');
+final _neutralizables = RegExp(r'[&<>`~*_\[\]]');
 
 String _comoEntidades(String texto) =>
     texto.replaceAllMapped(_neutralizables, (m) => _entidades[m[0]!]!);
 
-/// Lo que ABRE un bloque cuando está al principio de un renglón: un título,
-/// una viñeta, una línea de tabla, un subrayado de título, una lista
-/// numerada. Hasta tres espacios de sangría siguen contando como principio de
-/// renglón en Markdown, así que la sangría entra en el patrón.
+/// Lo que ABRE un bloque cuando está al principio de un renglón **y todavía
+/// no es una entidad**: un título, una viñeta, una línea de tabla, un
+/// subrayado de título, una lista numerada. Hasta tres espacios de sangría
+/// siguen contando como principio de renglón en Markdown, así que la sangría
+/// entra en el patrón.
+///
+/// El asterisco y el guion bajo NO están acá aunque también abran bloque:
+/// para cuando este patrón corre ya son entidades. Dejarlos en la clase sería
+/// una rama muerta que dice cubrir algo que nunca le llega.
 ///
 /// Ninguno de estos ENTIERRA nada —no abren una región que se trague lo que
 /// sigue, como sí hacen el comentario y la cerca—, pero sí FALSIFICAN
 /// estructura: un dato que empiece con `## Qué quedó cubierto` agrega una
 /// sección que nadie escribió, y un revisor no tiene desde dónde notar que esa
 /// sección la puso el dato y no el render.
-final _aperturaDeBloque = RegExp(r'^( {0,3})(\d{1,9}([.)])|[#\-+*=|_])');
+final _aperturaDeBloque = RegExp(r'^( {0,3})(\d{1,9}([.)])|[#\-+=|])');
 
 String _renglonDeBloque(String renglon) {
   final texto = _comoEntidades(renglon);

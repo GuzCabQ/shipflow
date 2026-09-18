@@ -8,6 +8,7 @@ library;
 import 'dart:convert';
 
 import 'package:cli/cli.dart';
+import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 import 'apoyo.dart';
@@ -125,6 +126,48 @@ void main() {
         ),
         throwsA(isA<ProtocoloRoto>()),
       );
+    });
+  });
+
+  group('el runId que genera el comando entra en el marcador de la forja', () {
+    test('lo que produce `generarRunId` construye un borrador de PR', () {
+      // **La atadura entre el generador y el invariante del dominio.** Desde
+      // la ronda 6, `PullRequestDraft` rechaza un runId con `<!--`, `-->` o un
+      // salto de línea: ese valor viaja adentro del comentario HTML del
+      // marcador estable, que es además la clave de la búsqueda idempotente.
+      // El invariante lo prueba `core`; lo que solo se puede probar acá —el
+      // único paquete que ve el generador y el dominio a la vez— es que lo que
+      // ESTE árbol produce lo cumple. Sin esto, endurecer la guarda rompería
+      // toda corrida y ninguna suite lo notaría hasta ejecutar una.
+      final artefacto = ArtefactoDeRevision(
+        superficie: SuperficieDeVerificacion(
+          cubierto: const [],
+          requiereCriterio: const [],
+          estado: EstadoDeCorrida.verde,
+        ),
+        candidato: CandidateIdentity(
+          contentRevision: 'arbol-1',
+          baseRevision: 'base-1',
+        ),
+        intent: 'atar el generador al invariante',
+        plan: null,
+        sinPlanPorque: 'no hay elementos de trabajo',
+        alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
+      );
+
+      for (var i = 0; i < 3; i++) {
+        final runId = generarRunId();
+        expect(
+          () => PullRequestDraft(
+            runId: runId,
+            branch: 'rama-1',
+            base: 'main',
+            artefacto: artefacto,
+          ),
+          returnsNormally,
+          reason: 'el generador produjo «$runId», que el dominio rechaza',
+        );
+      }
     });
   });
 

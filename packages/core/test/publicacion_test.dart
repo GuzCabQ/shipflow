@@ -241,6 +241,162 @@ void main() {
       );
     });
 
+    test('el árbol escrito en otra caja es el MISMO árbol, y construye', () {
+      // **El hallazgo de la ronda 6.** La ronda anterior canonicalizó la
+      // revisión y dejó esta guarda, dos líneas más abajo, comparando literal
+      // entre dos OIDs. Con el árbol del commit escrito en mayúsculas y el
+      // `contentRevision` del candidato en minúsculas —el mismo árbol— el
+      // constructor lanzaba afirmando que el commit lleva un árbol que los
+      // controles no vieron. Es falso, y corta la publicación entera.
+      final arbolEnMinuscula = oidSha1;
+      final arbolEnMayuscula = oidSha1.toUpperCase();
+
+      // El candidato en minúscula, el parámetro en mayúscula…
+      expect(
+        PullRequestRequest(
+          draft: PullRequestDraft(
+            runId: 'corrida-1',
+            branch: 'rama',
+            base: 'develop',
+            artefacto: artefacto(
+              estado: EstadoDeCorrida.verde,
+              arbol: arbolEnMinuscula,
+            ),
+          ),
+          revision: oidSha256,
+          arbolDeLaRevision: arbolEnMayuscula,
+        ).revision,
+        oidSha256,
+      );
+
+      // …y al revés, que es el caso que una canonicalización puesta en un solo
+      // lado dejaría roto.
+      expect(
+        PullRequestRequest(
+          draft: PullRequestDraft(
+            runId: 'corrida-1',
+            branch: 'rama',
+            base: 'develop',
+            artefacto: artefacto(
+              estado: EstadoDeCorrida.verde,
+              arbol: arbolEnMayuscula,
+            ),
+          ),
+          revision: oidSha256,
+          arbolDeLaRevision: arbolEnMinuscula,
+        ).revision,
+        oidSha256,
+      );
+    });
+
+    test('dos árboles DISTINTOS siguen sin construir, y una identidad opaca '
+        'conserva su caja', () {
+      // Los dos controles negativos de la canonicalización del árbol.
+      //
+      // Uno: dos OIDs distintos siguen siendo distintos — sin esto, una
+      // comparación que devolviera «iguales» siempre pasaría la prueba de
+      // arriba y borraría la guarda entera.
+      expect(
+        () => PullRequestRequest(
+          draft: borrador(EstadoDeCorrida.verde),
+          revision: oidSha1,
+          arbolDeLaRevision: oidSha256,
+        ),
+        throwsArgumentError,
+      );
+
+      // Dos: `CandidateIdentity` declara su representación OPACA, y un doble
+      // puede identificar el contenido con una cadena donde la caja signifique
+      // algo. `canonicalizarOid` solo toca lo que ES un OID completo, así que
+      // «arbol-A» y «arbol-a» siguen siendo dos identidades distintas.
+      expect(
+        () => PullRequestRequest(
+          draft: PullRequestDraft(
+            runId: 'corrida-1',
+            branch: 'rama',
+            base: 'develop',
+            artefacto: artefacto(
+              estado: EstadoDeCorrida.verde,
+              arbol: 'arbol-A',
+            ),
+          ),
+          revision: oidSha1,
+          arbolDeLaRevision: 'arbol-a',
+        ),
+        throwsArgumentError,
+        reason:
+            'bajar de caja a ciegas fundiría dos identidades opacas distintas '
+            'en una',
+      );
+      expect(
+        CandidateIdentity(
+          contentRevision: 'arbol-A',
+          baseRevision: 'base-B',
+        ).contentRevision,
+        'arbol-A',
+        reason: 'lo que no es un OID vuelve intacto',
+      );
+      expect(
+        CandidateIdentity(
+          contentRevision: oidSha1.toUpperCase(),
+          baseRevision: oidSha256.toUpperCase(),
+        ).contentRevision,
+        oidSha1,
+        reason: 'lo que sí es un OID queda en la forma canónica',
+      );
+    });
+
+    test('un runId que rompe el marcador no construye el borrador', () {
+      // **El marcador estable es un comentario HTML Y la clave de la búsqueda
+      // idempotente.** Un `-->` en el runId lo cierra antes de tiempo: lo que
+      // siga queda escrito al pie del cuerpo del pull request como si lo
+      // afirmara la corrida, y puede abrir otro `<!--` que se trague el resto.
+      // Un salto de línea parte el marcador en dos, y como la búsqueda es
+      // `contains` sobre el cuerpo que devuelve la forja —que vuelve con
+      // `\r\n`—, ese marcador no se encuentra nunca: el reintento abre un
+      // SEGUNDO pull request.
+      //
+      // Se rechaza en la frontera y no se escapa en el render porque adentro
+      // de un comentario HTML las entidades no se decodifican: escapar sería
+      // cambiar la clave de búsqueda, y los pull requests ya abiertos dejarían
+      // de coincidir.
+      for (final hostil in <String>[
+        'corrida--> ¡verificación completa! <!--',
+        '-->',
+        '<!--',
+        'corrida\n1',
+        'corrida\r\n1',
+      ]) {
+        expect(
+          () => PullRequestDraft(
+            runId: hostil,
+            branch: 'rama',
+            base: 'develop',
+            artefacto: artefacto(estado: EstadoDeCorrida.verde),
+          ),
+          throwsArgumentError,
+          reason: 'se aceptó «$hostil» como runId',
+        );
+      }
+    });
+
+    test('un runId de los que este árbol produce sigue construyendo', () {
+      // El control negativo: una guarda que rechazara cualquier cosa pasaría
+      // la prueba de arriba y rompería toda corrida. La forma es la que
+      // produce el generador del comando —microsegundos, un guion y un
+      // contador—, escrita acá porque `core` no ve a `cli`; la prueba de que
+      // el generador produce esa forma vive en la suite de `cli`.
+      expect(
+        PullRequestDraft(
+          runId: '1789456321987654-3',
+          branch: 'rama',
+          base: 'develop',
+          artefacto: artefacto(estado: EstadoDeCorrida.verde),
+        ).runId,
+        '1789456321987654-3',
+      );
+    });
+
     test('con el árbol correcto, construye', () {
       final s = PullRequestRequest(
         draft: borrador(EstadoDeCorrida.verde),

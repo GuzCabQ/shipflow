@@ -1120,6 +1120,16 @@ void main() {
             'incompleta, y eso es un fallo y no «no encontré nada»',
       );
       expect(
+        (r as PullRequestFailed).causa,
+        CausaDePublicacion.desconocida,
+        reason:
+            'la causa es parte de la declaración, no decoración: un `3xx` no '
+            'es `red` —nada de la red falló, el otro lado contestó— ni '
+            'ninguna de las causas que el código clasifica. Sin esta '
+            'aserción, la rama que lo trata puede desaparecer y la prueba '
+            'sigue verde porque el desenlace SIGUE siendo un fallo.',
+      );
+      expect(
         forja.pedidos.map((p) => p.metodo),
         isNot(contains('POST')),
         reason: 'con la búsqueda incompleta, crear sería a ciegas',
@@ -1154,6 +1164,18 @@ void main() {
         reason:
             'un `303` puede ser «lo creé, mirá allá»: decir `failed` haría '
             'que el reintento abriera un segundo pull request',
+      );
+      expect(
+        (r as PullRequestUnknown).causa,
+        CausaDePublicacion.desconocida,
+        reason:
+            'ESTA es la aserción que pincha la rama del `3xx` en la creación. '
+            'Sin ella, borrar esa rama entera deja la suite verde: un `303` '
+            'no trae `Content-Type: application/json`, así que cae en el '
+            'control del tipo de contenido y sale como '
+            '`PullRequestUnknown(red)` — «la red falló» sobre una respuesta '
+            'que llegó entera y a tiempo, y que además puede significar que '
+            'el pull request quedó creado.',
       );
       expect(r.retryable, isTrue);
     });

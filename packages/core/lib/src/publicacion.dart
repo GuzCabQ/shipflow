@@ -2,6 +2,7 @@
 library;
 
 import 'desenlace.dart';
+import 'entidades.dart';
 import 'superficie.dart';
 
 /// Por qué no se pudo publicar. **Cerrada**, y de acá sale `safeReason`: la
@@ -79,55 +80,6 @@ enum CausaDePublicacion {
 
   desconocida,
 }
-
-/// Los DOS largos que puede tener un OID completo de git, **medidos, no
-/// supuestos**, con `git rev-parse HEAD` sobre dos repositorios recién
-/// creados con git 2.50.1:
-///
-/// - `--object-format=sha1` → 40 caracteres hexadecimales (160 bits).
-/// - `--object-format=sha256` → 64 caracteres hexadecimales (256 bits).
-///
-/// Las dos familias entran porque el repositorio que se empuja puede ser de
-/// cualquiera de las dos y `core` no elige por el usuario: aceptar solo
-/// SHA-1 rechazaría revisiones perfectamente válidas de un repositorio
-/// SHA-256, que es el mismo tipo de falso rechazo que esta validación existe
-/// para no cometer.
-///
-/// **Mayúsculas incluidas, y también está medido**: `git rev-parse` y
-/// `git cat-file -t` resuelven sin chistar un OID escrito en mayúsculas y
-/// devuelven el objeto. O sea que un OID en mayúsculas ES un OID completo
-/// válido; rechazarlo sería afirmar «esto no identifica ningún objeto» sobre
-/// algo que sí lo identifica. Lo que producen nuestros propios adapters es
-/// minúscula —es lo que git imprime—, así que esta tolerancia no relaja
-/// ninguna ruta de este repositorio: solo evita mentir sobre una entrada
-/// legítima.
-///
-/// **Y tolerar dos escrituras no es dejarlas circular:** quien acepta un OID
-/// en mayúsculas lo canonicaliza a minúsculas en la frontera —ver
-/// [PullRequestRequest.revision]—, porque río abajo hay comparaciones
-/// literales contra lo que devuelve la forja, y dos formas del mismo objeto
-/// ahí adentro se leen como dos objetos distintos.
-final RegExp _patronDeOidCompleto = RegExp(
-  r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$',
-);
-
-/// ¿[revision] es un OID completo de git?
-///
-/// **Es una función del dominio y no un detalle del adapter** porque el
-/// dominio es donde nace la revisión que después se interpola en un refspec:
-/// [PullRequestRequest] la exige al construirse, y `EmpujeAislado` la vuelve
-/// a exigir justo antes de lanzar el proceso. Son dos fronteras distintas —un
-/// invariante de construcción y una precondición de ejecución—, y ninguna de
-/// las dos puede delegar en la otra: la primera no sabe si alguien llegará
-/// por otro camino, y la segunda no puede confiar en que su llamador validó.
-///
-/// **Lo que NO dice**: que el objeto exista en el repositorio. Eso solo lo
-/// sabe git, y averiguarlo desde acá sería lanzar un proceso adentro de una
-/// validación sincrónica del dominio. Un OID bien formado que no existe lo
-/// rechaza `git push` con su propio mensaje, y ESE rechazo no borra nada;
-/// el que borra es el refspec sin revisión, que es justamente lo que esta
-/// función impide construir.
-bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
 
 /// Qué tan entregada quedó la corrida. **Derivado**, nunca asignable.
 enum EstadoDeEntrega {
@@ -486,17 +438,64 @@ final class PullRequestClosed extends PublicacionNoUtilizable {
 
 /// Antes del commit. **No tiene revisión porque todavía no existe.**
 class PullRequestDraft {
+  /// Identifica la corrida. **No puede contener `<!--`, `-->` ni saltos de
+  /// línea**, y el invariante vive acá y no en el render — ver el constructor.
   final String runId;
+
   final String branch;
   final String base;
   final ArtefactoDeRevision artefacto;
 
+  /// **El `runId` viaja adentro de un comentario HTML, y por eso tiene una
+  /// forma prohibida.**
+  ///
+  /// El adapter de la forja escribe el marcador estable
+  /// —`<!-- shipflow:pr ... runId=<este valor> ... -->`— al pie del cuerpo del
+  /// pull request, y ESA MISMA línea es la clave de la búsqueda idempotente.
+  /// Dos cosas se rompen si el valor trae la forma que este constructor
+  /// rechaza, y ninguna es cosmética:
+  ///
+  /// - **`-->` cierra el comentario antes de tiempo.** Lo que el `runId`
+  ///   escriba después queda a la vista al pie del cuerpo, y puede abrir otro
+  ///   `<!--` que se trague lo que siga: una afirmación fabricada —«verificación
+  ///   completa, no hace falta revisar»— en el único lugar del cuerpo que el
+  ///   render seguro del adapter no puede proteger.
+  /// - **Un salto de línea parte el marcador en dos.** La búsqueda es
+  ///   `contains` sobre el cuerpo que devuelve la forja, y ese cuerpo vuelve
+  ///   con `\r\n`: el marcador partido no se encuentra nunca, así que un
+  ///   reintento abre un SEGUNDO pull request — lo único que esa búsqueda
+  ///   existe para impedir.
+  ///
+  /// **Por qué se rechaza acá y no se escapa allá.** Adentro de un comentario
+  /// HTML las entidades no se decodifican, así que «escapar» el valor sería
+  /// cambiar la clave de búsqueda por otra cadena: el marcador de los pull
+  /// requests ya abiertos dejaría de coincidir. Rechazar en la frontera del
+  /// dominio no cambia ninguna clave existente —`generarRunId` produce
+  /// microsegundos y un guion, o sea que para todo `runId` que este árbol sabe
+  /// producir esta guarda es una identidad— y pone la condición donde el valor
+  /// nace, que es la misma frontera que ya canonicaliza la revisión.
   PullRequestDraft({
     required this.runId,
     required this.branch,
     required this.base,
     required this.artefacto,
-  });
+  }) {
+    const prohibidas = ['<!--', '-->', '\n', '\r'];
+    for (final prohibida in prohibidas) {
+      if (!runId.contains(prohibida)) continue;
+      throw ArgumentError.value(
+        runId,
+        'runId',
+        'El runId viaja adentro del comentario HTML del marcador estable, que '
+            'es además la clave de la búsqueda idempotente. Con «<!--», «-->» '
+            'o un salto de línea adentro, ese comentario se cierra antes de '
+            'tiempo —y lo que siga queda escrito al pie del cuerpo como si lo '
+            'hubiera afirmado la corrida— o el marcador queda partido y la '
+            'búsqueda no lo encuentra nunca, con lo que el reintento abre un '
+            'segundo pull request.',
+      );
+    }
+  }
 
   /// **Derivado.** El artefacto ya lleva la intención de la rebanada; llevarla
   /// también acá serían dos cadenas independientes para una cosa, y la que el
@@ -547,7 +546,7 @@ class PullRequestRequest {
     required this.draft,
     required String revision,
     required String arbolDeLaRevision,
-  }) : revision = revision.toLowerCase() {
+  }) : revision = canonicalizarOid(revision) {
     // **Antes que la relación con el árbol**, porque esta condición es sobre
     // la revisión misma y la otra es sobre su vínculo con el contenido: una
     // revisión que no identifica ningún objeto no puede tener un árbol
@@ -576,8 +575,18 @@ class PullRequestRequest {
             'empuja nada: BORRA la rama del remoto.',
       );
     }
+    // **El árbol también entra por una frontera, y también se canonicaliza.**
+    // La primera versión de este arreglo canonicalizó la revisión y dejó esta
+    // comparación literal dos líneas más abajo: con el árbol escrito en una
+    // forma y `contentRevision` en la otra —el MISMO árbol—, el constructor
+    // lanzaba afirmando que el commit lleva un árbol que los controles no
+    // vieron, que es falso y corta la publicación. El otro lado de la
+    // comparación ya viene canónico de [CandidateIdentity], así que acá
+    // alcanza con canonicalizar lo que llega por este parámetro y la
+    // comparación vuelve a ser literal entre dos formas canónicas.
+    final arbolCanonico = canonicalizarOid(arbolDeLaRevision);
     final esperado = draft.artefacto.candidato.contentRevision;
-    if (arbolDeLaRevision != esperado) {
+    if (arbolCanonico != esperado) {
       throw ArgumentError.value(
         arbolDeLaRevision,
         'arbolDeLaRevision',

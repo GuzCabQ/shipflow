@@ -818,43 +818,84 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
           rama: 'rebanada-1',
         );
 
+    /// El instrumento de `bin/`, buscado por su nombre y no escrito como ruta
+    /// —el motivo está en la prueba del fin del proceso, más abajo: correrlo
+    /// por su nombre de ejecutable escribe en el checkout compartido, y
+    /// escribir su ruta obliga a nombrar la extensión de los archivos fuente,
+    /// que una regla del arnés caza con razón—.
+    String rutaDelInstrumento() {
+      final raizDelPaquete = Directory('packages/forge').existsSync()
+          ? 'packages/forge'
+          : '.';
+      final encontrados = Directory('$raizDelPaquete/bin')
+          .listSync()
+          .whereType<File>()
+          .where(
+            (f) => f.uri.pathSegments.last.startsWith(nombreDelInstrumento),
+          )
+          .toList();
+      expect(
+        encontrados,
+        hasLength(1),
+        reason: 'no se encontró el instrumento «$nombreDelInstrumento»',
+      );
+      return encontrados.single.path;
+    }
+
     test(
       'un remoto locuaz no hace crecer la memoria del proceso',
       () async {
         // **Se mide la memoria del proceso, no un contador nuestro.** Un
         // contador diría lo que este archivo cree que retiene; la memoria
         // residente dice lo que retiene de verdad, que es la propiedad que el
-        // autor reprodujo: cada `_Drenaje` guardaba en un `StringBuffer` todo
-        // lo que el hijo escribiera, por los DOS flujos, y el `stdout` que
+        // autor reprodujo: cada drenaje guardaba en un `StringBuffer` todo lo
+        // que el hijo escribiera, por los DOS flujos, y el `stdout` que
         // guardaba así no lo lee nadie.
         //
-        // 128 MiB por flujo, 256 MiB en total. **Medido en esta plataforma,
-        // con esta misma prueba:** 9 MiB de crecimiento drenando sin
-        // conservar, contra 211 MiB volviendo a acumular en un
-        // `StringBuffer` —la forma anterior—. El umbral de 96 MiB está entre
-        // los dos con margen para el ruido de un recolector que no corre
-        // cuando uno quiere: no es una marca de rendimiento, es la diferencia
-        // entre retener una cantidad fija y retener lo que el otro lado
-        // quiera mandar.
+        // **Y se mide en OTRO proceso, que es el arreglo de la ronda 6.**
+        // `ProcessInfo.currentRss` es del proceso entero, y `package:test`
+        // corre los archivos de una suite en isolates que comparten uno: lo
+        // que reservara otro archivo entraba en esta cifra y el margen la
+        // tapaba. El instrumento de `bin/` —el mismo que ya mide cuándo
+        // TERMINA un proceso— tiene un modo que hace un `empujar` y nada más e
+        // imprime el crecimiento; acá solo se lo lee y se lo compara.
+        //
+        // 128 MiB por flujo, 256 MiB en total. **Medido en esta plataforma**,
+        // con el instrumento: 6 MiB de crecimiento drenando sin conservar,
+        // contra 297 MiB volviendo a acumular en un `StringBuffer`. El umbral
+        // de 96 MiB está entre los dos con margen para el ruido de un
+        // recolector que no corre cuando uno quiere: no es una marca de
+        // rendimiento, es la diferencia entre retener una cantidad fija y
+        // retener lo que el otro lado quiera mandar.
         final programa = await charlatanDe(mib: 128);
 
-        final antes = ProcessInfo.currentRss;
-        final r = await empujarCon(programa);
-        final crecimiento = ProcessInfo.currentRss - antes;
+        final r = await Process.run(Platform.resolvedExecutable, [
+          rutaDelInstrumento(),
+          'memoria',
+          '${temporal.path}/trabajo',
+          programa,
+        ]);
 
+        expect(r.exitCode, 0, reason: '${r.stderr}');
         expect(
-          r,
-          isA<Empujado>(),
+          r.stdout,
+          contains('desenlace=Empujado'),
           reason: 'el hijo salió con 0 después de escribir 256 MiB',
+        );
+        final crecimiento = int.parse(
+          RegExp(
+            r'crecimiento=(-?\d+)',
+          ).firstMatch(r.stdout as String)!.group(1)!,
         );
         expect(
           crecimiento,
           lessThan(96 * 1024 * 1024),
           reason:
-              'la memoria residente creció ${crecimiento ~/ (1024 * 1024)} '
-              'MiB con 256 MiB de salida: lo retenido es proporcional a lo '
-              'que el remoto quiera escribir, que es lo que un remoto hostil '
-              'necesita para llevarse la memoria de la corrida',
+              'la memoria residente del proceso que empujó creció '
+              '${crecimiento ~/ (1024 * 1024)} MiB con 256 MiB de salida: lo '
+              'retenido es proporcional a lo que el remoto quiera escribir, '
+              'que es lo que un remoto hostil necesita para llevarse la '
+              'memoria de la corrida',
         );
       },
       timeout: const Timeout(Duration(seconds: 120)),

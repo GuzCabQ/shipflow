@@ -60,6 +60,7 @@ ArtefactoDeRevision _artefacto({
   List<EntradaDeCriterio> requiereCriterio = const [],
   String intent = 'probar el render del cuerpo del PR',
   String? plan,
+  String sinPlanPorque = 'no hay elementos de trabajo',
   String alcance = ArtefactoDeRevision.alcanceSoloPR,
 }) => ArtefactoDeRevision(
   superficie: SuperficieDeVerificacion(
@@ -73,7 +74,7 @@ ArtefactoDeRevision _artefacto({
   ),
   intent: intent,
   plan: plan,
-  sinPlanPorque: plan == null ? 'no hay elementos de trabajo' : null,
+  sinPlanPorque: plan == null ? sinPlanPorque : null,
   alcanceDeLoAfirmado: alcance,
 );
 
@@ -273,6 +274,11 @@ PullRequestRequest solicitudEnvenenada(String donde, String veneno) {
       estado: EstadoDeCorrida.noConcluyente,
       intent: donde == 'intent' ? veneno : 'probar el render del cuerpo del PR',
       plan: donde == 'plan' ? veneno : null,
+      // `sinPlanPorque` es el OTRO lado del par —presente si y solo si no hay
+      // plan— así que se envenena cuando el caso no envenena el plan.
+      sinPlanPorque: donde == 'sinPlanPorque'
+          ? veneno
+          : 'no hay elementos de trabajo',
       alcance: donde == 'alcanceDeLoAfirmado'
           ? veneno
           : ArtefactoDeRevision.alcanceSoloPR,
@@ -298,6 +304,11 @@ PullRequestRequest solicitudEnvenenada(String donde, String veneno) {
 const camposQueVienenDeAfuera = <String>[
   'intent',
   'plan',
+  // Faltaba, y el hueco lo encontró la ronda 6: se interpola en el cuerpo
+  // igual que el plan —es su rama `else`— y el fixture lo tenía fijo, así que
+  // la lista que se declara «lo que `cuerpoDeGitHub` interpola» ya nacía
+  // incompleta.
+  'sinPlanPorque',
   'alcanceDeLoAfirmado',
   'cubierto.sujeto',
   'cubierto.controlId',
@@ -528,6 +539,57 @@ void main() {
         }
       }
 
+      test('ningún campo puede meter una imagen ni un enlace en el cuerpo', () {
+        // **La baliza.** `![](http://atacante/x.png)` en el cuerpo de un pull
+        // request es una imagen remota: se pide sola cuando el revisor abre la
+        // página, sin que él haga nada. Enterrar no entierra —por eso las
+        // pruebas de visibilidad la daban por buena—, pero una imagen y un
+        // enlace SON estructura, y el render los tiene que neutralizar.
+        for (final campo in camposQueVienenDeAfuera) {
+          final cuerpo = cuerpoDeGitHub(
+            solicitudEnvenenada(
+              campo,
+              '![](http://atacante/x.png) y '
+              '[un enlace](http://atacante/y)',
+            ),
+          );
+          expect(
+            cuerpo,
+            isNot(contains('](http://atacante')),
+            reason: 'el campo $campo dejó la sintaxis de enlace intacta',
+          );
+          expect(
+            cuerpo,
+            isNot(contains('![')),
+            reason: 'el campo $campo dejó la sintaxis de imagen intacta',
+          );
+          expect(
+            cuerpo,
+            contains('http://atacante'),
+            reason:
+                'la URL tiene que seguir LEYÉNDOSE: neutralizar la sintaxis no '
+                'es borrar lo que el dato decía',
+          );
+        }
+      });
+
+      test(
+        'un dato con `**` no descuadra la negrita del ítem que lo contiene',
+        () {
+          // El sujeto va adentro de `**…**` que escribe este archivo. Con `a**b`
+          // crudo, la negrita cierra donde la abre el dato y el ítem muestra en
+          // negrita algo que el render no marcó.
+          final cuerpo = cuerpoDeGitHub(
+            solicitudEnvenenada('cubierto.sujeto', 'a**b'),
+          );
+          expect(cuerpo, contains('- **a&#42;&#42;b** (control '));
+          expect(
+            cuerpo,
+            isNot(contains('**a**b**')),
+            reason: 'la negrita del ítem la marca el render, no el dato',
+          );
+        },
+      );
       test('el dato hostil se sigue LEYENDO: neutralizar no es borrar', () {
         // El control negativo del grupo. Un render que tirara los caracteres
         // raros —o el campo entero— pasaría todas las pruebas de arriba y le

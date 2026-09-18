@@ -2878,9 +2878,14 @@ presupuesto, y el `stdout` que se guardaba así no lo lee nadie. Ahora `stdout`
 se lee y se tira sin siquiera decodificarlo, y de `stderr` no se conserva el
 texto sino **qué señales de la tabla del clasificador aparecieron**: un
 conjunto que ocupa lo mismo con diez bytes de salida que con diez gigabytes.
-Medido con 128 MiB por flujo, 256 MiB en total: **9 MiB** de crecimiento de la
-memoria residente drenando así, contra **211 MiB** volviendo a acumular, y hay
-una prueba que lo mide con `ProcessInfo.currentRss`.
+Medido con 128 MiB por flujo, 256 MiB en total: **6 MiB** de crecimiento de la
+memoria residente drenando así, contra **297 MiB** volviendo a acumular. La
+prueba lo mide con `ProcessInfo.currentRss` **adentro del instrumento de
+`bin/`** y no en la suite: esa cifra es del proceso entero, y `package:test`
+corre los archivos de una suite en isolates que comparten uno, así que medirlo
+desde adentro incluía lo que reservara cualquier otro archivo. El instrumento
+—el mismo que ya medía cuándo TERMINA un proceso— hace un `empujar` y nada
+más.
 
 **Por qué señales y no una cola de texto.** Una ventana de los últimos N
 caracteres también acota la memoria, pero cambia el comportamiento: `git` dice
@@ -3020,7 +3025,8 @@ revisión con el árbol y no la revisión misma, así que `revision: ''` se
 construía sin una queja.
 
 Ahora lo exigen **las dos fronteras**, y no es una duplicación: `esOidCompleto`
-(`packages/core/lib/src/publicacion.dart`) es un invariante de construcción en
+(`packages/core/lib/src/entidades.dart`, con la identidad del candidato, que es
+la otra frontera que recibe un OID) es un invariante de construcción en
 el dominio —el constructor lanza— y una precondición de ejecución en el
 adapter —`empujar` devuelve `PushFailed` con causa `revisionInvalida`, un
 desenlace cerrado y no una excepción, **antes de lanzar ningún proceso**—. La
@@ -3034,8 +3040,8 @@ se aceptan porque el repositorio puede ser de cualquiera de las dos, y también
 las mayúsculas: medido con `git cat-file -t`, git resuelve el mismo objeto, así
 que rechazarlas sería afirmar que un OID válido no lo es.
 
-**Y aceptar dos escrituras no es dejarlas circular: la revisión se canonicaliza
-a minúsculas en la frontera del dominio.** El defecto está reproducido: con la
+**Y aceptar dos escrituras no es dejarlas circular: los OID se canonicalizan a
+minúsculas en cada frontera que recibe uno.** El defecto está reproducido: con la
 solicitud trayendo el OID en mayúsculas y el pull request que ya existía
 teniéndolo en minúsculas, la búsqueda idempotente —que comparaba literal contra
 el `sha` de la forja— no lo encontraba y salía a crear un SEGUNDO pull request,
@@ -3046,6 +3052,23 @@ el refspec del push— usan **una sola** representación. El `sha` que llega en 
 respuesta es un dato ajeno y se lee a esa misma forma antes de comparar: que la
 forja de hoy lo mande en minúsculas es su costumbre, no un contrato que este
 cliente pueda exigir.
+
+**Y la revisión no era la única comparación literal entre OIDs.** Dos líneas más
+abajo, el mismo constructor exige que el árbol del commit sea
+`candidato.contentRevision`, y esa comparación seguía siendo textual: con el
+árbol escrito en una forma y el del candidato en la otra —el MISMO árbol— el
+constructor lanzaba afirmando que el commit lleva un árbol que los controles no
+vieron, que es falso y corta la publicación. Ahora `CandidateIdentity` y el
+parámetro del árbol pasan los dos por `canonicalizarOid`, así que la comparación
+vuelve a ser literal entre dos formas canónicas.
+
+`canonicalizarOid` **solo toca lo que ES un OID completo**, y eso no es
+prudencia: `CandidateIdentity` declara su representación opaca para el dominio
+—un doble puede identificar el contenido como quiera, con mayúsculas que
+signifiquen algo—, así que bajar de caso a ciegas podría fundir dos identidades
+distintas en una. Lo que esa función sabe es lo único que el dominio sabe desde
+que existe `esOidCompleto`: dos escrituras de un mismo OID nombran el mismo
+objeto de git.
 
 ### La búsqueda idempotente mira todas las páginas, y lee el código antes que el cuerpo
 
@@ -3093,9 +3116,9 @@ enterrar, y el pull request se leía como si no hubiera nada que mirar.
 
 El arreglo no son reemplazos sueltos sino **un render por contexto**, y ninguna
 interpolación cruda: la neutralización es una sola —los caracteres que son
-sintaxis (`&`, `<`, `>`, el acento grave y la tilde) pasan a entidades, que
-GitHub decodifica al mostrar, así que el revisor lee el dato tal como vino—, y
-lo que cambia es el envoltorio. Un texto de **bloque** conserva sus renglones y
+sintaxis (`&`, `<`, `>`, el acento grave, la tilde, el asterisco, el guion bajo
+y los corchetes) pasan a entidades, que GitHub decodifica al mostrar, así que el
+revisor lee el dato tal como vino—, y lo que cambia es el envoltorio. Un texto de **bloque** conserva sus renglones y
 se le escapa lo que abre bloque al principio de cada uno, para que un dato no
 fabrique un `## Qué quedó cubierto` que nadie escribió. Un texto **dentro de un
 ítem de lista** junta sus renglones en uno, porque un renglón nuevo termina el
@@ -3105,6 +3128,19 @@ entidades no se decodifican, y en CommonMark el HTML crudo tiene precedencia
 sobre ese tramo, así que un `<!--` en un identificador y un `-->` en otro
 formarían un comentario que se traga el detalle entre los dos.
 
+**El enterramiento no era lo único: la inyección a mitad de línea también es
+estructura.** La primera versión de este render neutralizaba lo que entierra
+—el comentario, la cerca— y lo que abre bloque al principio de un renglón, y
+dejaba pasar el énfasis y los enlaces: con `sujeto: 'a**b'` la negrita del ítem
+quedaba descuadrada, y con `detalle: '![](http://atacante/x.png)'` el cuerpo
+llevaba una imagen remota, o sea una baliza que se pide sola cuando el revisor
+abre la página. El asterisco, el guion bajo y los corchetes entraron a la
+neutralización por eso. **Lo que queda afuera, declarado:** el Markdown de la
+forja convierte en enlace una URL escrita al desnudo, y eso no se neutraliza
+escapando puntuación; un enlace que hay que clickear no entierra nada, no
+falsifica ninguna sección y no dispara solo — la diferencia con la imagen es
+exactamente esa.
+
 **No hay canal de Markdown confiable, y el plan también se escapa.** Declararlo
 por campo sería una propiedad de un `String` sostenida por prosa; el día que un
 plan quiera sus viñetas, lo que tiene que declararlo es un tipo que se
@@ -3113,8 +3149,8 @@ escrito en Markdown se lee como texto plano.
 
 Lo que la suite mide no es que el texto salga escapado —eso lo cumple cualquier
 escape— sino que **la advertencia y las dos secciones se sigan leyendo**, una
-vez cada una, fuera de todo comentario y de toda cerca: once campos por ocho
-valores hostiles (`<!--`, `-->`, cercas de acentos y de tildes, un encabezado
+vez cada una, fuera de todo comentario y de toda cerca: doce campos —los doce
+que `cuerpoDeGitHub` interpola— por ocho valores hostiles (`<!--`, `-->`, cercas de acentos y de tildes, un encabezado
 que falsifica una sección, una advertencia falsificada, saltos de línea,
 listas), más un control negativo que exige que el dato hostil se siga leyendo
 entero.
@@ -3128,6 +3164,30 @@ declarado:** por runas y no por grafemas, así que un emoji compuesto —una
 familia con `ZWJ`, una bandera— puede partirse en sus piezas; nunca en media
 pareja. Cortar por grafemas pediría una dependencia externa, y `forge` no tiene
 ninguna fuera del SDK.
+
+### El `runId` que rompe el marcador no se escapa: no se construye
+
+El marcador estable —`<!-- shipflow:pr ... runId=... revision=... -->`— es a la
+vez la última línea del cuerpo y **la clave de la búsqueda idempotente**. El
+`runId` viajaba ahí adentro sin condición alguna, y eso abría dos cosas: un
+`-->` cierra el comentario antes de tiempo y deja al pie del cuerpo lo que el
+`runId` escriba después —con otro `<!--` que se trague el resto, una afirmación
+fabricada del tipo «verificación completa, no hace falta revisar», por el único
+hueco que el render seguro no puede tapar—, y un salto de línea parte el
+marcador en dos, con lo que la búsqueda —un `contains` sobre un cuerpo que la
+forja devuelve con `\r\n`— no lo encuentra nunca y el reintento abre un segundo
+pull request.
+
+**No se arregla escapando, y esto sí es una propiedad del formato:** adentro de
+un comentario HTML las entidades no se decodifican, así que «escapar» el valor
+sería cambiar la clave de búsqueda por otra cadena y los pull requests ya
+abiertos dejarían de coincidir. El cierre es un invariante en el tipo:
+`PullRequestDraft` rechaza un `runId` con `<!--`, `-->` o un salto de línea. No
+cambia ninguna clave existente —`generarRunId` produce microsegundos, un guion y
+un contador, así que para todo `runId` que este árbol sabe producir la guarda es
+una identidad, y hay una prueba en `cli` que ata el generador a esa condición—
+y pone la exigencia donde el valor entra al dominio, que es la misma frontera
+que canonicaliza la revisión.
 
 ### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
 
@@ -3144,7 +3204,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Veinticinco hechos que esta rebanada deja escritos porque son límites reales,
+Veintiséis hechos que esta rebanada deja escritos porque son límites reales,
 no trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -3303,14 +3363,17 @@ no trabajo pendiente con fecha:
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
   pero nada además de una revisión humana lo sostiene.
 
-- **El `runId` viaja crudo adentro del comentario HTML del marcador estable.**
-  Un `runId` con `-->` cerraría ese comentario antes de tiempo y lo que
-  escribiera después se renderizaría. El marcador es la **última** línea del
-  cuerpo, así que no puede enterrar nada de lo que está arriba —que es lo que
-  el render seguro protege—, pero sí agregar texto al final. Sanearlo cambia la
-  forma del marcador, y el marcador es la clave de la búsqueda idempotente: el
-  render y la búsqueda tienen que seguir produciendo la misma cadena, así que
-  es un cambio de la clave y no un escape más.
+- **Una identidad opaca del candidato que tenga la forma de un OID completo
+  —40 o 64 caracteres hexadecimales— y además distinga mayúsculas caería en la
+  canonicalización.** `CandidateIdentity` declara opaca su representación, y
+  `canonicalizarOid` respeta esa opacidad para todo lo demás: lo que no es un
+  OID vuelve intacto. Distinguir esa coincidencia pediría un tipo que diga si
+  la identidad es un OID o no, que es un cambio de dominio.
+- **Una URL escrita al desnudo en un dato de la corrida se muestra como enlace
+  en el cuerpo del pull request.** El Markdown de la forja la convierte, y eso
+  no se neutraliza escapando puntuación. Entra en el mismo criterio que deja
+  afuera la imagen: un enlace que el revisor tiene que clickear no entierra
+  nada, no falsifica ninguna sección y no se pide solo.
 - **El título se trunca por runas, no por grafemas.** Un emoji compuesto puede
   quedar partido en las piezas que lo componen. Lo que ya no puede quedar es
   media pareja sustituta, que es lo que la forja recibía como `�`.

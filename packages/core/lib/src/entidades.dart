@@ -280,6 +280,83 @@ class Plan {
   );
 }
 
+// **El OID vive acá, con la identidad del candidato, y no con el desenlace de
+// publicar.** Lo que sigue define qué ES un identificador de objeto de git y
+// cómo se escribe; lo usan las dos fronteras que reciben uno —[CandidateIdentity],
+// unas líneas más abajo, y `PullRequestRequest`, en el módulo de la
+// publicación— y una de ellas es este mismo archivo, así que tenerlo allá
+// obligaba a que este archivo, que está más abajo, importara al que está más
+// arriba.
+
+/// Los DOS largos que puede tener un OID completo de git, **medidos, no
+/// supuestos**, con `git rev-parse HEAD` sobre dos repositorios recién
+/// creados con git 2.50.1:
+///
+/// - `--object-format=sha1` → 40 caracteres hexadecimales (160 bits).
+/// - `--object-format=sha256` → 64 caracteres hexadecimales (256 bits).
+///
+/// Las dos familias entran porque el repositorio que se empuja puede ser de
+/// cualquiera de las dos y `core` no elige por el usuario: aceptar solo
+/// SHA-1 rechazaría revisiones perfectamente válidas de un repositorio
+/// SHA-256, que es el mismo tipo de falso rechazo que esta validación existe
+/// para no cometer.
+///
+/// **Mayúsculas incluidas, y también está medido**: `git rev-parse` y
+/// `git cat-file -t` resuelven sin chistar un OID escrito en mayúsculas y
+/// devuelven el objeto. O sea que un OID en mayúsculas ES un OID completo
+/// válido; rechazarlo sería afirmar «esto no identifica ningún objeto» sobre
+/// algo que sí lo identifica. Lo que producen nuestros propios adapters es
+/// minúscula —es lo que git imprime—, así que esta tolerancia no relaja
+/// ninguna ruta de este repositorio: solo evita mentir sobre una entrada
+/// legítima.
+///
+/// **Y tolerar dos escrituras no es dejarlas circular:** quien acepta un OID
+/// en mayúsculas lo canonicaliza a minúsculas en la frontera —ver
+/// [PullRequestRequest.revision]—, porque río abajo hay comparaciones
+/// literales contra lo que devuelve la forja, y dos formas del mismo objeto
+/// ahí adentro se leen como dos objetos distintos.
+final RegExp _patronDeOidCompleto = RegExp(
+  r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$',
+);
+
+/// ¿[revision] es un OID completo de git?
+///
+/// **Es una función del dominio y no un detalle del adapter** porque el
+/// dominio es donde nace la revisión que después se interpola en un refspec:
+/// [PullRequestRequest] la exige al construirse, y `EmpujeAislado` la vuelve
+/// a exigir justo antes de lanzar el proceso. Son dos fronteras distintas —un
+/// invariante de construcción y una precondición de ejecución—, y ninguna de
+/// las dos puede delegar en la otra: la primera no sabe si alguien llegará
+/// por otro camino, y la segunda no puede confiar en que su llamador validó.
+///
+/// **Lo que NO dice**: que el objeto exista en el repositorio. Eso solo lo
+/// sabe git, y averiguarlo desde acá sería lanzar un proceso adentro de una
+/// validación sincrónica del dominio. Un OID bien formado que no existe lo
+/// rechaza `git push` con su propio mensaje, y ESE rechazo no borra nada;
+/// el que borra es el refspec sin revisión, que es justamente lo que esta
+/// función impide construir.
+bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
+
+/// La forma canónica de un OID: **minúsculas**, que es lo que imprime git y lo
+/// que devuelven las forjas.
+///
+/// **Y solo toca lo que ES un OID completo.** Cualquier otra cadena vuelve
+/// intacta, y eso no es prudencia: `CandidateIdentity` declara su
+/// representación OPACA para el dominio —un doble puede identificar el
+/// contenido como se le ocurra, con mayúsculas que signifiquen algo—, así que
+/// bajar de caso a ciegas podría fundir dos identidades distintas en una. Lo
+/// que esta función sabe es una sola cosa, y la sabe el dominio desde que
+/// existe [esOidCompleto]: dos escrituras de un mismo OID nombran el mismo
+/// objeto de git.
+///
+/// **Residuo declarado:** una identidad opaca que por casualidad tenga la
+/// forma de un OID —40 o 64 caracteres hexadecimales— y además distinga
+/// mayúsculas caería en esta canonicalización. Es una representación que
+/// nadie usa hoy; distinguirla pediría un tipo que diga si la identidad es un
+/// OID o no, que es un cambio de dominio y no de esta ronda.
+String canonicalizarOid(String revision) =>
+    esOidCompleto(revision) ? revision.toLowerCase() : revision;
+
 /// Qué contenido exacto se expuso a la cascada, y sobre qué base.
 ///
 /// **Es una identidad opaca para el dominio.** En el adapter de git
@@ -303,17 +380,34 @@ class Plan {
 /// ningún control lo haya mirado entero. Eso lo acota cada afirmación, y solo
 /// hasta los sujetos de su propio testigo.
 class CandidateIdentity {
-  /// Qué contenido se expuso a la cascada.
+  /// Qué contenido se expuso a la cascada. **Canónico si es un OID completo**
+  /// —ver el constructor—; cualquier otra representación queda tal cual.
   final String contentRevision;
 
   /// Sobre qué base se construyó. Es la condición del commit: si la rama se
-  /// movió, el cambio no se aplica.
+  /// movió, el cambio no se aplica. Con la misma canonicalización que
+  /// [contentRevision].
   final String baseRevision;
 
+  /// **Lo único que este constructor le hace al valor: llevarlo a la forma
+  /// canónica CUANDO es un OID completo.**
+  ///
+  /// La opacidad de arriba sigue en pie: `canonicalizarOid` deja intacta toda
+  /// cadena que no sea un OID, así que un doble que identifique el contenido
+  /// con cualquier otra representación —mayúsculas incluidas— conserva sus
+  /// identidades exactamente como las escribió.
+  ///
+  /// Hace falta porque esta identidad se COMPARA contra un árbol que llega por
+  /// otra frontera: `PullRequestRequest` exige que el árbol del commit sea
+  /// este mismo valor, y con las dos escrituras de un mismo OID circulando, esa
+  /// comparación afirmaba que el commit llevaba un árbol que los controles no
+  /// vieron. Canonicalizar en las dos fronteras deja la comparación literal,
+  /// que es lo que tiene que ser.
   CandidateIdentity({
-    required this.contentRevision,
-    required this.baseRevision,
-  }) {
+    required String contentRevision,
+    required String baseRevision,
+  }) : contentRevision = canonicalizarOid(contentRevision),
+       baseRevision = canonicalizarOid(baseRevision) {
     if (contentRevision.trim().isEmpty || baseRevision.trim().isEmpty) {
       throw ArgumentError(
         'Una identidad de candidato en blanco no identifica nada.',
