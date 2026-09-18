@@ -18,5 +18,6 @@ export 'src/salida.dart';
 export 'src/ship/entrada.dart';
 export 'src/ship/gitignore.dart';
 export 'src/ship/preflight.dart';
+export 'src/ship/preview.dart';
 export 'src/uso.dart';
 export 'src/verify.dart';
