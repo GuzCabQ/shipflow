@@ -107,6 +107,13 @@ abstract final class Codigo {
 /// **Se deriva, como el código.** Una acción escrita a mano en cada sitio de
 /// retorno diverge del desenlace en cuanto alguien agrega una variante; acá la
 /// exhaustividad del `switch` la ata.
+///
+/// **Nulo exactamente donde [Codigo.deShip] devuelve [Codigo.exito].** Es lo
+/// que [ResultEnvelope.nextAction] promete: toda salida que no sea verde tiene
+/// que poder decir qué hacer. Al revés no vale, y no tiene por qué: una salida
+/// `0` puede igual tener algo que decir —`confirmationMissing` sale `0` y
+/// sugiere `--yes`—, porque la promesa es que ninguna salida no-verde se quede
+/// muda, no que ninguna verde hable.
 String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
   NoIntentado(causa: CausaDeNoIntento.previewOnly) => null,
   NoIntentado(causa: CausaDeNoIntento.confirmationMissing) =>
@@ -130,7 +137,18 @@ String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
     'El commit $revision existe y el índice quedó sin sincronizar. Reparalo '
         'y después --retry-publication, que comprueba que el índice ya '
         'coincide antes de publicar.',
-  Publicado() => null,
+  Publicado(verificacion: EstadoPublicable.verde) => null,
+  // **Publicar no es verificar.** `--allow-incomplete` autoriza publicar un
+  // estado incompleto; no lo vuelve verde. Este desenlace sale `1` o `2` por
+  // [Codigo.deShip] —lleva el código de su verificación— y hasta acá salía sin
+  // acción siguiente: un código distinto de cero y nada que hacer. No sirve
+  // `--retry-publication`, porque la publicación ya se completó; lo que queda
+  // es lo que la verificación señaló, sobre un pull request que ya existe.
+  Publicado(:final verificacion, :final pr) =>
+    'El pull request ya existe en ${pr.url} y la verificación quedó en '
+        '${verificacion.name}. --allow-incomplete autorizó publicarla así, no '
+        'la declara verde: arreglá lo que la verificación señaló antes de '
+        'integrarla. No sirve --retry-publication: la publicación se completó.',
   PublicacionIncompleta() =>
     'shipflow ship --retry-publication <runId>. No se creará otro commit ni '
         'un segundo pull request.',
@@ -184,24 +202,32 @@ class ResultEnvelope {
   /// El veredicto del dominio, o `null` cuando el comando no llegó a
   /// producir uno.
   ///
-  /// **Hueco de la superficie, declarado.** La lista de veredictos cubre los
-  /// códigos que hoy se producen —`0`, `1`, `2` y `70`— pero no el `5`: un error
-  /// de uso no alcanzó el dominio, así que no tiene veredicto que dar.
-  /// Inventarle uno sería afirmar algo sobre un cambio que nadie miró. El código
-  /// de salida lleva ese dato, y va en el mismo documento.
+  /// **Hueco de la superficie, declarado.** Los cuatro veredictos de
+  /// [veredictoDe] cubren los códigos que salen de [Codigo.deCorrida] —`0`,
+  /// `1`, `2` y `70`— pero no el `5`: un error de uso no alcanzó el dominio,
+  /// así que no tiene veredicto que dar. Inventarle uno sería afirmar algo
+  /// sobre un cambio que nadie miró. El código de salida lleva ese dato, y va
+  /// en el mismo documento.
   ///
-  /// **El `3` no está en esa lista, y ya tiene productor: [Codigo.deShip]
-  /// lo devuelve para [NoAplicado].** Lo que sigue sin cubrir esa lista es el
-  /// veredicto: nadie arma todavía un `String` de veredicto para un
-  /// [ShipOutcome], así que un consumidor que reciba `3` lo sabe por el
-  /// código de salida y por `data`, no por `verdict`. Este comentario decía
-  /// que la lista cubría todo lo que el arnés produce, lo que describía la
-  /// superficie documentada como si fuera la implementada. Son dos cosas
-  /// distintas y hay que decir cuál se está nombrando.
+  /// **[Codigo.deShip] produce seis códigos —`0`, `1`, `2`, `3`, `6` y `70`—
+  /// y dos de ellos, el `3` y el `6`, no están en esa lista de veredictos.**
+  /// El `3` sale de [NoAplicado] y el `6` de [PublicacionIncompleta]: los dos
+  /// tienen productor y ninguno tiene veredicto, porque nadie arma todavía un
+  /// `String` de veredicto para un [ShipOutcome]. Un consumidor que reciba
+  /// cualquiera de los dos lo sabe por el código de salida y por `data`, no
+  /// por `verdict`. Enumerar los códigos acá **vence con cada variante nueva**
+  /// —esta lista ya nació incompleta una vez, con el `6` recién estrenado— así
+  /// que quien agregue una fila a [Codigo.deShip] agrega su código a esta
+  /// oración o la reescribe.
   final String? verdict;
 
   /// Qué hacer a continuación. Toda salida que no sea verde tiene que poder
   /// decirlo: es la misma exigencia que INV-8 le hace a una regla que bloquea.
+  ///
+  /// Para un [ShipOutcome] eso lo cumple [accionDe], y lo cumple entero: es
+  /// nulo exactamente cuando [Codigo.deShip] devuelve [Codigo.exito]. La
+  /// versión anterior no lo cumplía y no lo decía — un [Publicado] con la
+  /// verificación en rojo salía `1` sin acción siguiente.
   final String? nextAction;
 
   final Map<String, Object?> data;

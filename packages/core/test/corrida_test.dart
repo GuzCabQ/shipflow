@@ -160,6 +160,128 @@ void main() {
       }
     });
 
+    test('un publicado con un remoto NO utilizable NO se reconstruye', () {
+      // La guarda de `Publicado.fromJson` es lo que impide reconstruir por
+      // JSON lo que el tipo impide construir en memoria: el campo es
+      // `PublicacionUtilizable`, pero el JSON lo trae como
+      // `PublicationOutcome` y el discriminador decide la variante. Sin la
+      // guarda, «hay un pull request utilizable» quedaba escribible desde un
+      // archivo con un empuje que nadie sabe si llegó adentro.
+      //
+      // Nada la probaba: se podía aflojar el tipo del campo, borrar la guarda
+      // y dejar el árbol compilando, con `--fatal-infos` limpio y las pruebas
+      // en verde.
+      for (final noUtilizable in <PublicationOutcome>[
+        PushUnknown(causa: CausaDePublicacion.red),
+        PushFailed(causa: CausaDePublicacion.permisos),
+        PullRequestClosed(url: 'https://forja/pr/4'),
+      ]) {
+        final json = ShipOutcome.publicadoParaLaPrueba(
+          pr: PullRequestOpen(url: 'https://forja/pr/1'),
+          verificacion: EstadoPublicable.verde,
+        ).toJson();
+        json['pr'] = noUtilizable.toJson();
+        expect(
+          () => Publicado.fromJson(json),
+          throwsFormatException,
+          reason: noUtilizable.kind,
+        );
+        // Por el despachador de la base también: es el camino por el que
+        // llega un documento leído del disco.
+        expect(
+          () => ShipOutcome.fromJson(json),
+          throwsFormatException,
+          reason: noUtilizable.kind,
+        );
+      }
+      // Control positivo: sin esto, una `fromJson` que lanzara siempre
+      // pasaría el bucle de arriba.
+      final bueno = ShipOutcome.publicadoParaLaPrueba(
+        pr: PullRequestMerged(url: 'https://forja/pr/5'),
+        verificacion: EstadoPublicable.rojo,
+      ).toJson();
+      expect(Publicado.fromJson(bueno).pr, isA<PublicacionUtilizable>());
+    });
+
+    test('una publicación incompleta con un remoto utilizable NO se '
+        'reconstruye', () {
+      // El espejo de la anterior, y el falso alivio es peor: un documento que
+      // dijera «la entrega quedó incompleta» llevando adentro un pull request
+      // abierto mandaría a reintentar una publicación que ya está hecha, y el
+      // reintento crearía un segundo pull request.
+      for (final utilizable in <PublicationOutcome>[
+        PullRequestOpen(url: 'https://forja/pr/6'),
+        PullRequestMerged(url: 'https://forja/pr/7'),
+      ]) {
+        final json = ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushUnknown(causa: CausaDePublicacion.red),
+          verificacion: EstadoPublicable.verde,
+        ).toJson();
+        json['remoto'] = utilizable.toJson();
+        expect(
+          () => PublicacionIncompleta.fromJson(json),
+          throwsFormatException,
+          reason: utilizable.kind,
+        );
+        expect(
+          () => ShipOutcome.fromJson(json),
+          throwsFormatException,
+          reason: utilizable.kind,
+        );
+      }
+      final bueno = ShipOutcome.publicacionIncompletaParaLaPrueba(
+        remoto: PullRequestClosed(url: 'https://forja/pr/8'),
+        verificacion: EstadoPublicable.noConcluyente,
+      ).toJson();
+      expect(
+        PublicacionIncompleta.fromJson(bueno).remoto,
+        isA<PublicacionNoUtilizable>(),
+      );
+    });
+
+    test('un nombre de enumeración que no existe se rechaza como '
+        'FormatException, no como ArgumentError', () {
+      // `values.byName` lanza `ArgumentError`. El agujero estaba cerrado —ese
+      // JSON sí se rechazaba— pero por una familia distinta de la que usa el
+      // resto de este archivo para «este JSON no se puede leer», así que
+      // quien lea un documento tendría que atrapar las dos para una sola
+      // condición.
+      //
+      // `errorInterno` es el caso que de verdad llega: es un
+      // `EstadoDeCorrida` válido y NO un `EstadoPublicable`, que es
+      // exactamente el mecanismo que vuelve no escribible una publicación
+      // sobre una corrida con el arnés roto.
+      final casos = <String, Map<String, Object?>>{
+        'publicado.verificacion': ShipOutcome.publicadoParaLaPrueba(
+          pr: PullRequestOpen(url: 'https://forja/pr/1'),
+          verificacion: EstadoPublicable.verde,
+        ).toJson()..['verificacion'] = 'errorInterno',
+        'publicacionIncompleta.verificacion':
+            ShipOutcome.publicacionIncompletaParaLaPrueba(
+              remoto: PushUnknown(causa: CausaDePublicacion.red),
+              verificacion: EstadoPublicable.verde,
+            ).toJson()..['verificacion'] = 'errorInterno',
+        'noIntentado.causa': ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.previewOnly,
+          verificacion: EstadoDeCorrida.verde,
+        ).toJson()..['causa'] = 'nombreQueNadieDeclaro',
+        'noIntentado.verificacion': ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.previewOnly,
+          verificacion: EstadoDeCorrida.verde,
+        ).toJson()..['verificacion'] = 'nombreQueNadieDeclaro',
+      };
+      for (final caso in casos.entries) {
+        // `FormatException` no es un `ArgumentError`, así que esta sola
+        // aserción fija la familia: con `values.byName` de vuelta, lo que
+        // sale es `ArgumentError` y esto se pone rojo.
+        expect(
+          () => ShipOutcome.fromJson(caso.value),
+          throwsFormatException,
+          reason: caso.key,
+        );
+      }
+    });
+
     test('un kind desconocido no se adivina', () {
       expect(
         () => ShipOutcome.fromJson({'kind': 'inventado'}),

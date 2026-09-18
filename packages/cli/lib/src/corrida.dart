@@ -16,6 +16,15 @@ import 'package:path/path.dart' as rutas;
 /// `.shipflow/` viviera en otro sistema de archivos que el temporal, la
 /// garantía no valdría. Como los dos salen de [raiz], no puede pasar sin que
 /// alguien cambie esta clase.
+///
+/// **Segundo límite declarado: `flush: true` no lo sostiene ninguna prueba.**
+/// La escritura pide vaciar el búfer del sistema operativo antes de renombrar,
+/// para que el documento esté en el disco y no solo en la caché cuando el
+/// nombre final aparece. Sacarlo no pone roja ninguna prueba de esta suite, y
+/// no es un descuido: observar la diferencia pide un corte de energía o una
+/// caída del kernel entre las dos llamadas, que desde el proceso de pruebas no
+/// se simula. Queda declarado en vez de disimulado con una prueba que pasaría
+/// igual con el mecanismo roto.
 class RegistroDeCorridas {
   final String raiz;
 
@@ -81,6 +90,22 @@ enum QueHacerAlRecuperar {
 ///
 /// **No lee el repositorio**: quien la llama ya leyó el `HEAD`. Así se puede
 /// probar los tres casos sin montar un repositorio por cada uno.
+///
+/// **Tampoco lee `documento.estado`, y eso es una PRECONDICIÓN, no una
+/// omisión benigna.** Supone un documento en `prepared`, que es el único
+/// estado donde las tres respuestas significan algo: son «el CAS no llegó a
+/// correr», «el CAS corrió antes de morir» y «otra cosa avanzó la rama». Sobre
+/// un documento en otro estado devuelve igual una de las tres, y puede ser
+/// falsa: [leer] reconstruye cualquier estado —correctamente, porque un
+/// documento persistido se relee entero—, así que una corrida que murió en
+/// `publicationComplete` con `headActual == documento.revision` sale de acá
+/// como [QueHacerAlRecuperar.promoverACommitted], que es una arista que el
+/// grafo del documento no tiene.
+///
+/// **Asegurar la precondición es del llamador**, y ese llamador es
+/// `--retry-publication`, que todavía no existe: filtrar por estado es una
+/// decisión de esa rebanada, no de esta. Lo que corresponde acá es declarar la
+/// ausencia en vez de dejarla implícita.
 ///
 /// Si `base` y `revision` fueran iguales, el primer caso ganaría y se
 /// reintentaría un CAS que ya corrió. No puede pasar: una revisión es hija de

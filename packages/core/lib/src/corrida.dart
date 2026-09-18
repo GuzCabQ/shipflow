@@ -68,8 +68,8 @@ enum CausaDeNoIntento {
 
 /// El desenlace de una corrida de `ship`, como **un solo tipo cerrado**.
 ///
-/// **Los constructores son privados y la única entrada real es la fábrica de
-/// la tarea 3** (`ShipOutcome.derivar`, todavía no escrita en esta rebanada).
+/// **Los constructores son privados y la única entrada real es
+/// [ShipOutcome.derivar]**, más abajo en este mismo archivo.
 /// Las entradas `…ParaLaPrueba` existen para que la suite pueda construir
 /// variantes sin pasar por la derivación; es el mismo precedente que
 /// `RepositorioGit.identidadCapturadaParaLaPrueba`.
@@ -106,6 +106,30 @@ sealed class ShipOutcome {
         '«$leido».',
       );
     }
+  }
+
+  /// Lee un valor de enumeración por su nombre, y **lanza [FormatException]**
+  /// si no hay ninguno con ese nombre.
+  ///
+  /// `values.byName` lanza `ArgumentError`, que es la familia de «me pasaron
+  /// mal un argumento», no la de «este JSON no se puede leer». El agujero
+  /// estaba cerrado igual —el documento se rechazaba— pero por un tipo
+  /// distinto del que usa el resto de este archivo para la misma condición, y
+  /// dos familias para una sola condición obligan a quien lea un documento a
+  /// atrapar las dos para no dejar pasar ninguna.
+  static T _porNombre<T extends Enum>(
+    List<T> valores,
+    Object? leido,
+    String campo,
+    String deQuien,
+  ) {
+    for (final valor in valores) {
+      if (valor.name == leido) return valor;
+    }
+    throw FormatException(
+      '$deQuien.fromJson recibió «$leido» en «$campo», que no es ninguno de: '
+      '${valores.map((v) => v.name).join(", ")}.',
+    );
   }
 
   /// **La única entrada real.** Cada variante tiene constructor privado, así
@@ -227,9 +251,17 @@ final class NoIntentado extends ShipOutcome {
   factory NoIntentado.fromJson(Map<String, Object?> json) {
     ShipOutcome._exigirKind(json['kind'], 'noIntentado');
     return NoIntentado._(
-      causa: CausaDeNoIntento.values.byName(json['causa']! as String),
-      verificacion: EstadoDeCorrida.values.byName(
-        json['verificacion']! as String,
+      causa: ShipOutcome._porNombre(
+        CausaDeNoIntento.values,
+        json['causa'],
+        'causa',
+        'NoIntentado',
+      ),
+      verificacion: ShipOutcome._porNombre(
+        EstadoDeCorrida.values,
+        json['verificacion'],
+        'verificacion',
+        'NoIntentado',
       ),
     );
   }
@@ -316,8 +348,11 @@ final class Publicado extends ShipOutcome {
     }
     return Publicado._(
       pr: pr,
-      verificacion: EstadoPublicable.values.byName(
-        json['verificacion']! as String,
+      verificacion: ShipOutcome._porNombre(
+        EstadoPublicable.values,
+        json['verificacion'],
+        'verificacion',
+        'Publicado',
       ),
     );
   }
@@ -357,8 +392,11 @@ final class PublicacionIncompleta extends ShipOutcome {
     }
     return PublicacionIncompleta._(
       remoto: remoto,
-      verificacion: EstadoPublicable.values.byName(
-        json['verificacion']! as String,
+      verificacion: ShipOutcome._porNombre(
+        EstadoPublicable.values,
+        json['verificacion'],
+        'verificacion',
+        'PublicacionIncompleta',
       ),
     );
   }

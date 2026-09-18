@@ -3473,8 +3473,15 @@ que el usuario no fuera a confirmar no vuelve menos cierto que hay un
 secreto, así que el secreto le gana a la confirmación que falta y a la
 previsualización — y también a la compuerta por estado, con y sin
 `--allow-incomplete`: la bandera autoriza publicar un estado incompleto, no
-autoriza ignorar un secreto. Las nueve combinaciones de la tabla están
-probadas una por una en `packages/core/test/corrida_test.dart`.
+autoriza ignorar un secreto. El grupo `ShipOutcome.derivar · la precedencia`
+de `packages/core/test/corrida_test.dart` tiene **12 pruebas —8 de ellas fijan
+el orden de precedencia— y entre todas ejercitan 17 derivaciones**. Este
+párrafo decía «las nueve combinaciones de la tabla, probadas una por una», y no
+hay lectura del árbol que dé nueve: ni las pruebas del grupo, ni las de
+precedencia, ni las derivaciones. La tabla de códigos fila por fila tampoco
+vive en ese archivo: es `Codigo.deShip la tabla de §12, fila por fila`, en
+`packages/cli/test/salida_test.dart`, y tiene **6 filas**, una por cada código
+que `deShip` produce.
 
 `EstadoPublicable` es el mecanismo que hace que una publicación sobre una
 corrida con el arnés roto deje de ser escribible: no tiene variante
@@ -3515,7 +3522,24 @@ variante**, solo en `verdict` y en `data`.
 
 `accionDe` deriva, con el mismo mecanismo, qué hacer a continuación: la
 exhaustividad del `switch` sobre `ShipOutcome` ata la acción al desenlace, así
-que una variante nueva tampoco compila sin decidir su mensaje.
+que una variante nueva tampoco compila sin decidir su mensaje. **Es nula
+exactamente donde `Codigo.deShip` devuelve `0`**, que es lo que
+`ResultEnvelope.nextAction` promete: toda salida que no sea verde tiene que
+poder decir qué hacer. Al revés no vale ni tiene por qué —`confirmationMissing`
+sale `0` y sugiere `--yes`—, porque la promesa es que ninguna salida no-verde
+se quede muda, no que ninguna verde hable.
+
+Las dos funciones derivadas no coincidían, y solo se veía poniéndolas juntas:
+`Codigo.deShip(Publicado(verificacion: rojo))` daba `1` y `accionDe` de ese
+mismo desenlace daba nulo — un código distinto de cero sin acción siguiente,
+contra lo que el doc comment prometía, y sobre un desenlace alcanzable con
+`--allow-incomplete`. Se resolvió del lado de `accionDe`, no debilitando la
+promesa: **un `Publicado` que no es verde sí tiene qué decir** —el pull request
+existe, la verificación quedó incompleta, y `--retry-publication` no sirve
+porque la publicación se completó—, así que quitarle la exigencia al doc
+comment habría cambiado un contrato útil por una descripción de la
+implementación. Los veredictos son otra cosa y siguen sin cubrir el `3` ni el
+`6`: eso está declarado en `ResultEnvelope.verdict`.
 
 ### El documento autoritativo, con sus transiciones validadas
 
@@ -3542,6 +3566,55 @@ publicationComplete, notApplied, localInconsistent → (terminales)
 publica desde `committed` o `publicationIncomplete`», y sin esa arista una
 publicación que quedó a medias no tendría adónde avanzar cuando el reintento
 sí completa. El diagrama está incompleto, no este mapa.
+
+**Los tres estados terminales se prueban terminales**, no solo se leen del
+mapa: la suite intenta avanzar desde `publicationComplete`, `notApplied` y
+`localInconsistent` hacia cada uno de los seis estados, y exige que los
+dieciocho intentos lancen. Cubría solo `notApplied`, y con eso cambiarle a
+`publicationComplete` el conjunto vacío por `{committed}` dejaba la suite
+entera en verde — y `publicationComplete` terminal es lo único que impide que
+`--retry-publication` vuelva a publicar una corrida ya publicada.
+
+### El estado y el desenlace son el mismo hecho
+
+`estado` y `desenlace` se asignaban por separado, **y el segundo determina al
+primero**: `NoAplicado` es `notApplied`, `LocalInconsistente` es
+`localInconsistent`, `Publicado` es `publicationComplete` y
+`PublicacionIncompleta` es `publicationIncomplete`. `avanzarA` no miraba esa
+relación, así que esto se construía, se persistía y se releía: un documento que
+dice «el CAS fue rechazado, nada se aplicó» llevando adentro «hay un pull
+request abierto y utilizable». Es el estado contradictorio que el documento
+único existe para evitar —dos documentos del mismo hecho divergen siempre—,
+reproducido dentro de un solo documento, y un nivel por encima del tipo cerrado
+que se inventó para cerrarlo.
+
+`DocumentoDeCorrida.estadoQueAfirma` es esa correspondencia como función total
+sobre las cinco variantes, y el constructor privado —por el que pasan
+`preparado`, `avanzarA` y `fromJson`, y no hay otro— exige que el estado y el
+desenlace digan lo mismo. La comprobación es sobre el desenlace **arrastrado**:
+`avanzarA` conserva el anterior cuando no se pasa uno nuevo, así que completar
+una publicación a medias sin dar el desenlace nuevo dejaba adentro el que dice
+que no se completó, y eso tampoco pasa.
+
+**`NoIntentado` es la quinta variante y no afirma ningún estado del documento,
+así que ningún estado la acepta.** No es un olvido: sus cuatro causas se
+resuelven antes del CAS —así está ordenada `ShipOutcome.derivar`—, o sea antes
+de que exista la revisión candidata sin la cual este documento no se escribe.
+Un documento con un `NoIntentado` adentro afirmaría a la vez que hubo candidato
+y que nunca se intentó hacer uno.
+
+El desenlace **nulo** nunca es incoherente: significa «todavía no hay
+desenlace», que es exactamente lo que dicen `prepared` y `committed`. Que un
+estado terminal pueda seguir llevando desenlace nulo es el residuo que queda,
+declarado abajo.
+
+La incoherencia lanza `ArgumentError` desde el constructor —es un defecto de
+quien compone el documento— y `FormatException` desde `fromJson`, que la
+comprueba antes de construir para que «este JSON no se puede leer» siga siendo
+una sola familia de excepción. Ese es el camino por el que el documento
+contradictorio de verdad llegaba: un archivo en el disco.
+
+### La revisión ya existe cuando el documento se persiste
 
 **La revisión ya existe cuando el documento se persiste**, porque
 `commit-tree` corre antes: la versión anterior del diseño escribía
@@ -3577,6 +3650,18 @@ base— y el `HEAD` observado, y compara los tres valores.
 | == revisión del documento | el CAS corrió antes de morir | promover a `committed` |
 | ninguno de los dos | otra cosa avanzó la rama | reconstruir el candidato |
 
+**La tabla supone un documento en `prepared`, y la función no lo comprueba.**
+`decidirRecuperacion` no lee `documento.estado`: las tres respuestas solo
+significan algo sobre una corrida que murió antes del CAS o justo después.
+`RegistroDeCorridas.leer` reconstruye cualquier estado —y eso es correcto: un
+documento persistido se relee entero—, así que una corrida que murió en
+`publicationComplete` con `HEAD` igual a su revisión sale de acá como «promover
+a `committed`», que es una arista que el grafo del documento no tiene.
+**Asegurar la precondición es del llamador**, y ese llamador es
+`--retry-publication`, que es 4c: filtrar por estado es una decisión de esa
+rebanada. Lo que corresponde a ésta es declarar la ausencia, acá y en el doc
+comment de la función, en vez de dejarla implícita.
+
 Antes de que el documento llevara la revisión, esto tenía que salir a
 **buscar** qué commit podía ser el candidato; con los tres datos ya sobre la
 mesa, es una función pura de tres casos, probable sin montar un repositorio
@@ -3597,9 +3682,18 @@ medias sin detalle no dice qué hay que reparar.
 
 - **Nada de esto tiene productor todavía.** `ShipOutcome.derivar` no lo llama
   nadie —el comando llega en 4b—, y tampoco lo llama nada `Codigo.deShip`,
-  `accionDe`, `RegistroDeCorridas` ni `decidirRecuperacion`: hoy solo los
-  ejercitan sus propias suites. Un tipo sin productor es exactamente lo que
-  este repositorio declara en vez de disimular.
+  `accionDe`, `RegistroDeCorridas` ni `decidirRecuperacion`. A cada uno lo
+  ejercita una suite, y acá está cuál: `Codigo.deShip` y `accionDe` en el
+  grupo homónimo de `packages/cli/test/salida_test.dart`, `RegistroDeCorridas`
+  y `decidirRecuperacion` en `packages/cli/test/corrida_test.dart`,
+  `ShipOutcome` entero en `packages/core/test/corrida_test.dart`. Un tipo sin
+  productor es exactamente lo que este repositorio declara en vez de
+  disimular. **Esta frase decía «hoy solo los ejercitan sus propias suites» y
+  para `accionDe` era falsa**: esa función pública de ocho ramas y siete
+  mensajes no la referenciaba nada en el árbol fuera de su declaración, ni
+  siquiera una prueba, y reemplazar su cuerpo entero por `=> null` dejaba la
+  suite completa en verde. Nombrar el archivo en vez de decir «su propia
+  suite» es lo que vuelve comprobable la afirmación.
 - **`IndiceDesincronizado` tampoco tiene productor real todavía.** El único
   lugar que hoy la lanza es `RepositorioGit.apply`, y el único llamador de
   `apply` en el árbol es su propia suite de pruebas: no existe `ship`, que es
@@ -3614,18 +3708,16 @@ medias sin detalle no dice qué hay que reparar.
 - **`PublicacionIncompleta` sale `6` aunque la verificación haya sido roja o
   no concluyente**, y el estado de verificación viaja en `verdict` y en
   `data`, no en el código de salida de esa variante.
-- **La prueba de terminalidad del documento cubre `notApplied` y no los
-  otros dos estados terminales.** El mapa de transiciones declara
-  `publicationComplete` y `localInconsistent` con conjunto vacío —terminales,
-  igual que `notApplied`—, pero ninguna prueba intenta avanzar desde ellos:
-  lo que hoy demuestra que son terminales es la lectura del mapa, no una
-  aserción que lance al intentarlo.
-- **No está impuesto ni probado que un estado terminal lleve desenlace no
-  nulo.** `avanzarA` acepta `desenlace: null` en cualquier transición,
-  incluida una hacia un estado terminal: el tipo no exige que
-  `publicationComplete`, `publicationIncomplete`, `notApplied` o
-  `localInconsistent` tengan un `ShipOutcome` que los respalde. Corresponde a
-  quien escriba el documento en cada paso de la corrida, que es 4b.
+- **No está impuesto que un estado terminal lleve desenlace.** `avanzarA`
+  sigue aceptando `desenlace: null` en cualquier transición, incluida una
+  hacia un estado terminal: nada exige que `publicationComplete`,
+  `publicationIncomplete`, `notApplied` o `localInconsistent` tengan un
+  `ShipOutcome` que los respalde. Corresponde a quien escriba el documento en
+  cada paso de la corrida, que es 4b. **Lo que SÍ quedó cerrado es el otro
+  lado, que era el peor**: un desenlace presente que afirme un estado distinto
+  del que el documento declara ya no se construye —ver «El estado y el
+  desenlace son el mismo hecho»—, así que el residuo que queda es la ausencia
+  de desenlace, no la contradicción.
 - **La prueba del fallo de sincronización del índice inyecta el fallo por la
   costura del programa de `git`** —un envoltorio que intercepta `reset` y
   responde con un código de error fabricado—, así que no demuestra que un

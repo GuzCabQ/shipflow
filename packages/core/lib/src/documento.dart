@@ -49,14 +49,76 @@ class DocumentoDeCorrida {
   final PullRequestDraft draft;
 
   /// El desenlace, cuando ya hay uno. Nulo mientras la corrida sigue.
+  ///
+  /// **No es independiente de [estado]: lo determina.** Ver
+  /// [estadoQueAfirma] y el chequeo del constructor.
   final ShipOutcome? desenlace;
 
-  const DocumentoDeCorrida._({
+  /// El estado del documento que **afirma** un desenlace, o nulo si ese
+  /// desenlace no afirma ninguno.
+  ///
+  /// `estado` y `desenlace` no son dos hechos: son el mismo hecho dicho dos
+  /// veces, y el segundo determina al primero. Sin esta función los dos eran
+  /// campos independientes, y un documento que dijera «el CAS fue rechazado,
+  /// nada se aplicó» podía llevar adentro «hay un pull request abierto y
+  /// utilizable». Eso se construía, se persistía y se releía: el estado
+  /// contradictorio, un nivel por encima del tipo que se inventó para
+  /// cerrarlo.
+  ///
+  /// **[NoIntentado] devuelve nulo, y no es un olvido.** Es el único desenlace
+  /// que no afirma ningún estado de este documento: sus cinco causas se
+  /// resuelven ANTES del CAS —así está ordenada [ShipOutcome.derivar]—, o sea
+  /// antes de que exista la revisión candidata sin la cual este documento no
+  /// se puede escribir. Un documento con un desenlace [NoIntentado] adentro
+  /// afirmaría a la vez que hubo candidato y que nunca se intentó hacer uno,
+  /// así que no se construye: nulo acá significa «ningún estado le
+  /// corresponde», y el chequeo lo rechaza contra todos.
+  static EstadoDelDocumento? estadoQueAfirma(ShipOutcome desenlace) =>
+      switch (desenlace) {
+        NoIntentado() => null,
+        NoAplicado() => EstadoDelDocumento.notApplied,
+        LocalInconsistente() => EstadoDelDocumento.localInconsistent,
+        Publicado() => EstadoDelDocumento.publicationComplete,
+        PublicacionIncompleta() => EstadoDelDocumento.publicationIncomplete,
+      };
+
+  /// Por qué [estado] y [desenlace] no pueden ir juntos, o nulo si sí pueden.
+  ///
+  /// Un desenlace nulo nunca es incoherente: significa «todavía no hay
+  /// desenlace», que es exactamente lo que dicen `prepared` y `committed`.
+  /// Que un estado TERMINAL pueda seguir llevando desenlace nulo es un
+  /// residuo declarado: quién escribe el desenlace en cada paso es 4b.
+  static String? _incoherencia(
+    EstadoDelDocumento estado,
+    ShipOutcome? desenlace,
+  ) {
+    if (desenlace == null) return null;
+    final suyo = estadoQueAfirma(desenlace);
+    if (suyo == estado) return null;
+    return 'El documento dice «${estado.name}» y lleva un desenlace '
+        '«${desenlace.kind}», que ${suyo == null ? "no afirma ningún estado de este documento" : "afirma «${suyo.name}»"}. '
+        'Son el mismo hecho dicho dos veces: si discrepan, el documento '
+        'afirma dos cosas incompatibles sobre la misma corrida.';
+  }
+
+  /// **No es `const`, y ese es el punto**: acá es donde [estado] y [desenlace]
+  /// se juntan, así que acá se exige que digan lo mismo. Todas las entradas
+  /// —[preparado], [avanzarA] y [fromJson]— pasan por este constructor, y no
+  /// hay ninguna otra.
+  ///
+  /// Lanza `ArgumentError` porque la incoherencia es un defecto de quien
+  /// compone el documento. La lectura de JSON comprueba lo mismo ANTES de
+  /// llegar acá y lanza `FormatException`, para que «este JSON no se puede
+  /// leer» siga siendo una sola familia de excepción.
+  DocumentoDeCorrida._({
     required this.estado,
     required this.revision,
     required this.draft,
     this.desenlace,
-  });
+  }) {
+    final mal = _incoherencia(estado, desenlace);
+    if (mal != null) throw ArgumentError(mal);
+  }
 
   /// El primer estado. **La única forma de crear un documento desde cero**:
   /// los demás se alcanzan con [avanzarA].
@@ -98,6 +160,16 @@ class DocumentoDeCorrida {
   /// Avanza, o lanza. **Devuelve un documento nuevo** en vez de mutar este:
   /// con un campo mutable, alguien escribe `committed` sin pasar por acá y la
   /// comprobación deja de ser un invariante para ser una costumbre.
+  ///
+  /// **Dos comprobaciones, no una.** El grafo dice si el camino existe; el
+  /// constructor dice si el estado de llegada y el desenlace afirman lo
+  /// mismo. Sin la segunda, `avanzarA(notApplied, desenlace: Publicado(…))`
+  /// se construía, se persistía y se releía.
+  ///
+  /// El desenlace que no se pasa **se arrastra**, y la comprobación es sobre
+  /// el arrastrado: avanzar de `publicationIncomplete` a
+  /// `publicationComplete` sin dar el desenlace nuevo deja adentro el que
+  /// dice «la publicación no se completó», y eso ya no pasa.
   DocumentoDeCorrida avanzarA(
     EstadoDelDocumento destino, {
     ShipOutcome? desenlace,
@@ -146,15 +218,24 @@ class DocumentoDeCorrida {
       );
     }
     final crudo = json['desenlace'];
+    final estado = EstadoDelDocumento.values.byName(json['estado']! as String);
+    final desenlace = crudo == null
+        ? null
+        : ShipOutcome.fromJson(Map<String, Object?>.from(crudo as Map));
+    // **Antes de construir, y con `FormatException`.** Es la misma exigencia
+    // que el constructor, por el camino por el que de verdad llegaba el
+    // estado contradictorio: un documento que ya está en el disco. Que salga
+    // por la misma familia que el resto de los rechazos de lectura es lo que
+    // deja atrapar «este JSON no se puede leer» una sola vez.
+    final mal = _incoherencia(estado, desenlace);
+    if (mal != null) throw FormatException(mal);
     return DocumentoDeCorrida._(
-      estado: EstadoDelDocumento.values.byName(json['estado']! as String),
+      estado: estado,
       revision: json['revision']! as String,
       draft: PullRequestDraft.fromJson(
         Map<String, Object?>.from(json['draft']! as Map),
       ),
-      desenlace: crudo == null
-          ? null
-          : ShipOutcome.fromJson(Map<String, Object?>.from(crudo as Map)),
+      desenlace: desenlace,
     );
   }
 }

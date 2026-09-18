@@ -279,8 +279,15 @@ void main() {
     artefacto: artefacto,
   );
 
-  final desenlaceDelDocumento = ShipOutcome.localInconsistenteParaLaPrueba(
-    revision: 'f' * 40,
+  // **El desenlace tiene que ser el que afirma `publicationComplete`.** Acá
+  // había un `LocalInconsistente`, y el documento canónico de esta suite era
+  // el estado contradictorio en persona: decía «el commit existe y el índice
+  // quedó sucio» sobre un estado que afirma que la publicación se completó.
+  // Se construía, serializaba y volvía igual, así que la ida y vuelta no
+  // notaba nada. Ahora el constructor lo rechaza.
+  final desenlaceDelDocumento = ShipOutcome.publicadoParaLaPrueba(
+    pr: PullRequestOpen(url: 'https://forja/pr/canonico'),
+    verificacion: EstadoPublicable.noConcluyente,
   );
 
   final documento =

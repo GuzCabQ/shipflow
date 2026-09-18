@@ -81,10 +81,14 @@ class PromesaIncumplida implements Exception {
 /// **Valida como su análogo `LocalInconsistent`**
 /// (`packages/core/lib/src/desenlace`), con el mismo argumento: el
 /// commit existe, así que sin su revisión nadie puede repararlo, y un estado
-/// a medias sin detalle no dice qué hay que reparar. Sin esto,
-/// `IndiceDesincronizado('', '')` se construía sin quejarse — el mismo
-/// defecto que esta clase existe para cerrar, con la revisión reemplazada por
-/// una cadena vacía en vez de estar interpolada en un mensaje.
+/// a medias sin detalle no dice qué hay que reparar.
+///
+/// **El invariante es el tipo más la validación, no el tipo solo.** Un campo
+/// tipado `String` admite la cadena vacía, y un `IndiceDesincronizado` con la
+/// revisión vacía vuelve a ser el defecto que esta clase existe para cerrar:
+/// el dato deja de estar interpolado en una oración y pasa a no estar. Por eso
+/// los dos campos se comprueban acá y no en quien la lanza — ahí sería una
+/// costumbre, y basta un sitio que se la olvide.
 class IndiceDesincronizado implements Exception {
   /// El commit que sí se creó.
   final String revision;

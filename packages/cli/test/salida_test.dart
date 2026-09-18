@@ -23,6 +23,41 @@ const _result = ResultEnvelope(
   data: {},
 );
 
+/// **Todos** los [ShipOutcome] construibles, no una muestra.
+///
+/// `Codigo.deShip` y `accionDe` son funciones totales sobre el tipo cerrado, y
+/// las dos pruebas que las cubren afirman propiedades sobre el dominio ENTERO
+/// —«seis códigos», «ningún código distinto de cero se queda mudo»—. Con una
+/// muestra elegida a mano, una variante nueva se quedaría fuera de la lista y
+/// las dos afirmaciones seguirían en verde cubriendo menos de lo que dicen.
+/// Acá lo único escrito a mano son los cuerpos de las clases de publicación;
+/// las causas y los estados salen de `values`.
+List<ShipOutcome> todosLosDesenlaces() => [
+  for (final causa in CausaDeNoIntento.values)
+    for (final estado in EstadoDeCorrida.values)
+      ShipOutcome.noIntentadoParaLaPrueba(causa: causa, verificacion: estado),
+  ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
+  ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
+  for (final publicable in EstadoPublicable.values) ...[
+    ShipOutcome.publicadoParaLaPrueba(
+      pr: PullRequestOpen(url: 'https://forja/pr/1'),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicadoParaLaPrueba(
+      pr: PullRequestMerged(url: 'https://forja/pr/2'),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicacionIncompletaParaLaPrueba(
+      remoto: PushUnknown(causa: CausaDePublicacion.red),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicacionIncompletaParaLaPrueba(
+      remoto: PullRequestClosed(url: 'https://forja/pr/3'),
+      verificacion: publicable,
+    ),
+  ],
+];
+
 void main() {
   group('el protocolo con --json', () {
     test('todo es JSON Lines, y hay EXACTAMENTE un result, último', () async {
@@ -272,6 +307,17 @@ void main() {
       }
     });
 
+    test('deShip produce SEIS códigos, y son los que la superficie nombra', () {
+      // El doc comment de `ResultEnvelope.verdict` los enumera. Enumerar
+      // vence: esta prueba ata la cifra al `switch` real, así que una
+      // variante nueva con un código nuevo la pone roja y obliga a tocar la
+      // oración en vez de dejarla envejecer en silencio.
+      expect(
+        {for (final d in todosLosDesenlaces()) Codigo.deShip(d)},
+        {0, 1, 2, 3, 6, 70},
+      );
+    });
+
     test('la entrega incompleta sale 6 AUNQUE la verificación sea roja', () {
       // Deliberado: `1` dice «el cambio no verificó» y `6` dice «el efecto
       // remoto no se completó», y la segunda es la que decide qué hacer
@@ -285,6 +331,211 @@ void main() {
           ),
         ),
         6,
+      );
+    });
+  });
+
+  group('accionDe', () {
+    // Esta función pública de ocho ramas y siete mensajes no la referenciaba
+    // nada en el árbol fuera de su declaración, y el README afirmaba que su
+    // propia suite la ejercitaba. Reemplazar el cuerpo entero por `=> null`
+    // dejaba las 1061 pruebas en verde.
+
+    test('el switch cubre las CINCO variantes, y ninguna lanza', () {
+      final desenlaces = todosLosDesenlaces();
+      expect(
+        {for (final d in desenlaces) d.runtimeType},
+        hasLength(5),
+        reason:
+            'si nace una sexta variante y la lista no crece, las propiedades '
+            'de abajo vuelven a prometer «todo desenlace» cubriendo menos',
+      );
+      for (final d in desenlaces) {
+        expect(() => accionDe(d), returnsNormally, reason: d.kind);
+      }
+    });
+
+    test('ningún código distinto de 0 se queda sin acción siguiente', () {
+      // Es la promesa de `ResultEnvelope.nextAction`: toda salida que no sea
+      // verde tiene que poder decir qué hacer. Antes no valía —un `Publicado`
+      // con la verificación en rojo salía `1` con `nextAction` nulo— y el doc
+      // comment la afirmaba igual.
+      for (final d in todosLosDesenlaces()) {
+        if (Codigo.deShip(d) == Codigo.exito) continue;
+        expect(
+          accionDe(d),
+          isNotNull,
+          reason: '${d.kind} sale ${Codigo.deShip(d)} y no dice qué hacer',
+        );
+        expect(accionDe(d), isNotEmpty, reason: d.kind);
+      }
+    });
+
+    test('los únicos desenlaces sin acción son la previsualización y el '
+        'publicado verde', () {
+      // El control por el otro lado: sin esto, una `accionDe` que devolviera
+      // un mensaje para TODA variante pasaría la prueba de arriba.
+      final mudos = [
+        for (final d in todosLosDesenlaces())
+          if (accionDe(d) == null) d,
+      ];
+      expect(mudos, isNotEmpty);
+      for (final d in mudos) {
+        expect(
+          switch (d) {
+            NoIntentado(causa: CausaDeNoIntento.previewOnly) => true,
+            Publicado(verificacion: EstadoPublicable.verde) => true,
+            _ => false,
+          },
+          isTrue,
+          reason: '${d.kind} se quedó mudo y no es uno de los dos que pueden',
+        );
+      }
+    });
+
+    test('NoAplicado y LocalInconsistente NO dicen lo mismo, y el cruce '
+        'sería una instrucción prohibida', () {
+      // Intercambiar los dos mensajes compila —los dos llevan un `String`
+      // interpolado— y le diría a quien perdió el CAS que repare el índice y
+      // corra `--retry-publication`, que es justo lo que su mensaje correcto
+      // prohíbe: no hay entrega que recuperar.
+      final perdioElCas = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'c' * 40),
+      )!;
+      expect(perdioElCas, contains('c' * 40));
+      expect(perdioElCas, contains('Volvé a correr ship'));
+      expect(
+        perdioElCas,
+        contains('No sirve --retry-publication'),
+        reason: 'mandarlo a reintentar la publicación no tiene qué recuperar',
+      );
+      expect(perdioElCas, isNot(contains('índice')));
+
+      final indiceSucio = accionDe(
+        ShipOutcome.localInconsistenteParaLaPrueba(revision: 'd' * 40),
+      )!;
+      expect(indiceSucio, contains('d' * 40));
+      expect(indiceSucio, contains('índice'));
+      expect(indiceSucio, contains('--retry-publication'));
+      expect(
+        indiceSucio,
+        isNot(contains('No sirve')),
+        reason: 'acá el reintento SÍ es el camino, después de reparar',
+      );
+    });
+
+    test('la compuerta distingue el arnés roto del cambio que no verificó', () {
+      // Los dos salen por `verificationGate`, y la diferencia importa:
+      // `--allow-incomplete` autoriza uno y no autoriza el otro. Con los dos
+      // mensajes intercambiados, a quien se le rompió el arnés se le ofrece
+      // una bandera que no lo autoriza.
+      final arnesRoto = accionDe(
+        ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.verificationGate,
+          verificacion: EstadoDeCorrida.errorInterno,
+        ),
+      )!;
+      expect(arnesRoto, contains('arnés'));
+      expect(arnesRoto, contains('--allow-incomplete no autoriza esto'));
+
+      for (final estado in [
+        EstadoDeCorrida.rojo,
+        EstadoDeCorrida.noConcluyente,
+      ]) {
+        final verificoMal = accionDe(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.verificationGate,
+            verificacion: estado,
+          ),
+        )!;
+        expect(verificoMal, isNot(contains('arnés')), reason: estado.name);
+        expect(
+          verificoMal,
+          contains('--allow-incomplete'),
+          reason: '${estado.name}: la bandera SÍ autoriza este caso',
+        );
+        expect(
+          verificoMal,
+          isNot(contains('no autoriza esto')),
+          reason: estado.name,
+        );
+      }
+    });
+
+    test('la confirmación que falta y el secreto no comparten mensaje', () {
+      expect(
+        accionDe(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.confirmationMissing,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        contains('--yes'),
+      );
+      final secreto = accionDe(
+        ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.secretDetected,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+      )!;
+      expect(secreto, contains('secreto'));
+      expect(
+        secreto,
+        isNot(contains('--yes')),
+        reason: 'confirmar no saca el secreto del cambio',
+      );
+    });
+
+    test('un publicado que NO es verde dice qué hacer, y no manda a '
+        'reintentar la publicación', () {
+      // `Codigo.deShip(Publicado(rojo))` da 1 y `accionDe` daba nulo: un
+      // código distinto de cero sin acción siguiente, contra lo que
+      // `ResultEnvelope.nextAction` promete. El desenlace es alcanzable con
+      // `--allow-incomplete`.
+      for (final estado in [
+        EstadoPublicable.rojo,
+        EstadoPublicable.noConcluyente,
+      ]) {
+        final accion = accionDe(
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja/pr/7'),
+            verificacion: estado,
+          ),
+        )!;
+        expect(accion, contains('https://forja/pr/7'), reason: estado.name);
+        expect(accion, contains(estado.name), reason: estado.name);
+        expect(
+          accion,
+          contains('No sirve --retry-publication'),
+          reason: 'la publicación se completó: no hay nada que reintentar',
+        );
+      }
+      expect(
+        accionDe(
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja/pr/7'),
+            verificacion: EstadoPublicable.verde,
+          ),
+        ),
+        isNull,
+        reason: 'el verde publicado no tiene nada pendiente',
+      );
+    });
+
+    test('la publicación incompleta manda al reintento, y dice que no '
+        'duplica', () {
+      final accion = accionDe(
+        ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushUnknown(causa: CausaDePublicacion.red),
+          verificacion: EstadoPublicable.verde,
+        ),
+      )!;
+      expect(accion, contains('--retry-publication'));
+      expect(
+        accion,
+        contains('No se creará otro commit ni un segundo pull request'),
+        reason:
+            'sin esa promesa, el reintento se lee como «volvé a correr todo»',
       );
     });
   });

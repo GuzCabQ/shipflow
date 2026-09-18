@@ -61,6 +61,27 @@ void main() {
     expect((await registro.leer('r-1'))!.toJson(), doc.toJson());
   });
 
+  test(
+    'escribir NO deja ningún temporal atrás: es rename, no copiar',
+    () async {
+      // El mecanismo es temporal + `rename`. Cambiar el `rename` por un `copy`
+      // dejaba las otras tres pruebas en verde: el documento final queda igual
+      // de bien escrito, y el `.tmp` residual que la copia deja no lo miraba
+      // nadie. Un `.tmp` que sobrevive a una escritura terminada es además un
+      // documento a medio escribir que la lectura está obligada a ignorar para
+      // siempre, porque no puede distinguirlo de uno que se está escribiendo
+      // ahora.
+      final registro = RegistroDeCorridas(raiz: temporal.path);
+      await registro.escribir('r-4', documentoDePrueba());
+      final dir = Directory(rutas.join(temporal.path, 'runs'));
+      expect(
+        dir.listSync().map((e) => rutas.basename(e.path)).toList(),
+        ['r-4.json'],
+        reason: 'el temporal se renombra, no se copia',
+      );
+    },
+  );
+
   test('una corrida que no existe devuelve nulo, no lanza', () async {
     // «No hay documento» es un hecho que la recuperación tiene que poder
     // ramificar: significa que el proceso murió antes de `prepared`, y lo
