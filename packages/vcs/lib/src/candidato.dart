@@ -14,8 +14,8 @@ part of 'repositorio.dart';
 /// un fallo del commit: acá el cambio está en la rama y no se deshace. Viaja
 /// dentro de [LocalInconsistent], que es lo que la vuelve inolvidable.
 ///
-/// **Privada, y con un nombre distinto del `IndiceDesincronizado` público de
-/// `repositorio.dart`.** Nunca se lanza —solo arma el texto de `detalle` para
+/// **Privada, y con un nombre distinto del `IndiceDesincronizado` público del
+/// archivo `repositorio`.** Nunca se lanza —solo arma el texto de `detalle` para
 /// [LocalInconsistent], que ya tiene su propia `revision` tipada— así que no
 /// necesita ser parte de la superficie del archivo. El nombre público quedó
 /// libre para la excepción que sí viaja como tal desde `apply`.

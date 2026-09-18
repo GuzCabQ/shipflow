@@ -1068,7 +1068,7 @@ exec git "$@"
 
   group('IndiceDesincronizado valida sus campos', () {
     // El mismo criterio que su análogo `LocalInconsistent`
-    // (`packages/core/lib/src/desenlace.dart`): sin esto,
+    // (`packages/core/lib/src/desenlace`): sin esto,
     // `IndiceDesincronizado('', '')` se construía sin quejarse, y era
     // exactamente el defecto que esta clase existe para cerrar —una
     // revisión que no es un dato real— con la interpolación cambiada por

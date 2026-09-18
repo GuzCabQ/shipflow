@@ -34,6 +34,8 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien va a llamar a `PullRequestSink.open` de verdad, es la rebanada siguiente.
 
+**El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y ninguno de los dos tiene productor todavía.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una sola fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación— y ninguna de las dos corre todavía: nadie llama a `ShipOutcome.derivar`.
+
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
 **no existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
@@ -3439,6 +3441,208 @@ olvido:
   no, puede colarles el entorno del padre sin pasar por `paraHijos`. Quien
   componga `ship` va a capturar el entorno real una vez, en la raíz, e
   inyectarlo en las tres, en vez de dejar que alguna caiga en su respaldo.
+
+## El desenlace de una corrida, y su documento
+
+Le da al `ship` de la rebanada siguiente el tipo que cierra qué le pasó a una
+corrida **completa** —no a un paso, no a una publicación: a la corrida
+entera— y el documento que la persiste para poder recuperarla si el proceso
+muere a la mitad. **Es la primera de tres**: 4b es el comando de punta a
+punta y 4c es `--retry-publication` con la reconciliación. Nada de acá
+compone una corrida; se prueba el tipo, la derivación, la serialización y la
+persistencia.
+
+### `ShipOutcome` deriva de los hechos, no se ensambla a mano
+
+`ShipOutcome` (`packages/core/lib/src/corrida.dart`) es una jerarquía sellada
+de cinco variantes —`NoIntentado`, `NoAplicado`, `LocalInconsistente`,
+`Publicado`, `PublicacionIncompleta`— con constructores **privados**. La
+única entrada real es `ShipOutcome.derivar`, que las deriva de los hechos de
+la corrida con una precedencia explícita:
+
+```
+errorInterno > secretDetected > verificationGate
+             > confirmationMissing > previewOnly
+```
+
+**`errorInterno` es un ESTADO, no una causa**, y entra por
+`CausaDeNoIntento.verificationGate`: si el arnés se rompió, la variante que
+sale es `NoIntentado(verificationGate)` con `verificacion: errorInterno`. La
+precedencia se lee por gravedad del HECHO, no por el camino de autorización:
+que el usuario no fuera a confirmar no vuelve menos cierto que hay un
+secreto, así que el secreto le gana a la confirmación que falta y a la
+previsualización — y también a la compuerta por estado, con y sin
+`--allow-incomplete`: la bandera autoriza publicar un estado incompleto, no
+autoriza ignorar un secreto. Las nueve combinaciones de la tabla están
+probadas una por una en `packages/core/test/corrida_test.dart`.
+
+`EstadoPublicable` es el mecanismo que hace que una publicación sobre una
+corrida con el arnés roto deje de ser escribible: no tiene variante
+`errorInterno`, así que `Publicado` y `PublicacionIncompleta` —que llevan
+`EstadoPublicable` y no `EstadoDeCorrida`— no pueden construirse sobre ese
+estado. No hay que acordarse de comprobarlo aparte.
+
+### El ruling sobre las cuatro causas
+
+`CausaDeNoIntento` tiene **cuatro** valores —`secretDetected`,
+`verificationGate`, `confirmationMissing`, `previewOnly`— y no cinco. La spec
+escribe la precedencia mezclando un estado (`errorInterno`) con las cuatro
+causas, y una lectura posible era agregar una quinta causa homónima. **Con
+cinco, la fila «`NoIntentado(verificationGate)` con `errorInterno`» de la
+tabla de códigos queda inalcanzable**, porque `NoIntentado(errorInterno)` la
+taparía siempre. Una fila que no se puede producir se lee como cobertura de
+un caso que no existe, y eso es peor que la ambigüedad que resuelve. Con
+cuatro causas la tabla es total y no sobra ninguna fila. El costo si el
+ruling está mal: un valor más en el enum y una fila más en `Codigo.deShip`.
+
+### Los códigos `3` y `6` tienen productor, y uno de los dos no lleva el estado
+
+`Codigo.deShip` (`packages/cli/lib/src/salida.dart`) es una función total
+sobre `ShipOutcome`: una variante nueva no compila hasta que alguien decida
+su código, el mismo criterio que ya tenía `Codigo.deCorrida`. `NoAplicado`
+sale `3` —una detención declarada, no un error de configuración ni uno
+interno—; `LocalInconsistente` sale `70`, porque un commit que existe con el
+índice sin sincronizar es el arnés roto, no un resultado del pipeline.
+
+**`PublicacionIncompleta` sale `6` aunque la verificación haya sido roja o no
+concluyente.** `6` y `1` responden preguntas distintas —«el cambio no
+verificó» contra «el efecto remoto no se completó»— y la segunda es la que
+decide qué hacer después: un `1` acá mandaría a arreglar el código a alguien
+que además tiene una rama empujada sin pull request, y el reintento que esa
+situación pide no saldría de ningún lado. El precio, declarado en el propio
+`switch`: el estado de verificación **no viaja en el código de esta
+variante**, solo en `verdict` y en `data`.
+
+`accionDe` deriva, con el mismo mecanismo, qué hacer a continuación: la
+exhaustividad del `switch` sobre `ShipOutcome` ata la acción al desenlace, así
+que una variante nueva tampoco compila sin decidir su mensaje.
+
+### El documento autoritativo, con sus transiciones validadas
+
+`DocumentoDeCorrida` (`packages/core/lib/src/documento.dart`) es el único
+registro de una corrida: `intent` y el JSON de la revisión son proyecciones
+suyas, no fuentes paralelas, porque dos documentos del mismo hecho divergen
+siempre. Nace con `DocumentoDeCorrida.preparado` —la única forma de crear uno
+desde cero— y **avanza devolviendo un documento nuevo**, nunca mutando el que
+tiene: con un campo de estado mutable, algo podría escribir `committed` sin
+pasar por `avanzarA`, y la comprobación de la transición dejaría de ser un
+invariante para ser una costumbre.
+
+El grafo de transiciones válidas es un mapa, no una cadena de `if`:
+
+```
+prepared               → committed, notApplied, localInconsistent
+committed              → publicationComplete, publicationIncomplete
+publicationIncomplete  → publicationComplete
+publicationComplete, notApplied, localInconsistent → (terminales)
+```
+
+**`publicationIncomplete → publicationComplete` está, aunque el diagrama de
+§9 no la dibuje**: el texto de la spec dice que `--retry-publication` «solo
+publica desde `committed` o `publicationIncomplete`», y sin esa arista una
+publicación que quedó a medias no tendría adónde avanzar cuando el reintento
+sí completa. El diagrama está incompleto, no este mapa.
+
+**La revisión ya existe cuando el documento se persiste**, porque
+`commit-tree` corre antes: la versión anterior del diseño escribía
+`prepared` antes de crear el objeto commit, y dejaba una ventana donde había
+un objeto sin OID que nadie pudiera consultar para recuperar la corrida.
+
+### `rename` es atómico dentro del mismo sistema de archivos
+
+`RegistroDeCorridas` (`packages/cli/lib/src/corrida.dart`) escribe el
+documento a un temporal al lado del destino y lo renombra. El nombre final
+aparece con el contenido entero o no aparece: nadie lee un documento a medio
+escribir, y un temporal huérfano no se lee ni se borra, porque esta clase no
+sabe si alguien lo está escribiendo en este momento.
+
+**La garantía es *dentro del mismo sistema de archivos*, y hoy no puede
+romperse sin tocar la clase.** El temporal se crea al lado del destino
+justamente por eso —cruzar sistemas de archivos convertiría el `rename` en
+copiar y borrar, que no es atómico—, y los dos salen de la misma `raiz`. Si
+`.shipflow/` viviera partido en dos sistemas de archivos, la garantía de
+«entero o nada» dejaría de valer; hoy esa situación no existe porque no hay
+forma de construir un `RegistroDeCorridas` cuyo temporal y destino difieran
+de raíz.
+
+### La recuperación es una comparación de tres casos, no una búsqueda
+
+`decidirRecuperacion` (`packages/cli/lib/src/corrida.dart`) no lee el
+repositorio: recibe el documento —que ya lleva la revisión candidata y la
+base— y el `HEAD` observado, y compara los tres valores.
+
+| `HEAD` observado | Qué pasó | Qué hacer |
+|---|---|---|
+| == base | el CAS no llegó a correr | reintentarlo tal cual |
+| == revisión del documento | el CAS corrió antes de morir | promover a `committed` |
+| ninguno de los dos | otra cosa avanzó la rama | reconstruir el candidato |
+
+Antes de que el documento llevara la revisión, esto tenía que salir a
+**buscar** qué commit podía ser el candidato; con los tres datos ya sobre la
+mesa, es una función pura de tres casos, probable sin montar un repositorio
+por cada uno.
+
+### `IndiceDesincronizado`, tipada
+
+`IndiceDesincronizado` (`packages/vcs/lib/src/repositorio.dart`) reemplaza
+una `PromesaIncumplida` con la revisión interpolada dentro del mensaje: un
+dato que solo existe dentro de una oración no es un dato, y quien recuperara
+la corrida tenía que parsear texto para saber qué comprobar. Ahora la
+revisión viaja como campo tipado, y valida como su análogo `LocalInconsistent`
+—sin revisión o sin detalle, no se construye—, con el mismo argumento: el
+commit existe, así que sin su revisión nadie puede repararlo, y un estado a
+medias sin detalle no dice qué hay que reparar.
+
+### Residuos declarados
+
+- **Nada de esto tiene productor todavía.** `ShipOutcome.derivar` no lo llama
+  nadie —el comando llega en 4b—, y tampoco lo llama nada `Codigo.deShip`,
+  `accionDe`, `RegistroDeCorridas` ni `decidirRecuperacion`: hoy solo los
+  ejercitan sus propias suites. Un tipo sin productor es exactamente lo que
+  este repositorio declara en vez de disimular.
+- **`IndiceDesincronizado` tampoco tiene productor real todavía.** El único
+  lugar que hoy la lanza es `RepositorioGit.apply`, y el único llamador de
+  `apply` en el árbol es su propia suite de pruebas: no existe `ship`, que es
+  quien compondría un `RepositorioGit` real en producción.
+- **`rename` es atómico dentro del mismo sistema de archivos.** Si
+  `.shipflow/` viviera en otro, la garantía de «entero o nada» no vale. Hoy
+  no puede pasar sin tocar la clase, porque el temporal y el destino salen
+  los dos de la misma `raiz`.
+- **El ruling sobre las cuatro causas**: con cinco, la fila «compuerta con
+  arnés roto» de la tabla de códigos quedaba inalcanzable, y una fila que no
+  se puede producir se lee como cobertura de un caso que no existe.
+- **`PublicacionIncompleta` sale `6` aunque la verificación haya sido roja o
+  no concluyente**, y el estado de verificación viaja en `verdict` y en
+  `data`, no en el código de salida de esa variante.
+- **La prueba de terminalidad del documento cubre `notApplied` y no los
+  otros dos estados terminales.** El mapa de transiciones declara
+  `publicationComplete` y `localInconsistent` con conjunto vacío —terminales,
+  igual que `notApplied`—, pero ninguna prueba intenta avanzar desde ellos:
+  lo que hoy demuestra que son terminales es la lectura del mapa, no una
+  aserción que lance al intentarlo.
+- **No está impuesto ni probado que un estado terminal lleve desenlace no
+  nulo.** `avanzarA` acepta `desenlace: null` en cualquier transición,
+  incluida una hacia un estado terminal: el tipo no exige que
+  `publicationComplete`, `publicationIncomplete`, `notApplied` o
+  `localInconsistent` tengan un `ShipOutcome` que los respalde. Corresponde a
+  quien escriba el documento en cada paso de la corrida, que es 4b.
+- **La prueba del fallo de sincronización del índice inyecta el fallo por la
+  costura del programa de `git`** —un envoltorio que intercepta `reset` y
+  responde con un código de error fabricado—, así que no demuestra que un
+  fallo real de `reset` —disco lleno, permisos— pase por ese mismo camino:
+  solo que, si pasa por ahí, sale como `IndiceDesincronizado` con la revisión
+  como dato.
+
+### Lo que esta rebanada NO hace
+
+- **No existe `ship`.** Nadie compone `DocumentoDeCorrida`,
+  `RegistroDeCorridas` ni `decidirRecuperacion` en producción: las tres
+  cosas solo corren desde sus propias suites.
+- **`--retry-publication` no existe.** `decidirRecuperacion` y la transición
+  `publicationIncomplete → publicationComplete` están escritas para ese
+  comando, que es 4c.
+- **La reconciliación de una publicación a medias no existe.** Es el otro
+  contenido de 4c.
 
 ## Qué prometen estas fases y todavía no cumplen
 

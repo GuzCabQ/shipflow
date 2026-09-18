@@ -95,7 +95,7 @@ void main() {
       // rechazo ocurre en el `switch` de la base, ANTES de que se ejecute el
       // `_exigirKind` de cualquier fábrica. Borrar `_exigirKind` de las cinco
       // dejaba una versión anterior de esta prueba en verde igual. Mismo
-      // hueco, y mismo arreglo, que `publicacion_test.dart` ya cerró para
+      // hueco, y mismo arreglo, que la suite de `PublicationOutcome` ya cerró para
       // `PublicationOutcome` — «cada fromJson rechaza un discriminador
       // ajeno: las SIETE»: acá se llama a la fábrica de CADA variante por su
       // nombre, nunca al despachador de la base.

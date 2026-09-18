@@ -79,7 +79,7 @@ class PromesaIncumplida implements Exception {
 /// oración no es un dato.
 ///
 /// **Valida como su análogo `LocalInconsistent`**
-/// (`packages/core/lib/src/desenlace.dart`), con el mismo argumento: el
+/// (`packages/core/lib/src/desenlace`), con el mismo argumento: el
 /// commit existe, así que sin su revisión nadie puede repararlo, y un estado
 /// a medias sin detalle no dice qué hay que reparar. Sin esto,
 /// `IndiceDesincronizado('', '')` se construía sin quejarse — el mismo
