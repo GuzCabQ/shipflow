@@ -10,10 +10,19 @@
 ///
 /// **Por qué el orden de las secciones no es una elección de estilo.** ADR-016
 /// nombra «cubierto» como el peor lugar para una traducción mala: habilita a
-/// un revisor a **saltar**. Por eso la advertencia va antes de cualquier
-/// sección que se lea como verde, y por eso ninguna sección resume o entierra
-/// lo que requiere criterio — cada entrada sale completa, con su motivo y su
-/// detalle, nunca como un conteo.
+/// un revisor a **saltar**. De ahí salen las tres cosas que este archivo
+/// ordena, y ninguna es de estilo:
+///
+/// 1. La advertencia va antes de cualquier sección que se lea como verde.
+/// 2. **Lo que requiere criterio humano va antes que lo cubierto.** La
+///    propuesta aceptada lo dice verbatim en §13 —«requiere criterio,
+///    completo y antes que lo cubierto»— y ADR-022 lo dice por el otro lado:
+///    lo que requiere criterio no va después de una conclusión
+///    tranquilizadora. Un revisor que lee primero la lista de lo cubierto ya
+///    decidió saltar cuando llega a lo que tendría que mirar él.
+/// 3. Ninguna sección resume o entierra lo que requiere criterio — cada
+///    entrada sale completa, con su motivo y su detalle, nunca como un
+///    conteo.
 library;
 
 import 'package:core/core.dart';
@@ -150,8 +159,10 @@ void _escribirLoQueRequiereCriterio(
   buffer.writeln();
 }
 
-/// El cuerpo completo del PR. **Arma las secciones en el orden que impone
-/// ADR-016** y cierra con [marcadorEstable], que sigue viviendo en el módulo
+/// El cuerpo completo del PR. **Arma las secciones en el orden que imponen la
+/// propuesta aceptada (§13) y ADR-022** —lo que requiere criterio, completo y
+/// ANTES que lo cubierto— y cierra con [marcadorEstable], que sigue viviendo
+/// en el módulo
 /// vecino que habla con la API porque la clave de la búsqueda idempotente
 /// pertenece a quien busca.
 ///
@@ -191,8 +202,14 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
     buffer.writeln();
   }
 
-  _escribirLoQueQuedoCubierto(buffer, superficie.cubierto);
+  // **Lo que requiere criterio va PRIMERO, y eso es la norma y no un
+  // gusto.** La propuesta aceptada lo dice verbatim en §13: «requiere
+  // criterio, completo y antes que lo cubierto». ADR-022 dice lo mismo por
+  // el otro lado: lo que requiere criterio no va después de una conclusión
+  // tranquilizadora. Este archivo tenía las dos llamadas al revés, y una
+  // prueba que exigía el orden equivocado atribuyéndoselo a ADR-016.
   _escribirLoQueRequiereCriterio(buffer, superficie.requiereCriterio);
+  _escribirLoQueQuedoCubierto(buffer, superficie.cubierto);
 
   if (artefacto.plan != null) {
     buffer.writeln('## Plan');

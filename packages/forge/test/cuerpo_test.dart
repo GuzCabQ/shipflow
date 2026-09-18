@@ -7,6 +7,12 @@ import 'package:core/core.dart';
 import 'package:forge/forge.dart';
 import 'package:test/test.dart';
 
+/// La revisión de estas solicitudes. **Un OID completo de verdad**: desde la
+/// ronda de revisión del autor, `PullRequestRequest` rechaza cualquier otra
+/// cosa, porque una revisión vacía termina en el refspec
+/// `:refs/heads/<rama>`, que BORRA la rama del remoto.
+const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
+
 /// Un control que solo declara: no ejecuta. Igual que en la suite de la
 /// superficie de verificación, en `core` — la fábrica de [AfirmacionCubierta]
 /// recibe el desenlace ya producido, así que `run` no hace falta para estas
@@ -77,7 +83,7 @@ PullRequestRequest _solicitud(ArtefactoDeRevision artefacto) =>
         base: 'main',
         artefacto: artefacto,
       ),
-      revision: 'commit-1',
+      revision: revisionDePrueba,
       arbolDeLaRevision: 'arbol-1',
     );
 
@@ -166,6 +172,14 @@ void main() {
     final cuerpo = cuerpoDeGitHub(solicitudIncompleta());
     expect(cuerpo, contains(ArtefactoDeRevision.alcanceSoloPR));
     expect(cuerpo, contains('> [!WARNING]'));
+    // Antes de las DOS secciones, no solo de la que quedó primera. Con la
+    // aserción atada a «## Qué quedó cubierto» y el criterio adelante, una
+    // advertencia colocada entre las dos secciones habría pasado en verde:
+    // la prueba habría seguido midiendo el orden viejo.
+    expect(
+      cuerpo.indexOf('> [!WARNING]'),
+      lessThan(cuerpo.indexOf('## Qué requiere criterio humano')),
+    );
     expect(
       cuerpo.indexOf('> [!WARNING]'),
       lessThan(cuerpo.indexOf('## Qué quedó cubierto')),
@@ -197,14 +211,27 @@ void main() {
     expect(cuerpo, isNot(contains('nadie dio cuenta de')));
   });
 
-  test('lo cubierto va antes de lo que requiere criterio', () {
-    // ADR-016 regula este orden puntual, no solo que la advertencia preceda
-    // a lo verde: invertir las dos llamadas dentro de `cuerpoDeGitHub` es un
-    // cambio de una línea que ninguna otra prueba de este archivo detecta.
+  test('lo que requiere criterio va ANTES de lo cubierto', () {
+    // **Esta prueba exigía lo contrario, y se lo atribuía a ADR-016.** La
+    // norma real dice al revés: la propuesta aceptada, §13, «requiere
+    // criterio, completo y antes que lo cubierto», y ADR-022 lo dice por el
+    // otro lado —lo que requiere criterio no va después de una conclusión
+    // tranquilizadora—. Lo que el comentario viejo afirmaba sobre ADR-016 no
+    // está en ADR-016: ese ADR regula que la advertencia preceda a lo verde
+    // y que lo que requiere criterio salga completo, no este orden.
+    //
+    // Es el caso exacto que este repositorio persigue: una prueba en verde
+    // que PROTEGÍA la violación, con una cita que la hacía parecer
+    // deliberada. Invertir las dos llamadas de `cuerpoDeGitHub` no rompía
+    // ninguna otra prueba de este archivo; lo único que había que romper
+    // para arreglarlo era esta.
     final cuerpo = cuerpoDeGitHub(solicitudConCriterio());
     expect(
-      cuerpo.indexOf('## Qué quedó cubierto'),
-      lessThan(cuerpo.indexOf('## Qué requiere criterio humano')),
+      cuerpo.indexOf('## Qué requiere criterio humano'),
+      lessThan(cuerpo.indexOf('## Qué quedó cubierto')),
+      reason:
+          'un revisor que lee primero lo cubierto ya decidió saltar cuando '
+          'llega a lo que tendría que mirar él',
     );
   });
 
@@ -235,13 +262,17 @@ void main() {
     // el cuerpo entero: buscar las dos cadenas en el cuerpo completo pasa
     // igual con los textos cambiados de lugar.
     final cuerpo = cuerpoDeGitHub(solicitudSinNadaQueMostrar());
-    final inicioCubierto = cuerpo.indexOf('## Qué quedó cubierto');
     final inicioCriterio = cuerpo.indexOf('## Qué requiere criterio humano');
-    expect(inicioCubierto, greaterThanOrEqualTo(0));
-    expect(inicioCriterio, greaterThan(inicioCubierto));
+    final inicioCubierto = cuerpo.indexOf('## Qué quedó cubierto');
+    expect(inicioCriterio, greaterThanOrEqualTo(0));
+    expect(
+      inicioCubierto,
+      greaterThan(inicioCriterio),
+      reason: 'el orden lo fija la prueba de arriba: criterio primero',
+    );
 
-    final seccionCubierto = cuerpo.substring(inicioCubierto, inicioCriterio);
-    final seccionCriterio = cuerpo.substring(inicioCriterio);
+    final seccionCriterio = cuerpo.substring(inicioCriterio, inicioCubierto);
+    final seccionCubierto = cuerpo.substring(inicioCubierto);
 
     expect(
       seccionCubierto,
@@ -299,7 +330,7 @@ void main() {
     final ultima = cuerpo.trimRight().split('\n').last;
     expect(ultima, startsWith('<!-- shipflow:pr formatVersion=1'));
     expect(ultima, contains('runId=corrida-1'));
-    expect(ultima, contains('revision=commit-1'));
+    expect(ultima, contains('revision=$revisionDePrueba'));
   });
 
   test('no filtra nada local', () {
