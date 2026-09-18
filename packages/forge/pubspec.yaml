@@ -1,0 +1,19 @@
+name: forge
+description: >-
+  El adapter de la forja: por donde sale el pull request. Quién es la forja
+  vive acá y en ningún otro paquete.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.0
+
+resolution: workspace
+
+dependencies:
+  core:
+    path: ../core
+
+# `forge` no es `core`: puede declarar sus dependencias de desarrollo.
+dev_dependencies:
+  test: ^1.25.0

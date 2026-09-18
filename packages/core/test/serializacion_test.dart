@@ -14,6 +14,28 @@
 /// canónica no tenga ningún valor por defecto en ningún campo**. Entonces
 /// «ningún valor del JSON es un valor por defecto» se vuelve una aserción
 /// derivada, y cualquier campo aplastado a `''`, `0`, `null` o vacío la rompe.
+///
+/// **Residuo declarado, y es más ancho que cualquier clase de acá abajo.**
+/// Casi todas las entradas de `canonicas` arrancan de `unaInstancia.toJson()`,
+/// o sea de un objeto YA construido. Un constructor que normalice lo que
+/// recibe normaliza las dos mitades de la igualdad por igual, así que este
+/// archivo no lo puede ver: el valor sale transformado de la primera
+/// serialización y vuelve idéntico. Fue exactamente el falso verde de la
+/// ronda 7 con `CandidateIdentity`. Las únicas dos entradas inmunes son las
+/// que parten de un JSON escrito a mano —`AfirmacionCubierta` y
+/// `CandidateIdentity · hexadecimal en mayúsculas`—; para el resto, la
+/// cobertura de esa partición la sostiene hoy una revisión humana. Medido al
+/// cerrar la ronda 7: el único constructor de `packages/core/lib/src` que
+/// transforma lo que recibe es `PullRequestRequest.revision`, y
+/// `PullRequestRequest` no serializa.
+///
+/// **Y el mismo residuo del otro lado:** la precondición de arriba —ningún
+/// valor por defecto— OBLIGA a que todo campo anulable venga con valor en la
+/// instancia canónica, así que el lado nulo de esos campos no hace la ida y
+/// vuelta nunca. Hoy no se pierde nada —ninguna `fromJson` de `core` tiene un
+/// `??` que invente un valor cuando la clave falta—, y `ArtefactoDeRevision`
+/// muestra la tensión de frente: su `plan` nulo está declarado como excepción
+/// en `rutasExentas`.
 library;
 
 import 'dart:convert';
@@ -148,6 +170,30 @@ void main() {
     baseRevision: 'commit-de-base',
   );
 
+  /// **La partición que la instancia canónica no tocaba.**
+  ///
+  /// `CandidateIdentity` declara su representación OPACA, y ADR-002 le exige a
+  /// todo tipo de puerto ida y vuelta sin pérdida. Durante una ronda el
+  /// constructor canonicalizó los dos campos a minúsculas cuando la cadena
+  /// tenía 40 o 64 caracteres hexadecimales, y el control quedó VERDE igual:
+  /// `'arbol-del-candidato'` no es hexadecimal, así que la instancia canónica
+  /// nunca entraba en esa rama. `ABCDEF…` entraba por `fromJson` y `abcdef…`
+  /// salía por `toJson`, y nadie lo veía.
+  ///
+  /// **Y es un MAPA escrito a mano, no `unaInstancia.toJson()`.** Ahí está la
+  /// otra mitad de la lección: si el punto de partida sale de un objeto ya
+  /// construido, la normalización del constructor ya ocurrió antes de la
+  /// primera serialización y la ida y vuelta la confirma en vez de cazarla
+  /// —las dos mitades de la igualdad vuelven a salir del mismo lado, que es el
+  /// sabotaje que cuenta la cabecera de este archivo—. Partiendo del JSON, la
+  /// igualdad exacta que exige el grupo de ADR-002 se pone roja apenas alguien
+  /// vuelva a transformar el valor adentro de `CandidateIdentity`.
+  const candidatoHexEnMayusculas = {
+    'contentRevision': 'ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD',
+    'baseRevision':
+        'FEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDCBAFEDC',
+  };
+
   final noMaterializada = RutaNoMaterializada(
     ruta: 'enlace-que-escapa',
     motivo: MotivoDeNoMaterializacion.enlaceQueNoQuedaAdentro,
@@ -242,6 +288,10 @@ void main() {
         ),
         'Diagnostic': (diagnostico.toJson(), Diagnostic.fromJson),
         'CandidateIdentity': (candidato.toJson(), CandidateIdentity.fromJson),
+        'CandidateIdentity · hexadecimal en mayúsculas': (
+          candidatoHexEnMayusculas,
+          CandidateIdentity.fromJson,
+        ),
         'RutaNoMaterializada': (
           noMaterializada.toJson(),
           RutaNoMaterializada.fromJson,
@@ -418,6 +468,36 @@ void main() {
         'ArtefactoDeRevision': (
           artefacto.toJson(),
           ArtefactoDeRevision.fromJson,
+        ),
+        'PullRequestOpen': (
+          PullRequestOpen(url: 'https://forja.ejemplo/o/r/pull/1').toJson(),
+          PullRequestOpen.fromJson,
+        ),
+        'PullRequestMerged': (
+          PullRequestMerged(url: 'https://forja.ejemplo/o/r/pull/2').toJson(),
+          PullRequestMerged.fromJson,
+        ),
+        'PullRequestClosed': (
+          PullRequestClosed(url: 'https://forja.ejemplo/o/r/pull/3').toJson(),
+          PullRequestClosed.fromJson,
+        ),
+        'PushFailed': (
+          PushFailed(causa: CausaDePublicacion.red).toJson(),
+          PushFailed.fromJson,
+        ),
+        'PushUnknown': (
+          PushUnknown(causa: CausaDePublicacion.desconocida).toJson(),
+          PushUnknown.fromJson,
+        ),
+        'PullRequestFailed': (
+          PullRequestFailed(
+            causa: CausaDePublicacion.rechazoDeLaForja,
+          ).toJson(),
+          PullRequestFailed.fromJson,
+        ),
+        'PullRequestUnknown': (
+          PullRequestUnknown(causa: CausaDePublicacion.autenticacion).toJson(),
+          PullRequestUnknown.fromJson,
         ),
       };
 

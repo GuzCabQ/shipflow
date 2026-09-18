@@ -27,6 +27,7 @@ import 'package:analyzer/dart/analysis/features.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 
@@ -781,6 +782,150 @@ String _bibliotecaDe(CompilationUnit unidad, String rel) {
   return rel;
 }
 
+/// Un lugar donde el archivo nombra a la forja, o instancia su cliente.
+class _MencionDeForja {
+  final int offset;
+  final List<String> ambito;
+  final String criterio;
+
+  const _MencionDeForja(this.offset, this.ambito, this.criterio);
+
+  /// Lo más interno, para el mensaje. Mismo criterio que `_Lanzamiento.donde`.
+  String get donde => ambito.isEmpty ? 'el tope del archivo' : ambito.last;
+}
+
+/// Busca `HttpClient`, **derivado del árbol sintáctico y sin resolverlo**.
+///
+/// A diferencia de `_Subprocesos`, que compara la IDENTIDAD resuelta de
+/// `Process` contra `dart:io`, acá no se paga ese costo: el universo de esta
+/// regla ya está acotado por RUTA —`lib/` y `bin/` de todo paquete menos
+/// `forge`—, que es la exigencia dura de CLAUDE.md, y resolver una segunda
+/// vez empujaría el job de arquitectura hacia el límite que ya casi toca
+/// `subprocesos-con-entorno-saneado` (~11-12 min contra 20).
+///
+/// **Falso positivo deliberado**, la misma decisión y el mismo precio que ya
+/// toma `_Subprocesos` con `Process`: una clase PROPIA que se llame
+/// `HttpClient` se reporta igual, porque sin resolver no se puede saber cuál
+/// es. El precio es renombrarla.
+///
+/// **La prosa no cuenta.** `visitComment` no desciende: un doc comment que
+/// EXPLIQUE por qué este código no sabe quién es la forja —nombrando
+/// proveedores como ejemplo, como hace `puertos.dart`— no es la fuga que
+/// esta regla persigue, y castigarlo sería castigar la documentación que
+/// sostiene el propio invariante.
+///
+/// De paso arma el mapa de ámbitos —`rangos`— que el segundo criterio
+/// (textual) necesita para poder decir DÓNDE, no solo QUÉ: un identificador
+/// se ve en el momento en que el visitante lo visita, pero una mención de
+/// texto se encuentra por `String.indexOf`, fuera de cualquier recorrido, y
+/// necesita este mapa para saber en qué método o función cayó.
+class _Forja extends RecursiveAstVisitor<void> {
+  final List<_MencionDeForja> vistos = [];
+  final List<(int, int, String)> rangos = [];
+  final List<String> _pila = [];
+
+  @override
+  void visitComment(Comment node) {
+    // Intencionalmente no hace `node.visitChildren(this)`: ver el docstring
+    // de esta clase.
+  }
+
+  @override
+  void visitMethodDeclaration(MethodDeclaration node) {
+    rangos.add((node.offset, node.end, node.name.lexeme));
+    _pila.add(node.name.lexeme);
+    super.visitMethodDeclaration(node);
+    _pila.removeLast();
+  }
+
+  @override
+  void visitFunctionDeclaration(FunctionDeclaration node) {
+    rangos.add((node.offset, node.end, node.name.lexeme));
+    _pila.add(node.name.lexeme);
+    super.visitFunctionDeclaration(node);
+    _pila.removeLast();
+  }
+
+  @override
+  void visitSimpleIdentifier(SimpleIdentifier node) {
+    super.visitSimpleIdentifier(node);
+    if (node.name == 'HttpClient') {
+      vistos.add(
+        _MencionDeForja(
+          node.offset,
+          List<String>.unmodifiable(_pila),
+          'HttpClient',
+        ),
+      );
+    }
+  }
+
+  /// El ámbito más interno que CONTIENE a [offset]. Se elige el rango más
+  /// angosto que lo cubre, no el primero que aparece: un método anidado
+  /// adentro de otro tiene un rango más chico y es el que hay que nombrar.
+  String ambitoEn(int offset) {
+    String? mejor;
+    var anchoDelMejor = 1 << 30;
+    for (final r in rangos) {
+      final ancho = r.$2 - r.$1;
+      if (r.$1 <= offset && offset < r.$2 && ancho < anchoDelMejor) {
+        mejor = r.$3;
+        anchoDelMejor = ancho;
+      }
+    }
+    return mejor ?? 'el tope del archivo';
+  }
+}
+
+/// Los tramos de [contenido] que son comentario —`//`, `///` o `/* */`—,
+/// derivados del stream de tokens que ya generó el parseo. **Texto, no
+/// árbol**: se camina la cadena de `precedingComments` de cada token, que es
+/// justo lo que necesita `todo_finder.dart` del propio analizador para lo
+/// mismo. No se vuelve a tokenizar a mano ni con una expresión regular —una
+/// que buscara `//` a ciegas cortaría una URL como `https://` a mitad de
+/// camino, y es la misma clase de error que ya le costó dos revisiones a
+/// `subprocesos-con-entorno-saneado` con un prefiltro de texto.
+List<(int, int)> _rangosDeComentarios(CompilationUnit unidad) {
+  final rangos = <(int, int)>[];
+  Token? token = unidad.beginToken;
+  while (token != null) {
+    Token? comentario = token.precedingComments;
+    while (comentario != null) {
+      rangos.add((comentario.offset, comentario.end));
+      comentario = comentario.next;
+    }
+    // El EOF también puede tener comentarios propios — un comentario que es
+    // lo ÚLTIMO del archivo, sin ningún token real después, cuelga de él. Si
+    // el recorrido cortara antes de mirarlo, esa prosa quedaría fuera de
+    // `rangos` y el criterio textual la leería como código: exactamente la
+    // fuga que este control existe para no tener. Por eso se lo procesa y
+    // RECIÉN DESPUÉS se corta, en vez de cortar antes de llegar a él.
+    if (token.type == TokenType.EOF) break;
+    token = token.next;
+  }
+  return rangos;
+}
+
+/// Las posiciones donde [aguja] aparece en [contenido], **fuera de**
+/// cualquiera de [comentarios]. Una aguja dentro de un comentario es prosa, y
+/// la prosa no cuenta para este control — ver el docstring de `_Forja`.
+List<int> _ocurrenciasFueraDeComentarios(
+  String contenido,
+  String aguja,
+  List<(int, int)> comentarios,
+) {
+  final hallazgos = <int>[];
+  var desde = 0;
+  while (true) {
+    final i = contenido.indexOf(aguja, desde);
+    if (i < 0) break;
+    desde = i + 1;
+    if (comentarios.any((r) => i >= r.$1 && i < r.$2)) continue;
+    hallazgos.add(i);
+  }
+  return hallazgos;
+}
+
 Future<void> main(List<String> args) async {
   final raiz = Directory(
     File.fromUri(Platform.script).parent.parent.parent.parent.path,
@@ -1272,6 +1417,82 @@ Future<void> main(List<String> args) async {
     }
   }
 
+  // --- 5 · quién es la forja lo sabe packages/forge/, y nadie más -------
+  //
+  // Universo por RUTA, la exigencia dura de CLAUDE.md: `.dart` bajo `lib/` y
+  // `bin/` de cada paquete MENOS `forge`. Ni un prefiltro de texto ni una
+  // coincidencia de import deciden qué archivo entra — lo decide la ruta, acá
+  // y no en ningún otro lado.
+  //
+  // Dos criterios, ninguno resuelve el árbol (ver `_Forja`):
+  //   1. un identificador `HttpClient`, sintáctico;
+  //   2. el nombre de marca de la forja o su host, como TEXTO —fuera de
+  //      comentarios, ver `_ocurrenciasFueraDeComentarios`.
+  const nombreDeLaForja = 'GitHub';
+  const hostDeLaForja = 'github.com';
+  final fueraDeForge = RegExp(r'^packages/([^/]+)/(lib|bin)/');
+  final archivosDeLaForja = <File>[];
+  for (final f in fuentes(dirPaquetes)) {
+    final rel = f.path.substring(raiz.path.length + 1);
+    final m = fueraDeForge.firstMatch(rel);
+    if (m != null && m.group(1) != 'forge') archivosDeLaForja.add(f);
+  }
+  for (final f in archivosDeLaForja) {
+    final rel = f.path.substring(raiz.path.length + 1);
+    final resultado = parseFile(
+      path: f.path,
+      featureSet: FeatureSet.latestLanguageVersion(),
+      throwIfDiagnostics: false,
+    );
+    // Simétrico de la violación canónica: de un árbol parcial no sale ningún
+    // `HttpClient`, y del texto que el parser no pudo tokenizar no se sabe
+    // qué es comentario y qué es código. No mirar no es lo mismo que no
+    // encontrar nada, así que esto es un fallo y no un salteo.
+    if (resultado.errors.isNotEmpty) {
+      fallos.add(
+        '$rel: no parsea, así que no puedo decir si nombra a la forja o '
+        'instancia un `HttpClient` por su cuenta. '
+        '${resultado.errors.first.message}',
+      );
+      continue;
+    }
+
+    final buscador = _Forja();
+    resultado.unit.accept(buscador);
+    for (final m in buscador.vistos) {
+      fallos.add(
+        '$rel:${m.offset} · ${m.donde}: instancia `HttpClient` fuera de '
+        '`packages/forge`. Quién es la forja lo sabe forge y ningún otro '
+        'paquete: si esto necesita hablar por HTTP con el proveedor, ese '
+        'código va en su adapter.',
+      );
+    }
+
+    final comentarios = _rangosDeComentarios(resultado.unit);
+    for (final offset in _ocurrenciasFueraDeComentarios(
+      resultado.content,
+      nombreDeLaForja,
+      comentarios,
+    )) {
+      fallos.add(
+        '$rel:$offset · ${buscador.ambitoEn(offset)}: nombra a la forja '
+        '(«$nombreDeLaForja») fuera de `packages/forge`. Quién es la forja '
+        'lo sabe forge y ningún otro paquete.',
+      );
+    }
+    for (final offset in _ocurrenciasFueraDeComentarios(
+      resultado.content,
+      hostDeLaForja,
+      comentarios,
+    )) {
+      fallos.add(
+        '$rel:$offset · ${buscador.ambitoEn(offset)}: nombra el host de la '
+        'forja («$hostDeLaForja») fuera de `packages/forge`. Quién es la '
+        'forja lo sabe forge y ningún otro paquete.',
+      );
+    }
+  }
+
   // --- salida -----------------------------------------------------------
   if (fallos.isNotEmpty) {
     stdout.writeln('serializacion: FALLA\n');
@@ -1288,6 +1509,8 @@ Future<void> main(List<String> args) async {
     'verificadas campo por campo, ${opacos.length} opacas declaradas, '
     '${huerfanos.length} puertos sin implementación declarados, '
     '${lanzamientos.length} lanzamientos de proceso con entorno saneado '
-    '(${sinSanear.length} exceptuado).',
+    '(${sinSanear.length} exceptuado). '
+    'forja: ok — ${archivosDeLaForja.length} archivos revisados fuera de '
+    '`forge`, sin `HttpClient` ni mención al proveedor.',
   );
 }

@@ -58,6 +58,9 @@
         "plugin_fake": [
           "core"
         ],
+        "forge": [
+          "core"
+        ],
         "cli": [
           "core",
           "orchestration",
@@ -65,7 +68,8 @@
           "rules",
           "agents",
           "plugin_dart",
-          "plugin_fake"
+          "plugin_fake",
+          "forge"
         ]
       },
       "violacion_canonica": {
@@ -339,7 +343,7 @@
         "vieja porque el puerto ya se implemento, tambien."
       ],
       "sin_implementacion": {
-        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado: hoy no hay etapa que lo consuma —no existe `ship`— asi que no hay nada que probar contra un fake, y una suite de contrato con una sola implementacion no contrasta nada: corre la misma logica dos veces. El fake llega con `ship`, que es la primera etapa que lo va a usar. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta. VerificationEnvironment salio en la rebanada del entorno con UNA implementacion real en plugin_dart y NINGUNA falsa, y eso va escrito: no hay etapa que lo consuma —la composicion vive en una prueba de cli—, asi que una suite de contrato con una sola implementacion correria la misma logica dos veces. El fake llega con la etapa que lo use.",
+        "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado: hoy no hay etapa que lo consuma —no existe `ship`— asi que no hay nada que probar contra un fake, y una suite de contrato con una sola implementacion no contrasta nada: corre la misma logica dos veces. El fake llega con `ship`, que es la primera etapa que lo va a usar. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta. VerificationEnvironment salio en la rebanada del entorno con UNA implementacion real en plugin_dart y NINGUNA falsa, y eso va escrito: no hay etapa que lo consuma —la composicion vive en una prueba de cli—, asi que una suite de contrato con una sola implementacion correria la misma logica dos veces. El fake llega con la etapa que lo use. PullRequestSink salio en la rebanada de la forja con UNA implementacion real —`SalidaDePrDeGitHub` en `forge`— y UNA falsa —`SalidaDePrFalsa` en plugin_fake—, con la suite de contrato de esta misma rebanada corriendo contra las dos: es el primer puerto de esta lista que sale con las dos puntas del contrato ya puestas, no con la promesa de que van a llegar despues. Sigue, igual que `ChangeSink` y que `VerificationEnvironment`, sin una etapa productiva que lo invoque —`ship` todavia no existe—, asi que lo que esta rebanada deja es la garantia del contrato en si, no la de un consumidor real ejercitandolo.",
         "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -349,10 +353,9 @@
         "AgentRunner": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "HookInstaller": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "ContextProjector": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "PullRequestSink": "fase 2, rebanada de la forja · el adapter del proveedor vive en su propio paquete, no en vcs",
         "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-        "CredentialStore": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
+        "CredentialStore": "fase de `init` · el puerto se partio en la rebanada de la forja: `CredentialSource`, que solo lee, salio de esta lista con UNA implementacion real —`FuenteDeEntorno` en cli— y, desde la tarea de los fakes de la forja, UNA falsa —`FuenteDeCredencialFalsa` en plugin_fake—. No hay suite de contrato que las corra a las dos contra las mismas preguntas, y eso queda escrito y no disimulado: hoy la falsa solo se usa como colaborador de la suite de `PullRequestSink` —para construir `SalidaDePrDeGitHub` sin credenciales reales—, no como sujeto comparado contra la real. Escribir esa suite tendria que decidir primero algo que hoy no esta decidido: `FuenteDeEntorno` rechaza con `ArgumentError` una clave que `clavesDeCredencial` no declaro —esa validacion vive en `EntornoDelProceso`, no en el puerto— y `FuenteDeCredencialFalsa`, configurada con un mapa directo, no tiene ningun equivalente; sirve cualquier clave que se le dio. Si esa clausula es del contrato de `CredentialSource` o es propia de leer de un entorno de proceso es la pregunta que falta responder antes de poder escribir la suite, asi que el hueco es de esa decision, no solo de tiempo. `CredentialStore` agrega escritura y borrado, y sigue sin implementacion porque no hay almacenamiento real: una clase que leyera y lanzara en `write`/`delete` seria una capacidad declarada que no existe",
         "ReviewSensor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "TraceAuditor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
         "RuleContributor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
@@ -443,6 +446,24 @@
         },
         "ResultadoDeEntorno": {
           "por_que": "Misma situacion que StepOutcome y CommitOutcome: es la base de una jerarquia sellada cuyas variantes -EntornoDerivado, CandidatoRechazado, DerivacionAbortada- serializan cada una con su kind, y la base solo despacha fromJson. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear- y dejarlo sin declarar seria la tercera opcion silenciosa que esta regla prohibe."
+        },
+        "PublicationOutcome": {
+          "por_que": "Es la base de la jerarquia sellada del desenlace de la publicacion: sin campo propio, despacha fromJson por kind hacia las siete variantes concretas -PullRequestOpen, PullRequestMerged, PullRequestClosed, PushFailed, PushUnknown, PullRequestFailed, PullRequestUnknown-, que serializan cada una por su lado. Misma situacion que StepOutcome y ResultadoDeEntorno."
+        },
+        "PublicacionUtilizable": {
+          "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio: agrupa PullRequestOpen y PullRequestMerged, que comparten la validacion de que la URL no puede venir en blanco pero declaran su propio campo url -un getter abstracto en la base, no un campo, para que el verificador de serializacion derive los campos de cada variante concreta y no de lo que hereda- y su propio toJson/fromJson discriminados por kind."
+        },
+        "PublicacionNoUtilizable": {
+          "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio, para lo que no dejo un PR utilizable confirmado: PullRequestClosed y las cuatro variantes de PublicacionConCausa serializan cada una por su lado."
+        },
+        "PublicacionConCausa": {
+          "por_que": "Refinamiento sellado de PublicacionNoUtilizable sin campo propio: agrupa PushFailed, PushUnknown, PullRequestFailed y PullRequestUnknown, que comparten causa y safeReason -causa es un getter abstracto en la base, no un campo, por el mismo motivo que PublicacionUtilizable.url- y cada una declara su propio campo causa y su propio toJson/fromJson discriminados por kind."
+        },
+        "PullRequestDraft": {
+          "por_que": "Es la composicion IN-PROCESS de antes del commit: no tiene revision porque todavia no existe. Su unico dato propio es el ArtefactoDeRevision que ya serializa por su lado; runId, branch y base son coordenadas que compone quien arma la corrida, en el mismo proceso que las usa para commitear. Serializar ademas el borrador crearia una segunda fuente de la intencion -que ya vive en artefacto.intent-, exactamente el hecho repetido que esta rebanada existe para cerrar."
+        },
+        "PullRequestRequest": {
+          "por_que": "Es la composicion IN-PROCESS de despues del commit, consumida por el adapter de la forja en la misma corrida que la construye. Lo que se persiste es el PublicationOutcome que resulta de publicarla, no la solicitud: serializarla ademas duplicaria por una segunda ruta la relacion entre revision y arbolDeLaRevision que su constructor ya exige una sola vez, y que es la razon de ser del tipo -si esa relacion viajara como dos campos independientes en vez de validarse una vez en memoria, un documento reconstruido podria discrepar sin que nada lo note."
         }
       },
       "violacion_canonica": {
@@ -722,14 +743,14 @@
       ],
       "alcance": {
         "raiz": "packages",
-        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete. El lanzamiento se identifica por su ELEMENTO RESUELTO —de que clase y de que biblioteca es el metodo que se invoca—, no por como se escribe: la clase a secas, con un comentario en medio, o a traves del prefijo de una importacion son la misma llamada. Los test/ NO entran: las pruebas lanzan git y chmod a mano, y esa es su forma de medir que recibe un hijo.",
+        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete. El lanzamiento se identifica por su ELEMENTO RESUELTO —de que clase y de que biblioteca es el metodo que se invoca—, no por como se escribe: la clase a secas, con un comentario en medio, o a traves del prefijo de una importacion son la misma llamada. Los test/ NO entran: las pruebas lanzan git y chmod a mano, y esa es su forma de medir que recibe un hijo. ESA DESCRIPCION SE QUEDO CORTA y se corrige aca: desde la ronda de revision del autor, la suite de forge lanza tambien un programa de ESTE repositorio —el instrumento de packages/forge/bin/ que mide cuando termina un proceso— y lo hace SIN environment: ni includeParentEnvironment:, o sea heredando el entorno de quien corre la suite. No hay fuga: ese instrumento arma su propio EntornoDelProceso y entornoSaneado filtra lo que llega a cualquier nieto. Pero ya no es cierto que lo unico que las pruebas lancen sean herramientas del sistema con argumentos a la vista: es un programa propio que publica. Que el universo de esta regla siga excluyendo test/ es la misma decision de antes; lo que cambia es que ahora se sabe que ahi adentro hay un lanzamiento que la regla no mira.",
         "residuo_declarado": "Lo que NO ve: un alias de la clase (`final p = Process; p.run(...)`) y una funcion que envuelva el lanzamiento recibiendo el entorno de afuera. Lo segundo es lo que hacen las costuras de vcs y de plugin_dart, y por eso la regla se aplica ADENTRO de ellas, donde esta el lanzamiento. PRECONDICION: la resolucion necesita las dependencias del workspace resueltas; si un archivo no resuelve, el check FALLA en vez de saltearlo, porque no poder resolver no es no tener lanzamientos. FALSO POSITIVO DELIBERADO: una clase propia que se llame como la que lanza se reporta igual, porque el control no puede decir que corre; el precio es renombrarla. COSTO DECLARADO: resolver cuesta ~1,5 s por corrida del verificador con el snapshot que usa el arnes de sabotajes, contra ~0,3 s parseando. Se paga: la alternativa es comparar texto, que es lo que dos reviews reprodujeron."
       },
       "excepciones": [
         {
           "archivo": "packages/vcs/lib/src/repositorio.dart",
           "metodo": "_identidadComoEntorno",
-          "por_que": "La identidad de git se captura UNA vez con el entorno del padre, antes de sanear. `git config --get` tiene que ver XDG_CONFIG_HOME y GIT_CONFIG_GLOBAL, que la lista blanca no lleva a proposito, y enumerar por donde git puede leer su configuracion es la misma carrera que una lista negra. Medido: con PATH y HOME solos, una identidad que vive en XDG se pierde y git FABRICA el autor. Es un `git config --get` de solo lectura: no corre ganchos ni filtros y no escribe nada. El check admite EXACTAMENTE UN lanzamiento sin sanear en esta biblioteca, dentro de este metodo, y cuenta: un segundo es rojo."
+          "por_que": "La identidad de git se captura UNA vez con el entorno del padre, antes de sanear. `git config --get` tiene que ver XDG_CONFIG_HOME y GIT_CONFIG_GLOBAL, que la lista blanca no lleva a proposito, y enumerar por donde git puede leer su configuracion es la misma carrera que una lista negra. Medido: con PATH y HOME solos, una identidad que vive en XDG se pierde y git FABRICA el autor. Es un `git config --get` de solo lectura: no corre ganchos ni filtros y no escribe nada. El check admite EXACTAMENTE UN lanzamiento sin sanear en esta biblioteca, dentro de este metodo, y cuenta: un segundo es rojo. CONDICIONADA desde la rebanada de la forja: el tipo de la costura es `EntornoDelProceso`, y lo que entrega hacia abajo ya paso por `paraHijos`, que quita `clavesDeCredencial`. Antes de esa rebanada la justificacion argumentaba que `git config --get` no corre ganchos ni escribe nada, y nunca argumento QUE VE el hijo; no hacia falta, porque no habia nada secreto en el entorno. La rebanada de la forja lo puso ahi. Que el entero que recibe este lanzamiento ya no pueda traer la credencial no se resuelve en cada llamada —eso seria la lista negra otra vez— sino en el tipo."
         }
       ],
       "violacion_canonica": {
@@ -816,6 +837,99 @@
         "que": "Un archivo de packages/ que no parsea.",
         "como": "archivo_ilegible",
         "por_que_ciega": "Los lanzamientos se buscan en el arbol sintactico. De un arbol parcial no sale ninguno, y un archivo que no se pudo leer no tiene subprocesos que revisar — que se lee exactamente igual que no tenerlos.",
+        "debe_mencionar": "no parsea"
+      }
+    },
+    "forja-en-su-adapter": {
+      "enunciado": "Quién es la forja lo sabe `packages/forge/` y ningún otro paquete: ni su nombre de marca, ni su host, ni un `HttpClient` instanciado por fuera de su adapter.",
+      "origen": "Propuesta del entorno de verificacion §10, enmienda `365cfc1`.",
+      "tipo": "forja_en_su_adapter",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Si algo necesita hablar por HTTP con la forja, ese código vive en `packages/forge`, detrás de `PullRequestSink`. El resto del árbol recibe un puerto, nunca el proveedor.",
+      "por_que": [
+        "«El adapter del proveedor vive en su propio paquete» es una",
+        "intención escrita hasta que algo la comprueba. El día que a",
+        "alguien le convenga poner una alerta con sintaxis de GitHub en un",
+        "componente neutral —o instanciar un `HttpClient` para no esperar",
+        "a que `forge` tenga el método que hace falta—, nada se entera:",
+        "compila, pasa `dart analyze`, y el acoplamiento queda escrito en un",
+        "lugar que nadie audita.",
+        "",
+        "Y es un acoplamiento CARO de deshacer más tarde. El día que",
+        "haya un segundo proveedor, lo que esté afuera del adapter es",
+        "exactamente lo que hay que desenredar —cada mención dispersa es",
+        "un sitio más a encontrar, entender y migrar. Una regla que lo",
+        "impide desde el día uno cuesta mucho menos que esa migración.",
+        "",
+        "NO SE RESUELVE EL ÁRBOL. El primer criterio —un identificador",
+        "`HttpClient`— se deriva SIN resolverlo. Resolver ya le costó a",
+        "`subprocesos-con-entorno-saneado` que el job de arquitectura pasara",
+        "de ~3 a ~11-12 minutos contra un límite de 20; una segunda regla",
+        "resolviendo lo empujaría al límite, y acá la ganancia es menor:",
+        "el universo ya está acotado por RUTA, que es lo que la regla dura",
+        "de CLAUDE.md exige —el prefiltro nunca decide qué archivos se",
+        "miran, eso lo decide la ruta. FALSO POSITIVO DELIBERADO, la misma",
+        "decisión que ya toma `_Subprocesos` con `Process`: una clase",
+        "propia que se llame `HttpClient` se reporta igual, porque sin",
+        "resolver no se puede decir cuál es. El precio es renombrarla."
+      ],
+      "alcance": {
+        "raiz": "packages",
+        "que_mira": "Archivos .dart bajo lib/ y bin/ de cada paquete MENOS forge. Los test/ NO entran: igual que en `subprocesos-con-entorno-saneado`, una prueba de integración necesita poder fijar el comportamiento contra la forma real del proveedor —una URL, un cuerpo de PR dorado— para poder decir que el adapter hace lo que promete, y esa mención en una prueba no es la fuga que esta regla existe para cazar: es la vara con la que se mide `forge`. Tampoco entra la prosa —comentarios y doc comments—, en NINGUNO de los dos criterios: `puertos.dart` explica HOY, en un doc comment, que `core` no sabe si la forja es GitHub, GitLab o lo que sea, nombrando ambas A PROPÓSITO para decir que NINGUNA vive ahí. Cazar esa explicación sería castigar la documentación que sostiene el propio invariante.",
+        "residuo_declarado": "EL PRIMER CRITERIO no resuelve el árbol (ver `por_que`), y lo que ve es un identificador `HttpClient` en posición de EXPRESIÓN. Medido con `parseFile` y el mismo visitante, analyzer 9.0.0 — SÍ se cazan: `HttpClient()`, `io.HttpClient()`, `HttpClient.new`, `HttpClient/*x*/()`, `show HttpClient` y el alias `final C = HttpClient;` (la parte derecha es un identificador común, no un tipo). Una clase LOCAL llamada `HttpClient` se reporta igual que la del SDK — el mismo residuo, con el mismo precio, que ya declara `subprocesos-con-entorno-saneado`. NO SE VEN, y esto es el residuo de verdad: un nombre en posición de TIPO —`NamedType`— nunca llega a `visitSimpleIdentifier`, porque en analyzer 9.0.0 el nombre del tipo es un `Token` y no un `SimpleIdentifier`. De ahí salen las tres formas ciegas, las tres medidas: (1) `new HttpClient()` —el nombre va en posición de tipo—. Hoy no pasa por otra cosa: el lint `unnecessary_new` bajo `--fatal-infos` lo pone rojo antes. ESTA REGLA DEPENDE DE OTRO CONTROL PARA ESA FORMA, y hasta esta ronda no lo decía: el día que alguien afloje `--fatal-infos` o saque ese lint, la forma queda abierta acá sin que nada más cambie. (2) `typedef C = HttpClient; var c = C();` — el `typedef` pone el nombre en posición de tipo y el uso es `C`, que no es la aguja. (3) `import 'package:http/http.dart' as http; http.Client()` — el identificador es `Client`, no `HttpClient`, y NINGUNA regla lo impide: `nucleo-sin-externas` gobierna solo a `core`, y el `alcance` de `deps-hacia-core` dice explícitamente que las dependencias externas de los paquetes que no son `core` no las gobierna. O sea que el acoplamiento que esta regla existe para impedir se puede escribir en tres líneas, con la biblioteca HTTP más ordinaria del lenguaje, sin ninguna intención de evadir nada. Es el hueco más grande de este criterio y no se tapa acá: ensanchar la regla es un control nuevo, no un arreglo. EL SEGUNDO CRITERIO es TEXTUAL sobre código, nunca sobre prosa, y busca dos agujas exactas: el nombre de marca `GitHub` —con esa capitalización— y el host `github.com`. Caza una regresión LITERAL y no una promesa equivalente escrita con otras palabras —«la forja principal»—, ni un host que no lleve el nombre en su texto —un espejo corporativo en un dominio propio—. Por la misma razón, una mención de marca en OTRA capitalización —`GITHUB`, dentro de una constante de entorno como `SHIPFLOW_GITHUB_TOKEN` en `entorno.dart`— tampoco se ve: no es sintaxis del proveedor, es el nombre de una variable de entorno, y ESE residuo ya lo acepta el origen `365cfc1`. Los headers y el vocabulario de superficie del proveedor —`X-GitHub-Api-Version`, la alerta `> [!WARNING]`— tampoco se cazan por sí solos si el archivo no nombra también a la forja o su host: es el mismo residuo inferencial que ya declara `sin-api-de-modelo` para un cliente HTTP genérico apuntado a un valor de configuración. LO QUE VA A DISPARAR SOBRE LA COMPOSICIÓN QUE LA PROPIA ARQUITECTURA EXIGE. `SalidaDePrDeGitHub`, `ConfiguracionDeGitHub`, `cuerpoDeGitHub` y `tituloDeGitHub` llevan la aguja `GitHub` adentro del nombre, con la capitalización exacta. Hoy el check está verde SOLO porque el único archivo de `cli` que los nombra vive en `test/`, que queda fuera del universo por ruta. El día que la raíz de composición —lo que el `alternativa` de esta misma regla manda hacer, y lo que el README llama así— arme el adapter en `cli/lib` o `cli/bin`, el check sale rojo por nombrar una clase de `forge`, sin que nadie haya escrito una sola línea de sintaxis del proveedor. Las salidas son dos —renombrar esos símbolos para que no lleven la marca, o darle a la regla una excepción acotada a la raíz de composición— y ESTA RONDA NO ELIGE: es decisión de arquitectura de la rebanada de `ship`. Queda escrito acá para que quien la componga se lo encuentre ya declarado y no como una sorpresa roja. FUERA DEL UNIVERSO POR RUTA, no por una excepción de contenido: README, `arquitectura.json`, los planes de `.superpowers/` y `tool/` —que contiene las dos agujas literalmente, en `tool/analisis/bin/check.dart`, porque es el archivo que las define— hablan LEGÍTIMAMENTE de la forja. Ninguno vive bajo `packages/*/lib` o `packages/*/bin`, que es lo único que este control mira."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_forja.dart",
+        "contenido": "const cuerpoDelCanario =\n    '> [!WARNING]\\n'\n    'Revisá el pull request en GitHub antes de mergear.';\n",
+        "debe_mencionar": "forge"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "HttpClient fuera de forge",
+          "por_que": "El primer criterio, en el paquete que más cerca está de necesitar red algún día: si `orchestration` instancia su propio cliente HTTP en vez de pedirle el trabajo a `forge`, el día del segundo proveedor hay que desenredar DOS lugares que hablan con la red, no uno.",
+          "archivos": {
+            "packages/orchestration/lib/_canario_forja.dart": "import 'dart:io';\n\nHttpClient construir() => HttpClient();\n"
+          },
+          "debe_mencionar": "HttpClient"
+        },
+        {
+          "nombre": "el host, sin el nombre del proveedor",
+          "por_que": "El segundo criterio por su otra aguja. Una URL puede delatar a la forja sin decir su nombre de marca en ningún lado, y el residuo declarado dice que ESTO sí se cubre —a diferencia de un host que no lleve el nombre en su propio texto.",
+          "archivos": {
+            "packages/cli/lib/_canario_forja.dart": "const apiDeLaForja = 'https://github.com/api/v3';\n"
+          },
+          "debe_mencionar": "github.com"
+        },
+        {
+          "nombre": "en bin/ y no en lib/",
+          "por_que": "Una regla que mirara solo `lib/` dejaría abierto el ejecutable, que es justo donde es cómodo escribir un atajo. Mismo canario que la violación canónica, bajo `bin/`.",
+          "archivos": {
+            "packages/cli/bin/_canario_forja.dart": "const cuerpoDelCanario =\n    '> [!WARNING]\\n'\n    'Revisá el pull request en GitHub antes de mergear.';\n"
+          },
+          "debe_mencionar": "forge"
+        },
+        {
+          "nombre": "el proveedor en código, pegado al final de un comentario",
+          "por_que": "El canario que exige la regla dura de este repositorio sobre alcance mudo: el segundo criterio tiene un atajo declarado —la prosa no cuenta— y ese atajo necesita un canario que viva DENTRO del universo y JUSTO en el borde de lo que excluye, no lejos de él. Si el cálculo del rango de un comentario se pasara de largo por un solo carácter, se comería el primer byte del código que sigue, y una mención real quedaría leída como si fuera parte del comentario: un falso negativo mudo, no una alarma. `GitHub` empieza en el carácter EXACTO donde termina el comentario —offset 10, el mismo `comentario.end` que calcula `_rangosDeComentarios`—, sin ningún carácter de por medio: el check solo pasa si excluye EXACTAMENTE el comentario y ni uno más.",
+          "archivos": {
+            "packages/core/lib/src/_canario_forja_borde.dart": "/* nota */GitHub() => 0;\n"
+          },
+          "debe_mencionar": "GitHub"
+        },
+        {
+          "nombre": "el proveedor en un comentario que es lo último del archivo",
+          "por_que": "CONTROL NEGATIVO, simétrico del anterior: cubre el bug real que encontró la ronda de arreglo 1 en `_rangosDeComentarios`. El recorrido de tokens cortaba ANTES de mirar los `precedingComments` que cuelgan del propio token EOF, así que un comentario que es LO ÚLTIMO del archivo —sin ningún token real después— nunca entraba en la lista de rangos excluidos, y una mención de la forja ahí se leía como código en vez de como prosa. Este archivo no tiene ninguna mención en código, solo en un comentario final: con el fix puesto tiene que pasar limpio; si alguien revierte el fix, este archivo empieza a dispararse solo, sin que haga falta ningún otro cambio.",
+          "archivos": {
+            "packages/core/lib/_canario_forja_cola.dart": "// Menciona a GitHub, pero es lo último del archivo: no hay ningún\n// token real después de este comentario.\n"
+          },
+          "espera": "pasa"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simétrico de `violacion_canonica`: aquélla prueba que el check detecta un EXCESO; éste, que detecta una OMISIÓN.",
+        "que": "Un archivo de packages/ que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Los dos criterios se derivan del árbol sintáctico y del texto que el parser reconoce. De un árbol parcial no sale ningún `HttpClient`, y del texto que el parser no pudo tokenizar no se puede saber qué es comentario y qué es código —un archivo que no se pudo leer se lee exactamente igual que uno sin ninguna mención al proveedor.",
         "debe_mencionar": "no parsea"
       }
     }

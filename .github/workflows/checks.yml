@@ -134,6 +134,12 @@ jobs:
       - name: pruebas del plugin de stack
         run: dart test packages/plugin_dart
 
+      # El adapter de la forja contra un servidor local: que el push no le
+      # entregue la credencial a los ganchos ni al credential helper del
+      # usuario, y que `open` repetido no cree un segundo PR.
+      - name: pruebas de la forja
+        run: dart test packages/forge
+
       - name: analyze
         run: dart analyze --fatal-infos
 

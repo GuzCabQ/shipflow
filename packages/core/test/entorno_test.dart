@@ -162,4 +162,68 @@ void main() {
       },
     );
   });
+
+  group('EntornoDelProceso', () {
+    test('lo que va a los hijos no lleva la credencial', () {
+      final e = EntornoDelProceso(const {
+        'PATH': '/bin',
+        'HOME': '/casa',
+        'SHIPFLOW_GITHUB_TOKEN': 'ghp_secreto',
+      });
+      expect(e.paraHijos.containsKey('SHIPFLOW_GITHUB_TOKEN'), isFalse);
+      expect(e.paraHijos['PATH'], '/bin');
+      expect(e.paraHijos['HOME'], '/casa');
+    });
+
+    test('lo que va a los hijos es inmodificable', () {
+      final e = EntornoDelProceso(const {'PATH': '/bin'});
+      expect(() => e.paraHijos['X'] = 'y', throwsUnsupportedError);
+    });
+
+    test('la credencial sale como Credential, nunca como cadena', () {
+      final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
+      final c = e.credencial('SHIPFLOW_GITHUB_TOKEN');
+      expect(c, isNotNull);
+      expect(c.toString(), '***');
+      expect(c!.use((secreto) => secreto), 'ghp_x');
+    });
+
+    test('ausente y vacía son la misma respuesta: no hay credencial', () {
+      expect(
+        EntornoDelProceso(const {}).credencial('SHIPFLOW_GITHUB_TOKEN'),
+        isNull,
+      );
+      expect(
+        EntornoDelProceso(const {
+          'SHIPFLOW_GITHUB_TOKEN': '',
+        }).credencial('SHIPFLOW_GITHUB_TOKEN'),
+        isNull,
+      );
+    });
+
+    test('pedir una clave que no está declarada como credencial no compila '
+        'un secreto: falla', () {
+      final e = EntornoDelProceso(const {'PATH': '/bin'});
+      expect(() => e.credencial('PATH'), throwsArgumentError);
+    });
+
+    test('`paraHijos` no reenvía el valor de una clave declarada como '
+        'credencial', () {
+      // **El título dice lo que la prueba afirma, y nada más.** Se llamaba
+      // «el mapa crudo que se le pasó no se puede leer entero desde afuera»,
+      // y eso no es lo que mira: mira `paraHijos`. En este lenguaje no se
+      // puede probar la AUSENCIA de un getter sin reflexión, así que ese control
+      // no existe —y un título que promete cobertura que no hay es lo que le
+      // dice al próximo revisor que eso ya está mirado—.
+      //
+      // **Lo que sí lo sostiene, y no es esta prueba:** que `_crudo` sea
+      // privado lo comprueba el compilador en cada llamador de fuera de la
+      // biblioteca, y que la clase no lo serialice lo comprueba la regla
+      // `opacidad-declarada`. Agregar un getter público que devuelva el
+      // crudo no lo caza nada de eso: queda declarado acá como residuo, y
+      // como revisión humana.
+      final e = EntornoDelProceso(const {'SHIPFLOW_GITHUB_TOKEN': 'ghp_x'});
+      expect(e.paraHijos.values.contains('ghp_x'), isFalse);
+    });
+  });
 }

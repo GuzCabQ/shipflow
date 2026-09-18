@@ -77,8 +77,9 @@ VALORES_FIJOS = {
     "deps-hacia-core": {"permitidas": {
         "core": [], "orchestration": ["core"], "vcs": ["core"], "rules": ["core"],
         "agents": ["core"], "plugin_dart": ["core"], "plugin_fake": ["core"],
+        "forge": ["core"],
         "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart",
-                "plugin_fake"]}},
+                "plugin_fake", "forge"]}},
 }
 # El alcance de las reglas de cadenas no deriva: vaciarlo las neutraliza sin
 # tocar ningun otro campo.
@@ -135,6 +136,7 @@ PASOS_OBLIGATORIOS = {
     "las pruebas de vcs": ("dart test packages/vcs", None),
     "las suites de contrato": ("dart test packages/cli", None),
     "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
+    "las pruebas de la forja": ("dart test packages/forge", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
     # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
@@ -191,6 +193,7 @@ CIEGO_FIJO = {
     "colecciones-inmutables": "archivo_ilegible",
     "dependencias-declaradas-se-usan": "grafo_indisponible",
     "subprocesos-con-entorno-saneado": "archivo_ilegible",
+    "forja-en-su-adapter": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {

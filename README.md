@@ -9,9 +9,9 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, quinta rebanada. **Hay un comando.**
+## Estado: fase 2. **Hay un comando.**
 
-`core` existe: **las entidades y los puertos, como tipos.** 8 de los 27
+`core` existe: **las entidades y los puertos, como tipos.** 10 de los 28
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
 de verdad, con toolchain de verdad.
 
@@ -31,6 +31,8 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 **El desenlace de un paso ya es un tipo cerrado, y la aplicabilidad ya salió del verificador.** Ver [El desenlace se cierra, y la aplicabilidad sale del verificador](#el-desenlace-se-cierra-y-la-aplicabilidad-sale-del-verificador). El plan, tarea por tarea, está en [PLAN-desenlace-cerrado.md](PLAN-desenlace-cerrado.md); lo que queda de él es propagar el registro de deltas al otro repositorio, no código de este.
 
 **La superficie de verificación se está implementando en esta rama.** Ver [La superficie de verificación](#la-superficie-de-verificación). El plan, tarea por tarea, está en [PLAN-superficie-de-verificacion.md](PLAN-superficie-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
+
+**La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien va a llamar a `PullRequestSink.open` de verdad, es la rebanada siguiente.
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
@@ -69,13 +71,14 @@ dart test packages/orchestration              # el registro de pasos y la cuenta
 dart test packages/vcs                        # la rama y el commit, contra git de verdad
 dart test packages/cli                        # las suites de CONTRATO entre implementaciones
 dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
+dart test packages/forge                      # push aislado, cliente de GitHub, búsqueda idempotente
 dart analyze --fatal-infos
 dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
 
-**Son 15 pasos y `capas.py` lo verifica contra el workflow**, comando por
+**Son 16 pasos y `capas.py` lo verifica contra el workflow**, comando por
 comando: un paso borrado de CI, o neutralizado con un `if:` o un
 `continue-on-error`, pone el check en rojo.
 
@@ -98,20 +101,48 @@ la arquitectura y se revisa como tal.
 | `puertos-sin-implementacion` | Que una superficie de puertos vacía se lea como un sistema que hace esas cosas | `tool/analisis` |
 | `colecciones-inmutables` | Que un invariante se pueda romper **después** de construir el objeto, mutando la lista que se le pasó | `tool/analisis` |
 | `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
+| `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué las cinco últimas necesitan otro motor
+### Por qué siete de estas reglas necesitan otro motor
 
-Se derivan del **árbol sintáctico** de `core`, no de su texto. Es la misma
-lección que ya pagó `capas.py` con el grafo de dependencias: parsear a mano
-devuelve cero resultados ante una sintaxis que el parser no reconoce, y cero se
-lee igual que *"está todo bien"*. Los campos de una clase se le piden al
-analizador. Su paquete está **fuera del `workspace:`** a propósito: ninguna
-regla de capas debería tener que hacerle una excepción a su propio verificador.
+**Siete, y no son un bloque contiguo de la tabla:** las seis últimas más
+`subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
+fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
+
+Lo único que las siete comparten es la razón: **ninguna se puede derivar
+leyendo el archivo como texto plano.** Es la misma lección que ya pagó
+`capas.py` con el grafo de dependencias: parsear a mano devuelve cero
+resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
+*"está todo bien"*. Su paquete está **fuera del `workspace:`** a propósito:
+ninguna regla de capas debería tener que hacerle una excepción a su propio
+verificador.
+
+**Lo que mira cada una no es lo mismo, y agruparlas bajo «se derivan del árbol
+sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
+
+- `serializacion-sin-perdida`, `opacidad-declarada` y `colecciones-inmutables`
+  — y solo estas tres — se derivan del árbol sintáctico de `packages/core/lib`.
+- `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
+  implementa lo busca en todos los paquetes**: una implementación que viviera
+  solo en `core` no es la pregunta que responde.
+- `subprocesos-con-entorno-saneado` mira `lib/` y `bin/` de cada paquete, y es
+  la única que además **resuelve** la identidad de `Process` contra el SDK en
+  vez de conformarse con el nombre.
+- `forja-en-su-adapter` mira `lib/` y `bin/` de cada paquete **menos `forge`**,
+  y de sus dos criterios solo el primero sale del árbol: el segundo es
+  **textual** sobre el contenido del archivo, y lo único que le pide al parser
+  es el stream de tokens con el que descarta los comentarios.
+- `grafo-derivado` mira el repositorio entero, `.dart` **y `.md`**: los `.dart`
+  por sus directivas en el árbol, pero las aristas de cita de los `.md` salen
+  de la **prosa**, no de ningún árbol.
+
+Los residuos de cada criterio están en
+[`arquitectura.json`](arquitectura.json), no acá.
 
 ---
 
@@ -481,7 +512,7 @@ Mientras el CI no corría era una molestia teórica. **Desde que las ramas está
 protegidas y el merge depende de este workflow, borrar un paso es abrir la
 compuerta sin tocar ninguna regla.**
 
-Los 15 pasos obligatorios están fijados en `capas.py` —es política, no deriva
+Los 16 pasos obligatorios están fijados en `capas.py` —es política, no deriva
 de nada— y se comprueban en varios modos de fallo, que son distintos entre sí:
 
 | El sabotaje | Resultado |
@@ -1285,7 +1316,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 133 sabotajes.**
+y su caso ciego. **El arnés aplica 142 sabotajes.**
 
 ---
 
@@ -2780,6 +2811,635 @@ cada paquete, los tests y los `bin/`. Corregido el criterio, los huérfanos son
 > veinte violaciones el primer día, lo que suele estar mal es la regla.**
 > Declarar las veinte la desactiva sin borrarla.
 
+## La forja y el aislamiento de la credencial
+
+Le da a `ship` —que todavía no existe— dos cosas que necesita antes de poder
+publicar algo: un desenlace tipado para lo que le pasa a un pull request, y la
+garantía de que el token que lo abre no se filtra por ningún subproceso que
+este repositorio lance en el camino.
+
+### El token sale del entorno en un solo sitio, y por tipo
+
+`EntornoDelProceso` (`packages/core/lib/src/entorno.dart`) captura el mapa del
+proceso una sola vez, en la raíz de composición, y expone `paraHijos`: un
+derivado que nunca lleva las claves de `clavesDeCredencial`. Antes de esta
+rebanada cada costura que lanzaba un subproceso tenía que acordarse de excluir
+el token por su cuenta —una lista negra repetida en cada lanzador—; ahora
+`RepositorioGit` (en `vcs`) y `EmpujeAislado` (en `forge`) reciben
+`EntornoDelProceso` en vez de un `Map` crudo, así que lo que baja hacia
+`entornoSaneado(...)` ya pasó por `paraHijos` antes de que el lanzamiento
+exista. El candidato de `vcs` no tiene un campo propio de ese tipo —guarda un
+`RepositorioGit` y llega al entorno saneado a través suyo—, así que la
+garantía le alcanza indirecta, no como tercer receptor directo. **El tipo es
+el control**, no una convención que cada lector tiene que recordar.
+
+Eso alcanza también al único lanzamiento que `subprocesos-con-entorno-saneado`
+exceptúa: `_identidadComoEntorno`, en `RepositorioGit`, corre `git config --get`
+con el entorno del padre sin sanear —porque necesita ver `XDG_CONFIG_HOME` y
+`GIT_CONFIG_GLOBAL`, que la lista blanca no lleva a propósito—. Antes de esta
+rebanada esa excepción se sostenía porque no había nada secreto en el entorno
+que ver; ahora que sí lo hay, la excepción sigue admitiendo un único
+lanzamiento sin sanear en esa biblioteca —el arnés lo cuenta y un segundo es
+rojo—, pero el entero que recibe ya es el que entregó `EntornoDelProceso`, así
+que tampoco puede traer el token: la garantía la sostiene el tipo, no una
+revisión manual de cada excepción.
+
+### El push no le entrega el token a ningún programa del usuario
+
+`EmpujeAislado` (`packages/forge/lib/src/empuje.dart`) lanza su propio
+`git push` con dos `-c`: `core.hooksPath` apuntado a un directorio temporal
+vacío —que frena todos los ganchos del usuario— y `credential.helper=`, que
+resetea la cadena de helpers **entera**, no solo la que este repositorio
+configuró. Medido: sin el segundo, el helper del usuario corre igual —dos
+veces— y ve el entorno completo, aunque `core.hooksPath` ya esté puesto; los
+dos mecanismos gobiernan superficies distintas y hace falta vaciar las dos. La
+credencial viaja en el `userinfo` de la URL de destino, de un solo uso, nunca
+en el entorno del proceso.
+
+**El `push` produce un desenlace o se muere en el intento: no se cuelga.**
+`Process.run` sin límite espera a que el hijo salga, y `git push` puede no
+salir nunca —un remoto que acepta la conexión y deja de contestar, un `git`
+trabado—: ese flujo no producía **ningún** desenlace, que es lo contrario del
+invariante de que el desenlace se declara. Ahora el lanzamiento es
+`Process.start` con un presupuesto de **dos minutos**, y son cuatro cosas y no
+una: se drenan `stdout` y `stderr` desde el arranque —un hijo que llena la
+tubería se bloquea escribiendo, y entonces el presupuesto se dispararía por un
+cuelgue que causamos nosotros—, al vencer se manda `SIGKILL` y se espera la
+muerte **del proceso que lanzamos** —que no queda huérfano, y hay una prueba
+que lo comprueba consultando su PID; lo que ese proceso haya lanzado a su vez
+sobrevive, y está declarado más abajo entre los residuos—, y el desenlace es
+`PushUnknown`: al interrumpirlo se pierde quien sabía cómo terminó, y el
+packfile puede haber llegado entero.
+
+**Drenar no es acumular, y esa distinción es de esta ronda.** Cada flujo se
+guardaba entero en un `StringBuffer`: un remoto locuaz —o uno hostil— producía
+memoria proporcional a todo lo que quisiera emitir durante los dos minutos del
+presupuesto, y el `stdout` que se guardaba así no lo lee nadie. Ahora `stdout`
+se lee y se tira sin siquiera decodificarlo, y de `stderr` no se conserva el
+texto sino **qué señales de la tabla del clasificador aparecieron**: un
+conjunto que ocupa lo mismo con diez bytes de salida que con diez gigabytes.
+Medido con 128 MiB por flujo, 256 MiB en total: **6 MiB** de crecimiento de la
+memoria residente drenando así, contra **297 MiB** volviendo a acumular. La
+prueba lo mide con `ProcessInfo.currentRss` **adentro del instrumento de
+`bin/`** y no en la suite: esa cifra es del proceso entero, y `package:test`
+corre los archivos de una suite en isolates que comparten uno, así que medirlo
+desde adentro incluía lo que reservara cualquier otro archivo. El instrumento
+—el mismo que ya medía cuándo TERMINA un proceso— hace un `empujar` y nada
+más.
+
+**Por qué señales y no una cola de texto.** Una ventana de los últimos N
+caracteres también acota la memoria, pero cambia el comportamiento: `git` dice
+«fatal: Authentication failed» al principio y después escupe páginas de
+progreso, así que con una cola esa línea se cae del final y el desenlace
+degrada a `desconocida` sin que nada lo diga. Marcando las señales a medida que
+pasan, la clasificación es **la misma** que con el texto entero —hay una prueba
+con la causa al principio de 32 MiB de relleno, y otra con la señal partida
+entre dos lecturas, que es lo que cubre el arrastre entre trozos—. Efecto
+lateral declarado y buscado: el texto de `git` ya no existe en este proceso, ni
+siquiera en memoria.
+
+El drenaje **posterior** a la salida también tiene presupuesto, y al vencer
+**suelta la tubería en vez de abandonarla**. La distinción no es de estilo y
+está medida: `Future.timeout` abandona el futuro pero **no cancela la
+suscripción**, así que con un `join()` el descriptor queda abierto y
+escuchado, y un proceso con una suscripción viva no termina —`shipflow` fija
+`exitCode` y vuelve de `main` a propósito, en vez de llamar a `exit`—. Con un
+programa que deja un nieto durmiendo 20 s con la tubería heredada y un
+presupuesto de 300 ms: **el desenlace se computa a los 322 ms en las dos
+formas**, pero el proceso termina a los **20,2 s** abandonando el futuro y a
+los **0,8 s** cancelando la suscripción. En producción ese nieto es el
+ayudante de transporte de `git` sobre una conexión muerta, o sea sin cota. Lo
+que se pierde al soltar es el final del texto con el que se clasifica la
+causa, que degrada a `desconocida` —un reintento de más— y nunca a una
+publicación que se lea como completa; las señales ya vistas se conservan.
+
+Se espera **un solo** flujo, `stderr`, que es el único del que sale algo: la
+causa. `stdout` se drena mientras el proceso corre —para que no se bloquee
+escribiendo— y se suelta sin esperarlo cuando termina, así que no agrega una
+tercera espera por un texto que nadie mira y que ya no se guarda. Y el `stdin` del hijo
+se cierra tras el lanzamiento, que es lo que `Process.run` hacía solo: sin
+eso, un `git` que leyera de ahí dejaba de fallar al instante y pasaba a
+colgarse hasta agotar el presupuesto.
+
+Dos
+minutos, y no treinta segundos como los pedidos de la API, porque un `push` no
+es un pedido y una respuesta sino una negociación más la subida de un
+packfile; y no más, porque el presupuesto de la corrida entera se mide en
+minutos.
+
+**Y no poder lanzar `git` es un fallo con nombre, no un efecto remoto
+desconocido.** Si `Process.start` no consigue el proceso, no hubo nada capaz de
+hablar con el remoto: el desenlace es `PushFailed` y no `PushUnknown`, que
+mandaba a buscar allá un efecto que no pudo ocurrir. Y la causa es
+`noSePudoLanzar`, no `desconocida`: ese `catch` sigue sin mirar la excepción
+—`ProcessException.arguments` lleva la URL con la credencial adentro y su
+`toString()` la interpola verbatim—, pero **no leer la excepción no es no
+saber**: qué rama corrió es información propia del código, no del texto de la
+excepción, así que nombrar el hecho no arriesga un byte del secreto. Decirle
+«no se pudo determinar la causa» a alguien que no tiene `git` en el `PATH` es
+falso y no deja nada que mirar. Es reintentable, a diferencia de
+`revisionInvalida`: un `fork` que falló por recursos puede andar en el próximo
+intento.
+
+**Y los dos canales que llevan la credencial exigen `https`, validado.** El
+`userinfo` del `git push` y el `Authorization: Bearer` del cliente de la API
+salen los dos de una URL que produce la raíz de composición —que no existe
+todavía—, y con `http://` el token viaja en claro por los dos.
+`esCanalSeguroParaLaCredencial` (`packages/forge/lib/src/empuje.dart`) lo
+rechaza **antes** de adjuntar nada, con un desenlace cerrado —`PushFailed` con
+causa `configuracionInsegura`, que no es reintentable y no nombra la URL
+rechazada— y no con una excepción que se escape del puerto. La causa es propia
+y no `autenticacion` a propósito: decir «la credencial no fue aceptada» sobre
+un token que nunca salió del proceso le reporta al usuario un problema de su
+token cuando el problema es de la configuración. **Excepción decidida y
+declarada:** `http` sobre loopback (`127.0.0.0/8`, `::1`, `localhost`) se
+acepta —no sale de la máquina, y exigirle TLS obligaría a cada suite que
+levanta un `HttpServer` local a montar un certificado propio, con lo que el
+control terminaría probándose contra un montaje que no es el de producción.
+
+### Ningún redirect se lleva la credencial, y el SDK no alcanzaba
+
+Los dos pedidos a la API salían con `followRedirects` en su valor por omisión
+—`true`—, así que un `3xx` lo seguía el cliente por su cuenta, con el
+`Authorization` puesto y hacia el destino que eligiera el `Location`. Una
+revisión anterior dio ese camino por seguro porque la biblioteca de entrada y
+salida no copia el `authorization` cuando el redirect cambia de esquema, host o
+puerto. **Eso es incompleto, y la diferencia es exactamente el agujero:**
+`_HttpClient.shouldCopyHeaderOnRedirect`, en `lib/_http/http_impl.dart` del SDK
+de Dart 3.12.0, copia **todos** los encabezados cuando `_isSubdomain(destino,
+origen)` da verdadero, y esa función acepta cualquier host que **termine en `.`
+más el host del origen**. Reproducido con la API servida en `http://localhost` y un
+redirect hacia `http://sub.localhost`, con el mismo esquema y el mismo puerto.
+El código fue `302` para el `GET` y `303` para el `POST` —el único que el SDK
+sigue para ese método—, y el segundo destino recibió
+`Authorization: Bearer <secreto>` en los dos.
+
+Ahora `followRedirects` se apaga **en la misma función que adjunta la
+credencial y antes de adjuntarla**, que es la única forma de que no exista un
+pedido autenticado y seguidor a la vez; ponerlo en cada sitio de llamada sería
+una disciplina que el próximo pedido puede olvidar. El `3xx` se trata como
+respuesta fallida: en la búsqueda cae en «no es 200», o sea búsqueda
+incompleta, que no autoriza a crear; en la creación tiene rama propia y es
+`PullRequestUnknown`, porque un `303 See Other` es la forma documentada de
+contestar «lo creé, mirá allá» y decir `failed` haría que el reintento abriera
+un segundo pull request. Tampoco se sigue a mano: se podría, validando esquema,
+host y puerto exactos, pero un redirect dentro del mismo origen no agrega nada
+que esta API necesite —sus dos URLs salen de `baseDeLaApi`— y cada camino que
+reintenta con la credencial adjunta es un camino más donde revalidar. La
+comparación de origen que sí existe —la del encabezado `Link` de la
+paginación— es por igualdad de los tres componentes, o sea que un **subdominio
+no es el mismo origen**: es justo donde la regla del SDK se queda corta.
+
+### El desenlace de publicar es una jerarquía sellada, no dos enums que se puedan combinar mal
+
+`PublicationOutcome` (`packages/core/lib/src/publicacion.dart`) reemplaza lo
+que hubieran sido dos enums independientes —uno para el `push`, otro para el
+pull request— porque ese par admite el producto cartesiano: `push: failed,
+pullRequest: succeeded` no significa nada, y `succeeded` a secas no
+distinguía un PR abierto de uno fusionado o de uno cerrado. Son **siete
+variantes**: `PullRequestOpen`, `PullRequestMerged` (utilizables),
+`PullRequestClosed`, `PushFailed`, `PushUnknown`, `PullRequestFailed` y
+`PullRequestUnknown` (no utilizables). `retryable`, `deliveryStatus` y
+`nextAction` no son campos: se derivan de la variante y, en las que fallan, de
+`CausaDePublicacion`. `safeReason` nunca copia la excepción externa —que puede
+traer el secreto adentro—, porque sale de esa causa cerrada.
+
+`unknown` no es un lujo: sin distinguir «falló» de «no sé si llegó», una
+respuesta perdida se reporta como `failed` y un reintento crea un segundo PR.
+La búsqueda idempotente de `SalidaDePrDeGitHub` —por revisión, rama base y el
+marcador estable que `cuerpo.dart` también usa para renderizar— es lo que le
+permite a un reintento después de `unknown` encontrar el PR que sí se llegó a
+crear, en vez de abrir otro. **Mientras el reintento traiga el mismo `runId`:**
+el marcador lo lleva adentro, así que un reintento con un `runId` nuevo no
+encuentra el PR de la corrida anterior y abre uno segundo. Quien componga el
+reintento tiene que reusar el `runId` de la corrida que quedó en `unknown` —es
+de la rebanada de `ship`— y esa atadura hoy no la sostiene ningún control.
+
+### Una revisión que no es un OID no llega a ser un refspec
+
+`EmpujeAislado` arma `<revisión>:refs/heads/<rama>` y se lo pasa a `git push`.
+Con la revisión vacía eso queda `:refs/heads/<rama>`, que es la forma
+documentada de **eliminar** esa rama del remoto: una solicitud mal compuesta no
+publicaba de más, borraba. `PullRequestRequest` validaba la relación de la
+revisión con el árbol y no la revisión misma, así que `revision: ''` se
+construía sin una queja.
+
+Ahora lo exigen **las dos fronteras**, y no es una duplicación: `esOidCompleto`
+(`packages/core/lib/src/entidades.dart`) es un invariante de construcción en
+el dominio —el constructor lanza— y una precondición de ejecución en el
+adapter —`empujar` devuelve `PushFailed` con causa `revisionInvalida`, un
+desenlace cerrado y no una excepción, **antes de lanzar ningún proceso**—. La
+frontera del proceso no puede confiar en que su llamador validó: `empujar` es
+público y recibe la revisión como parámetro suelto.
+
+Los dos largos están **medidos, no supuestos**, con `git rev-parse HEAD` sobre
+repositorios recién creados con git 2.50.1: **40** caracteres hexadecimales con
+`--object-format=sha1`, **64** con `--object-format=sha256`. Las dos familias
+se aceptan porque el repositorio puede ser de cualquiera de las dos, y también
+las mayúsculas: medido con `git cat-file -t`, git resuelve el mismo objeto, así
+que rechazarlas sería afirmar que un OID válido no lo es.
+
+**Y aceptar dos escrituras no es dejarlas circular: la revisión se canonicaliza
+a minúsculas en la frontera del dominio.** El defecto está reproducido: con la
+solicitud trayendo el OID en mayúsculas y el pull request que ya existía
+teniéndolo en minúsculas, la búsqueda idempotente —que comparaba literal contra
+el `sha` de la forja— no lo encontraba y salía a crear un SEGUNDO pull request,
+que es lo único que esa búsqueda existe para impedir. `PullRequestRequest`
+guarda la forma canónica, así que las tres cosas que se derivan de la revisión
+—la comparación con lo que devuelve la forja, el marcador estable del cuerpo y
+el refspec del push— usan **una sola** representación. El `sha` que llega en la
+respuesta es un dato ajeno y se lee a esa misma forma antes de comparar: que la
+forja de hoy lo mande en minúsculas es su costumbre, no un contrato que este
+cliente pueda exigir.
+
+**Y la canonicalización llega hasta ahí, y no más lejos.** Dos líneas más abajo,
+el mismo constructor exige que el árbol del commit sea
+`candidato.contentRevision`, y esa comparación es **literal**. Una ronda la
+canonicalizó también —y con ella los dos campos de `CandidateIdentity`— para que
+el mismo árbol escrito en dos cajas dejara de parecer dos árboles distintos. El
+arreglo costó más de lo que arreglaba: `canonicalizarOid` decide por el LARGO de
+la cadena —40 o 64 caracteres hexadecimales—, y `CandidateIdentity` declara su
+representación **opaca**, así que una identidad con esa forma y con mayúsculas
+entraba `ABCDEF…` y salía `abcdef…`. Eso es transformar en silencio el dato de
+un puerto: rompe el ida y vuelta sin pérdida que **ADR-002** le exige a estos
+tipos, y contradice la propuesta aceptada, que dice que `core` no sabe si el
+identificador es un árbol, un SHA u otra representación.
+
+Lo que queda es la comparación literal, y **alcanza bajo el contrato de hoy**:
+los dos lados salen del adapter de git, que imprime el OID en minúsculas. Quien
+componga la solicitud con el árbol escrito de otra forma que el
+`contentRevision` del candidato recibe una queja en la frontera, no una
+publicación torcida. Y el día que haga falta una identidad de git con semántica
+propia —capaz de decir «esto es un OID» y comparar como tal— se introduce un
+tipo que lo diga: la semántica **no se infiere del largo de un `String`**.
+
+`canonicalizarOid` queda entonces con un solo llamador, `PullRequestRequest`
+sobre `revision`, que es el campo que sí declara ser un OID completo de git —el
+constructor lanza si no lo es—. Lo que esa función sabe es lo único que el
+dominio sabe desde que existe `esOidCompleto`: dos escrituras de un mismo OID
+nombran el mismo objeto de git.
+
+### La búsqueda idempotente mira todas las páginas, y lee el código antes que el cuerpo
+
+Dos defectos que se sostenían el uno al otro. **Uno:** la búsqueda no miraba el
+código de estado y le pasaba cualquier cuerpo a `jsonDecode(...) as
+List<Object?>`. Un `401` de la forja trae un objeto, el cast fallaba, y el
+`catch` exterior lo convertía en `PullRequestFailed(red)` —«la red falló» sobre
+una credencial rechazada—; y como la corrida se detenía ahí, la clasificación
+correcta del `401` del POST era prácticamente inalcanzable: estaba escrita y no
+la ejercía ninguna corrida. Ahora el código se clasifica **antes** de decodificar
+—`401` es `autenticacion`, `403` es `permisos`, `422` es `rechazoDeLaForja`— y
+por el **mismo** clasificador que usa la creación, así que la coherencia entre
+los dos pedidos dejó de ser una promesa de dos `switch` parecidos.
+
+**Dos:** la búsqueda hacía **una sola** petición. La forja pagina esa operación
+—30 por omisión, 100 como máximo— y entrega el resto por el encabezado `Link`.
+Con el pull request coincidente en la segunda página, el cliente no la pedía y
+seguía hasta el POST: creaba un segundo pull request, que es exactamente lo que
+la búsqueda existe para impedir. Ahora pide `per_page=100` y sigue
+`rel="next"` hasta encontrar o agotar, con el presupuesto de red y la
+clasificación aplicados en **cada** página. Subir `per_page` no habría
+alcanzado: corre el borde, no lo cierra.
+
+Y el recorrido tiene un **tope de diez páginas, declarado con su motivo**: el
+final lo decide lo que conteste el otro lado, y un `Link` que cicle haría girar
+el bucle para siempre —el cuelgue que el presupuesto por pedido no cubre,
+porque cada pedido contesta a tiempo—. Agotar el tope no significa «hay más de
+mil pull requests para esta misma rama origen y esta misma rama base»:
+significa que las páginas no se terminan, o sea que la búsqueda quedó
+incompleta, y por eso el desenlace es un fallo y no «no encontré nada» —seguir
+hasta la creación con la búsqueda incompleta es abrir el segundo pull request a
+ciegas—. Lo mismo vale para un `Link` que apunte fuera del origen configurado:
+no se sigue, porque cada página se pide con el `Authorization` puesto y el
+destino lo habría elegido la respuesta y no la configuración.
+
+### Ningún dato de la corrida puede enterrar la advertencia obligatoria
+
+`cuerpoDeGitHub` interpolaba directo adentro del Markdown la intención, el
+plan, los detalles, los sujetos y los identificadores. Reproducido con
+`intent: '<!--'`: la intención abría un comentario HTML, **la advertencia y las
+dos secciones obligatorias quedaban adentro**, y el comentario recién cerraba
+al llegar al marcador final. O sea que un dato de la corrida enterraba
+exactamente lo que ADR-016 y la decisión 7 de ADR-022 dicen que no se puede
+enterrar, y el pull request se leía como si no hubiera nada que mirar.
+
+El arreglo no son reemplazos sueltos sino **un render por contexto**, y ninguna
+interpolación cruda: la neutralización es una sola —los caracteres que son
+sintaxis (`&`, `<`, `>`, el acento grave, la tilde, el asterisco, el guion bajo
+y los corchetes) pasan a entidades, que GitHub decodifica al mostrar, así que el
+revisor lee el dato tal como vino—, y lo que cambia es el envoltorio. Un texto de **bloque** conserva sus renglones y
+se le escapa lo que abre bloque al principio de cada uno, para que un dato no
+fabrique un `## Qué quedó cubierto` que nadie escribió. Un texto **dentro de un
+ítem de lista** junta sus renglones en uno, porque un renglón nuevo termina el
+ítem y deja al dato al mismo nivel que las secciones. Un **identificador** va
+entre `<code>` y no entre acentos graves: adentro de un tramo de código las
+entidades no se decodifican, y en CommonMark el HTML crudo tiene precedencia
+sobre ese tramo, así que un `<!--` en un identificador y un `-->` en otro
+formarían un comentario que se traga el detalle entre los dos.
+
+**El enterramiento no era lo único: la inyección a mitad de línea también es
+estructura.** La primera versión de este render neutralizaba lo que entierra
+—el comentario, la cerca— y lo que abre bloque al principio de un renglón, y
+dejaba pasar el énfasis y los enlaces: con `sujeto: 'a**b'` la negrita del ítem
+quedaba descuadrada, y con `detalle: '![](http://atacante/x.png)'` el cuerpo
+llevaba una imagen remota, o sea una baliza que se pide sola cuando el revisor
+abre la página. El asterisco, el guion bajo y los corchetes entraron a la
+neutralización por eso. **Lo que queda afuera, declarado:** el Markdown de la
+forja convierte en enlace una URL escrita al desnudo, y eso no se neutraliza
+escapando puntuación; un enlace que hay que clickear no entierra nada, no
+falsifica ninguna sección y no dispara solo — la diferencia con la imagen es
+exactamente esa.
+
+**No hay canal de Markdown confiable, y el plan también se escapa.** Declararlo
+por campo sería una propiedad de un `String` sostenida por prosa; el día que un
+plan quiera sus viñetas, lo que tiene que declararlo es un tipo que se
+construya donde alguien pueda responder por el contenido. Precio: un plan
+escrito en Markdown se lee como texto plano.
+
+Lo que la suite mide no es que el texto salga escapado —eso lo cumple cualquier
+escape— sino que **la advertencia y las dos secciones se sigan leyendo**, una
+vez cada una, fuera de todo comentario y de toda cerca: doce campos —los doce
+que `cuerpoDeGitHub` interpola— por ocho valores hostiles (`<!--`, `-->`, cercas de acentos y de tildes, un encabezado
+que falsifica una sección, una advertencia falsificada, saltos de línea,
+listas), más un control negativo que exige que el dato hostil se siga leyendo
+entero.
+
+**Y el título se trunca por runas, no por unidades UTF-16.** `String.length` y
+`substring` cuentan unidades, y un emoji ocupa dos: cortar en 256 podía dejar
+media pareja sustituta, que al codificarse a UTF-8 se vuelve `�` — un carácter
+que la intención no tenía. No bloqueaba nada —la intención completa va en el
+cuerpo—, pero era el render mostrando algo que no es el dato. **Residuo
+declarado:** por runas y no por grafemas, así que un emoji compuesto —una
+familia con `ZWJ`, una bandera— puede partirse en sus piezas; nunca en media
+pareja. Cortar por grafemas pediría una dependencia externa, y `forge` no tiene
+ninguna fuera del SDK.
+
+### El `runId` que rompe el marcador no se escapa: no se construye
+
+El marcador estable —`<!-- shipflow:pr ... runId=... revision=... -->`— es a la
+vez la última línea del cuerpo y **la clave de la búsqueda idempotente**. El
+`runId` viajaba ahí adentro sin condición alguna, y eso abría dos cosas: un
+`-->` cierra el comentario antes de tiempo y deja al pie del cuerpo lo que el
+`runId` escriba después —con otro `<!--` que se trague el resto, una afirmación
+fabricada del tipo «verificación completa, no hace falta revisar», por el único
+hueco que el render seguro no puede tapar—, y un salto de línea parte el
+marcador en dos, con lo que la búsqueda —un `contains` sobre un cuerpo que la
+forja devuelve con `\r\n`— no lo encuentra nunca y el reintento abre un segundo
+pull request.
+
+**No se arregla escapando, y esto sí es una propiedad del formato:** adentro de
+un comentario HTML las entidades no se decodifican, así que «escapar» el valor
+sería cambiar la clave de búsqueda por otra cadena y los pull requests ya
+abiertos dejarían de coincidir. El cierre es un invariante en el tipo:
+`PullRequestDraft` rechaza un `runId` con `<!--`, `-->` o un salto de línea. No
+cambia ninguna clave existente —`generarRunId` produce microsegundos, un guion y
+un contador, así que para todo `runId` que este árbol sabe producir la guarda es
+una identidad, y hay una prueba en `cli` que ata el generador a esa condición—
+y pone la exigencia donde el valor entra al dominio, que es la misma frontera
+que canonicaliza la revisión.
+
+### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
+
+`PullRequestRequest` exige, en su constructor, que el árbol del commit al que
+apunta la rama sea el mismo que `draft.artefacto.candidato.contentRevision` —el
+contenido que la superficie de verificación certificó—. `incompleto` y
+`titulo` son derivados de `draft.artefacto.superficie.estado`, no campos
+asignables: con dos campos independientes se puede construir `artefacto:
+noConcluyente, incompleto: false`, y el título omitiría la advertencia
+obligatoria de ADR-016. El render de la sintaxis de GitHub —la alerta
+`> [!WARNING]`, el límite de 256 caracteres del título, el comentario HTML del
+marcador— vive en `packages/forge/lib/src/cuerpo.dart`, y en ningún paquete que
+otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
+
+### Residuos declarados
+
+Veintiséis hechos que esta rebanada deja escritos porque son límites reales,
+no trabajo pendiente con fecha:
+
+- **La clasificación de la causa de un `push` fallido mira el texto del
+  `stderr` de nuestro propio hijo.** Es un universo acotado por construcción
+  —el mensaje lo escribe `git`, no un tercero—, y lo que el clasificador no
+  reconoce cae en `desconocida`, que es reintentable: el precio de errar es un
+  reintento de más, nunca una publicación que se lea como completa. **Lo que
+  ese texto deja en memoria es solo la marca de qué señales pasaron**, y esas
+  señales se buscan por trozo con un arrastre del largo de la más larga menos
+  uno: las agujas son ASCII, así que pasar a minúsculas por trozo en vez de
+  sobre la cadena entera no cambia ninguna, pero es una diferencia declarada y
+  no una equivalencia que se dé por sentada.
+- **`/proc/<pid>/cmdline` deja ver el argv de nuestro propio `git`** —y con él,
+  la credencial en la URL— en Linux. Es limitación de ambiente, no un fallo
+  propio: a diferencia de entregarle el token a un programa que el usuario
+  eligió y que nosotros ejecutamos —lo que `core.hooksPath` y
+  `credential.helper=` existen para impedir—, esto es el propio proceso que
+  lanzamos, visible por un mecanismo del sistema operativo que no está bajo
+  nuestro control.
+- **El segundo criterio de `forja-en-su-adapter` es textual**: caza el nombre
+  o el host de la forja como texto fuera de `packages/forge/`, y eso caza una
+  regresión **literal** —alguien pegó `github.com` o `GitHub` donde no debía—,
+  no una promesa equivalente escrita con otras palabras. Una mención que
+  evitara esas palabras exactas no la vería.
+- **La atadura entre la revisión del pull request y el árbol que vieron los
+  controles es una invariante entre dos parámetros, no una verdad sobre
+  git.** `core` no tiene entrada ni salida, así que el constructor de
+  `PullRequestRequest` exige que el árbol que el llamador afirma sea el que
+  vieron los controles, pero no puede abrir el commit para comprobarlo por su
+  cuenta. Quien componga `revision` y `arbolDeLaRevision` a partir de un
+  repositorio real tiene que hacer que las dos nazcan de la misma operación
+  de git, y eso es trabajo de la rebanada de `ship`, no de esta.
+- **La fase de conexión del `POST` no tiene prueba automatizada**, aislada de
+  la del `GET`. Las dos URLs de `SalidaDePrDeGitHub` salen del mismo
+  `baseDeLaApi`, y no se puede apuntar solo una a un host muerto sin cambiar
+  la forma de la configuración. Se verificó a mano, contra una dirección no
+  ruteable, que el `connectionTimeout` también cubre esa fase; no hay un test
+  en el árbol que lo repita.
+- **`CredentialSource` salió de `sin_implementacion` con una real
+  —`FuenteDeEntorno`— y una falsa —`FuenteDeCredencialFalsa`— pero sin suite de
+  contrato propia.** La pregunta de si le hace falta una quedó abierta:
+  `FuenteDeEntorno` rechaza con `ArgumentError` una clave que
+  `clavesDeCredencial` no declaró, y `FuenteDeCredencialFalsa`, configurada
+  con un mapa directo, no tiene ningún equivalente. Si esa cláusula es del
+  contrato del puerto o es propia de leer de un entorno de proceso real es lo
+  que falta decidir antes de poder escribir esa suite.
+- **El campo `"espera": "pasa"` de `violaciones_extra`, en la regla
+  `forja-en-su-adapter`, es la primera vez que el JSON declarativo del arnés
+  expresa un control negativo** —un caso que tiene que pasar, no fallar—.
+  Antes de esta rebanada esa forma solo la tenían los casos escritos a mano en
+  Python; acá cubre el fix de `_rangosDeComentarios` que hace que un comentario
+  al final del archivo no se lea como código.
+- **La excepción de loopback del canal de la credencial se acepta por el
+  TEXTO del host, no por la dirección a la que resuelve.** `localhost` pasa
+  porque se llama así; un `/etc/hosts` que lo apunte a una máquina remota haría
+  viajar el token en claro y `esCanalSeguroParaLaCredencial` no lo vería.
+  Resolverlo ahí significaría hacer DNS dentro de una validación sincrónica, y
+  el resultado seguiría sin ser el que use el `git` que se lanza después, que
+  resuelve por su cuenta al conectarse: sería una segunda resolución, no la
+  misma.
+- **`PushUnknown` y `PullRequestUnknown` admiten la causa
+  `configuracionInsegura`, y esa combinación diría «no sé si llegó» sobre una
+  credencial que nunca salió del proceso.** Hoy no la produce ningún sitio —los
+  dos rechazos son `PushFailed`— y el tipo no la impide: `causa` es un getter
+  de `PublicacionConCausa`, así que **toda** causa cabe en **toda** variante con
+  causa. Es la misma forma que ya admitía `permisos` —un `PushUnknown` por
+  permisos tampoco significa nada—, o sea un hueco previo un poco más ancho, no
+  uno nuevo. Cerrarlo pide partir el enum por variante, que es un cambio de
+  dominio y no de esta rebanada.
+- **El ida y vuelta por JSON de `configuracionInsegura` no lo fija ninguna
+  prueba.** Viaja por `name`/`byName` como cualquier otro valor del enum, así
+  que funciona por construcción y no por cobertura: si alguien cambiara esa
+  serialización a índices, lo cazaría la prueba «un enum viaja por nombre, no
+  por índice» de `core`, que no nombra este valor en particular.
+- **El peor caso del `push` es el presupuesto DOS veces, y son exactamente
+  dos.** `Future.timeout` arranca su reloj cuando se lo invoca, así que las
+  esperas en serie se suman: la del código de salida y la del drenaje de
+  `stderr`. No hay una tercera porque `stdout` no se espera —se suelta—, que
+  es la razón por la que este número dice dos y no tres. Es el mismo valor en
+  las dos a propósito —es la misma pregunta, «¿esto termina?», en dos momentos
+  del mismo lanzamiento— y no un segundo número que ajustar por su cuenta.
+- **El presupuesto del `push` mide tiempo TOTAL del proceso, no progreso.**
+  Una subida grande pero sana que pase de dos minutos se corta igual, y el
+  desenlace es `PushUnknown`. Cortar por falta de progreso pediría leer el
+  avance desde la salida de `git`, que es texto de progreso sin contrato — y
+  de ese texto este repositorio solo deriva una causa cerrada.
+- **El `SIGKILL` del vencimiento alcanza al hijo, no a sus nietos.** `git`
+  lanza `git-remote-https`, y matar al proceso que lanzamos no mata lo que él
+  haya lanzado: un nieto puede sobrevivir y mantener abierta la tubería. Por
+  eso el camino del vencimiento espera la muerte del hijo y **no** el cierre
+  de los flujos —esperar el cierre sería poner el cuelgue de vuelta un renglón
+  más abajo—. Matar el grupo entero pide poner al hijo en su propio grupo de
+  procesos al lanzarlo, que es un cambio de mecanismo y no un arreglo de este.
+- **Un `403` de la forja también aparece por límite de tasa, y se clasifica
+  como `permisos`.** Es lo que ya hacía la creación, y la coherencia entre los
+  dos pedidos es lo que el clasificador único garantiza; el precio es que un
+  límite de tasa se reporta como no reintentable. Separarlos pide mirar los
+  encabezados de límite de tasa, que es un control nuevo.
+- **El recorrido de páginas tiene un tope de diez, y agotarlo se reporta como
+  fallo.** Diez páginas de a cien son mil pull requests para la misma rama
+  origen y la misma rama base, que un repositorio real no alcanza: agotar el
+  tope significa que las páginas no se terminan —un `Link` que cicla—, no que
+  haya demasiados. El tope existe porque el presupuesto POR PEDIDO no cubre un
+  bucle en el que cada pedido contesta a tiempo.
+- **Perder el drenaje pierde parte de la clasificación.** Si el drenaje
+  posterior a la salida se agota, se conserva el texto que ya había llegado y
+  se pierde el resto; si lo perdido era la aguja, la causa cae en
+  `desconocida`, que es reintentable. Es el precio elegido: un reintento de
+  más antes que un cuelgue sin desenlace.
+- **Lo que suelta los sockets del cliente de la API es una sola palabra:
+  el `force: true` del `close` de `open`.** Todos los `.timeout(...)` de ese
+  archivo abandonan lo que esperaban —un futuro abandonado no cancela la
+  lectura ni cierra el socket—, así que con un extremo que manda encabezados y
+  no cierra el cuerpo, `open` devuelve a tiempo y el proceso queda vivo con el
+  socket abierto. Medido: con `force: true` el proceso termina en 0,5 s; con
+  `close()` a secas seguía vivo a los 400 s. Se eligió un mecanismo único y
+  declarado antes que cancelar sitio por sitio, porque cancelar suscripciones
+  no cubre la fase de PEDIDO —ahí no hay flujo que cancelar— ni el grupo de
+  conexiones. Lo pincha «el proceso TERMINA aunque la forja deje el cuerpo a
+  medias».
+- **Los dos `soltar()` de la rama del vencimiento del `push` no los sostiene
+  ninguna prueba.** El fixture que deja un nieto vivo sale con 0 —ejercita el
+  camino posterior a la salida— y el fixture del vencimiento muere por señal,
+  con lo que sus tuberías cierran solas: borrar esas dos líneas queda verde.
+  Pincharlas pide un hijo que se cuelgue Y deje un nieto con la tubería, un
+  fixture que todavía no existe.
+- **`forge` tiene superficie de comando y ninguna regla la vigila.** Su
+  `bin/` es hoy el segundo ejecutable del repositorio fuera de la raíz de
+  composición, y compone y empuja de verdad; que sea solo un instrumento de
+  medición lo dice su doc comment y nada más — que es la clase de declaración
+  sin control que este arnés existe para reemplazar. Ninguna de las catorce
+  reglas mira quién puede tener `bin/`, así que al próximo que agregue uno no
+  lo caza nada.
+- **Que el proceso termine no lo sostiene una prueba de la suite, sino un
+  proceso aparte.** Una suite no puede afirmar sobre su propio fin: corre
+  hasta que terminan todas las pruebas. Por eso
+  el programa `ayuda_fin_del_proceso` de `packages/forge/bin/` hace UN
+  `empujar` y vuelve de `main`, y la prueba mide cuánto tarda ESE proceso en
+  terminar. Vive en `bin/` y no en `test/` porque en `test/` sería un huérfano
+  para el grafo; la suite lo BUSCA por su nombre en vez de escribir su ruta, y
+  lo invoca directamente en vez de correrlo como ejecutable del paquete —eso
+  último precompila un `snapshot` dentro del `.dart_tool` del checkout
+  compartido, que es exactamente lo que `probar_reglas.py` vigila—. Lo que esa
+  medición no distingue es POR QUÉ terminó: afirma el efecto observable —el
+  proceso termina con un nieto vivo del otro lado de la tubería— y no que la
+  suscripción se haya cancelado, que es el mecanismo. Un mecanismo distinto
+  con el mismo efecto la pasaría igual.
+- **La causa `revisionInvalida` usa `corregirConfiguracion` como acción
+  siguiente, y quien tiene que corregir es el código que compuso la
+  solicitud**, no una opción que el usuario haya configurado. Lo que las dos
+  comparten —y es lo que esa acción promete— es que el mismo intento vuelve a
+  fallar idéntico hasta que alguien cambie lo que se le pasa. Partir la acción
+  por origen del defecto es un cambio de dominio.
+- **`capas.py` no compara el árbol de paquetes que describe la sección
+  `## Estructura` de este README contra `packages/` real.** Es una enumeración
+  que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
+  pero nada además de una revisión humana lo sostiene.
+- **El control de ida y vuelta de ADR-002 no ve un constructor que normalice lo
+  que recibe.** Casi todas sus instancias canónicas arrancan de
+  `unaInstancia.toJson()`, o sea de un objeto ya construido: la normalización
+  ocurre antes de la primera serialización y las dos mitades de la igualdad
+  quedan transformadas por igual. Es lo que dejó en verde la canonicalización
+  de `CandidateIdentity` durante una ronda entera, y es una propiedad del
+  control, no de esa clase. Hoy ningún tipo serializable de `core` normaliza
+  —medido: el único constructor que transforma su entrada es
+  `PullRequestRequest.revision`, y ese tipo no serializa—, y las dos entradas
+  que parten de un JSON escrito a mano son las únicas inmunes. Cerrarlo pide
+  que cada instancia canónica sea un JSON literal, que es trabajo aparte.
+
+- **El árbol del commit se compara literal contra `contentRevision`, así que el
+  MISMO objeto de git escrito en otra caja se rechaza.** No es un descuido: la
+  representación del candidato es opaca —`core` no sabe si es un árbol, un SHA
+  u otra cosa—, y canonicalizarla por el largo de la cadena fue exactamente el
+  defecto de la ronda 7. Alcanza bajo el contrato de hoy porque los dos lados
+  salen del adapter de git, que imprime el OID en minúsculas; lo que nadie
+  sostiene es que un compositor futuro escriba el árbol en la misma caja que el
+  candidato. Cerrarlo pide un tipo que declare «esto es un OID de git», no una
+  inferencia sobre un `String`.
+- **Una URL escrita al desnudo en un dato de la corrida se muestra como enlace
+  en el cuerpo del pull request.** El Markdown de la forja la convierte, y eso
+  no se neutraliza escapando puntuación. Entra en el mismo criterio que deja
+  afuera la imagen: un enlace que el revisor tiene que clickear no entierra
+  nada, no falsifica ninguna sección y no se pide solo.
+- **El título se trunca por runas, no por grafemas.** Un emoji compuesto puede
+  quedar partido en las piezas que lo componen. Lo que ya no puede quedar es
+  media pareja sustituta, que es lo que la forja recibía como `�`.
+- **El plan se renderiza como texto plano.** No existe hoy un tipo que declare
+  «esto es Markdown que su autor escribió a propósito», y declararlo por campo
+  sería sostener con prosa una propiedad de un `String`. Mientras no exista ese
+  tipo, un plan con viñetas se lee con sus viñetas literales.
+
+### Lo que esta rebanada NO hace
+
+Queda para la rebanada de `ship`, y está declarado para que nadie lo lea como
+olvido:
+
+- **Nadie llama a `PullRequestSink.open` todavía.** La composición vive en las
+  pruebas de contrato; `ship` es quien la va a hacer productiva.
+- **`--retry-publication` no existe.** El desenlace ya sabe decir
+  `retryable`; el comando que lo consume es de la rebanada siguiente.
+- **`ShipOutcome`, `EstadoPublicable` y `CausaDeNoIntento` no se construyen
+  acá.** Son §12 y §13 de la propuesta.
+- **El código de salida `6` no se emite.** `packages/cli/lib/src/salida.dart`
+  no se toca en esta rebanada.
+- **La raíz de composición todavía no arma un `EntornoDelProceso` real y lo
+  pasa hacia abajo.** Las tres costuras no comparten un único mecanismo acá,
+  y hace falta decirlo por separado: `RepositorioGit._padre` y
+  `EjecutorDelSistema._padre` (`packages/plugin_dart/lib/src/ejecutor.dart`)
+  tienen, cada uno, el respaldo `_entornoDelPadre ?? EntornoDelProceso(Platform.environment)`
+  —el parámetro es opcional por eso—, pero el respaldo se ejerce distinto en
+  cada uno: `EjecutorDelSistema` sí tiene un llamador real que no inyecta,
+  `cascadaPorDefecto` (`packages/cli/lib/src/verify.dart`), que construye
+  `EjecutorDelSistema()` así y es el mismo `shipflow verify` que este README
+  muestra al principio; `RepositorioGit` todavía no tiene ninguno en
+  producción —hoy solo se construye desde pruebas—, porque quien lo compondría
+  ahí es `ship`, que no existe. `EmpujeAislado.entornoDelPadre`, en
+  `forge`, no tiene respaldo ninguno —es `required` y no nulable—, porque no
+  tiene ningún llamador que no inyecte: ahí olvidarlo no es un valor por
+  defecto silencioso, es un error de compilación. Lo que las tres comparten,
+  y lo que cierra el agujero que esta rebanada vino a cerrar, no es el
+  respaldo —que dos tienen y una no— sino el **tipo**: ninguna de las tres
+  acepta un `Map<String, String>` crudo, así que ningún llamador, inyecte o
+  no, puede colarles el entorno del padre sin pasar por `paraHijos`. Quien
+  componga `ship` va a capturar el entorno real una vez, en la raíz, e
+  inyectarlo en las tres, en vez de dejar que alguna caiga en su respaldo.
+
 ## Qué prometen estas fases y todavía no cumplen
 
 Declararlo es obligación de cada fase, y viene de una lección concreta: una
@@ -2787,7 +3447,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 
 | Falta | Cuándo |
 |---|---|
-| **19 de los 27 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
+| **18 de los 28 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
 | **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
@@ -2824,6 +3484,7 @@ packages/
   agents          adapters por CLI agéntico
   plugin_dart     preguntas de stack Dart/Flutter
   plugin_fake     los fakes de los puertos que ya tienen contrato
+  forge           el adapter de la forja: push aislado, cliente de GitHub · solo ve a core
   cli             comandos y composition root
 tool/
   checks/         capas.py · probar_reglas.py

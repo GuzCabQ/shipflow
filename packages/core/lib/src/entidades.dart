@@ -280,6 +280,89 @@ class Plan {
   );
 }
 
+// **El OID vive acá, con la identidad del candidato, y no con el desenlace de
+// publicar.** Lo que sigue define qué ES un identificador de objeto de git y
+// cómo se escribe; lo usan las dos fronteras que reciben uno —[CandidateIdentity],
+// unas líneas más abajo, y `PullRequestRequest`, en el módulo de la
+// publicación— y una de ellas es este mismo archivo, así que tenerlo allá
+// obligaba a que este archivo, que está más abajo, importara al que está más
+// arriba.
+
+/// Los DOS largos que puede tener un OID completo de git, **medidos, no
+/// supuestos**, con `git rev-parse HEAD` sobre dos repositorios recién
+/// creados con git 2.50.1:
+///
+/// - `--object-format=sha1` → 40 caracteres hexadecimales (160 bits).
+/// - `--object-format=sha256` → 64 caracteres hexadecimales (256 bits).
+///
+/// Las dos familias entran porque el repositorio que se empuja puede ser de
+/// cualquiera de las dos y `core` no elige por el usuario: aceptar solo
+/// SHA-1 rechazaría revisiones perfectamente válidas de un repositorio
+/// SHA-256, que es el mismo tipo de falso rechazo que esta validación existe
+/// para no cometer.
+///
+/// **Mayúsculas incluidas, y también está medido**: `git rev-parse` y
+/// `git cat-file -t` resuelven sin chistar un OID escrito en mayúsculas y
+/// devuelven el objeto. O sea que un OID en mayúsculas ES un OID completo
+/// válido; rechazarlo sería afirmar «esto no identifica ningún objeto» sobre
+/// algo que sí lo identifica. Lo que producen nuestros propios adapters es
+/// minúscula —es lo que git imprime—, así que esta tolerancia no relaja
+/// ninguna ruta de este repositorio: solo evita mentir sobre una entrada
+/// legítima.
+///
+/// **Y tolerar dos escrituras no es dejarlas circular:** quien acepta un OID
+/// en mayúsculas lo canonicaliza a minúsculas en la frontera —ver
+/// [PullRequestRequest.revision]—, porque río abajo hay comparaciones
+/// literales contra lo que devuelve la forja, y dos formas del mismo objeto
+/// ahí adentro se leen como dos objetos distintos.
+final RegExp _patronDeOidCompleto = RegExp(
+  r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$',
+);
+
+/// ¿[revision] es un OID completo de git?
+///
+/// **Es una función del dominio y no un detalle del adapter** porque el
+/// dominio es donde nace la revisión que después se interpola en un refspec:
+/// [PullRequestRequest] la exige al construirse, y `EmpujeAislado` la vuelve
+/// a exigir justo antes de lanzar el proceso. Son dos fronteras distintas —un
+/// invariante de construcción y una precondición de ejecución—, y ninguna de
+/// las dos puede delegar en la otra: la primera no sabe si alguien llegará
+/// por otro camino, y la segunda no puede confiar en que su llamador validó.
+///
+/// **Lo que NO dice**: que el objeto exista en el repositorio. Eso solo lo
+/// sabe git, y averiguarlo desde acá sería lanzar un proceso adentro de una
+/// validación sincrónica del dominio. Un OID bien formado que no existe lo
+/// rechaza `git push` con su propio mensaje, y ESE rechazo no borra nada;
+/// el que borra es el refspec sin revisión, que es justamente lo que esta
+/// función impide construir.
+bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
+
+/// La forma canónica de un OID: **minúsculas**, que es lo que imprime git y lo
+/// que devuelven las forjas.
+///
+/// **Se aplica en un solo lugar: `PullRequestRequest.revision`.** Ese campo
+/// DECLARA ser un OID completo de git —el constructor lanza si no lo es—, así
+/// que llevarlo a minúsculas no interpreta nada: elige una de las dos
+/// escrituras del mismo objeto, que es lo único que el dominio sabe desde que
+/// existe [esOidCompleto].
+///
+/// **Y no se aplica a ninguna identidad opaca.** Durante una ronda esta
+/// función se aplicó también a [CandidateIdentity], adivinando por el largo
+/// —40 o 64 caracteres hexadecimales— que la cadena era un OID. Una identidad
+/// opaca con esa forma y con mayúsculas entraba de un modo y salía de otro:
+/// una transformación silenciosa del dato de un puerto, que contradice el ida
+/// y vuelta sin pérdida que exige ADR-002 y la opacidad que ese tipo declara.
+/// Si hace falta una identidad de git con semántica propia, se introduce un
+/// tipo que lo diga; la semántica no se infiere del largo de un `String`.
+///
+/// **Y solo toca lo que ES un OID completo.** Cualquier otra cadena vuelve
+/// intacta: su llamador valida inmediatamente después y reporta en la queja lo
+/// que escribió quien la compuso. Bajar la caja a ciegas acá dejaría a mano una
+/// función que transforma cualquier cadena, que es exactamente la superficie
+/// que el párrafo anterior costó.
+String canonicalizarOid(String revision) =>
+    esOidCompleto(revision) ? revision.toLowerCase() : revision;
+
 /// Qué contenido exacto se expuso a la cascada, y sobre qué base.
 ///
 /// **Es una identidad opaca para el dominio.** En el adapter de git
@@ -303,13 +386,28 @@ class Plan {
 /// ningún control lo haya mirado entero. Eso lo acota cada afirmación, y solo
 /// hasta los sujetos de su propio testigo.
 class CandidateIdentity {
-  /// Qué contenido se expuso a la cascada.
+  /// Qué contenido se expuso a la cascada. **Tal cual se lo escribió**: es la
+  /// representación del adapter, y este tipo no la lee.
   final String contentRevision;
 
   /// Sobre qué base se construyó. Es la condición del commit: si la rama se
-  /// movió, el cambio no se aplica.
+  /// movió, el cambio no se aplica. **También literal**, por lo mismo.
   final String baseRevision;
 
+  /// **Lo único que este constructor le hace al valor: nada.** Rechaza el
+  /// blanco —que no identifica nada— y guarda lo que recibió, carácter por
+  /// carácter.
+  ///
+  /// **Por qué no canonicaliza.** Durante una ronda sí lo hizo: los dos campos
+  /// pasaban por `canonicalizarOid`, que baja a minúsculas toda cadena de 40 o
+  /// 64 caracteres hexadecimales. Eso adivina por el largo una semántica que
+  /// este tipo declara NO tener —la representación es opaca, y un doble puede
+  /// usar una donde la caja signifique algo—, y rompe dos cosas escritas: el
+  /// ida y vuelta sin pérdida que ADR-002 le exige a todo tipo de puerto
+  /// —`ABCDEF…` entraba y salía `abcdef…`— y la propuesta aceptada, que dice
+  /// que `core` no sabe si el identificador es un árbol, un SHA u otra cosa.
+  /// Si mañana hace falta una identidad de git con semántica propia, se
+  /// introduce un tipo que lo diga.
   CandidateIdentity({
     required this.contentRevision,
     required this.baseRevision,

@@ -414,12 +414,12 @@ void main() {
         directorio: raiz.path,
         politica: const _TodoEsFuente(),
         programa: gitFalso.path,
-        entornoDelPadre: {
+        entornoDelPadre: EntornoDelProceso({
           'PATH': Platform.environment['PATH']!,
           'HOME': Platform.environment['HOME']!,
           'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
           'GIT_DIR': '/otro/repositorio/.git',
-        },
+        }),
       );
       escribir('a.txt', 'dos\n');
       final c = await r.prepareCandidate(rebanada(['a.txt']));
@@ -456,11 +456,11 @@ void main() {
         directorio: raiz.path,
         politica: const _TodoEsFuente(),
         programaChmod: chmodFalso.path,
-        entornoDelPadre: {
+        entornoDelPadre: EntornoDelProceso({
           'PATH': Platform.environment['PATH']!,
           'HOME': Platform.environment['HOME']!,
           'SHIPFLOW_GITHUB_TOKEN': 'secreto-de-prueba',
-        },
+        }),
       );
       escribir('ejecutable.sh', '#!/bin/sh\necho x\n');
       final c = await r.prepareCandidate(rebanada(['ejecutable.sh']));
@@ -491,7 +491,7 @@ void main() {
     RepositorioGit con(Map<String, String> p) => RepositorioGit(
       directorio: raiz.path,
       politica: const _TodoEsFuente(),
-      entornoDelPadre: p,
+      entornoDelPadre: EntornoDelProceso(p),
     );
 
     Future<String> autorDe(RepositorioGit r) async {

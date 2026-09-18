@@ -16,6 +16,16 @@
 /// - **credencial** — [Credential], el único tipo que no serializa.
 /// - **entorno** — [entornoSaneado], la lista blanca con la que se lanza
 ///   todo subproceso.
+/// - **publicación** — el desenlace de la publicación: [PublicationOutcome]
+///   sellado, con `retryable`, [EstadoDeEntrega] y [AccionSiguiente]
+///   derivados de la variante y su [CausaDePublicacion].
+/// - **identidad de un objeto de git** — [esOidCompleto], la única definición
+///   de qué es una revisión empujable, que el dominio exige al construir la
+///   solicitud y el adapter vuelve a exigir antes de lanzar el proceso; y
+///   [canonicalizarOid], que la lleva a una sola escritura donde el campo
+///   DECLARA ser un OID —hoy, solo `PullRequestRequest.revision`—. No se
+///   aplica a [CandidateIdentity]: esa identidad es opaca y se conserva
+///   literal.
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.
@@ -32,6 +42,7 @@ export 'src/desenlace.dart';
 export 'src/entidades.dart';
 export 'src/entorno.dart';
 export 'src/observacion.dart';
+export 'src/publicacion.dart';
 export 'src/puertos.dart';
 export 'src/regla.dart';
 export 'src/superficie.dart';
