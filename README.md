@@ -9,7 +9,7 @@ fases— vive en un repositorio aparte: **`../sdlc-agentico/`**. Empezá por su
 
 ---
 
-## Estado: fase 2, quinta rebanada. **Hay un comando.**
+## Estado: fase 2. **Hay un comando.**
 
 `core` existe: **las entidades y los puertos, como tipos.** 10 de los 28
 puertos ya tienen implementación viva. Y existe el **fixture**: un proyecto
