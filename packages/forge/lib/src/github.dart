@@ -185,6 +185,31 @@ class SalidaDePrDeGitHub implements PullRequestSink {
 
       return await _crearPr(cliente, request, credencial);
     } finally {
+      // **`force: true` es EL mecanismo que suelta, no una prolijidad.**
+      //
+      // Todos los `.timeout(...)` de este archivo ABANDONAN lo que estaban
+      // esperando: un futuro abandonado no cancela la lectura que lo
+      // alimentaba ni cierra el socket de abajo. Con un extremo que manda
+      // encabezados y no cierra el cuerpo, `open` devuelve a tiempo —eso lo
+      // comprueban las pruebas de la paginación— y el proceso queda vivo con
+      // el socket abierto. `packages/cli/bin/` vuelve de `main` en vez de
+      // llamar a `exit`, así que eso es el comando que no termina.
+      //
+      // Medido contra un servidor así, con un proceso que vuelve de `main`:
+      // con `force: true` el proceso termina en 0,5 s; con `close()` a secas
+      // seguía vivo a los 400 s, cuando lo maté. La diferencia es esta
+      // palabra.
+      //
+      // **Se eligió un mecanismo único y declarado antes que cancelar en cada
+      // sitio.** Cancelar suscripción por suscripción dejaría afuera la fase
+      // de PEDIDO —`pedido.close().timeout(...)` espera un futuro, no un
+      // flujo: ahí no hay suscripción que cancelar, haría falta `abort()`— y
+      // dejaría igual el grupo de conexiones abierto. Cerrar el cliente
+      // cubre las tres fases de los dos pedidos de una vez.
+      //
+      // Lo sostiene «el proceso TERMINA aunque la forja deje el cuerpo a
+      // medias», en la suite de este archivo, que mide el fin de un proceso
+      // de verdad: si alguien saca el `force`, esa prueba se pone roja.
       cliente.close(force: true);
     }
   }
@@ -373,6 +398,9 @@ class SalidaDePrDeGitHub implements PullRequestSink {
         return PullRequestFailed(causa: causa);
       }
 
+      // Abandona la lectura al vencer, y quien la SUELTA es el
+      // `close(force: true)` del `finally` de [open] — ver ahí por qué el
+      // mecanismo está en un solo lugar y qué prueba lo pincha.
       final cuerpo = await utf8.decoder
           .bind(respuesta)
           .join()

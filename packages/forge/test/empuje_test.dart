@@ -858,6 +858,9 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
         Platform.resolvedExecutable,
         [
           instrumento.single.path,
+          // El instrumento tiene dos modos: este mide el subproceso; el otro
+          // —`forja`, en la suite del cliente de la API— mide el socket.
+          'empuje',
           '${temporal.path}/trabajo',
           conNieto.path,
           revisionDeLaCabeza,

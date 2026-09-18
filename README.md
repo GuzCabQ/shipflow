@@ -3028,7 +3028,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Diecinueve hechos que esta rebanada deja escritos porque son límites reales,
+Veintidós hechos que esta rebanada deja escritos porque son límites reales,
 no trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -3133,6 +3133,30 @@ no trabajo pendiente con fecha:
   se pierde el resto; si lo perdido era la aguja, la causa cae en
   `desconocida`, que es reintentable. Es el precio elegido: un reintento de
   más antes que un cuelgue sin desenlace.
+- **Lo que suelta los sockets del cliente de la API es una sola palabra:
+  el `force: true` del `close` de `open`.** Todos los `.timeout(...)` de ese
+  archivo abandonan lo que esperaban —un futuro abandonado no cancela la
+  lectura ni cierra el socket—, así que con un extremo que manda encabezados y
+  no cierra el cuerpo, `open` devuelve a tiempo y el proceso queda vivo con el
+  socket abierto. Medido: con `force: true` el proceso termina en 0,5 s; con
+  `close()` a secas seguía vivo a los 400 s. Se eligió un mecanismo único y
+  declarado antes que cancelar sitio por sitio, porque cancelar suscripciones
+  no cubre la fase de PEDIDO —ahí no hay flujo que cancelar— ni el grupo de
+  conexiones. Lo pincha «el proceso TERMINA aunque la forja deje el cuerpo a
+  medias».
+- **Los dos `soltar()` de la rama del vencimiento del `push` no los sostiene
+  ninguna prueba.** El fixture que deja un nieto vivo sale con 0 —ejercita el
+  camino posterior a la salida— y el fixture del vencimiento muere por señal,
+  con lo que sus tuberías cierran solas: borrar esas dos líneas queda verde.
+  Pincharlas pide un hijo que se cuelgue Y deje un nieto con la tubería, un
+  fixture que todavía no existe.
+- **`forge` tiene superficie de comando y ninguna regla la vigila.** Su
+  `bin/` es hoy el segundo ejecutable del repositorio fuera de la raíz de
+  composición, y compone y empuja de verdad; que sea solo un instrumento de
+  medición lo dice su doc comment y nada más — que es la clase de declaración
+  sin control que este arnés existe para reemplazar. Ninguna de las catorce
+  reglas mira quién puede tener `bin/`, así que al próximo que agregue uno no
+  lo caza nada.
 - **Que el proceso termine no lo sostiene una prueba de la suite, sino un
   proceso aparte.** Una suite no puede afirmar sobre su propio fin: corre
   hasta que terminan todas las pruebas. Por eso

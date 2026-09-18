@@ -8,11 +8,15 @@
 /// por su NOMBRE, sin ruta ni extensión, y el grafo lo alcanza porque todo
 /// ejecutable de `bin/` es un punto de entrada por convención.
 ///
-/// Nadie lo compone en ningún flujo: lo único que lo invoca es la suite del
-/// empuje, bajo `packages/forge/test/`.
+/// Nadie lo compone en ningún flujo: lo único que lo invoca son las suites de
+/// este paquete, bajo `packages/forge/test/`.
 ///
-/// Corre UN `empujar` contra el programa que se le pase y **vuelve de `main`
-/// sin llamar a `exit`**, igual que el ejecutable del comando bajo
+/// **Dos modos, porque son dos salidas distintas del proceso hacia afuera** y
+/// las dos tenían el mismo defecto: un futuro abandonado que deja algo
+/// abierto. `empuje` corre un `empujar` contra el programa que se le pase;
+/// `forja` corre un `open` contra una URL que contesta encabezados y nunca
+/// cierra el cuerpo. En los dos casos **vuelve de `main` sin llamar a
+/// `exit`**, igual que el ejecutable del comando bajo
 /// `packages/cli/bin/`, que fija `exitCode` y vuelve a propósito. Esa es toda la gracia: un proceso
 /// que vuelve de `main` sigue vivo mientras le quede trabajo pendiente —una
 /// suscripción a una tubería, por ejemplo—, así que CUÁNDO TERMINA ESTE
@@ -26,6 +30,21 @@ import 'package:core/core.dart';
 import 'package:forge/forge.dart';
 
 Future<void> main(List<String> argumentos) async {
+  final modo = argumentos.first;
+  final desenlace = switch (modo) {
+    'empuje' => await _medirElEmpuje(argumentos.sublist(1)),
+    'forja' => await _medirLaForja(argumentos.sublist(1)),
+    _ => throw ArgumentError.value(modo, 'modo', 'no es «empuje» ni «forja»'),
+  };
+
+  // El tipo del desenlace. No sale nada más: lo que se mide afuera es cuánto
+  // tarda este proceso en terminar DESPUÉS de esta línea.
+  stdout.writeln('desenlace=${desenlace.runtimeType}');
+}
+
+/// El camino del subproceso: `git push` contra un programa que se cuelga o
+/// que deja un nieto con la tubería heredada.
+Future<Object> _medirElEmpuje(List<String> argumentos) async {
   final [directorio, programa, revision, urlDelRemoto] = argumentos;
 
   final empuje = EmpujeAislado(
@@ -37,18 +56,77 @@ Future<void> main(List<String> argumentos) async {
     presupuesto: const Duration(milliseconds: 300),
   );
 
-  final comienzo = DateTime.now();
-  final desenlace = await empuje.empujar(
+  return empuje.empujar(
     urlDelRemoto: urlDelRemoto,
     credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
     revision: revision,
     rama: 'rebanada-1',
   );
-  final tardanza = DateTime.now().difference(comienzo);
+}
 
-  // El tipo del desenlace y los milisegundos que tardó en computarse. No sale
-  // nada más: lo que se mide afuera es cuánto tarda este proceso en terminar
-  // DESPUÉS de esta línea.
-  stdout.writeln('desenlace=${desenlace.runtimeType}');
-  stdout.writeln('computado_en_ms=${tardanza.inMilliseconds}');
+/// El camino de la red: un `open` contra una URL que manda encabezados y no
+/// cierra el cuerpo nunca.
+///
+/// Los `.timeout(...)` de ese archivo hacen que `open` DEVUELVA a tiempo y no
+/// cierran el socket —abandonan el futuro, que es lo mismo que hacía el
+/// drenaje del empuje antes de soltarse—. Lo que lo cierra es una sola línea,
+/// el `close(force: true)` del `finally`, y esto es lo que la pincha: sin
+/// ella el proceso queda vivo hasta que el otro lado suelte el socket.
+Future<Object> _medirLaForja(List<String> argumentos) async {
+  final [base, revision, arbol] = argumentos;
+
+  final salida = SalidaDePrDeGitHub(
+    configuracion: ConfiguracionDeGitHub(
+      duenio: 'duenio',
+      repositorio: 'repo',
+      baseDeLaApi: Uri.parse(base),
+      urlDelRemoto: '\$base/duenio/repo.git',
+    ),
+    credenciales: const _CredencialFija(),
+    empuje: EmpujeAislado(
+      directorio: Directory.systemTemp.path,
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH'] ?? '',
+      }),
+      programa: 'true',
+    ),
+    presupuestoDeRed: const Duration(milliseconds: 200),
+  );
+
+  return salida.open(
+    PullRequestRequest(
+      draft: PullRequestDraft(
+        runId: 'corrida-1',
+        branch: 'rama-1',
+        base: 'main',
+        artefacto: ArtefactoDeRevision(
+          superficie: SuperficieDeVerificacion(
+            cubierto: const [],
+            requiereCriterio: const [],
+            estado: EstadoDeCorrida.verde,
+          ),
+          candidato: CandidateIdentity(
+            contentRevision: arbol,
+            baseRevision: 'base-1',
+          ),
+          intent: 'medir cuándo termina el proceso',
+          plan: null,
+          sinPlanPorque: 'no hay elementos de trabajo',
+          alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
+        ),
+      ),
+      revision: revision,
+      arbolDeLaRevision: arbol,
+    ),
+  );
+}
+
+/// La credencial de la medición. No se lee de ningún lado: este programa no
+/// es un comando y no tiene que descubrir nada del entorno.
+class _CredencialFija implements CredentialSource {
+  const _CredencialFija();
+
+  @override
+  Future<Credential?> read(String key) async =>
+      const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN');
 }

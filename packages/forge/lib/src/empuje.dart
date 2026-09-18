@@ -288,6 +288,15 @@ class EmpujeAislado {
         // fija `exitCode` y vuelve de `main`, no llama a `exit`—. Medido: sin
         // cancelar, el desenlace se computaba en 624 ms y el proceso recién
         // terminaba a los 20,3 s, cuando moría el nieto.
+        //
+        // **Residuo declarado: estas dos líneas no las sostiene ninguna
+        // prueba.** El fixture que deja un nieto vivo con la tubería
+        // heredada sale con 0, así que ejercita el camino de ABAJO —el
+        // posterior a la salida—, y el fixture del vencimiento muere por
+        // señal, con lo que sus tuberías se cierran solas y el proceso
+        // termina igual sin estas dos líneas. Borrarlas queda en verde. Un
+        // caso que las pinchara necesita un hijo que se cuelgue Y deje un
+        // nieto con la tubería, que es un fixture que todavía no existe.
         await salidaDeError.soltar();
         await salidaEstandar.soltar();
         // **`PushUnknown` y no `PushFailed`.** Al interrumpirlo se pierde la

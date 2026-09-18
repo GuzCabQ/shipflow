@@ -19,6 +19,11 @@ const secretoDePrueba = 'ghp_x';
 /// BORRA la rama del remoto.
 const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
 
+/// El nombre del programa que mide el FIN de un proceso, en `bin/`. Se lo
+/// busca por este prefijo en vez de escribir su ruta: ver el comentario de la
+/// prueba que lo usa, y el de su gemela en la suite del empuje.
+const nombreDelInstrumento = 'ayuda_fin_del_proceso';
+
 void main() {
   late HttpServer api;
   late List<Map<String, Object?>> prsExistentes;
@@ -879,6 +884,95 @@ void main() {
       expect(creados, 0, reason: 'la búsqueda quedó incompleta');
     });
   });
+
+  test(
+    'el proceso TERMINA aunque la forja deje el cuerpo a medias',
+    () async {
+      // **El mismo abandono que el drenaje del empuje, un archivo más allá.**
+      // `utf8.decoder.bind(respuesta).join().timeout(...)` y
+      // `respuesta.drain(...).timeout(...)` hacen que `open` DEVUELVA a tiempo
+      // —las dos pruebas de más arriba lo comprueban— y no cierran el socket:
+      // abandonan el futuro, igual que hacía `_drenar` antes de soltarse.
+      //
+      // Lo que sí lo cierra es UNA línea: el `close(force: true)` del `finally`
+      // de `open`. Está medido en esta plataforma, contra este mismo servidor
+      // —encabezados y un cuerpo que nunca completa— y con un proceso que
+      // vuelve de `main` sin llamar a `exit`:
+      //
+      // | forma | fin del proceso |
+      // |---|---|
+      // | con `close(force: true)` | **0,5 s** |
+      // | con `close()` a secas | seguía vivo a los **400 s**, cuando lo maté |
+      //
+      // O sea que el comportamiento correcto descansa entero en esa palabra, y
+      // **ninguna otra prueba la pincha**: las dos de la paginación quedan
+      // verdes con o sin ella, porque miden el desenlace y no el proceso. Esta
+      // es la que se rompe si alguien la borra.
+      //
+      // **Residuo del método**: el subproceso se lanza sin `environment:` ni
+      // `includeParentEnvironment:`, así que hereda el entorno de quien corre
+      // la suite. No hay fuga —el instrumento arma su propio
+      // `EntornoDelProceso` y `entornoSaneado` filtra lo que llegue a un
+      // nieto—, pero es el primer hijo de esta suite que es él mismo un
+      // programa que publica, y el punto ciego declarado de
+      // `subprocesos-con-entorno-saneado` («las pruebas lanzan `git` y `chmod`
+      // a mano») se queda corto para describirlo.
+      final colgado = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      colgado.listen((p) async {
+        p.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..contentLength = 1000
+          ..write('[');
+        await p.response.flush();
+        // Nunca se cierra.
+      });
+      addTearDown(() => colgado.close(force: true));
+
+      final raizDelPaquete = Directory('packages/forge').existsSync()
+          ? 'packages/forge'
+          : '.';
+      final instrumento = Directory('$raizDelPaquete/bin')
+          .listSync()
+          .whereType<File>()
+          .where(
+            (f) => f.uri.pathSegments.last.startsWith(nombreDelInstrumento),
+          )
+          .toList();
+      expect(
+        instrumento,
+        hasLength(1),
+        reason: 'no se encontró el instrumento «$nombreDelInstrumento»',
+      );
+
+      final reloj = Stopwatch()..start();
+      final r = await Process.run(Platform.resolvedExecutable, [
+        instrumento.single.path,
+        'forja',
+        'http://127.0.0.1:${colgado.port}',
+        revisionDePrueba,
+        'arbol-1',
+      ]);
+      reloj.stop();
+
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      expect(
+        r.stdout,
+        contains('desenlace=PullRequestFailed'),
+        reason: 'el cuerpo no llegó entero: la búsqueda falló, y eso está bien',
+      );
+      expect(
+        reloj.elapsed,
+        lessThan(const Duration(seconds: 10)),
+        reason:
+            'el proceso siguió vivo después de que `open` devolvió: quedó un '
+            'socket abierto con una lectura abandonada encima. Lo que lo suelta '
+            'es el `close(force: true)` del `finally` de `open`; sin el '
+            '`force`, el proceso espera a que el otro lado suelte.',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 
   test('un PR fusionado devuelve URL; uno cerrado da incompleto no '
       'reintentable', () async {
