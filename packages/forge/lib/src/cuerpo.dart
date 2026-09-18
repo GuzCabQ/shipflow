@@ -243,6 +243,96 @@ String _textoDeBloque(String texto) =>
 String _textoEnLista(String texto) =>
     _comoEntidades(texto).split(_finDeRenglon).join(' ');
 
+/// El texto de «Qué hacer». **Es fijo y no pasa por el render seguro**: no
+/// depende de ningún dato de la corrida —a diferencia de todo lo demás que
+/// interpola este archivo—, así que no hay nada ajeno que pudiera actuar
+/// como sintaxis.
+///
+/// **Por qué esto y no la acción del desenlace de la publicación.** `forge`
+/// arma este cuerpo ANTES de que exista un desenlace que dar: la operación
+/// que lo llama es la misma que todavía no terminó de abrir el pull request,
+/// y `accionDe(ShipOutcome)` —en `cli`, la raíz de composición— recién puede
+/// evaluarse con lo que esa apertura devuelva. Pedirle el parámetro a `cli`
+/// además cruzaría la flecha al revés: `forge` no puede ver a `cli`. Lo que
+/// SÍ existe en este momento es [PullRequestRequest.incompleto], que ya lo
+/// tiene la solicitud — de ahí se deriva esta sección, sin agregar un
+/// parámetro nuevo.
+const _queHacerSiIncompleto =
+    'La verificación de este cambio no salió verde. Antes de fusionar, '
+    'alguien con criterio tiene que revisar «Qué requiere criterio humano», '
+    'arriba, y decidir si el cambio se acepta publicado así.';
+
+/// La línea visible con la revisión, el `runId` y `payloadVersionDeShip`.
+///
+/// **Es la corrección directa del hallazgo que motiva este archivo.** La
+/// revisión y el `runId` ya viajaban en [marcadorEstable], pero ADENTRO de un
+/// comentario HTML: la forja no lo muestra, así que para el revisor humano no
+/// estaban — el JSON de la corrida es local y `git` lo ignora, y el marcador
+/// era la única otra copia. Esta línea repite los mismos dos valores, ya
+/// visibles, y agrega `payloadVersionDeShip`, que hasta ahora no aparecía en
+/// ningún lado del cuerpo.
+///
+/// Pasa por [_identificadorEnCodigo] como cualquier otro identificador de
+/// este archivo. `runId` y `revision` tienen su propia forma restringida
+/// —[PullRequestDraft] rechaza `<!--`, `-->` y saltos de línea en el primero;
+/// [PullRequestRequest] exige que el segundo sea un OID completo—, pero esta
+/// función no se apoya en esa restricción para estar segura: la promesa del
+/// render seguro es la misma para todo dato que este archivo no haya escrito
+/// él mismo.
+String _lineaDeIdentidad(PullRequestRequest solicitud) =>
+    'Corrida ${_identificadorEnCodigo(solicitud.draft.runId)} · '
+    'revisión ${_identificadorEnCodigo(solicitud.revision)} · '
+    'payload v$payloadVersionDeShip';
+
+/// Los testigos que sostienen lo cubierto, en un bloque PLEGABLE: es
+/// evidencia de apoyo, no algo que un revisor tenga que leer para decidir —
+/// eso ya lo dijeron, completas y sin plegar, las dos secciones obligatorias
+/// de arriba. Por eso este bloque va DESPUÉS de las dos, nunca antes ni entre
+/// ellas, y por eso es el único de este archivo que el adapter puede plegar:
+/// `<details>` es sintaxis de GitHub, igual que `> [!WARNING]`.
+///
+/// **Sin nada cubierto no hay testigos que mostrar, y no se inventa un bloque
+/// vacío** — el mismo principio que ya aplican [_escribirLoQueQuedoCubierto]
+/// y [_escribirLoQueRequiereCriterio] con su texto de lista vacía, llevado un
+/// paso más allá: acá ni siquiera hay una sección fija que rellenar.
+///
+/// **Deduplicado por identidad, no por contenido.** Un solo paso puede cubrir
+/// varios sujetos con el MISMO testigo —una invocación certifica una lista de
+/// archivos—, y `AfirmacionCubierta.desde` (en `core`, `superficie`) reusa ese
+/// mismo objeto para cada sujeto que cubre. `Witness` no define `==`, así que
+/// el `Set` de abajo compara por identidad y agrupa exactamente esas
+/// repeticiones, sin fundir dos testigos distintos que dijeran lo mismo por
+/// coincidencia.
+///
+/// **Nada se trunca.** Un testigo con muchos sujetos —o muchas omisiones— sale
+/// completo: cortarlo y dejar un «…» sería, otra vez, la forma exacta del
+/// defecto que este archivo existe para no cometer — decirle al revisor que
+/// puede no mirar algo que nadie certificó.
+void _escribirTestigos(StringBuffer buffer, List<AfirmacionCubierta> cubierto) {
+  final testigos = <Witness>{for (final c in cubierto) c.testigo};
+  if (testigos.isEmpty) return;
+
+  buffer.writeln('<details>');
+  buffer.writeln('<summary>Testigos (${testigos.length})</summary>');
+  buffer.writeln();
+  for (final testigo in testigos) {
+    final sujetos = testigo.subjects.map(_identificadorEnCodigo).join(', ');
+    buffer.writeln(
+      '- ${_identificadorEnCodigo(testigo.invocation)}'
+      '${sujetos.isEmpty ? '' : ' — sujetos: $sujetos'} — salida '
+      '${testigo.exitCode} — terminó '
+      '${testigo.finishedAt.toUtc().toIso8601String()}',
+    );
+    for (final omision in testigo.omitted) {
+      final sujeto = omision.subject == null
+          ? 'residuo general'
+          : 'sujeto ${_identificadorEnCodigo(omision.subject!)}';
+      buffer.writeln('  - omitido — $sujeto: ${_textoEnLista(omision.reason)}');
+    }
+  }
+  buffer.writeln('</details>');
+}
+
 /// Un identificador que se muestra como código: el sujeto, el id del control,
 /// el id de la afirmación.
 ///
@@ -389,6 +479,14 @@ void _escribirLoQueRequiereCriterio(
 /// vecino que habla con la API porque la clave de la búsqueda idempotente
 /// pertenece a quien busca.
 ///
+/// **Después del plan, y antes del marcador, van los cuatro elementos que
+/// §13 exige y que este archivo no llevaba**: la acción siguiente cuando la
+/// corrida se publica incompleta ([_queHacerSiIncompleto], derivada de
+/// [PullRequestRequest.incompleto]), los testigos agrupados en un bloque
+/// plegable ([_escribirTestigos]) y, visibles y no solo dentro del
+/// comentario HTML del marcador, la revisión, el `runId` y
+/// `payloadVersionDeShip` ([_lineaDeIdentidad]).
+///
 /// **Lo que no aparece acá, a propósito**: ninguna ruta del workspace local,
 /// ningún campo que el revisor remoto no pueda ver por su cuenta. Todo lo que
 /// esta función lee sale de [ArtefactoDeRevision] y de sus tipos —ninguno
@@ -445,6 +543,24 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
     buffer.writeln();
     buffer.writeln(_textoDeBloque(artefacto.sinPlanPorque!));
   }
+  buffer.writeln();
+
+  // Presente si y solo si la corrida se publica incompleta: sobre una
+  // superficie verde no hay nada que decidir, y una sección vacía afirmaría
+  // que sí lo hay.
+  if (solicitud.incompleto) {
+    buffer.writeln('## Qué hacer');
+    buffer.writeln();
+    buffer.writeln(_queHacerSiIncompleto);
+    buffer.writeln();
+  }
+
+  _escribirTestigos(buffer, superficie.cubierto);
+  buffer.writeln();
+
+  buffer.writeln('---');
+  buffer.writeln();
+  buffer.writeln(_lineaDeIdentidad(solicitud));
   buffer.writeln();
 
   buffer.writeln(marcadorEstable(solicitud));

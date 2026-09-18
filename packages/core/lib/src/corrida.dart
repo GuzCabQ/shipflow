@@ -12,6 +12,19 @@ library;
 import 'desenlace.dart';
 import 'publicacion.dart';
 
+/// La versión del formato del payload de `ship`: el documento que persiste
+/// [ShipOutcome] y el cuerpo del pull request que lo resume para quien
+/// revisa.
+///
+/// **Vive acá y no en `cli` ni en `forge`, porque los dos la necesitan y
+/// ninguno de los dos es dueño del otro.** El payload del CLI la imprime como
+/// dato de máquina; el cuerpo del PR, en `forge`, la imprime como dato visible
+/// para un humano — y `forge` no puede depender de `cli` para leerla, porque
+/// las flechas del grafo van hacia `core`. Ponerla en cualquiera de los dos
+/// adapters obligaría al otro a llevar su propia copia del número, que es la
+/// forma exacta en que dos «versión 1» dejan de significar lo mismo.
+const payloadVersionDeShip = 1;
+
 /// Los estados desde los que **se puede publicar**.
 ///
 /// `errorInterno` no está, y esa ausencia es el mecanismo: sin él en el tipo,
