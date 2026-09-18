@@ -262,8 +262,8 @@ class EmpujeAislado {
       // nunca sale, así que el presupuesto de arriba se cumpliría y
       // reportaría un vencimiento cuya causa real es que nosotros no
       // leímos. Sería un falso `unknown` fabricado por este archivo.
-      final salidaEstandar = _drenar(proceso.stdout);
-      final salidaDeError = _drenar(proceso.stderr);
+      final salidaEstandar = _Drenaje(proceso.stdout);
+      final salidaDeError = _Drenaje(proceso.stderr);
 
       final int codigo;
       try {
@@ -274,13 +274,22 @@ class EmpujeAislado {
         // abierta la posibilidad de que la ignore y el cuelgue siga, que es
         // exactamente lo que este camino existe para terminar.
         proceso.kill(ProcessSignal.sigkill);
-        // Se espera la MUERTE, no el drenaje. `exitCode` viene de esperar al
-        // hijo y `SIGKILL` no se puede bloquear, así que esto termina. Los
-        // dos `_drenar` quedan sin esperar A PROPÓSITO: un nieto que heredó
-        // la tubería —`git` lanza `git-remote-https`— puede mantenerla
-        // abierta después de que el hijo murió, y esperar el cierre acá
-        // sería poner el cuelgue de vuelta, un renglón más abajo.
+        // Se espera la MUERTE, no el cierre de los flujos. `exitCode` viene
+        // de esperar al hijo y `SIGKILL` no se puede bloquear, así que esto
+        // termina; esperar a que las tuberías se cierren, en cambio, sería
+        // poner el cuelgue de vuelta un renglón más abajo, porque un nieto
+        // que las heredó —`git` lanza `git-remote-https`— puede tenerlas
+        // abiertas después de que el hijo murió.
         await proceso.exitCode;
+        // **Y se SUELTAN, que no es lo mismo que no esperarlas.** Dejar de
+        // esperar un futuro no cancela la suscripción que lo alimenta: la
+        // tubería seguiría abierta y escuchada, y el proceso que corre esto
+        // no puede terminar mientras haya una suscripción viva —`shipflow`
+        // fija `exitCode` y vuelve de `main`, no llama a `exit`—. Medido: sin
+        // cancelar, el desenlace se computaba en 624 ms y el proceso recién
+        // terminaba a los 20,3 s, cuando moría el nieto.
+        await salidaDeError.soltar();
+        await salidaEstandar.soltar();
         // **`PushUnknown` y no `PushFailed`.** Al interrumpirlo se pierde la
         // única fuente que sabía cómo terminó: puede haber subido el
         // packfile entero y estar esperando el `report-status` del remoto,
@@ -289,54 +298,35 @@ class EmpujeAislado {
         return NoEmpujado(PushUnknown(causa: CausaDePublicacion.desconocida));
       }
 
-      // **También CON presupuesto, y por el mismo motivo que un `if` más
-      // arriba manda a no esperar los drenajes tras el `SIGKILL`.** El hijo
-      // salió, pero un descendiente suyo pudo heredar la tubería y
-      // conservarla abierta —`git` lanza `git-remote-https`—: entonces estos
-      // `await` no vuelven nunca y `empujar` se cuelga sin producir ningún
-      // desenlace, que es exactamente el cuelgue que esta ronda vino a
-      // cerrar, vuelto a entrar por la puerta de al lado.
+      // **Una sola espera con presupuesto, y la otra se suelta sin esperar.**
+      // El texto del hijo se mira en UN solo lugar —`_causaDe`, que clasifica
+      // sobre `stderr`—, así que el contenido de `stdout` no hace falta una
+      // vez que el proceso terminó: se drenó para que el hijo no se bloqueara
+      // escribiendo, y ese trabajo ya está hecho. Esperarlo también sería un
+      // tercer presupuesto en serie por un texto que nadie lee.
       //
-      // El respaldo es texto VACÍO y no una excepción: lo que se pierde es
-      // el texto con el que se clasifica la causa, así que un drenaje que no
-      // termina degrada a `desconocida` —un reintento de más— en vez de
-      // volverse un cuelgue o una excepción que escape del puerto.
+      // La espera que sí queda lleva presupuesto por el mismo motivo que el
+      // `if` de arriba manda a no esperar los cierres tras el `SIGKILL`: el
+      // hijo salió, pero un descendiente suyo pudo heredar la tubería y
+      // conservarla abierta, y entonces este `await` no vuelve nunca y
+      // `empujar` se cuelga sin producir ningún desenlace. Al vencer se
+      // SUELTA la tubería —cancela la suscripción— y se devuelve lo que se
+      // alcanzó a leer: lo que se pierde es parte del texto con el que se
+      // clasifica la causa, que degrada a `desconocida` —un reintento de
+      // más— y nunca a una publicación que se lea como completa.
       //
       // **El peor caso es el presupuesto dos veces**, y está declarado: la
-      // segunda espera solo ocurre cuando alguien conserva el descriptor
-      // después de que el hijo murió. Es el mismo valor a propósito —es la
+      // espera de la salida más esta. Es el mismo valor a propósito —es la
       // misma pregunta, «¿esto termina?», en dos momentos del mismo
       // lanzamiento— y no un segundo número que ajustar por su cuenta.
-      final textoDeError = await salidaDeError.timeout(
-        presupuesto,
-        onTimeout: () => '',
-      );
-      await salidaEstandar.timeout(presupuesto, onTimeout: () => '');
+      final textoDeError = await salidaDeError.texto(presupuesto);
+      await salidaEstandar.soltar();
       if (codigo == 0) return const Empujado();
       return NoEmpujado(PushFailed(causa: _causaDe(textoDeError)));
     } finally {
       await sinGanchos.delete(recursive: true);
     }
   }
-
-  /// Lee un flujo del hijo entero y lo convierte en texto.
-  ///
-  /// **`allowMalformed`**, porque lo que sale de `git` son bytes y no una
-  /// promesa de UTF-8: un nombre de rama o un mensaje del remoto en otra
-  /// codificación haría que el decodificador estricto lanzara, y esa
-  /// excepción escaparía de `empujar` — que el puerto declara que no lanza—
-  /// en vez de convertirse en una causa. Un byte que no se pudo decodificar
-  /// se vuelve el carácter de reemplazo y el clasificador sigue viendo el
-  /// resto del texto, que es donde están las agujas que mira.
-  ///
-  /// **Y traga sus propios errores.** Si el flujo se rompe, lo que queda es
-  /// texto vacío, que el clasificador lee como `desconocida`: un
-  /// reintento de más, nunca una publicación que se lea como completa. Una
-  /// excepción acá, en cambio, sería un futuro sin dueño cuando el camino
-  /// del vencimiento decide no esperarlo.
-  static Future<String> _drenar(Stream<List<int>> flujo) => const Utf8Decoder(
-    allowMalformed: true,
-  ).bind(flujo).join().catchError((Object _) => '');
 
   /// Solo para la suite: `_causaDe` es privada, y esta es la forma de probar
   /// el clasificador contra salidas de `git` que son costosas o difíciles de
@@ -388,5 +378,83 @@ class EmpujeAislado {
       return CausaDePublicacion.rechazoDeLaForja;
     }
     return CausaDePublicacion.desconocida;
+  }
+}
+
+/// Un flujo del hijo que se lee a medida que llega **y que se puede soltar**.
+///
+/// **Por qué es una clase y no un `join()` con `.timeout(...)`.** Esa forma
+/// —la que tenía este archivo— parecía cerrar el cuelgue y lo mudaba: el
+/// `timeout` ABANDONA el futuro, pero no cancela la suscripción que lo
+/// alimenta. La tubería queda abierta y escuchada, y un proceso con una
+/// suscripción viva no termina — el ejecutable del comando, bajo
+/// `packages/cli/bin/`, fija `exitCode` y vuelve de `main` a propósito, en vez
+/// de llamar a `exit`, que mataría el proceso con trabajo pendiente.
+///
+/// **Medido**, con un programa que deja un nieto con la tubería heredada
+/// (`sh -c 'sleep 20 & exit 0'`) y un presupuesto de 300 ms:
+///
+/// | forma | desenlace | fin del proceso |
+/// |---|---|---|
+/// | `join()` abandonado por `timeout` | 624 ms | **20,3 s** — cuando muere el nieto |
+/// | `listen` + `cancel()` al vencer | 624 ms | **0,9 s** |
+///
+/// En producción ese nieto es `git-remote-https` contra una conexión muerta,
+/// o sea sin cota: el proceso queda vivo hasta que el sistema corte el
+/// socket. Cancelar la suscripción es lo único que cierra el descriptor.
+///
+/// **El texto ya leído se conserva** al soltar: se acumula a medida que
+/// llega, no al final, así que un vencimiento pierde lo que faltaba y no lo
+/// que ya había.
+final class _Drenaje {
+  final StringBuffer _acumulado = StringBuffer();
+  final Completer<void> _cerrado = Completer<void>();
+  late final StreamSubscription<String> _suscripcion;
+
+  /// **`allowMalformed`**, porque lo que sale de `git` son bytes y no una
+  /// promesa de UTF-8: un nombre de rama o un mensaje del remoto en otra
+  /// codificación haría que el decodificador estricto lanzara, y esa
+  /// excepción escaparía de `empujar` —que el puerto declara que no lanza—
+  /// en vez de convertirse en una causa.
+  ///
+  /// **Y un error del flujo termina el drenaje en vez de propagarse**: lo que
+  /// queda es el texto leído hasta ahí, que el clasificador lee como una
+  /// causa más pobre —un reintento de más—, nunca como una publicación
+  /// completa.
+  _Drenaje(Stream<List<int>> flujo) {
+    _suscripcion = const Utf8Decoder(allowMalformed: true)
+        .bind(flujo)
+        .listen(
+          _acumulado.write,
+          onError: (Object _) => _marcarCerrado(),
+          onDone: _marcarCerrado,
+          cancelOnError: true,
+        );
+  }
+
+  void _marcarCerrado() {
+    if (!_cerrado.isCompleted) _cerrado.complete();
+  }
+
+  /// Lo que el hijo escribió, esperando a que el flujo termine **con
+  /// [presupuesto]**. Si vence, suelta la tubería y devuelve lo leído.
+  Future<String> texto(Duration presupuesto) async {
+    try {
+      await _cerrado.future.timeout(presupuesto);
+    } on TimeoutException {
+      await soltar();
+    }
+    return _acumulado.toString();
+  }
+
+  /// Suelta la tubería **sin esperar a que termine**: cancela la suscripción,
+  /// que es lo que cierra el descriptor de este lado.
+  ///
+  /// `cancel()` no espera a que el que escribe deje de escribir —por eso es
+  /// seguro llamarlo con un nieto vivo del otro lado—, y llamarlo dos veces
+  /// no es un error.
+  Future<void> soltar() async {
+    await _suscripcion.cancel();
+    _marcarCerrado();
   }
 }

@@ -705,6 +705,68 @@ void main() {
       timeout: const Timeout(Duration(seconds: 10)),
     );
 
+    test(
+      'la SEGUNDA página cuyo CUERPO no termina de llegar vence',
+      () async {
+        // El presupuesto de una página no es uno solo: son tres esperas —la
+        // respuesta, la lectura del cuerpo, y el descarte del cuerpo de
+        // error—, y las pruebas de arriba solo clavan la primera. Este servidor
+        // manda los encabezados y anuncia un cuerpo que nunca completa, así que
+        // `pedido.close()` vuelve enseguida y lo que se cuelga es la LECTURA.
+        final forja = await forjaConSegundaPagina((p) async {
+          p.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..contentLength = 1000
+            ..write('[');
+          await p.response.flush();
+          // Nunca se cierra: el cuerpo queda a medias para siempre.
+        });
+
+        final r = await construirSalida(
+          forja.servidor.port,
+          presupuestoDeRed: const Duration(milliseconds: 200),
+        ).open(solicitud());
+
+        expect(r, isA<PullRequestFailed>());
+        expect((r as PullRequestFailed).causa, CausaDePublicacion.red);
+        expect(forja.metodos, isNot(contains('POST')));
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
+
+    test('la SEGUNDA página que falla con un cuerpo que no termina conserva '
+        'su clasificación', () async {
+      // Dos cosas en una, y las dos estaban sin cubrir. El descarte del
+      // cuerpo de error también puede colgarse —es la tercera espera de la
+      // página—, y si su vencimiento saliera por excepción, un `401` bien
+      // clasificado terminaría como `red` en el catch de `open`: el defecto
+      // original del punto 2, reaparecido por el camino del descarte.
+      final forja = await forjaConSegundaPagina((p) async {
+        p.response
+          ..statusCode = HttpStatus.unauthorized
+          ..headers.contentType = ContentType.json
+          ..contentLength = 1000
+          ..write('{"message":');
+        await p.response.flush();
+      });
+
+      final r = await construirSalida(
+        forja.servidor.port,
+        presupuestoDeRed: const Duration(milliseconds: 200),
+      ).open(solicitud());
+
+      expect(r, isA<PullRequestFailed>());
+      expect(
+        (r as PullRequestFailed).causa,
+        CausaDePublicacion.autenticacion,
+        reason:
+            'el código ya había clasificado: que el cuerpo que se descarta no '
+            'termine de llegar no puede degradar la causa a `red`',
+      );
+      expect(forja.metodos, isNot(contains('POST')));
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
     test('un `Link` que cicla no gira para siempre: se corta y se declara '
         'fallo', () async {
       // Un `Link` que apunta siempre a la misma página —un proxy roto, un

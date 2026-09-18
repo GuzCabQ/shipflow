@@ -358,10 +358,19 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       // lista, y tratar de convertirlo en una borra la única información que
       // sí dice qué pasó: el código.
       if (respuesta.statusCode != HttpStatus.ok) {
+        final causa = _causaDelCodigo(respuesta.statusCode);
         // El cuerpo se descarta, no se lee: libera la conexión sin que su
-        // texto llegue a ninguna parte.
-        await respuesta.drain<void>().timeout(_presupuestoDeRed);
-        return PullRequestFailed(causa: _causaDelCodigo(respuesta.statusCode));
+        // texto llegue a ninguna parte. **Con presupuesto, y tragándose su
+        // vencimiento**: un cuerpo de error que no termina de llegar colgaría
+        // la corrida igual que uno bueno, y una vez que el CÓDIGO clasificó,
+        // que el cuerpo se haya terminado de descartar o no ya no cambia la
+        // causa. Dejar que el vencimiento saliera por excepción convertiría
+        // un `401` bien clasificado en un `red` del catch de arriba.
+        await respuesta
+            .drain<void>()
+            .timeout(_presupuestoDeRed)
+            .catchError((Object _) {});
+        return PullRequestFailed(causa: causa);
       }
 
       final cuerpo = await utf8.decoder

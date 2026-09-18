@@ -2871,14 +2871,27 @@ sobrevive, y está declarado más abajo entre los residuos—, y el desenlace es
 `PushUnknown`: al interrumpirlo se pierde quien sabía cómo terminó, y el
 packfile puede haber llegado entero.
 
-El drenaje **posterior** a la salida también tiene presupuesto, con respaldo
-vacío. Es el mismo peligro por la otra puerta: el hijo sale, pero un
-descendiente suyo pudo heredar la tubería y conservarla abierta, y entonces
-esperar el cierre sin límite deja el flujo otra vez sin ningún desenlace. Lo
-que se pierde al vencer es el texto con el que se clasifica la causa, así que
-degrada a `desconocida` —un reintento de más— en vez de colgarse. Y el `stdin`
-del hijo se cierra tras el lanzamiento, que es lo que `Process.run` hacía solo:
-sin eso, un `git` que leyera de ahí dejaba de fallar al instante y pasaba a
+El drenaje **posterior** a la salida también tiene presupuesto, y al vencer
+**suelta la tubería en vez de abandonarla**. La distinción no es de estilo y
+está medida: `Future.timeout` abandona el futuro pero **no cancela la
+suscripción**, así que con un `join()` el descriptor queda abierto y
+escuchado, y un proceso con una suscripción viva no termina —`shipflow` fija
+`exitCode` y vuelve de `main` a propósito, en vez de llamar a `exit`—. Con un
+programa que deja un nieto durmiendo 20 s con la tubería heredada y un
+presupuesto de 300 ms: **el desenlace se computa a los 322 ms en las dos
+formas**, pero el proceso termina a los **20,2 s** abandonando el futuro y a
+los **0,8 s** cancelando la suscripción. En producción ese nieto es el
+ayudante de transporte de `git` sobre una conexión muerta, o sea sin cota. Lo
+que se pierde al soltar es el final del texto con el que se clasifica la
+causa, que degrada a `desconocida` —un reintento de más— y nunca a una
+publicación que se lea como completa; el texto ya leído se conserva.
+
+Se espera **un solo** flujo, `stderr`, que es el único que alguien lee: la
+causa sale de ahí. `stdout` se drena mientras el proceso corre —para que no se
+bloquee escribiendo— y se suelta sin esperarlo cuando termina, así que no
+agrega una tercera espera por un texto que nadie mira. Y el `stdin` del hijo
+se cierra tras el lanzamiento, que es lo que `Process.run` hacía solo: sin
+eso, un `git` que leyera de ahí dejaba de fallar al instante y pasaba a
 colgarse hasta agotar el presupuesto.
 
 Dos
@@ -3015,8 +3028,8 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Dieciocho hechos que esta rebanada deja escritos porque son límites reales, no
-trabajo pendiente con fecha:
+Diecinueve hechos que esta rebanada deja escritos porque son límites reales,
+no trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
   `stderr` de nuestro propio hijo.** Es un universo acotado por construcción
@@ -3085,12 +3098,13 @@ trabajo pendiente con fecha:
   que funciona por construcción y no por cobertura: si alguien cambiara esa
   serialización a índices, lo cazaría la prueba «un enum viaja por nombre, no
   por índice» de `core`, que no nombra este valor en particular.
-- **El peor caso del `push` es el presupuesto DOS veces.** El primero es la
-  espera del código de salida; el segundo, el del drenaje posterior, que solo
-  se agota cuando un descendiente conservó el descriptor después de que el
-  hijo murió. Es el mismo valor a propósito —es la misma pregunta, «¿esto
-  termina?», en dos momentos del mismo lanzamiento— y no un segundo número que
-  ajustar por su cuenta.
+- **El peor caso del `push` es el presupuesto DOS veces, y son exactamente
+  dos.** `Future.timeout` arranca su reloj cuando se lo invoca, así que las
+  esperas en serie se suman: la del código de salida y la del drenaje de
+  `stderr`. No hay una tercera porque `stdout` no se espera —se suelta—, que
+  es la razón por la que este número dice dos y no tres. Es el mismo valor en
+  las dos a propósito —es la misma pregunta, «¿esto termina?», en dos momentos
+  del mismo lanzamiento— y no un segundo número que ajustar por su cuenta.
 - **El presupuesto del `push` mide tiempo TOTAL del proceso, no progreso.**
   Una subida grande pero sana que pase de dos minutos se corta igual, y el
   desenlace es `PushUnknown`. Cortar por falta de progreso pediría leer el
@@ -3114,10 +3128,24 @@ trabajo pendiente con fecha:
   tope significa que las páginas no se terminan —un `Link` que cicla—, no que
   haya demasiados. El tope existe porque el presupuesto POR PEDIDO no cubre un
   bucle en el que cada pedido contesta a tiempo.
-- **Perder el drenaje pierde la clasificación.** Si el drenaje posterior a la
-  salida se agota, el texto de `git` que decide la causa llega vacío y el
-  desenlace cae en `desconocida`, que es reintentable. Es el precio elegido: un
-  reintento de más antes que un cuelgue sin desenlace.
+- **Perder el drenaje pierde parte de la clasificación.** Si el drenaje
+  posterior a la salida se agota, se conserva el texto que ya había llegado y
+  se pierde el resto; si lo perdido era la aguja, la causa cae en
+  `desconocida`, que es reintentable. Es el precio elegido: un reintento de
+  más antes que un cuelgue sin desenlace.
+- **Que el proceso termine no lo sostiene una prueba de la suite, sino un
+  proceso aparte.** Una suite no puede afirmar sobre su propio fin: corre
+  hasta que terminan todas las pruebas. Por eso
+  el ejecutable `ayuda_fin_del_proceso` de `packages/forge/bin/` hace UN
+  `empujar` y vuelve de `main`, y la prueba mide cuánto tarda ESE proceso en
+  terminar. Vive en `bin/` y no en `test/` por el arnés: en `test/` sería un
+  huérfano para el grafo, y nombrar su ruta desde la suite obliga a escribir
+  la extensión de los archivos fuente, que `lenguaje-en-plugin-dart` caza
+  fuera de su adapter y del composition root. Lo que esa
+  medición no distingue es POR QUÉ terminó: afirma el efecto observable —el
+  proceso termina con un nieto vivo del otro lado de la tubería— y no que la
+  suscripción se haya cancelado, que es el mecanismo. Un mecanismo distinto
+  con el mismo efecto la pasaría igual.
 - **La causa `revisionInvalida` usa `corregirConfiguracion` como acción
   siguiente, y quien tiene que corregir es el código que compuso la
   solicitud**, no una opción que el usuario haya configurado. Lo que las dos

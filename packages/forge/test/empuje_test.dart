@@ -736,10 +736,15 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
     // `PushUnknown`: el cambio de lanzador habría convertido un fallo
     // inmediato en una duda de dos minutos.
     //
-    // `cat` es el programa que hace justamente eso: lee hasta EOF. Con el
-    // stdin cerrado ve EOF de entrada y sale con 0; sin cerrar, espera.
+    // El programa lee hasta EOF con `read`, que es una construcción del
+    // propio intérprete de la línea de comandos y no un ejecutable aparte:
+    // así esta prueba no depende de que exista ningún binario más en el
+    // `PATH` del entorno donde corra. Con el stdin cerrado ve EOF de entrada
+    // y sale con 0; sin cerrar, espera.
     final lector = File('${temporal.path}/lee-stdin.sh');
-    await lector.writeAsString('#!/bin/sh\ncat > /dev/null\nexit 0\n');
+    await lector.writeAsString(
+      '#!/bin/sh\nwhile read -r linea; do :; done\nexit 0\n',
+    );
     await Process.run('chmod', ['+x', lector.path]);
 
     final empuje = EmpujeAislado(
@@ -768,6 +773,94 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
           'iba a mandar hasta que venció el presupuesto.',
     );
   }, timeout: const Timeout(Duration(seconds: 30)));
+
+  test(
+    'el proceso TERMINA aunque un nieto conserve la tubería',
+    () async {
+      // **Esta prueba mide lo que la ronda anterior no midió.** Poner
+      // `.timeout(...)` sobre un `join()` hace que `empujar` DEVUELVA a tiempo
+      // —eso ya lo comprueba la prueba de arriba— y no cierra nada: `timeout`
+      // abandona el futuro, pero la suscripción que lo alimenta sigue viva y la
+      // tubería sigue abierta. Un proceso con trabajo pendiente no termina, y
+      // el ejecutable del comando —bajo `packages/cli/bin/`— vuelve de `main`
+      // a propósito en vez de llamar a `exit`. O sea que el cuelgue no estaba
+      // cerrado: estaba mudado del desenlace al fin del proceso.
+      //
+      // Por eso lo que se mide acá NO es lo que devuelve `empujar` sino CUÁNTO
+      // TARDA EN TERMINAR un proceso que hizo un `empujar`. Eso no se puede
+      // afirmar desde adentro del proceso de prueba —que no termina hasta que
+      // termina la suite entera—, así que se corre un proceso aparte:
+      // el ejecutable `ayuda_fin_del_proceso` de este paquete, que hace un
+      // `empujar` y vuelve de `main`.
+      //
+      // Medido en esta plataforma, con el nieto durmiendo 20 s y un presupuesto
+      // de 300 ms: con el drenaje soltado, el proceso entero termina en ~0,8 s;
+      // con el `join()` abandonado, en ~20,3 s — cuando muere el nieto. En
+      // producción ese nieto es el ayudante de transporte de `git` sobre una
+      // conexión muerta, o sea sin cota.
+      // El instrumento se invoca por su NOMBRE —es el ejecutable de este
+      // paquete— y no por su ruta. No es comodidad: escribir la ruta obliga a
+      // nombrar la extensión de los archivos fuente, y la regla que acota el
+      // nombre del lenguaje a su plugin y al composition root caza esa cadena
+      // acá, con razón. Las dos raíces cubren correr la suite desde el
+      // repositorio o desde el paquete.
+      final raizDelPaquete = Directory('packages/forge').existsSync()
+          ? 'packages/forge'
+          : '.';
+
+      final conNieto = File('${temporal.path}/nieto-que-hereda.sh');
+      await conNieto.writeAsString(
+        '#!/bin/sh\nsleep 20 &\necho "\$!" > "${temporal.path}/pid-del-nieto"\n'
+        'exit 0\n',
+      );
+      await Process.run('chmod', ['+x', conNieto.path]);
+      addTearDown(() async {
+        final archivo = File('${temporal.path}/pid-del-nieto');
+        if (!archivo.existsSync()) return;
+        await Process.run('kill', ['-9', archivo.readAsStringSync().trim()]);
+      });
+
+      final reloj = Stopwatch()..start();
+      final r = await Process.run(
+        // El mismo intérprete que corre esta suite: no se busca uno por `PATH`.
+        Platform.resolvedExecutable,
+        [
+          'run',
+          // Los dos puntos delante significan «el ejecutable del paquete de
+          // este directorio», que es por qué hace falta el `workingDirectory`.
+          ':ayuda_fin_del_proceso',
+          '${temporal.path}/trabajo',
+          conNieto.path,
+          revisionDeLaCabeza,
+          'http://127.0.0.1:${servidor.port}/x.git',
+        ],
+        workingDirectory: raizDelPaquete,
+      );
+      reloj.stop();
+
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      expect(
+        r.stdout,
+        contains('desenlace=Empujado'),
+        reason: 'el hijo salió con 0: el desenlace no cambia por el nieto',
+      );
+      // El desenlace se computa rápido en las DOS formas —esa es la trampa que
+      // esta prueba existe para no repetir—, así que se afirma sobre el fin del
+      // proceso y no sobre eso. Diez segundos es el punto medio entre el ~0,8 s
+      // que tarda soltando la tubería y los ~20,3 s que tarda sin soltarla: no
+      // es una marca de rendimiento, es la diferencia entre terminar y esperar
+      // a que muera el nieto.
+      expect(
+        reloj.elapsed,
+        lessThan(const Duration(seconds: 10)),
+        reason:
+            'el proceso siguió vivo después de computar el desenlace: quedó una '
+            'suscripción escuchando la tubería que el nieto conserva. Abandonar '
+            'el futuro con `timeout` no la cancela; hay que soltarla.',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }
 
 /// Una [Credential] que anota si alguien llegó a desenvolver el secreto.
