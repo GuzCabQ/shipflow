@@ -50,6 +50,23 @@ class EntradaDeShip {
   }) : archivos = List.unmodifiable(archivos);
 }
 
+/// Exige que ningún archivo se repita. **Una sola función para las dos
+/// formas de declarar archivos** —`--file` y un archivo de rebanada—, porque
+/// el motivo es el mismo en las dos: `apply` exige declarar cada archivo una
+/// sola vez, porque compara con igualdad literal. La forma en que la lista
+/// llegó no cambia esa comparación, así que tampoco cambia esta regla.
+void _exigirSinRepetidos(List<String> archivos) {
+  final vistos = <String>{};
+  for (final archivo in archivos) {
+    if (!vistos.add(archivo)) {
+      throw UsoInvalido(
+        'archivo repetido: «$archivo»',
+        'Cada archivo se declara una sola vez: sacá el duplicado.',
+      );
+    }
+  }
+}
+
 /// Interpreta la invocación de `ship` entera.
 ///
 /// El orden de las comprobaciones repite el de `interpretarGlobales`: la
@@ -154,15 +171,7 @@ EntradaDeShip interpretarShip(List<String> args) {
     );
   }
 
-  final vistos = <String>{};
-  for (final archivo in archivos) {
-    if (!vistos.add(archivo)) {
-      throw UsoInvalido(
-        'archivo repetido: «$archivo»',
-        'Cada archivo se declara una sola vez. Sacá el duplicado de --file.',
-      );
-    }
-  }
+  _exigirSinRepetidos(archivos);
 
   return EntradaDeShip(
     intent: intent,
@@ -317,17 +326,54 @@ Future<EntradaDeShip> resolverRebanada(
     );
   }
 
+  // Misma regla que `--file`, y por el mismo motivo: `apply` compara con
+  // igualdad literal. `desdeJson` ya comprobó la forma del archivo; esto
+  // comprueba su contenido, que es justo lo que la validación de formato no
+  // mira.
+  _exigirSinRepetidos(archivo.files);
+
   return EntradaDeShip(
     intent: archivo.intent,
     archivos: archivo.files,
     rutaDeLaRebanada: ruta,
-    // Lo que se pasó por línea de comandos gana: es la instrucción más
-    // específica, dada en el momento de esta invocación. La rebanada aporta
-    // el valor cuando esa bandera no se usó, no lo reemplaza cuando sí.
-    branch: entrada.branch ?? archivo.branch,
+    branch: _resolverBranch(
+      explicito: entrada.branch,
+      deLaRebanada: archivo.branch,
+    ),
+    // **`--base` sí se fusiona: la explícita gana y la rebanada rellena.**
+    // Es la misma cadena de precedencia de tres fuentes que ya tiene `base`
+    // en el diseño —explícito → configuración → rama por defecto—; extender
+    // la rebanada como una fuente más de esa cadena es seguirla, no
+    // inventar una regla nueva.
     base: entrada.base ?? archivo.base,
     dryRun: entrada.dryRun,
     yes: entrada.yes,
     allowIncomplete: entrada.allowIncomplete,
+  );
+}
+
+/// **`--branch` no es un valor: es una aserción.** El diseño dice que tiene
+/// que coincidir con la rama actual —`ship` nunca cambia de rama—, y eso vale
+/// igual venga la bandera de la línea de comandos o de la rebanada: las dos
+/// declaraciones dicen «la corrida está en esta rama», sobre el mismo hecho.
+///
+/// Por eso esto NO es `??`. Fusionar con el operador —quedarse con la
+/// explícita cuando las dos están— convertiría en silencio una contradicción
+/// en una preferencia: si la línea de comandos dice `main` y la rebanada dice
+/// `feature/x`, alguien se equivocó en una de las dos, y elegir una sin
+/// avisar deja publicar sobre la rama que no era.
+String? _resolverBranch({
+  required String? explicito,
+  required String? deLaRebanada,
+}) {
+  if (explicito == null) return deLaRebanada;
+  if (deLaRebanada == null) return explicito;
+  if (explicito == deLaRebanada) return explicito;
+  throw UsoInvalido(
+    '--branch («$explicito») y la rebanada («$deLaRebanada») declaran ramas '
+        'distintas',
+    'Las dos son la misma aserción dicha dos veces, y no coinciden. Sacá '
+        '--branch, o corregí la rebanada para que declare la rama que '
+        'corresponde.',
   );
 }

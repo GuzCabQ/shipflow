@@ -191,25 +191,83 @@ void main() {
       expect(resuelta.rutaDeLaRebanada, 'e.json');
     });
 
-    test('lo que se pasó por línea de comandos gana sobre lo que trae la '
-        'rebanada', () async {
+    test(
+      '--base explícito gana sobre el de la rebanada, que rellena',
+      () async {
+        final entrada = interpretarShip([
+          '--slice',
+          'e.json',
+          '--base',
+          'develop',
+        ]);
+        final resuelta = await resolverRebanada(
+          entrada,
+          leer: (_) async => jsonEncode({
+            'intent': 'medir',
+            'files': ['a.txt'],
+            'base': 'main',
+          }),
+        );
+        // `--base` no es una aserción sobre un hecho observable como
+        // `--branch`: es la cadena de precedencia de tres fuentes que ya tiene
+        // en el diseño, y la rebanada es una fuente más de esa cadena.
+        expect(resuelta.base, 'develop');
+      },
+    );
+
+    test('--branch que coincide con el de la rebanada no falla: son la misma '
+        'aserción', () async {
       final entrada = interpretarShip([
         '--slice',
         'e.json',
         '--branch',
-        'feature/de-la-linea-de-comandos',
+        'feature/x',
       ]);
       final resuelta = await resolverRebanada(
         entrada,
         leer: (_) async => jsonEncode({
           'intent': 'medir',
           'files': ['a.txt'],
-          'branch': 'feature/de-la-rebanada',
-          'base': 'main',
+          'branch': 'feature/x',
         }),
       );
-      expect(resuelta.branch, 'feature/de-la-linea-de-comandos');
-      expect(resuelta.base, 'main');
+      expect(resuelta.branch, 'feature/x');
+    });
+
+    test('--branch que difiere del de la rebanada falla: son dos aserciones '
+        'contradictorias, no una preferencia', () async {
+      final entrada = interpretarShip([
+        '--slice',
+        'e.json',
+        '--branch',
+        'feature/de-la-linea-de-comandos',
+      ]);
+      expect(
+        () => resolverRebanada(
+          entrada,
+          leer: (_) async => jsonEncode({
+            'intent': 'medir',
+            'files': ['a.txt'],
+            'branch': 'feature/de-la-rebanada',
+          }),
+        ),
+        throwsA(isA<UsoInvalido>()),
+      );
+    });
+
+    test('un archivo de rebanada con archivos repetidos falla, igual que '
+        '--file', () async {
+      final entrada = interpretarShip(['--slice', 'e.json']);
+      expect(
+        () => resolverRebanada(
+          entrada,
+          leer: (_) async => jsonEncode({
+            'intent': 'medir',
+            'files': ['a.txt', 'a.txt'],
+          }),
+        ),
+        throwsA(isA<UsoInvalido>()),
+      );
     });
 
     test(
