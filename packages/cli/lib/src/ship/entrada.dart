@@ -13,6 +13,9 @@
 /// desconocida falla en vez de ignorarse.
 library;
 
+import 'dart:convert';
+import 'dart:io' show FileSystemException;
+
 import '../uso.dart';
 
 /// Lo que la invocación de `ship` dijo, ya interpretado.
@@ -24,9 +27,9 @@ class EntradaDeShip {
   final List<String> archivos;
 
   /// La ruta declarada con `--slice`, **sin leer**. Nula cuando la selección
-  /// vino de `--file`. Leerla y resolverla en `archivos` es de la tarea
-  /// siguiente, que todavía no existe: este intérprete no toca disco, y por
-  /// eso sus pruebas son baratas.
+  /// vino de `--file`. Leerla y resolverla en `archivos` es trabajo de
+  /// [resolverRebanada], que vive aparte porque sí toca disco: este
+  /// intérprete no, y por eso sus pruebas son baratas.
   final String? rutaDeLaRebanada;
 
   final String? branch;
@@ -170,5 +173,161 @@ EntradaDeShip interpretarShip(List<String> args) {
     dryRun: dryRun,
     yes: yes,
     allowIncomplete: allowIncomplete,
+  );
+}
+
+/// Las claves que el formato de un archivo de rebanada declara. Una clave que
+/// no está acá se rechaza en vez de ignorarse: ignorarla en silencio dejaría
+/// creer que configuró algo que el archivo nunca leyó.
+const _clavesDeLaRebanada = {'intent', 'files', 'branch', 'base'};
+
+/// Lo que hay adentro de un archivo de rebanada — lo que `--slice` señala.
+///
+/// **No es un `PullRequestSlice` serializado, y la omisión es a propósito.**
+/// Ese tipo lleva el identificador de la rebanada; este archivo, no. El
+/// identificador es `${runId}/1` y lo asigna la corrida, no el archivo: hoy
+/// hay una sola rebanada por corrida, pero el modelo final admite varias, y
+/// si el archivo trajera el identificador habría dos fuentes de la misma
+/// identidad. Dos fuentes del mismo hecho divergen siempre.
+class ArchivoDeRebanada {
+  final String intent;
+
+  /// Nunca vacía: [desdeJson] lo exige, por la misma razón que
+  /// `interpretarShip` rechaza cero archivos de `--file`.
+  final List<String> files;
+
+  final String? branch;
+  final String? base;
+
+  ArchivoDeRebanada({
+    required this.intent,
+    required List<String> files,
+    required this.branch,
+    required this.base,
+  }) : files = List.unmodifiable(files);
+
+  /// Interpreta el objeto JSON de un archivo de rebanada.
+  ///
+  /// Lanza [FormatException] —la misma familia que `DocumentoDeCorrida.
+  /// fromJson` y el resto de las lecturas de JSON de este repositorio— para
+  /// «este archivo no se puede leer». Traducir eso a `UsoInvalido` es trabajo
+  /// de quien resuelve la rebanada, no de esta lectura.
+  static ArchivoDeRebanada desdeJson(Map<String, Object?> json) {
+    final desconocidas = json.keys.toSet().difference(_clavesDeLaRebanada);
+    if (desconocidas.isNotEmpty) {
+      throw FormatException(
+        'el archivo de rebanada trae una clave que el formato no declara: '
+        '«${desconocidas.first}». Las claves válidas son: '
+        '${_clavesDeLaRebanada.join(", ")}.',
+      );
+    }
+
+    final intent = json['intent'];
+    if (intent is! String || intent.trim().isEmpty) {
+      throw const FormatException(
+        'el archivo de rebanada no declara «intent» como una cadena no '
+        'vacía.',
+      );
+    }
+
+    final files = json['files'];
+    if (files is! List || files.isEmpty || files.any((f) => f is! String)) {
+      throw const FormatException(
+        'el archivo de rebanada no declara «files» como una lista de texto '
+        'con al menos uno.',
+      );
+    }
+
+    final branch = json['branch'];
+    if (branch != null && branch is! String) {
+      throw const FormatException(
+        'el archivo de rebanada declara «branch» con algo que no es texto.',
+      );
+    }
+
+    final base = json['base'];
+    if (base != null && base is! String) {
+      throw const FormatException(
+        'el archivo de rebanada declara «base» con algo que no es texto.',
+      );
+    }
+
+    return ArchivoDeRebanada(
+      intent: intent,
+      files: List<String>.from(files),
+      branch: branch as String?,
+      base: base as String?,
+    );
+  }
+}
+
+/// Lee `rutaDeLaRebanada`, si hay una, y devuelve la [EntradaDeShip]
+/// completa: la misma forma que produce `--file`.
+///
+/// **Función aparte, y no parte de `interpretarShip`, a propósito.** Esta sí
+/// toca disco; `interpretarShip` no, y esa pureza es lo que hace baratas sus
+/// siete pruebas —no montan nada—. Fundir las dos encarecería esas pruebas
+/// para pagar un camino —leer el archivo— que la mayoría no ejercita.
+///
+/// Si `entrada.rutaDeLaRebanada` es nula no hay nada que resolver: la
+/// selección ya vino completa por `--file`, y esta función devuelve la
+/// entrada tal cual.
+///
+/// `leer` es la única forma en que esta función toca el sistema de archivos,
+/// y por eso es lo que una prueba reemplaza para no montar nada real: el
+/// mismo motivo que ya separa la interpretación de la lectura.
+///
+/// Lo que `leer` no puede resolver —no existe, no se puede leer— y lo que el
+/// contenido no cumple —no es JSON, no es el formato declarado— salen los
+/// dos por [UsoInvalido], que el despachador traduce al código `5`. Ninguno
+/// de los dos escapa como excepción cruda.
+Future<EntradaDeShip> resolverRebanada(
+  EntradaDeShip entrada, {
+  required Future<String> Function(String ruta) leer,
+}) async {
+  final ruta = entrada.rutaDeLaRebanada;
+  if (ruta == null) return entrada;
+
+  final String contenido;
+  try {
+    contenido = await leer(ruta);
+  } on FileSystemException catch (e) {
+    throw UsoInvalido(
+      'no se pudo leer la rebanada «$ruta»: ${e.osError?.message ?? e.message}',
+      'Comprobá que la ruta exista y que el proceso pueda leerla.',
+    );
+  }
+
+  final ArchivoDeRebanada archivo;
+  try {
+    final decodificado = jsonDecode(contenido);
+    if (decodificado is! Map) {
+      throw const FormatException(
+        'el archivo de rebanada no es un objeto JSON.',
+      );
+    }
+    archivo = ArchivoDeRebanada.desdeJson(
+      Map<String, Object?>.from(decodificado),
+    );
+  } on FormatException catch (e) {
+    throw UsoInvalido(
+      'la rebanada «$ruta» no cumple el formato: ${e.message}',
+      'Corregí el archivo: tiene que declarar «intent» y «files», y puede '
+          'declarar «branch» y «base».',
+    );
+  }
+
+  return EntradaDeShip(
+    intent: archivo.intent,
+    archivos: archivo.files,
+    rutaDeLaRebanada: ruta,
+    // Lo que se pasó por línea de comandos gana: es la instrucción más
+    // específica, dada en el momento de esta invocación. La rebanada aporta
+    // el valor cuando esa bandera no se usó, no lo reemplaza cuando sí.
+    branch: entrada.branch ?? archivo.branch,
+    base: entrada.base ?? archivo.base,
+    dryRun: entrada.dryRun,
+    yes: entrada.yes,
+    allowIncomplete: entrada.allowIncomplete,
   );
 }

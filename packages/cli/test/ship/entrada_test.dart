@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io' show FileSystemException;
+
 import 'package:cli/cli.dart';
 import 'package:test/test.dart';
 
@@ -111,5 +114,141 @@ void main() {
     final porFile = interpretarShip(['--intent', 'x', '--file', 'a.txt']);
     expect(porFile.rutaDeLaRebanada, isNull);
     expect(porFile.archivos, ['a.txt']);
+  });
+
+  group('ArchivoDeRebanada.desdeJson', () {
+    test('el archivo de rebanada NO lleva identificador', () {
+      // Si lo llevara, habría dos fuentes de la identidad: la del archivo y la
+      // que asigna la corrida. Dos fuentes del mismo hecho divergen siempre.
+      expect(
+        () => ArchivoDeRebanada.desdeJson({
+          'id': 'r-1',
+          'intent': 'x',
+          'files': ['a.txt'],
+        }),
+        throwsFormatException,
+        reason: 'una clave que el formato no declara no se ignora en silencio',
+      );
+    });
+
+    test('un archivo de rebanada válido se interpreta entero', () {
+      final a = ArchivoDeRebanada.desdeJson({
+        'intent': 'medir',
+        'files': ['lib/a.txt'],
+        'branch': 'feature/x',
+        'base': 'main',
+      });
+      expect(a.intent, 'medir');
+      expect(a.files, ['lib/a.txt']);
+      expect(a.branch, 'feature/x');
+      expect(a.base, 'main');
+    });
+
+    test('sin intención o sin archivos, el archivo se rechaza', () {
+      expect(
+        () => ArchivoDeRebanada.desdeJson({
+          'files': ['a.txt'],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ArchivoDeRebanada.desdeJson({'intent': 'x', 'files': <String>[]}),
+        throwsFormatException,
+      );
+    });
+  });
+
+  group('resolverRebanada', () {
+    test('sin ruta de rebanada, no hay nada que resolver', () async {
+      final entrada = interpretarShip(['--intent', 'x', '--file', 'a.txt']);
+      final resuelta = await resolverRebanada(
+        entrada,
+        // Si esto se llamara, la prueba fallaría: `--file` no señala ningún
+        // archivo de rebanada, así que no hay nada que leer.
+        leer: (_) async => fail('no debería leer nada'),
+      );
+      expect(resuelta, same(entrada));
+    });
+
+    test('--slice produce la misma EntradaDeShip que --file', () async {
+      final entrada = interpretarShip(['--slice', 'e.json']);
+      final resuelta = await resolverRebanada(
+        entrada,
+        leer: (ruta) async {
+          expect(ruta, 'e.json');
+          return jsonEncode({
+            'intent': 'medir',
+            'files': ['lib/a.txt', 'test/a_test.txt'],
+            'branch': 'feature/x',
+            'base': 'main',
+          });
+        },
+      );
+      expect(resuelta.intent, 'medir');
+      expect(resuelta.archivos, ['lib/a.txt', 'test/a_test.txt']);
+      expect(resuelta.branch, 'feature/x');
+      expect(resuelta.base, 'main');
+      expect(resuelta.rutaDeLaRebanada, 'e.json');
+    });
+
+    test('lo que se pasó por línea de comandos gana sobre lo que trae la '
+        'rebanada', () async {
+      final entrada = interpretarShip([
+        '--slice',
+        'e.json',
+        '--branch',
+        'feature/de-la-linea-de-comandos',
+      ]);
+      final resuelta = await resolverRebanada(
+        entrada,
+        leer: (_) async => jsonEncode({
+          'intent': 'medir',
+          'files': ['a.txt'],
+          'branch': 'feature/de-la-rebanada',
+          'base': 'main',
+        }),
+      );
+      expect(resuelta.branch, 'feature/de-la-linea-de-comandos');
+      expect(resuelta.base, 'main');
+    });
+
+    test(
+      'un archivo que no se puede leer sale por UsoInvalido, no crudo',
+      () async {
+        final entrada = interpretarShip(['--slice', 'e.json']);
+        expect(
+          () => resolverRebanada(
+            entrada,
+            leer: (_) async =>
+                throw const FileSystemException('no existe', 'e.json'),
+          ),
+          throwsA(isA<UsoInvalido>()),
+        );
+      },
+    );
+
+    test('un contenido que no es JSON sale por UsoInvalido', () async {
+      final entrada = interpretarShip(['--slice', 'e.json']);
+      expect(
+        () => resolverRebanada(entrada, leer: (_) async => 'no es json'),
+        throwsA(isA<UsoInvalido>()),
+      );
+    });
+
+    test('un archivo de rebanada con una clave desconocida sale por '
+        'UsoInvalido, no por la FormatException cruda', () async {
+      final entrada = interpretarShip(['--slice', 'e.json']);
+      expect(
+        () => resolverRebanada(
+          entrada,
+          leer: (_) async => jsonEncode({
+            'id': 'r-1',
+            'intent': 'x',
+            'files': ['a.txt'],
+          }),
+        ),
+        throwsA(isA<UsoInvalido>()),
+      );
+    });
   });
 }
