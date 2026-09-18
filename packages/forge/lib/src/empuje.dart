@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -99,10 +100,44 @@ class EmpujeAislado {
 
   final String programa;
 
+  /// Cuánto se espera a que `git push` termine antes de matarlo.
+  ///
+  /// **Sin esto el flujo no producía NINGÚN desenlace.** `Process.run` sin
+  /// límite espera a que el hijo salga, y `git push` puede no salir nunca:
+  /// un remoto que acepta la conexión y deja de contestar, un `git` trabado
+  /// en una espera propia. Eso contradice el invariante de que el desenlace
+  /// se declara: un cuelgue no es un desenlace, es la ausencia de uno.
+  ///
+  /// **Dos minutos, y por qué ese número.** Un `git push` no es un pedido y
+  /// una respuesta como los de la API —que viven con 30 segundos en
+  /// `SalidaDePrDeGitHub`—: es una negociación de referencias MÁS la subida
+  /// de un packfile cuyo tamaño depende de la rebanada, por el mismo enlace
+  /// y con el mismo enlace de subida, que suele ser el lado angosto. Con 30
+  /// segundos una subida lenta pero sana se convertiría en un [PushUnknown]
+  /// —el peor desenlace que este archivo puede producir, porque manda a
+  /// buscar un efecto que quizás ocurrió—. Más de dos minutos, en cambio,
+  /// empieza a competir con el presupuesto de la corrida entera, que el
+  /// README mide en minutos: el cuelgue que este límite existe para cortar
+  /// se volvería indistinguible de una corrida que simplemente tarda. Dos
+  /// minutos es el punto donde una subida que todavía progresa es rara y un
+  /// cuelgue ya es evidente.
+  ///
+  /// **Lo que NO es:** un presupuesto de progreso. Mide tiempo total del
+  /// proceso, no tiempo sin datos, así que una subida grande y sana que pase
+  /// de dos minutos se corta igual. Cortarla por falta de progreso pediría
+  /// leer el avance de `git` desde su salida, que es texto de progreso sin
+  /// contrato — y este archivo ya declara que del texto de `git` solo deriva
+  /// una causa cerrada.
+  static const presupuestoPorDefecto = Duration(minutes: 2);
+
+  /// Inyectable para que la prueba del vencimiento no espere dos minutos.
+  final Duration presupuesto;
+
   const EmpujeAislado({
     required this.directorio,
     required this.entornoDelPadre,
     this.programa = 'git',
+    this.presupuesto = presupuestoPorDefecto,
   });
 
   Future<ResultadoDeEmpuje> empujar({
@@ -123,14 +158,41 @@ class EmpujeAislado {
       );
     }
 
+    // La SEGUNDA frontera, y por eso vuelve a preguntar lo mismo que
+    // `PullRequestRequest` ya preguntó al construirse. **No es una
+    // duplicación: es una precondición de ejecución.** Lo que se interpola
+    // abajo es `'$revision:refs/heads/$rama'`, y con la revisión vacía eso
+    // queda `:refs/heads/<rama>`, que es la forma documentada de BORRAR esa
+    // rama del remoto. Este método es público, recibe la revisión como
+    // parámetro suelto y no tiene forma de saber por dónde llegó: confiar en
+    // que el llamador validó sería declarar un control que vive en otro
+    // archivo, y el precio de equivocarse es el borrado de la rama de otro.
+    //
+    // Es un desenlace cerrado y no una excepción, por el mismo motivo que el
+    // rechazo de arriba: `PullRequestSink` declara que `open` no lanza.
+    if (!esOidCompleto(revision)) {
+      return NoEmpujado(PushFailed(causa: CausaDePublicacion.revisionInvalida));
+    }
+
     final sinGanchos = await Directory.systemTemp.createTemp('forge-ganchos-');
     try {
       final destino = credencial.use(
         (secreto) => _conCredencial(urlDelRemoto, secreto),
       );
-      final ProcessResult r;
+      final Process proceso;
       try {
-        r = await Process.run(
+        // **`start` y no `run`.** `Process.run` espera a que el hijo termine
+        // y no ofrece dónde poner un límite: con un remoto que acepta la
+        // conexión y deja de contestar, ese `await` no vuelve nunca y la
+        // corrida no produce ningún desenlace. `start` devuelve el proceso,
+        // que es lo que hace falta para poder esperarlo CON presupuesto y,
+        // sobre todo, para poder MATARLO cuando vence.
+        //
+        // El entorno se arma igual que antes y eso no es incidental:
+        // `subprocesos-con-entorno-saneado` mira los tres lanzadores —`run`,
+        // `runSync` y `start`— por elemento resuelto, así que cambiar de
+        // lanzador no mueve la obligación ni un milímetro.
+        proceso = await Process.start(
           programa,
           [
             '-c',
@@ -144,11 +206,22 @@ class EmpujeAislado {
           workingDirectory: directorio,
           environment: entornoSaneado(entornoDelPadre.paraHijos),
           includeParentEnvironment: false,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
         );
       } on ProcessException {
-        // No se pudo ni lanzar `git`. No sabemos si algo salió.
+        // No se pudo ni LANZAR `git`, y eso es distinto de no saber qué pasó.
+        // `Process.start` es lo que obtiene el proceso; cuando falla, no hay
+        // proceso, y sin proceso no hay nada que haya podido hablar con el
+        // remoto. Decir `PushUnknown` acá mandaba a buscar un efecto remoto
+        // que no pudo existir: el desenlace es `PushFailed`.
+        //
+        // **La causa se queda en `desconocida`, y es verdad y no pereza.**
+        // Este `catch` no mira la excepción a propósito (ver abajo), así que
+        // lo único que este código sabe es que el lanzamiento no ocurrió;
+        // por qué —un `git` que no está, un `PATH` sin él, un fork que no se
+        // pudo hacer— es exactamente lo que se eligió no averiguar. Y deja
+        // el desenlace reintentable, que es lo correcto para un fork que
+        // falló por recursos y apenas un reintento de más para un `git` que
+        // no está instalado.
         //
         // **Esta excepción no se nombra, no se loguea, no se relanza y no se
         // encadena — nunca.** `ProcessException.arguments` es la lista de
@@ -161,14 +234,71 @@ class EmpujeAislado {
         // canal de este archivo que no es `Credential`. Lo único que sale de
         // este `catch` es una causa cerrada, igual que en el resto del
         // archivo.
+        return NoEmpujado(PushFailed(causa: CausaDePublicacion.desconocida));
+      }
+
+      // **El drenaje empieza ANTES de esperar la salida, y no es opcional.**
+      // Los dos flujos son tuberías con un buffer finito en el núcleo: un
+      // hijo que escribe más de lo que entra ahí se BLOQUEA escribiendo
+      // hasta que alguien lea. `git push` es locuaz —progreso por `stderr`,
+      // mensajes del remoto— y un `git` bloqueado en su propia escritura
+      // nunca sale, así que el presupuesto de arriba se cumpliría y
+      // reportaría un vencimiento cuya causa real es que nosotros no
+      // leímos. Sería un falso `unknown` fabricado por este archivo.
+      final salidaEstandar = _drenar(proceso.stdout);
+      final salidaDeError = _drenar(proceso.stderr);
+
+      final int codigo;
+      try {
+        codigo = await proceso.exitCode.timeout(presupuesto);
+      } on TimeoutException {
+        // **`SIGKILL` y no `SIGTERM`.** Lo que se está cortando es un proceso
+        // que ya demostró no avanzar; una señal que se puede ignorar deja
+        // abierta la posibilidad de que la ignore y el cuelgue siga, que es
+        // exactamente lo que este camino existe para terminar.
+        proceso.kill(ProcessSignal.sigkill);
+        // Se espera la MUERTE, no el drenaje. `exitCode` viene de esperar al
+        // hijo y `SIGKILL` no se puede bloquear, así que esto termina. Los
+        // dos `_drenar` quedan sin esperar A PROPÓSITO: un nieto que heredó
+        // la tubería —`git` lanza `git-remote-https`— puede mantenerla
+        // abierta después de que el hijo murió, y esperar el cierre acá
+        // sería poner el cuelgue de vuelta, un renglón más abajo.
+        await proceso.exitCode;
+        // **`PushUnknown` y no `PushFailed`.** Al interrumpirlo se pierde la
+        // única fuente que sabía cómo terminó: puede haber subido el
+        // packfile entero y estar esperando el `report-status` del remoto,
+        // con la rama ya actualizada del otro lado. Reportarlo como fallo
+        // haría que quien reintenta creyera que no hay nada allá.
         return NoEmpujado(PushUnknown(causa: CausaDePublicacion.desconocida));
       }
-      if (r.exitCode == 0) return const Empujado();
-      return NoEmpujado(PushFailed(causa: _causaDe(r.stderr as String)));
+
+      final textoDeError = await salidaDeError;
+      await salidaEstandar;
+      if (codigo == 0) return const Empujado();
+      return NoEmpujado(PushFailed(causa: _causaDe(textoDeError)));
     } finally {
       await sinGanchos.delete(recursive: true);
     }
   }
+
+  /// Lee un flujo del hijo entero y lo convierte en texto.
+  ///
+  /// **`allowMalformed`**, porque lo que sale de `git` son bytes y no una
+  /// promesa de UTF-8: un nombre de rama o un mensaje del remoto en otra
+  /// codificación haría que el decodificador estricto lanzara, y esa
+  /// excepción escaparía de `empujar` — que el puerto declara que no lanza—
+  /// en vez de convertirse en una causa. Un byte que no se pudo decodificar
+  /// se vuelve el carácter de reemplazo y el clasificador sigue viendo el
+  /// resto del texto, que es donde están las agujas que mira.
+  ///
+  /// **Y traga sus propios errores.** Si el flujo se rompe, lo que queda es
+  /// texto vacío, que el clasificador lee como `desconocida`: un
+  /// reintento de más, nunca una publicación que se lea como completa. Una
+  /// excepción acá, en cambio, sería un futuro sin dueño cuando el camino
+  /// del vencimiento decide no esperarlo.
+  static Future<String> _drenar(Stream<List<int>> flujo) => const Utf8Decoder(
+    allowMalformed: true,
+  ).bind(flujo).join().catchError((Object _) => '');
 
   /// Solo para la suite: `_causaDe` es privada, y esta es la forma de probar
   /// el clasificador contra salidas de `git` que son costosas o difíciles de

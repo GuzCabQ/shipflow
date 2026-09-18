@@ -18,7 +18,10 @@
 ///   todo subproceso.
 /// - **publicación** — el desenlace de la publicación: [PublicationOutcome]
 ///   sellado, con `retryable`, [EstadoDeEntrega] y [AccionSiguiente]
-///   derivados de la variante y su [CausaDePublicacion].
+///   derivados de la variante y su [CausaDePublicacion]; y [esOidCompleto],
+///   la única definición de qué es una revisión empujable, que el dominio
+///   exige al construir la solicitud y el adapter vuelve a exigir antes de
+///   lanzar el proceso.
 /// - **puertos** — solo interfaces. `core` no implementa ninguno; quién lo
 ///   hace y cuáles siguen sin implementación está declarado en
 ///   `arquitectura.json`, y verificado en los dos sentidos.

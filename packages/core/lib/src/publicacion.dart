@@ -34,8 +34,73 @@ enum CausaDePublicacion {
   /// dominio.
   configuracionInsegura,
 
+  /// La revisión que se iba a empujar no es un OID completo de git. **Nada se
+  /// lanzó**: ni un proceso, ni un socket.
+  ///
+  /// Es una causa propia y no [desconocida] por lo que esta distinción evita.
+  /// El `git push` arma el refspec `<revisión>:refs/heads/<rama>`, y con la
+  /// revisión vacía eso es `:refs/heads/<rama>`, que en git **borra la
+  /// referencia remota** (`git push <remoto> :<rama>` es la forma documentada
+  /// de eliminar una rama del remoto). Un desenlace que dijera «no se pudo
+  /// determinar la causa» sobre eso sería el falso alivio exacto: lo que
+  /// pasó se sabe con precisión, y lo que hay que corregir es quién produjo
+  /// esa revisión.
+  ///
+  /// No es reintentable: el mismo valor vuelve a no ser un OID la próxima
+  /// vez. Su [AccionSiguiente] es [AccionSiguiente.corregirConfiguracion] y
+  /// no una propia, **y eso es un residuo declarado**: quien tiene que
+  /// corregir acá es el código que compuso la solicitud, no una opción que
+  /// el usuario haya configurado. Lo que las dos comparten —y es lo que esa
+  /// acción promete— es que el mismo intento vuelve a fallar idéntico hasta
+  /// que alguien cambie lo que se le pasa; partir la acción por origen del
+  /// defecto es un cambio de dominio que esta ronda no hace.
+  revisionInvalida,
+
   desconocida,
 }
+
+/// Los DOS largos que puede tener un OID completo de git, **medidos, no
+/// supuestos**, con `git rev-parse HEAD` sobre dos repositorios recién
+/// creados con git 2.50.1:
+///
+/// - `--object-format=sha1` → 40 caracteres hexadecimales (160 bits).
+/// - `--object-format=sha256` → 64 caracteres hexadecimales (256 bits).
+///
+/// Las dos familias entran porque el repositorio que se empuja puede ser de
+/// cualquiera de las dos y `core` no elige por el usuario: aceptar solo
+/// SHA-1 rechazaría revisiones perfectamente válidas de un repositorio
+/// SHA-256, que es el mismo tipo de falso rechazo que esta validación existe
+/// para no cometer.
+///
+/// **Mayúsculas incluidas, y también está medido**: `git rev-parse` y
+/// `git cat-file -t` resuelven sin chistar un OID escrito en mayúsculas y
+/// devuelven el objeto. O sea que un OID en mayúsculas ES un OID completo
+/// válido; rechazarlo sería afirmar «esto no identifica ningún objeto» sobre
+/// algo que sí lo identifica. Lo que producen nuestros propios adapters es
+/// minúscula —es lo que git imprime—, así que esta tolerancia no relaja
+/// ninguna ruta de este repositorio: solo evita mentir sobre una entrada
+/// legítima.
+final RegExp _patronDeOidCompleto = RegExp(
+  r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$',
+);
+
+/// ¿[revision] es un OID completo de git?
+///
+/// **Es una función del dominio y no un detalle del adapter** porque el
+/// dominio es donde nace la revisión que después se interpola en un refspec:
+/// [PullRequestRequest] la exige al construirse, y `EmpujeAislado` la vuelve
+/// a exigir justo antes de lanzar el proceso. Son dos fronteras distintas —un
+/// invariante de construcción y una precondición de ejecución—, y ninguna de
+/// las dos puede delegar en la otra: la primera no sabe si alguien llegará
+/// por otro camino, y la segunda no puede confiar en que su llamador validó.
+///
+/// **Lo que NO dice**: que el objeto exista en el repositorio. Eso solo lo
+/// sabe git, y averiguarlo desde acá sería lanzar un proceso adentro de una
+/// validación sincrónica del dominio. Un OID bien formado que no existe lo
+/// rechaza `git push` con su propio mensaje, y ESE rechazo no borra nada;
+/// el que borra es el refspec sin revisión, que es justamente lo que esta
+/// función impide construir.
+bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
 
 /// Qué tan entregada quedó la corrida. **Derivado**, nunca asignable.
 enum EstadoDeEntrega {
@@ -228,6 +293,13 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
     // el único texto de este archivo que se publica.
     CausaDePublicacion.configuracionInsegura =>
       'el canal configurado no es https, así que la credencial no se envió',
+    // Tampoco nombra la revisión. No lleva secreto —es un OID o basura—,
+    // pero esta cadena se publica y el hecho que importa es el mismo sin
+    // ella: lo que se pasó no identifica ningún objeto, así que no se lanzó
+    // nada.
+    CausaDePublicacion.revisionInvalida =>
+      'la revisión a empujar no es un identificador de objeto completo de '
+          'git, así que no se lanzó ningún proceso',
     CausaDePublicacion.desconocida => 'no se pudo determinar la causa',
   };
 
@@ -238,6 +310,7 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
   bool get retryable => switch (causa) {
     CausaDePublicacion.permisos => false,
     CausaDePublicacion.configuracionInsegura => false,
+    CausaDePublicacion.revisionInvalida => false,
     CausaDePublicacion.red ||
     CausaDePublicacion.autenticacion ||
     CausaDePublicacion.rechazoDeLaForja ||
@@ -248,6 +321,8 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
   AccionSiguiente get nextAction => switch (causa) {
     CausaDePublicacion.permisos => AccionSiguiente.corregirPermisos,
     CausaDePublicacion.configuracionInsegura =>
+      AccionSiguiente.corregirConfiguracion,
+    CausaDePublicacion.revisionInvalida =>
       AccionSiguiente.corregirConfiguracion,
     CausaDePublicacion.red ||
     CausaDePublicacion.autenticacion ||
@@ -417,6 +492,29 @@ class PullRequestRequest {
     required this.revision,
     required String arbolDeLaRevision,
   }) {
+    // **Antes que la relación con el árbol**, porque esta condición es sobre
+    // la revisión misma y la otra es sobre su vínculo con el contenido: una
+    // revisión que no identifica ningún objeto no puede tener un árbol
+    // correcto ni incorrecto.
+    //
+    // Lo que esta guarda impide no es un dato feo: es un BORRADO. El adapter
+    // arma el refspec `<revisión>:refs/heads/<rama>` y se lo pasa a
+    // `git push`; con la revisión vacía eso queda `:refs/heads/<rama>`, que
+    // es la forma documentada de ELIMINAR esa rama del remoto. El
+    // constructor validaba la relación con el árbol y no la revisión, así
+    // que `revision: ''` se aceptaba y el borrado quedaba a una sola llamada
+    // de distancia.
+    if (!esOidCompleto(revision)) {
+      throw ArgumentError.value(
+        revision,
+        'revision',
+        'La revisión de un pull request tiene que ser un OID completo de git '
+            '—40 caracteres hexadecimales con SHA-1, 64 con SHA-256—. Lo que '
+            'no lo es termina interpolado en el refspec '
+            '«<revisión>:refs/heads/<rama>», y una revisión vacía ahí no '
+            'empuja nada: BORRA la rama del remoto.',
+      );
+    }
     final esperado = draft.artefacto.candidato.contentRevision;
     if (arbolDeLaRevision != esperado) {
       throw ArgumentError.value(

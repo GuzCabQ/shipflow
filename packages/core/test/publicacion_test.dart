@@ -160,6 +160,13 @@ void main() {
   });
 
   group('el borrador y la solicitud', () {
+    // OIDs de verdad, no cadenas con forma de nombre. Salen de dos
+    // repositorios recién creados y medidos: `git init --object-format=sha1`
+    // da 40 caracteres hexadecimales, `--object-format=sha256` da 64.
+    const oidSha1 = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
+    const oidSha256 =
+        'b9050a8da2fe144803f3f92b87ce78319d12e16999cd6976c6b047a5b77e0d83';
+
     ArtefactoDeRevision artefacto({
       required EstadoDeCorrida estado,
       String arbol = 'arbol-1',
@@ -194,7 +201,7 @@ void main() {
       expect(
         () => PullRequestRequest(
           draft: borrador(EstadoDeCorrida.verde),
-          revision: 'commit-1',
+          revision: oidSha1,
           arbolDeLaRevision: 'OTRO-arbol',
         ),
         throwsArgumentError,
@@ -205,10 +212,10 @@ void main() {
     test('con el árbol correcto, construye', () {
       final s = PullRequestRequest(
         draft: borrador(EstadoDeCorrida.verde),
-        revision: 'commit-1',
+        revision: oidSha1,
         arbolDeLaRevision: 'arbol-1',
       );
-      expect(s.revision, 'commit-1');
+      expect(s.revision, oidSha1);
       expect(s.incompleto, isFalse);
     });
 
@@ -216,24 +223,92 @@ void main() {
       for (final estado in EstadoDeCorrida.values) {
         final s = PullRequestRequest(
           draft: borrador(estado),
-          revision: 'commit-1',
+          revision: oidSha1,
           arbolDeLaRevision: 'arbol-1',
         );
         expect(s.incompleto, estado != EstadoDeCorrida.verde);
       }
     });
 
+    test(
+      'una revisión que no es un OID completo no construye la solicitud',
+      () {
+        // Esto no es higiene de tipos: es lo que separa una publicación de un
+        // BORRADO. `EmpujeAislado` arma el refspec
+        // `<revisión>:refs/heads/<rama>`, y `:refs/heads/<rama>` es la forma
+        // documentada de eliminar esa rama del remoto. El constructor validaba
+        // la relación de la revisión con el árbol y no la revisión misma, así
+        // que `revision: ''` se construía sin una queja.
+        for (final invalida in <String>[
+          '',
+          '   ',
+          'commit-1',
+          'HEAD',
+          'a4e66d5',
+          // 39 y 41: los dos vecinos del largo de SHA-1, para que la prueba
+          // falle si alguien escribe `>= 40` o `{40,}`.
+          'a4e66d50d152b67d451a9028fd1cf54c71e18e7',
+          'a4e66d50d152b67d451a9028fd1cf54c71e18e790',
+          // 63 y 65: los dos vecinos del largo de SHA-256.
+          'b9050a8da2fe144803f3f92b87ce78319d12e16999cd6976c6b047a5b77e0d8',
+          'b9050a8da2fe144803f3f92b87ce78319d12e16999cd6976c6b047a5b77e0d833',
+          // Largo correcto, alfabeto equivocado.
+          'z4e66d50d152b67d451a9028fd1cf54c71e18e79',
+          'a4e66d50d152b67d451a9028fd1cf54c71e18e7 ',
+        ]) {
+          expect(
+            () => PullRequestRequest(
+              draft: borrador(EstadoDeCorrida.verde),
+              revision: invalida,
+              arbolDeLaRevision: 'arbol-1',
+            ),
+            throwsArgumentError,
+            reason: 'se aceptó «$invalida» como revisión de un pull request',
+          );
+        }
+      },
+    );
+
+    test('las DOS familias de OID construyen: SHA-1 y SHA-256', () {
+      // El control positivo, y no es una formalidad: una validación que
+      // conociera solo los 40 caracteres de SHA-1 rechazaría todas las
+      // revisiones de un repositorio SHA-256 —un rechazo falso sobre una
+      // revisión perfectamente válida—, y la prueba de arriba pasaría igual.
+      // Los dos largos están medidos con `git rev-parse HEAD` sobre
+      // repositorios creados con cada `--object-format`.
+      expect(oidSha1, hasLength(40));
+      expect(oidSha256, hasLength(64));
+      for (final valida in <String>[
+        oidSha1,
+        oidSha256,
+        // Mayúsculas: medido con `git cat-file -t`, git resuelve el mismo
+        // objeto. Rechazarlas sería afirmar que un OID válido no lo es.
+        oidSha1.toUpperCase(),
+        oidSha256.toUpperCase(),
+      ]) {
+        expect(esOidCompleto(valida), isTrue, reason: '«$valida» es un OID');
+        expect(
+          PullRequestRequest(
+            draft: borrador(EstadoDeCorrida.verde),
+            revision: valida,
+            arbolDeLaRevision: 'arbol-1',
+          ).revision,
+          valida,
+        );
+      }
+    });
+
     test('el título se deriva, y cuando está incompleto lo dice', () {
       final verde = PullRequestRequest(
         draft: borrador(EstadoDeCorrida.verde),
-        revision: 'c',
+        revision: oidSha1,
         arbolDeLaRevision: 'arbol-1',
       );
       expect(verde.titulo, 'sostener el arnés');
 
       final rojo = PullRequestRequest(
         draft: borrador(EstadoDeCorrida.noConcluyente),
-        revision: 'c',
+        revision: oidSha256,
         arbolDeLaRevision: 'arbol-1',
       );
       expect(rojo.titulo, startsWith(PullRequestRequest.prefijoIncompleto));

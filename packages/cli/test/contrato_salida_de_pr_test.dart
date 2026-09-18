@@ -44,6 +44,13 @@ import 'package:forge/forge.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
+/// La revisión de esta suite. **Un OID completo de verdad —40 caracteres
+/// hexadecimales, el largo de SHA-1 medido con `git rev-parse`—**, igual que
+/// en `packages/forge/test/github_test.dart`: `PullRequestRequest` rechaza
+/// cualquier otra cosa desde que una revisión vacía se reveló capaz de
+/// convertirse en `:refs/heads/<rama>`, que borra la rama del remoto.
+const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
+
 void main() {
   // Los mismos valores que usa `packages/forge/test/github_test.dart`, para
   // que «la misma solicitud» signifique lo mismo en las dos suites.
@@ -70,7 +77,7 @@ void main() {
       base: 'main',
       artefacto: artefacto(),
     ),
-    revision: 'commit-1',
+    revision: revisionDePrueba,
     arbolDeLaRevision: 'arbol-1',
   );
 
@@ -109,7 +116,7 @@ void main() {
         'state': 'open',
         'merged_at': null,
         'body': cuerpo['body'],
-        'head': {'sha': 'commit-1'},
+        'head': {'sha': revisionDePrueba},
       };
       prsExistentes.add(nuevo);
       if (perderRespuestaDelPost) {

@@ -10,6 +10,16 @@ void main() {
   late HttpServer servidor;
   final autorizaciones = <String?>[];
 
+  /// El OID del commit que arma `setUp`, leído de `git rev-parse HEAD`.
+  ///
+  /// **No es `'HEAD'` ni una constante inventada**: desde esta ronda,
+  /// `empujar` exige un OID completo antes de lanzar nada, así que una
+  /// revisión simbólica no llegaría al proceso y estas pruebas dejarían de
+  /// ejercitar lo que dicen ejercitar. Sale del repositorio de verdad, que
+  /// es además la única forma de que el `push` tenga sentido: es el objeto
+  /// que efectivamente existe ahí.
+  late String revisionDeLaCabeza;
+
   setUp(() async {
     temporal = await Directory.systemTemp.createTemp('forge-empuje-');
     servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -47,6 +57,15 @@ void main() {
     File('${trabajo.path}/a.txt').writeAsStringSync('a');
     await git(['add', 'a.txt']);
     await git(['commit', '-qm', 'a']);
+    final cabeza = await Process.run(
+      'git',
+      const ['rev-parse', 'HEAD'],
+      workingDirectory: trabajo.path,
+      environment: {'PATH': Platform.environment['PATH']!, 'HOME': casa.path},
+      includeParentEnvironment: false,
+    );
+    expect(cabeza.exitCode, 0, reason: '${cabeza.stderr}');
+    revisionDeLaCabeza = (cabeza.stdout as String).trim();
     File('${trabajo.path}/.git/hooks/pre-push').writeAsStringSync(
       '#!/bin/sh\necho corrio > ${temporal.path}/gancho-corrio\n',
     );
@@ -75,7 +94,7 @@ void main() {
         'ghp_secreto',
         label: 'SHIPFLOW_GITHUB_TOKEN',
       ),
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
 
@@ -142,15 +161,15 @@ void main() {
       // Puerto cerrado a propósito.
       urlDelRemoto: 'http://127.0.0.1:1/x.git',
       credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
     expect(r, isA<NoEmpujado>());
     expect((r as NoEmpujado).desenlace.retryable, isTrue);
   });
 
-  test('un programa ausente no expone la credencial en ningún texto del '
-      'desenlace', () async {
+  test('un programa que no se puede lanzar es PushFailed, no PushUnknown, y '
+      'no expone la credencial en ningún texto del desenlace', () async {
     const secreto = 'ghp_no_debe_aparecer_jamas';
     final empuje = EmpujeAislado(
       directorio: '${temporal.path}/trabajo',
@@ -166,12 +185,20 @@ void main() {
     final r = await empuje.empujar(
       urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
       credencial: const Credential(secreto, label: 'SHIPFLOW_GITHUB_TOKEN'),
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
 
     expect(r, isA<NoEmpujado>());
-    expect((r as NoEmpujado).desenlace, isA<PushUnknown>());
+    expect(
+      (r as NoEmpujado).desenlace,
+      isA<PushFailed>(),
+      reason:
+          'si el proceso NUNCA arrancó, el efecto remoto no pudo ocurrir: no '
+          'hubo nada capaz de hablar con el remoto. `PushUnknown` mandaba a '
+          'buscar allá un efecto imposible, que es la clase de duda que este '
+          'repositorio existe para no fabricar.',
+    );
 
     // `ProcessException` de un programa ausente lleva `destino` —la URL
     // con la credencial en el `userinfo`— en `.arguments`, y su
@@ -216,7 +243,7 @@ void main() {
     final r = await empuje.empujar(
       urlDelRemoto: 'http://forja.invalido/duenio/repo.git',
       credencial: credencial,
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
 
@@ -273,7 +300,7 @@ void main() {
     final r = await empuje.empujar(
       urlDelRemoto: 'http://127.0.0.1:${servidor403.port}/x.git',
       credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
 
@@ -347,7 +374,7 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
         'ghp_del_push',
         label: 'SHIPFLOW_GITHUB_TOKEN',
       ),
-      revision: 'HEAD',
+      revision: revisionDeLaCabeza,
       rama: 'rebanada-1',
     );
 
@@ -404,6 +431,235 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
           'hijo (PATH, HOME).',
     );
   });
+
+  test(
+    'una revisión que no es un OID completo no lanza NINGÚN proceso',
+    () async {
+      // El defecto que esta prueba fija tenía un desenlace posible y uno solo:
+      // `empujar` arma el refspec `<revisión>:refs/heads/<rama>`, y con la
+      // revisión vacía eso es `:refs/heads/<rama>` — la forma documentada de
+      // BORRAR la rama del remoto. O sea que una revisión en blanco no
+      // producía un push fallido: producía el borrado de la rama de destino.
+      //
+      // **Lo que se afirma es que no se lanzó nada, no que el desenlace sea
+      // lindo.** Un rechazo que devolviera la causa correcta DESPUÉS de lanzar
+      // `git` pasaría una prueba que solo mirara el desenlace, y el borrado ya
+      // habría ocurrido. Por eso el programa es un espía que deja rastro con
+      // solo arrancar.
+      final espia = File('${temporal.path}/espia-revision.sh');
+      await espia.writeAsString(
+        '#!/bin/sh\ntouch "${temporal.path}/se-lanzo-por-revision"\nexit 0\n',
+      );
+      await Process.run('chmod', ['+x', espia.path]);
+      final rastro = File('${temporal.path}/se-lanzo-por-revision');
+
+      final empuje = EmpujeAislado(
+        directorio: '${temporal.path}/trabajo',
+        entornoDelPadre: EntornoDelProceso({
+          'PATH': Platform.environment['PATH']!,
+          'HOME': '${temporal.path}/casa',
+        }),
+        programa: espia.path,
+      );
+
+      // Las formas que un llamador distraído produce de verdad: la vacía —la
+      // que borra—, una revisión simbólica, una abreviada de las que git
+      // acepta en la línea de comandos, y dos que tienen el largo correcto
+      // pero no son hexadecimales o le sobra un carácter.
+      final invalidas = <String>[
+        '',
+        '   ',
+        'HEAD',
+        'main',
+        'a4e66d5',
+        'a4e66d50d152b67d451a9028fd1cf54c71e18e7',
+        'a4e66d50d152b67d451a9028fd1cf54c71e18e790',
+        'z4e66d50d152b67d451a9028fd1cf54c71e18e79',
+      ];
+      for (final invalida in invalidas) {
+        final credencial = _CredencialEspia('ghp_no_debe_desenvolverse');
+        final r = await empuje.empujar(
+          urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+          credencial: credencial,
+          revision: invalida,
+          rama: 'rebanada-1',
+        );
+        expect(r, isA<NoEmpujado>());
+        expect((r as NoEmpujado).desenlace, isA<PushFailed>());
+        expect(
+          (r.desenlace as PushFailed).causa,
+          CausaDePublicacion.revisionInvalida,
+        );
+        expect(
+          r.desenlace.retryable,
+          isFalse,
+          reason: 'la misma revisión vuelve a no ser un OID la próxima vez',
+        );
+        expect(
+          rastro.existsSync(),
+          isFalse,
+          reason:
+              'con la revisión «$invalida» se lanzó un proceso. Con la revisión '
+              'vacía ese proceso es `git push <remoto> :refs/heads/<rama>`, que '
+              'BORRA la rama del remoto.',
+        );
+        expect(
+          credencial.desenvuelta,
+          isFalse,
+          reason:
+              'el rechazo ocurre antes de armar el destino, así que el secreto '
+              'no tiene por qué haberse desenvuelto',
+        );
+      }
+
+      // El control positivo, sin el cual una validación que rechazara
+      // cualquier revisión pasaría este archivo entero y rompería la
+      // publicación: con el OID de verdad, el lanzamiento sí ocurre.
+      await empuje.empujar(
+        urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+        credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+        revision: revisionDeLaCabeza,
+        rama: 'rebanada-1',
+      );
+      expect(
+        rastro.existsSync(),
+        isTrue,
+        reason:
+            'con un OID completo el push tiene que lanzarse: una validación '
+            'que rechace todo no es una validación, es una publicación rota',
+      );
+    },
+  );
+
+  test(
+    'un git que no termina vence, se mata, y no queda ningún proceso huérfano',
+    () async {
+      // `Process.run` sin presupuesto esperaba para siempre: un remoto que
+      // acepta la conexión y no contesta, un filtro, un `git` trabado. El
+      // flujo no producía ningún desenlace, que es lo contrario del
+      // invariante de este paquete — el desenlace se declara.
+      //
+      // El `exec` no es decorativo: sin él, el `sh` lanzaría `sleep` como
+      // HIJO suyo y matar al `sh` dejaría al `sleep` vivo, con lo que la
+      // prueba estaría midiendo la muerte de un proceso distinto del que se
+      // cuelga. Con `exec`, el PID que se anota es el mismo que se bloquea.
+      final bloqueante = File('${temporal.path}/bloqueante.sh');
+      await bloqueante.writeAsString(
+        '#!/bin/sh\necho \$\$ > "${temporal.path}/pid-bloqueante"\n'
+        'exec sleep 300\n',
+      );
+      await Process.run('chmod', ['+x', bloqueante.path]);
+
+      final empuje = EmpujeAislado(
+        directorio: '${temporal.path}/trabajo',
+        entornoDelPadre: EntornoDelProceso({
+          'PATH': Platform.environment['PATH']!,
+          'HOME': '${temporal.path}/casa',
+        }),
+        programa: bloqueante.path,
+        presupuesto: const Duration(milliseconds: 300),
+      );
+
+      final r = await empuje.empujar(
+        urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+        credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+        revision: revisionDeLaCabeza,
+        rama: 'rebanada-1',
+      );
+
+      expect(r, isA<NoEmpujado>());
+      expect(
+        (r as NoEmpujado).desenlace,
+        isA<PushUnknown>(),
+        reason:
+            'al interrumpirlo se pierde quien sabía cómo terminó: el packfile '
+            'puede haber llegado entero. `PushFailed` afirmaría que del otro '
+            'lado no hay nada.',
+      );
+      expect(r.desenlace.retryable, isTrue);
+
+      // Y el proceso no quedó dando vueltas. Sin el `kill`, `sleep 300`
+      // sobrevive a la corrida entera: el desenlace se habría declarado y el
+      // proceso seguiría vivo, que es media promesa presentada como entera.
+      final archivoDePid = File('${temporal.path}/pid-bloqueante');
+      expect(
+        archivoDePid.existsSync(),
+        isTrue,
+        reason: 'el programa bloqueante ni siquiera llegó a anotar su PID',
+      );
+      final pid = int.parse(archivoDePid.readAsStringSync().trim());
+      var vivo = true;
+      for (var intento = 0; intento < 100 && vivo; intento++) {
+        // `kill -0` no manda ninguna señal: solo pregunta si el proceso
+        // existe. Se consulta en un bucle corto porque entre el `SIGKILL` y
+        // la desaparición del proceso hay un instante que es del sistema
+        // operativo, no de este código.
+        final consulta = await Process.run('kill', ['-0', '$pid']);
+        vivo = consulta.exitCode == 0;
+        if (vivo) await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(
+        vivo,
+        isFalse,
+        reason:
+            'el proceso $pid sobrevivió al vencimiento: el presupuesto cortó '
+            'la espera pero no el proceso, y eso deja un huérfano por cada '
+            'push colgado',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  test(
+    'un hijo que escribe más de lo que entra en la tubería igual termina',
+    () async {
+      // El drenaje no es prolijidad: es lo que impide que el presupuesto se
+      // dispare por la razón equivocada. Las tuberías del hijo tienen un
+      // buffer finito en el núcleo —del orden de 64 KiB—; un hijo que escribe
+      // más que eso se BLOQUEA escribiendo hasta que alguien lea. `git push`
+      // es locuaz por `stderr`, así que sin drenar, un push perfectamente
+      // sano se cuelga, vence, y se reporta como `PushUnknown`: un falso
+      // desenlace ambiguo fabricado por nuestro propio cliente.
+      //
+      // 200 000 bytes por cada flujo, bien por encima del buffer, y salida 0.
+      final charlatan = File('${temporal.path}/charlatan.sh');
+      await charlatan.writeAsString(
+        '#!/bin/sh\n'
+        "head -c 200000 /dev/zero | tr '\\0' 'x'\n"
+        "head -c 200000 /dev/zero | tr '\\0' 'y' >&2\n"
+        'exit 0\n',
+      );
+      await Process.run('chmod', ['+x', charlatan.path]);
+
+      final empuje = EmpujeAislado(
+        directorio: '${temporal.path}/trabajo',
+        entornoDelPadre: EntornoDelProceso({
+          'PATH': Platform.environment['PATH']!,
+          'HOME': '${temporal.path}/casa',
+        }),
+        programa: charlatan.path,
+        presupuesto: const Duration(seconds: 5),
+      );
+
+      final r = await empuje.empujar(
+        urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+        credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+        revision: revisionDeLaCabeza,
+        rama: 'rebanada-1',
+      );
+
+      expect(
+        r,
+        isA<Empujado>(),
+        reason:
+            'el hijo salió con 0 después de escribir 400 000 bytes. Si esto da '
+            '`PushUnknown`, nadie está leyendo las tuberías: el hijo se '
+            'bloqueó escribiendo y el presupuesto lo mató por un cuelgue que '
+            'causamos nosotros.',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
 }
 
 /// Una [Credential] que anota si alguien llegó a desenvolver el secreto.
