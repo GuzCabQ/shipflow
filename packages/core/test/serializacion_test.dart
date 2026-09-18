@@ -499,6 +499,37 @@ void main() {
           PullRequestUnknown(causa: CausaDePublicacion.autenticacion).toJson(),
           PullRequestUnknown.fromJson,
         ),
+        'NoIntentado': (
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.secretDetected,
+            verificacion: EstadoDeCorrida.errorInterno,
+          ).toJson(),
+          NoIntentado.fromJson,
+        ),
+        'NoAplicado': (
+          ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'c' * 40).toJson(),
+          NoAplicado.fromJson,
+        ),
+        'LocalInconsistente': (
+          ShipOutcome.localInconsistenteParaLaPrueba(
+            revision: 'd' * 40,
+          ).toJson(),
+          LocalInconsistente.fromJson,
+        ),
+        'Publicado': (
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja.ejemplo/o/r/pull/4'),
+            verificacion: EstadoPublicable.verde,
+          ).toJson(),
+          Publicado.fromJson,
+        ),
+        'PublicacionIncompleta': (
+          ShipOutcome.publicacionIncompletaParaLaPrueba(
+            remoto: PushFailed(causa: CausaDePublicacion.permisos),
+            verificacion: EstadoPublicable.rojo,
+          ).toJson(),
+          PublicacionIncompleta.fromJson,
+        ),
       };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
