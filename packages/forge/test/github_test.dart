@@ -11,6 +11,14 @@ import 'package:test/test.dart';
 /// un `Bearer` de relleno, la prueba tiene que ponerse roja.
 const secretoDePrueba = 'ghp_x';
 
+/// La revisión que esta suite publica. **Es un OID completo de verdad —40
+/// caracteres hexadecimales, el largo de SHA-1 medido con `git rev-parse`— y
+/// no una cadena con forma de nombre**: desde esta ronda
+/// `PullRequestRequest` rechaza cualquier cosa que no sea un OID completo,
+/// porque una revisión vacía termina en el refspec `:refs/heads/<rama>`, que
+/// BORRA la rama del remoto.
+const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
+
 void main() {
   late HttpServer api;
   late List<Map<String, Object?>> prsExistentes;
@@ -58,7 +66,7 @@ void main() {
         'state': 'open',
         'merged_at': null,
         'body': cuerpo['body'],
-        'head': {'sha': 'commit-1'},
+        'head': {'sha': revisionDePrueba},
       });
       p.response
         ..statusCode = 201
@@ -71,8 +79,8 @@ void main() {
   tearDown(() async => api.close(force: true));
 
   // Los mismos valores que la tarea 5 usa en su suite «el borrador y la
-  // solicitud», bajo `packages/core/test`: `runId: 'corrida-1'`,
-  // `revision: 'commit-1'`, y `arbolDeLaRevision` igual al
+  // solicitud», bajo `packages/core/test`: `runId: 'corrida-1'`, un OID
+  // completo como revisión, y `arbolDeLaRevision` igual al
   // `candidato.contentRevision` del artefacto.
   ArtefactoDeRevision artefacto() => ArtefactoDeRevision(
     superficie: SuperficieDeVerificacion(
@@ -97,7 +105,7 @@ void main() {
       base: 'main',
       artefacto: artefacto(),
     ),
-    revision: 'commit-1',
+    revision: revisionDePrueba,
     arbolDeLaRevision: 'arbol-1',
   );
 
@@ -170,8 +178,8 @@ void main() {
       'merged_at': null,
       'body':
           '<!-- shipflow:pr formatVersion=1 runId=otra '
-          'revision=commit-1 -->',
-      'head': {'sha': 'commit-1'},
+          'revision=$revisionDePrueba -->',
+      'head': {'sha': revisionDePrueba},
     });
     final salida = construirSalida(api.port);
     final r = await salida.open(solicitud());
@@ -359,6 +367,361 @@ void main() {
     expect(esCanalSeguroParaLaCredencial('http://[no es una url'), isFalse);
   });
 
+  group('la respuesta del GET se clasifica antes de decodificarla', () {
+    // El defecto que este grupo fija: `_buscarExistente` no miraba el código
+    // de estado y le pasaba CUALQUIER cuerpo a `jsonDecode(...) as
+    // List<Object?>`. Un `401` de la forja trae un OBJETO, el cast tiraba
+    // `TypeError`, y el `catch` exterior de `open` lo convertía en
+    // `PullRequestFailed(red)`: «la red falló» sobre una credencial
+    // rechazada. Reproducido por el autor — se esperaba `autenticacion` y
+    // salía `red`.
+    //
+    // Y había un segundo efecto, peor porque es invisible: como la corrida
+    // se detenía en el GET, la clasificación del `401` del POST no la
+    // alcanzaba ninguna corrida. Estaba escrita y no la ejercía nadie.
+
+    /// Un servidor que contesta el GET con [codigo] y [cuerpo], y cuenta los
+    /// POST que recibe. Lo que importa medir es que el POST NO llegue: un
+    /// fallo de la búsqueda no puede terminar creando un pull request.
+    Future<({HttpServer servidor, List<String> metodos})> forjaQueContesta(
+      int codigo,
+      String cuerpo, {
+      ContentType? tipo,
+    }) async {
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final metodos = <String>[];
+      servidor.listen((p) async {
+        metodos.add(p.method);
+        p.response.statusCode = codigo;
+        if (tipo != null) p.response.headers.contentType = tipo;
+        p.response.write(cuerpo);
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+      return (servidor: servidor, metodos: metodos);
+    }
+
+    // El cuerpo real de esta forja para un `401`: un OBJETO, no una lista.
+    // Es el dato que hacía fallar el cast.
+    const cuerpoDe401 =
+        '{"message":"Bad credentials",'
+        '"documentation_url":"https://docs.github.com/rest"}';
+
+    final casos =
+        <String, ({int codigo, String cuerpo, CausaDePublicacion causa})>{
+          'un 401 es autenticación, no red': (
+            codigo: HttpStatus.unauthorized,
+            cuerpo: cuerpoDe401,
+            causa: CausaDePublicacion.autenticacion,
+          ),
+          'un 403 es permisos, igual que en la creación': (
+            codigo: HttpStatus.forbidden,
+            cuerpo:
+                '{"message":"Resource not accessible by personal access token"}',
+            causa: CausaDePublicacion.permisos,
+          ),
+          'un error del servidor no se disfraza de causa conocida': (
+            codigo: HttpStatus.internalServerError,
+            cuerpo: '{"message":"Server Error"}',
+            causa: CausaDePublicacion.desconocida,
+          ),
+        };
+
+    for (final caso in casos.entries) {
+      test(caso.key, () async {
+        final forja = await forjaQueContesta(
+          caso.value.codigo,
+          caso.value.cuerpo,
+          tipo: ContentType.json,
+        );
+        final r = await construirSalida(forja.servidor.port).open(solicitud());
+
+        expect(r, isA<PullRequestFailed>());
+        expect(
+          (r as PullRequestFailed).causa,
+          caso.value.causa,
+          reason:
+              'el GET contestó ${caso.value.codigo} y el desenlace dice '
+              '«${r.safeReason}». Sin mirar el código, cualquiera de estos '
+              'termina en `red` porque el cuerpo no es una lista.',
+        );
+        expect(
+          forja.metodos,
+          isNot(contains('POST')),
+          reason:
+              'la búsqueda falló: seguir hasta el POST crearía un pull '
+              'request sin haber podido comprobar si ya existía uno',
+        );
+      });
+    }
+
+    test('un 200 con un cuerpo que no es una lista es un fallo de red, no una '
+        'búsqueda vacía', () async {
+      // El control que separa «clasifiqué el código» de «entendí la
+      // respuesta». Un `200` cuyo cuerpo no es una lista —la página de un
+      // proxy, un objeto de error de un intermediario— no puede leerse como
+      // «no hay ningún PR»: eso mandaría a crear uno sin haber buscado.
+      final forja = await forjaQueContesta(
+        HttpStatus.ok,
+        '{"message":"esto no es una lista"}',
+        tipo: ContentType.json,
+      );
+      final r = await construirSalida(forja.servidor.port).open(solicitud());
+
+      expect(r, isA<PullRequestFailed>());
+      expect((r as PullRequestFailed).causa, CausaDePublicacion.red);
+      expect(r.retryable, isTrue);
+      expect(
+        forja.metodos,
+        isNot(contains('POST')),
+        reason: 'no se pudo buscar: no se puede crear',
+      );
+    });
+
+    test('un 200 con una lista SÍ se decodifica: la clasificación no rechaza '
+        'todo', () async {
+      // El control positivo del grupo. Sin él, un `_buscarExistente` que
+      // devolviera un fallo ante CUALQUIER respuesta pasaría las cuatro
+      // pruebas de arriba y rompería la publicación entera.
+      final salida = construirSalida(api.port);
+      expect(await salida.open(solicitud()), isA<PullRequestOpen>());
+      expect(creados, 1);
+    });
+  });
+
+  group('la búsqueda idempotente recorre TODAS las páginas', () {
+    /// Una forja que pagina: [paginas] es lo que devuelve cada página, en
+    /// orden, y cada una menos la última anuncia la siguiente por `Link`.
+    ///
+    /// **Anunciar por `Link` y no por conteo** es lo que hace la forja de
+    /// verdad, y es lo único que un cliente puede seguir sin adivinar.
+    Future<({HttpServer servidor, List<String> rutas, int Function() creados})>
+    forjaPaginada(List<List<Map<String, Object?>>> paginas) async {
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final rutas = <String>[];
+      var creados = 0;
+      servidor.listen((p) async {
+        if (p.method == 'GET') {
+          rutas.add(p.uri.toString());
+          final numero =
+              int.tryParse(p.uri.queryParameters['page'] ?? '1') ?? 1;
+          final indice = numero - 1;
+          final pagina = indice < paginas.length
+              ? paginas[indice]
+              : const <Map<String, Object?>>[];
+          if (indice + 1 < paginas.length) {
+            final siguiente = p.uri.replace(
+              queryParameters: {
+                ...p.uri.queryParameters,
+                'page': '${numero + 1}',
+              },
+            );
+            p.response.headers.add(
+              'link',
+              '<http://127.0.0.1:${servidor.port}${siguiente.path}'
+                  '?${siguiente.query}>; rel="next", '
+                  '<http://127.0.0.1:${servidor.port}${siguiente.path}'
+                  '?${siguiente.query}>; rel="last"',
+            );
+          }
+          p.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode(pagina));
+          await p.response.close();
+          return;
+        }
+        creados++;
+        await utf8.decoder.bind(p).join();
+        p.response
+          ..statusCode = 201
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({'html_url': 'https://forja/pr/nuevo'}));
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+      return (servidor: servidor, rutas: rutas, creados: () => creados);
+    }
+
+    Map<String, Object?> prCoincidente() => {
+      'html_url': 'https://forja/pr/el-que-ya-existe',
+      'state': 'open',
+      'merged_at': null,
+      'body': marcadorEsperado(),
+      'head': {'sha': revisionDePrueba},
+    };
+
+    Map<String, Object?> prAjeno(int n) => {
+      'html_url': 'https://forja/pr/ajeno-$n',
+      'state': 'open',
+      'merged_at': null,
+      'body': '<!-- shipflow:pr formatVersion=1 runId=otra revision=OTRA -->',
+      'head': {'sha': 'OTRA'},
+    };
+
+    test(
+      'el PR que coincide está en la SEGUNDA página, y se encuentra',
+      () async {
+        // Reproducido por el autor con un servidor local: con una sola
+        // petición, el cliente no veía esta página, seguía como si el pull
+        // request no existiera y llegaba al POST — o sea que creaba un
+        // segundo pull request, que es exactamente lo que la búsqueda
+        // idempotente existe para impedir.
+        final forja = await forjaPaginada([
+          [prAjeno(1), prAjeno(2)],
+          [prAjeno(3), prCoincidente()],
+        ]);
+
+        final r = await construirSalida(forja.servidor.port).open(solicitud());
+
+        expect(r, isA<PullRequestOpen>());
+        expect((r as PullRequestOpen).url, 'https://forja/pr/el-que-ya-existe');
+        expect(
+          forja.creados(),
+          0,
+          reason:
+              'se creó un segundo pull request para una revisión que ya tenía '
+              'uno: la búsqueda se quedó en la primera página',
+        );
+        expect(
+          forja.rutas,
+          hasLength(2),
+          reason: 'la segunda página nunca se pidió',
+        );
+        expect(
+          forja.rutas.first,
+          contains('per_page=100'),
+          reason:
+              'sin `per_page` la forja devuelve 30 por página: más páginas y '
+              'más pedidos para la misma respuesta',
+        );
+      },
+    );
+
+    test('sin `rel="next"` no se piden páginas de más', () async {
+      // El control negativo: una implementación que siguiera pidiendo
+      // páginas hasta el tope gastaría diez pedidos por cada búsqueda y
+      // pasaría igual la prueba de arriba.
+      final forja = await forjaPaginada([
+        [prAjeno(1)],
+      ]);
+      await construirSalida(forja.servidor.port).open(solicitud());
+      expect(forja.rutas, hasLength(1));
+    });
+
+    test('un `Link` que cicla no gira para siempre: se corta y se declara '
+        'fallo', () async {
+      // Un `Link` que apunta siempre a la misma página —un proxy roto, un
+      // bug de paginación, una respuesta hostil— es el cuelgue que el
+      // presupuesto POR PEDIDO no cubre: cada pedido contesta a tiempo y el
+      // bucle no termina nunca. El tope existe por eso, y agotarlo NO es
+      // «no encontré nada»: es «no pude terminar de buscar», que no
+      // autoriza a crear.
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final vistos = <String>[];
+      var creados = 0;
+      servidor.listen((p) async {
+        if (p.method != 'GET') {
+          creados++;
+          await utf8.decoder.bind(p).join();
+          p.response
+            ..statusCode = 201
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode({'html_url': 'https://forja/pr/nuevo'}));
+          await p.response.close();
+          return;
+        }
+        vistos.add(p.uri.toString());
+        p.response.headers.add(
+          'link',
+          '<http://127.0.0.1:${servidor.port}/repos/duenio/repo/pulls'
+              '?page=ciclo>; rel="next"',
+        );
+        p.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(const <Object?>[]));
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+
+      final r = await construirSalida(servidor.port).open(solicitud());
+
+      expect(r, isA<PullRequestFailed>());
+      expect((r as PullRequestFailed).causa, CausaDePublicacion.desconocida);
+      expect(
+        vistos.length,
+        lessThanOrEqualTo(10),
+        reason: 'el recorrido tiene que tener un tope declarado',
+      );
+      expect(
+        creados,
+        0,
+        reason:
+            'la búsqueda no terminó: crear acá es abrir un segundo pull '
+            'request a ciegas',
+      );
+    });
+
+    test('un `Link` a otro origen no se sigue: la credencial no viaja adonde '
+        'diga la respuesta', () async {
+      // Cada página se pide con el `Authorization` puesto. Seguir un `Link`
+      // a otro host mandaría el token a un destino que eligió la respuesta y
+      // no la configuración — y `open` valida el canal UNA vez, sobre
+      // `baseDeLaApi`, precisamente porque hasta esta ronda todas las URLs
+      // salían de ahí.
+      final ajeno = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final autorizacionesAjenas = <String?>[];
+      ajeno.listen((p) async {
+        autorizacionesAjenas.add(
+          p.headers.value(HttpHeaders.authorizationHeader),
+        );
+        p.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(const <Object?>[]));
+        await p.response.close();
+      });
+      addTearDown(() => ajeno.close(force: true));
+
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var creados = 0;
+      servidor.listen((p) async {
+        if (p.method != 'GET') {
+          creados++;
+          await utf8.decoder.bind(p).join();
+          p.response
+            ..statusCode = 201
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode({'html_url': 'https://forja/pr/nuevo'}));
+          await p.response.close();
+          return;
+        }
+        p.response.headers.add(
+          'link',
+          '<http://127.0.0.1:${ajeno.port}/repos/duenio/repo/pulls?page=2>; '
+              'rel="next"',
+        );
+        p.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(const <Object?>[]));
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+
+      final r = await construirSalida(servidor.port).open(solicitud());
+
+      expect(
+        autorizacionesAjenas,
+        isEmpty,
+        reason: 'el `Bearer` llegó a un host que eligió la respuesta',
+      );
+      expect(r, isA<PullRequestFailed>());
+      expect(creados, 0, reason: 'la búsqueda quedó incompleta');
+    });
+  });
+
   test('un PR fusionado devuelve URL; uno cerrado da incompleto no '
       'reintentable', () async {
     prsExistentes.add({
@@ -366,7 +729,7 @@ void main() {
       'state': 'closed',
       'merged_at': '2026-09-14T00:00:00Z',
       'body': marcadorEsperado(),
-      'head': {'sha': 'commit-1'},
+      'head': {'sha': revisionDePrueba},
     });
     expect(
       await construirSalida(api.port).open(solicitud()),
@@ -379,7 +742,7 @@ void main() {
       'state': 'closed',
       'merged_at': null,
       'body': marcadorEsperado(),
-      'head': {'sha': 'commit-1'},
+      'head': {'sha': revisionDePrueba},
     });
     final cerrado = await construirSalida(api.port).open(solicitud());
     expect(cerrado, isA<PullRequestClosed>());

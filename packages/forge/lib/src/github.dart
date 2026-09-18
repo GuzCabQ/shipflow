@@ -143,17 +143,32 @@ class SalidaDePrDeGitHub implements PullRequestSink {
     // límite que `HttpClient` ya trae para esa fase específica.
     cliente.connectionTimeout = _presupuestoDeRed;
     try {
-      final PublicationOutcome? existente;
+      // **Lo que devuelve la búsqueda corta la corrida, y no siempre porque
+      // haya encontrado algo.** Puede ser el pull request que ya existe, o
+      // puede ser un fallo de la búsqueda misma —una página que contestó
+      // `401`, un `Link` fuera del origen, el tope de páginas agotado—. Los
+      // dos frenan acá, y por el mismo motivo: seguir hacia la creación con
+      // la búsqueda incompleta es abrir un segundo pull request a ciegas.
+      final PublicationOutcome? desenlaceDeLaBusqueda;
       try {
-        existente = await _buscarExistente(cliente, request, credencial);
+        desenlaceDeLaBusqueda = await _buscarExistente(
+          cliente,
+          request,
+          credencial,
+        );
       } on Object {
+        // Solo llega acá lo que no es una respuesta clasificable: una
+        // excepción de transporte, un vencimiento, o un cuerpo que dice ser
+        // una lista y no lo es. Los códigos de estado ya los clasificó
+        // `_buscarExistente` y no pasan por este `catch`.
+        //
         // La búsqueda es de solo lectura: no tiene efecto remoto que dejar a
         // medias. Un fallo acá es un fallo común y reintentable, no un
         // `unknown` — `unknown` está reservado para el paso que sí puede
         // haber escrito algo del otro lado.
         return PullRequestFailed(causa: CausaDePublicacion.red);
       }
-      if (existente != null) return existente;
+      if (desenlaceDeLaBusqueda != null) return desenlaceDeLaBusqueda;
 
       final resultadoDelEmpuje = await empuje.empujar(
         urlDelRemoto: configuracion.urlDelRemoto,
@@ -195,33 +210,190 @@ class SalidaDePrDeGitHub implements PullRequestSink {
         : base.replace(path: path, queryParameters: query);
   }
 
+  /// Cuántos pull requests se piden por página.
+  ///
+  /// **Medido contra el contrato del proveedor, no elegido**: esta operación
+  /// pagina, con 30 elementos por omisión y 100 como máximo configurable. Se
+  /// pide el máximo porque cada página es un pedido más —con su propio
+  /// presupuesto de red y su propia chance de fallar—, no porque 100 alcance:
+  /// [_maximoDePaginas] existe justamente porque no alcanza.
+  static const _porPagina = 100;
+
+  /// El tope de páginas que la búsqueda recorre, **y por qué hay uno**.
+  ///
+  /// El recorrido termina cuando una respuesta ya no trae `rel="next"`. Eso
+  /// depende de lo que conteste el otro lado, y un `Link` que apunte a una
+  /// página ya vista —un proxy mal configurado, una forja con un bug de
+  /// paginación, una respuesta hostil— haría girar este bucle para siempre:
+  /// el cuelgue que el presupuesto por pedido NO cubre, porque cada pedido
+  /// individual contesta a tiempo.
+  ///
+  /// Diez páginas de a 100 son mil pull requests para la MISMA rama origen y
+  /// la MISMA rama base. Un repositorio real no llega ahí: la consulta ya
+  /// está filtrada por `head` y `base`. O sea que agotar el tope no significa
+  /// «hay más de mil», significa que las páginas no se agotan, y por eso el
+  /// desenlace de agotarlo no es «no encontré nada» sino un fallo — ver
+  /// [_buscarExistente].
+  static const _maximoDePaginas = 10;
+
+  /// Cómo se lee un código de estado de la forja. **Uno solo para los dos
+  /// pedidos**, y eso es el arreglo y no una refactorización.
+  ///
+  /// La búsqueda no miraba el código: le pasaba cualquier cuerpo a
+  /// `jsonDecode(...) as List<Object?>`. Un `401` de la forja trae un OBJETO
+  /// —`{"message": "Bad credentials", ...}`—, el cast fallaba, y el `catch`
+  /// exterior de [open] lo convertía en `PullRequestFailed(red)`: «la red
+  /// falló» sobre una credencial rechazada. Y como la corrida se detenía ahí,
+  /// en el GET, la clasificación correcta del `401` del POST era
+  /// prácticamente inalcanzable — estaba escrita y no la llegaba a ejercer
+  /// nadie.
+  ///
+  /// **El cuerpo de la respuesta de error no se mira nunca**, ni acá ni en la
+  /// creación: solo el código decide la causa. Copiar el texto del servidor a
+  /// `safeReason` sería exactamente lo que esa cadena promete no hacer.
+  ///
+  /// **Residuo declarado:** un `403` de esta forja también aparece por límite
+  /// de tasa, no solo por permisos insuficientes. Se clasifica como
+  /// `permisos` —que es lo que ya hacía la creación, y la coherencia entre
+  /// los dos pedidos es lo que esta función existe para garantizar—, con el
+  /// precio de que un límite de tasa se reporta como no reintentable. Separar
+  /// los dos pide mirar los encabezados de límite de tasa, que es un control
+  /// nuevo y no un arreglo de este.
+  static CausaDePublicacion _causaDelCodigo(int codigo) => switch (codigo) {
+    HttpStatus.unauthorized => CausaDePublicacion.autenticacion,
+    HttpStatus.forbidden => CausaDePublicacion.permisos,
+    HttpStatus.unprocessableEntity => CausaDePublicacion.rechazoDeLaForja,
+    _ => CausaDePublicacion.desconocida,
+  };
+
+  /// Un enlace del encabezado `Link`: `<url>; rel="next", <url>; rel="last"`.
+  static final _patronDeEnlace = RegExp(r'<([^>]*)>([^,]*)');
+
+  /// El valor de `rel` dentro de los parámetros de UN enlace.
+  static final _patronDeRel = RegExp(r'\brel\s*=\s*"?([^";]*)"?');
+
+  /// La URL de la página siguiente, o `null` si esta era la última.
+  ///
+  /// **Sale del encabezado `Link` y no de contar elementos.** «Vinieron menos
+  /// de [_porPagina], entonces se acabó» es una inferencia sobre el
+  /// comportamiento del servidor, no su contrato; el contrato es este
+  /// encabezado, y es el que la forja documenta para recorrer el resto.
+  static Uri? _siguientePagina(HttpClientResponse respuesta, Uri pedida) {
+    // `HttpHeaders` no tiene constante para este encabezado; el nombre va
+    // literal. La biblioteca de entrada y salida compara los nombres en
+    // minúscula, así que `Link` y `link` son el mismo.
+    final valores = respuesta.headers['link'];
+    if (valores == null) return null;
+    for (final valor in valores) {
+      for (final enlace in _patronDeEnlace.allMatches(valor)) {
+        final rel = _patronDeRel.firstMatch(enlace.group(2)!)?.group(1);
+        if (rel == null) continue;
+        // `rel` admite varios tipos separados por espacios; lo que importa es
+        // que `next` sea uno de ellos, no que sea el texto entero.
+        if (!rel.trim().split(RegExp(r'\s+')).contains('next')) continue;
+        return pedida.resolve(enlace.group(1)!.trim());
+      }
+    }
+    return null;
+  }
+
+  /// ¿Las dos URLs son del MISMO origen?
+  ///
+  /// Hace falta porque cada página se pide con el `Authorization` puesto. Un
+  /// `Link` que apuntara a otro host mandaría la credencial ahí, a un destino
+  /// que eligió la respuesta y no la configuración — y `open` valida el canal
+  /// UNA vez, sobre `baseDeLaApi`, precisamente porque hasta esta ronda todas
+  /// las URLs salían de ella.
+  static bool _mismoOrigen(Uri a, Uri b) =>
+      a.scheme == b.scheme && a.host == b.host && a.port == b.port;
+
   /// La búsqueda idempotente. **Rama y base no alcanzan**: una rama
   /// reutilizada recuperaría un PR ajeno. La clave completa es
   /// repositorio/remoto (fijos en [configuracion]), rama origen, rama base,
   /// la revisión esperada, el marcador estable con su propio `runId` y
   /// `revision`, y el estado del PR.
+  ///
+  /// **Recorre TODAS las páginas, no la primera.** La forja pagina esta
+  /// operación y entrega el resto por el encabezado `Link`. Una sola petición
+  /// dejaba el contrato a medias, y el modo de fallo está reproducido: con el
+  /// pull request coincidente en la segunda página, el cliente no la pedía,
+  /// seguía como si no existiera y creaba un SEGUNDO pull request — que es
+  /// exactamente lo que esta búsqueda existe para impedir. Subir `per_page` a
+  /// 100 no lo arregla: corre el borde, no lo cierra.
+  ///
+  /// **El presupuesto de red y la clasificación del código valen en CADA
+  /// página**, no solo en la primera: cada página es un pedido entero, con su
+  /// propia forma de colgarse y su propia forma de fallar.
+  ///
+  /// Lo que devuelve, y no es solo «lo que encontré»:
+  ///
+  /// - el desenlace del pull request que YA existe, si aparece;
+  /// - un [PullRequestFailed] si alguna página falló, si el `Link` sale del
+  ///   origen configurado, o si el tope de páginas se agota — los tres son
+  ///   «la búsqueda no se pudo completar», y seguir hacia la creación con la
+  ///   búsqueda incompleta es abrir el segundo pull request a ciegas;
+  /// - `null` si las páginas se agotaron sin coincidencia, que es la única
+  ///   forma de decir «no existe» con fundamento.
   Future<PublicationOutcome?> _buscarExistente(
     HttpClient cliente,
     PullRequestRequest request,
     Credential credencial,
   ) async {
-    final uri = _urlDePulls(
+    final marcador = marcadorEstable(request);
+    var uri = _urlDePulls(
       query: {
         'head': '${configuracion.duenio}:${request.draft.branch}',
         'base': request.draft.base,
         'state': 'all',
+        'per_page': '$_porPagina',
       },
     );
-    final pedido = await cliente.getUrl(uri);
-    _autenticar(pedido, credencial);
-    final respuesta = await pedido.close().timeout(_presupuestoDeRed);
-    final cuerpo = await utf8.decoder
-        .bind(respuesta)
-        .join()
-        .timeout(_presupuestoDeRed);
-    final lista = jsonDecode(cuerpo) as List<Object?>;
-    final marcador = marcadorEstable(request);
 
+    for (var pagina = 1; pagina <= _maximoDePaginas; pagina++) {
+      final pedido = await cliente.getUrl(uri);
+      _autenticar(pedido, credencial);
+      final respuesta = await pedido.close().timeout(_presupuestoDeRed);
+
+      // **Clasificar ANTES de decodificar.** Un cuerpo de error no es una
+      // lista, y tratar de convertirlo en una borra la única información que
+      // sí dice qué pasó: el código.
+      if (respuesta.statusCode != HttpStatus.ok) {
+        // El cuerpo se descarta, no se lee: libera la conexión sin que su
+        // texto llegue a ninguna parte.
+        await respuesta.drain<void>().timeout(_presupuestoDeRed);
+        return PullRequestFailed(causa: _causaDelCodigo(respuesta.statusCode));
+      }
+
+      final cuerpo = await utf8.decoder
+          .bind(respuesta)
+          .join()
+          .timeout(_presupuestoDeRed);
+      final lista = jsonDecode(cuerpo) as List<Object?>;
+      final encontrado = _coincidenciaEnLaPagina(lista, request, marcador);
+      if (encontrado != null) return encontrado;
+
+      final siguiente = _siguientePagina(respuesta, uri);
+      if (siguiente == null) return null;
+      if (!_mismoOrigen(siguiente, uri)) {
+        // No se sigue, y no se calla: seguir mandaría el `Bearer` a un host
+        // que eligió la respuesta; callar y devolver `null` diría «no hay
+        // ningún PR» sobre una búsqueda que se cortó a la mitad.
+        return PullRequestFailed(causa: CausaDePublicacion.desconocida);
+      }
+      uri = siguiente;
+    }
+
+    // El tope se agotó. Ver [_maximoDePaginas]: esto no es «hay demasiados»,
+    // es «las páginas no se terminan», y la búsqueda quedó incompleta.
+    return PullRequestFailed(causa: CausaDePublicacion.desconocida);
+  }
+
+  /// La coincidencia dentro de UNA página ya decodificada.
+  PublicationOutcome? _coincidenciaEnLaPagina(
+    List<Object?> lista,
+    PullRequestRequest request,
+    String marcador,
+  ) {
     for (final item in lista) {
       final pr = item as Map<String, Object?>;
       final cabeza = pr['head'] as Map<String, Object?>?;
@@ -324,19 +496,9 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       }
     }
     // El cuerpo de la respuesta de error no se mira nunca: solo el código de
-    // estado decide la causa. Copiar el texto del servidor a `safeReason`
-    // sería exactamente lo que esa cadena promete no hacer.
-    return switch (codigo) {
-      HttpStatus.unauthorized => PullRequestFailed(
-        causa: CausaDePublicacion.autenticacion,
-      ),
-      HttpStatus.forbidden => PullRequestFailed(
-        causa: CausaDePublicacion.permisos,
-      ),
-      HttpStatus.unprocessableEntity => PullRequestFailed(
-        causa: CausaDePublicacion.rechazoDeLaForja,
-      ),
-      _ => PullRequestFailed(causa: CausaDePublicacion.desconocida),
-    };
+    // estado decide la causa, y por [_causaDelCodigo], que es el MISMO
+    // clasificador que usa la búsqueda. Que los dos pedidos coincidan dejó de
+    // ser una promesa de dos `switch` parecidos.
+    return PullRequestFailed(causa: _causaDelCodigo(codigo));
   }
 }
