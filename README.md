@@ -2856,6 +2856,31 @@ dos mecanismos gobiernan superficies distintas y hace falta vaciar las dos. La
 credencial viaja en el `userinfo` de la URL de destino, de un solo uso, nunca
 en el entorno del proceso.
 
+**El `push` produce un desenlace o se muere en el intento: no se cuelga.**
+`Process.run` sin límite espera a que el hijo salga, y `git push` puede no
+salir nunca —un remoto que acepta la conexión y deja de contestar, un `git`
+trabado—: ese flujo no producía **ningún** desenlace, que es lo contrario del
+invariante de que el desenlace se declara. Ahora el lanzamiento es
+`Process.start` con un presupuesto de **dos minutos**, y son cuatro cosas y no
+una: se drenan `stdout` y `stderr` desde el arranque —un hijo que llena la
+tubería se bloquea escribiendo, y entonces el presupuesto se dispararía por un
+cuelgue que causamos nosotros—, al vencer se manda `SIGKILL` y se espera la
+muerte del proceso —no queda huérfano, y hay una prueba que lo comprueba
+consultando el PID—, y el desenlace es `PushUnknown`: al interrumpirlo se
+pierde quien sabía cómo terminó, y el packfile puede haber llegado entero. Dos
+minutos, y no treinta segundos como los pedidos de la API, porque un `push` no
+es un pedido y una respuesta sino una negociación más la subida de un
+packfile; y no más, porque el presupuesto de la corrida entera se mide en
+minutos.
+
+**Y no poder lanzar `git` es un fallo, no un efecto remoto desconocido.** Si
+`Process.start` no consigue el proceso, no hubo nada capaz de hablar con el
+remoto: el desenlace es `PushFailed` y no `PushUnknown`, que mandaba a buscar
+allá un efecto que no pudo ocurrir. La causa se queda en `desconocida` porque
+ese `catch` sigue sin mirar la excepción —`ProcessException.arguments` lleva
+la URL con la credencial adentro y su `toString()` la interpola verbatim—, así
+que lo único que este código sabe es que el lanzamiento no ocurrió.
+
 **Y los dos canales que llevan la credencial exigen `https`, validado.** El
 `userinfo` del `git push` y el `Authorization: Bearer` del cliente de la API
 salen los dos de una URL que produce la raíz de composición —que no existe
@@ -2897,6 +2922,64 @@ encuentra el PR de la corrida anterior y abre uno segundo. Quien componga el
 reintento tiene que reusar el `runId` de la corrida que quedó en `unknown` —es
 de la rebanada de `ship`— y esa atadura hoy no la sostiene ningún control.
 
+### Una revisión que no es un OID no llega a ser un refspec
+
+`EmpujeAislado` arma `<revisión>:refs/heads/<rama>` y se lo pasa a `git push`.
+Con la revisión vacía eso queda `:refs/heads/<rama>`, que es la forma
+documentada de **eliminar** esa rama del remoto: una solicitud mal compuesta no
+publicaba de más, borraba. `PullRequestRequest` validaba la relación de la
+revisión con el árbol y no la revisión misma, así que `revision: ''` se
+construía sin una queja.
+
+Ahora lo exigen **las dos fronteras**, y no es una duplicación: `esOidCompleto`
+(`packages/core/lib/src/publicacion.dart`) es un invariante de construcción en
+el dominio —el constructor lanza— y una precondición de ejecución en el
+adapter —`empujar` devuelve `PushFailed` con causa `revisionInvalida`, un
+desenlace cerrado y no una excepción, **antes de lanzar ningún proceso**—. La
+frontera del proceso no puede confiar en que su llamador validó: `empujar` es
+público y recibe la revisión como parámetro suelto.
+
+Los dos largos están **medidos, no supuestos**, con `git rev-parse HEAD` sobre
+repositorios recién creados con git 2.50.1: **40** caracteres hexadecimales con
+`--object-format=sha1`, **64** con `--object-format=sha256`. Las dos familias
+se aceptan porque el repositorio puede ser de cualquiera de las dos, y también
+las mayúsculas: medido con `git cat-file -t`, git resuelve el mismo objeto, así
+que rechazarlas sería afirmar que un OID válido no lo es.
+
+### La búsqueda idempotente mira todas las páginas, y lee el código antes que el cuerpo
+
+Dos defectos que se sostenían el uno al otro. **Uno:** la búsqueda no miraba el
+código de estado y le pasaba cualquier cuerpo a `jsonDecode(...) as
+List<Object?>`. Un `401` de la forja trae un objeto, el cast fallaba, y el
+`catch` exterior lo convertía en `PullRequestFailed(red)` —«la red falló» sobre
+una credencial rechazada—; y como la corrida se detenía ahí, la clasificación
+correcta del `401` del POST era prácticamente inalcanzable: estaba escrita y no
+la ejercía ninguna corrida. Ahora el código se clasifica **antes** de decodificar
+—`401` es `autenticacion`, `403` es `permisos`, `422` es `rechazoDeLaForja`— y
+por el **mismo** clasificador que usa la creación, así que la coherencia entre
+los dos pedidos dejó de ser una promesa de dos `switch` parecidos.
+
+**Dos:** la búsqueda hacía **una sola** petición. La forja pagina esa operación
+—30 por omisión, 100 como máximo— y entrega el resto por el encabezado `Link`.
+Con el pull request coincidente en la segunda página, el cliente no la pedía y
+seguía hasta el POST: creaba un segundo pull request, que es exactamente lo que
+la búsqueda existe para impedir. Ahora pide `per_page=100` y sigue
+`rel="next"` hasta encontrar o agotar, con el presupuesto de red y la
+clasificación aplicados en **cada** página. Subir `per_page` no habría
+alcanzado: corre el borde, no lo cierra.
+
+Y el recorrido tiene un **tope de diez páginas, declarado con su motivo**: el
+final lo decide lo que conteste el otro lado, y un `Link` que cicle haría girar
+el bucle para siempre —el cuelgue que el presupuesto por pedido no cubre,
+porque cada pedido contesta a tiempo—. Agotar el tope no significa «hay más de
+mil pull requests para esta misma rama origen y esta misma rama base»:
+significa que las páginas no se terminan, o sea que la búsqueda quedó
+incompleta, y por eso el desenlace es un fallo y no «no encontré nada» —seguir
+hasta la creación con la búsqueda incompleta es abrir el segundo pull request a
+ciegas—. Lo mismo vale para un `Link` que apunte fuera del origen configurado:
+no se sigue, porque cada página se pide con el `Authorization` puesto y el
+destino lo habría elegido la respuesta y no la configuración.
+
 ### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
 
 `PullRequestRequest` exige, en su constructor, que el árbol del commit al que
@@ -2912,7 +2995,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Once hechos que esta rebanada deja escritos porque son límites reales, no
+Dieciséis hechos que esta rebanada deja escritos porque son límites reales, no
 trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -2982,6 +3065,35 @@ trabajo pendiente con fecha:
   que funciona por construcción y no por cobertura: si alguien cambiara esa
   serialización a índices, lo cazaría la prueba «un enum viaja por nombre, no
   por índice» de `core`, que no nombra este valor en particular.
+- **El presupuesto del `push` mide tiempo TOTAL del proceso, no progreso.**
+  Una subida grande pero sana que pase de dos minutos se corta igual, y el
+  desenlace es `PushUnknown`. Cortar por falta de progreso pediría leer el
+  avance desde la salida de `git`, que es texto de progreso sin contrato — y
+  de ese texto este repositorio solo deriva una causa cerrada.
+- **El `SIGKILL` del vencimiento alcanza al hijo, no a sus nietos.** `git`
+  lanza `git-remote-https`, y matar al proceso que lanzamos no mata lo que él
+  haya lanzado: un nieto puede sobrevivir y mantener abierta la tubería. Por
+  eso el camino del vencimiento espera la muerte del hijo y **no** el cierre
+  de los flujos —esperar el cierre sería poner el cuelgue de vuelta un renglón
+  más abajo—. Matar el grupo entero pide poner al hijo en su propio grupo de
+  procesos al lanzarlo, que es un cambio de mecanismo y no un arreglo de este.
+- **Un `403` de la forja también aparece por límite de tasa, y se clasifica
+  como `permisos`.** Es lo que ya hacía la creación, y la coherencia entre los
+  dos pedidos es lo que el clasificador único garantiza; el precio es que un
+  límite de tasa se reporta como no reintentable. Separarlos pide mirar los
+  encabezados de límite de tasa, que es un control nuevo.
+- **El recorrido de páginas tiene un tope de diez, y agotarlo se reporta como
+  fallo.** Diez páginas de a cien son mil pull requests para la misma rama
+  origen y la misma rama base, que un repositorio real no alcanza: agotar el
+  tope significa que las páginas no se terminan —un `Link` que cicla—, no que
+  haya demasiados. El tope existe porque el presupuesto POR PEDIDO no cubre un
+  bucle en el que cada pedido contesta a tiempo.
+- **La causa `revisionInvalida` usa `corregirConfiguracion` como acción
+  siguiente, y quien tiene que corregir es el código que compuso la
+  solicitud**, no una opción que el usuario haya configurado. Lo que las dos
+  comparten —y es lo que esa acción promete— es que el mismo intento vuelve a
+  fallar idéntico hasta que alguien cambie lo que se le pasa. Partir la acción
+  por origen del defecto es un cambio de dominio.
 - **`capas.py` no compara el árbol de paquetes que describe la sección
   `## Estructura` de este README contra `packages/` real.** Es una enumeración
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
