@@ -100,6 +100,77 @@ sealed class ShipOutcome {
     }
   }
 
+  /// **La única entrada real.** Cada variante tiene constructor privado, así
+  /// que nadie puede ensamblar un desenlace eligiendo la combinación que le
+  /// convenga: se derivan de los hechos.
+  ///
+  /// **La precedencia es por gravedad del hecho, no por el camino de
+  /// autorización.** Que el usuario no fuera a confirmar no vuelve menos cierto
+  /// que hay un secreto:
+  ///
+  ///     errorInterno > secretDetected > verificationGate
+  ///                  > confirmationMissing > previewOnly
+  ///
+  /// `errorInterno` está en esa lista como ESTADO y sale por
+  /// [CausaDeNoIntento.verificationGate]; no es una causa. Con una causa propia,
+  /// la combinación «gate con arnés roto» quedaría inalcanzable.
+  static ShipOutcome derivar({
+    required EstadoDeCorrida verificacion,
+    required bool huboSecreto,
+    required bool seConfirmo,
+    required bool soloPreview,
+    required bool autorizaIncompleto,
+    PublicationOutcome? remoto,
+    String? headQueRechazoElCas,
+    String? revisionConIndiceSucio,
+  }) {
+    NoIntentado sinIntentar(CausaDeNoIntento causa) =>
+        NoIntentado._(causa: causa, verificacion: verificacion);
+
+    // 1 · El arnés roto. No lo autoriza ninguna bandera.
+    if (verificacion == EstadoDeCorrida.errorInterno) {
+      return sinIntentar(CausaDeNoIntento.verificationGate);
+    }
+    // 2 · El secreto, antes que cualquier camino de autorización.
+    if (huboSecreto) return sinIntentar(CausaDeNoIntento.secretDetected);
+    // 3 · La compuerta por estado.
+    if (verificacion != EstadoDeCorrida.verde && !autorizaIncompleto) {
+      return sinIntentar(CausaDeNoIntento.verificationGate);
+    }
+    // 4 · La confirmación, antes que la previsualización: quien no confirmó
+    //     pidió escribir y no llegó a autorizarlo; quien previsualiza no lo
+    //     pidió nunca.
+    if (!seConfirmo) return sinIntentar(CausaDeNoIntento.confirmationMissing);
+    if (soloPreview) return sinIntentar(CausaDeNoIntento.previewOnly);
+
+    // A partir de acá la corrida sí intentó escribir.
+    if (headQueRechazoElCas != null) {
+      return NoAplicado._(headObservado: headQueRechazoElCas);
+    }
+    if (revisionConIndiceSucio != null) {
+      return LocalInconsistente._(revision: revisionConIndiceSucio);
+    }
+
+    final publicable = EstadoPublicable.desde(verificacion);
+    if (remoto == null || publicable == null) {
+      throw ArgumentError(
+        'La corrida pasó todas las compuertas y no hay desenlace remoto que '
+        'informar. Devolver algo acá inventaría un hecho: nadie sabe qué pasó '
+        'con la publicación.',
+      );
+    }
+    return switch (remoto) {
+      PublicacionUtilizable() => Publicado._(
+        pr: remoto,
+        verificacion: publicable,
+      ),
+      PublicacionNoUtilizable() => PublicacionIncompleta._(
+        remoto: remoto,
+        verificacion: publicable,
+      ),
+    };
+  }
+
   // Entradas para la suite. La derivación real es `ShipOutcome.derivar`.
   static NoIntentado noIntentadoParaLaPrueba({
     required CausaDeNoIntento causa,

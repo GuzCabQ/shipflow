@@ -167,4 +167,117 @@ void main() {
       );
     });
   });
+
+  group('ShipOutcome.derivar · la precedencia', () {
+    ShipOutcome derivar({
+      EstadoDeCorrida verificacion = EstadoDeCorrida.verde,
+      bool huboSecreto = false,
+      bool seConfirmo = true,
+      bool soloPreview = false,
+      bool autorizaIncompleto = false,
+      PublicationOutcome? remoto,
+      String? headQueRechazoElCas,
+      String? revisionConIndiceSucio,
+    }) => ShipOutcome.derivar(
+      verificacion: verificacion,
+      huboSecreto: huboSecreto,
+      seConfirmo: seConfirmo,
+      soloPreview: soloPreview,
+      autorizaIncompleto: autorizaIncompleto,
+      remoto: remoto,
+      headQueRechazoElCas: headQueRechazoElCas,
+      revisionConIndiceSucio: revisionConIndiceSucio,
+    );
+
+    test('el arnés roto gana sobre TODO lo demás', () {
+      final r = derivar(
+        verificacion: EstadoDeCorrida.errorInterno,
+        huboSecreto: true,
+        seConfirmo: false,
+        soloPreview: true,
+        autorizaIncompleto: true,
+      );
+      expect(r, isA<NoIntentado>());
+      expect((r as NoIntentado).causa, CausaDeNoIntento.verificationGate);
+      expect(r.verificacion, EstadoDeCorrida.errorInterno);
+    });
+
+    test('el secreto le gana a la confirmación que falta', () {
+      // Es el punto que cambia un contrato vigente: sin `--yes` se salía con 0
+      // sin condición. Que el usuario no fuera a confirmar no vuelve menos
+      // cierto que hay un secreto.
+      final r = derivar(huboSecreto: true, seConfirmo: false);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.secretDetected);
+    });
+
+    test('el secreto le gana a la previsualización', () {
+      final r = derivar(huboSecreto: true, soloPreview: true);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.secretDetected);
+    });
+
+    test('la compuerta le gana a la confirmación que falta', () {
+      final r = derivar(verificacion: EstadoDeCorrida.rojo, seConfirmo: false);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.verificationGate);
+    });
+
+    test(
+      'con --allow-incomplete, rojo y no concluyente SÍ pasan la compuerta',
+      () {
+        for (final estado in [
+          EstadoDeCorrida.rojo,
+          EstadoDeCorrida.noConcluyente,
+        ]) {
+          final r = derivar(
+            verificacion: estado,
+            autorizaIncompleto: true,
+            remoto: PullRequestOpen(url: 'https://forja/pr/9'),
+          );
+          expect(r, isA<Publicado>(), reason: estado.name);
+        }
+      },
+    );
+
+    test('--allow-incomplete NO autoriza el arnés roto', () {
+      final r = derivar(
+        verificacion: EstadoDeCorrida.errorInterno,
+        autorizaIncompleto: true,
+        remoto: PullRequestOpen(url: 'https://forja/pr/9'),
+      );
+      expect(r, isA<NoIntentado>());
+    });
+
+    test('la confirmación que falta le gana a la previsualización', () {
+      final r = derivar(seConfirmo: false, soloPreview: true);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.confirmationMissing);
+    });
+
+    test('el CAS rechazado da NoAplicado con el head que se vio', () {
+      final r = derivar(headQueRechazoElCas: 'c' * 40);
+      expect(r, isA<NoAplicado>());
+      expect((r as NoAplicado).headObservado, 'c' * 40);
+    });
+
+    test('el índice sucio da LocalInconsistente con la revisión', () {
+      final r = derivar(revisionConIndiceSucio: 'd' * 40);
+      expect(r, isA<LocalInconsistente>());
+      expect((r as LocalInconsistente).revision, 'd' * 40);
+    });
+
+    test('un remoto utilizable da Publicado; uno que no, incompleta', () {
+      expect(
+        derivar(remoto: PullRequestOpen(url: 'https://forja/pr/1')),
+        isA<Publicado>(),
+      );
+      expect(
+        derivar(remoto: PullRequestClosed(url: 'https://forja/pr/1')),
+        isA<PublicacionIncompleta>(),
+      );
+    });
+
+    test('sin remoto y sin ninguna causa, la derivación LANZA', () {
+      // Quedarse callada acá inventaría un desenlace: la corrida pasó todas
+      // las compuertas y nadie dijo qué pasó con la publicación.
+      expect(() => derivar(), throwsArgumentError);
+    });
+  });
 }
