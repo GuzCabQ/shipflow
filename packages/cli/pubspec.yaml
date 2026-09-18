@@ -23,6 +23,10 @@ dependencies:
     path: ../core
   orchestration:
     path: ../orchestration
+  # El temporal se arma al lado del destino con el mismo nombre de archivo
+  # más un sufijo, y esa unión de rutas se le pide a la biblioteca oficial,
+  # no a mano — la misma razón que ya la trae `plugin_dart`.
+  path: ^1.9.0
   plugin_dart:
     path: ../plugin_dart
 

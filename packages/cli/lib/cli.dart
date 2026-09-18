@@ -12,6 +12,7 @@
 library;
 
 export 'src/comando.dart';
+export 'src/corrida.dart';
 export 'src/credenciales.dart';
 export 'src/salida.dart';
 export 'src/uso.dart';
