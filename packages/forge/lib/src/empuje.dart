@@ -271,8 +271,16 @@ class EmpujeAislado {
       // nunca sale, así que el presupuesto de arriba se cumpliría y
       // reportaría un vencimiento cuya causa real es que nosotros no
       // leímos. Sería un falso `unknown` fabricado por este archivo.
-      final salidaEstandar = _Drenaje(proceso.stdout);
-      final salidaDeError = _Drenaje(proceso.stderr);
+      //
+      // **Y los dos drenajes no son el mismo, a propósito.** `stdout` se lee y
+      // se TIRA: su texto no lo mira nadie —la causa sale de `stderr`—, así
+      // que conservarlo era memoria proporcional a lo que el remoto quisiera
+      // escribir. De `stderr` no se conserva el texto tampoco: se conserva
+      // QUÉ señales de [_senales] aparecieron, que es todo lo que la
+      // clasificación necesita y ocupa lo mismo con diez bytes de salida que
+      // con diez gigabytes.
+      final salidaEstandar = _Sumidero(proceso.stdout);
+      final salidaDeError = _SenalesDelError(proceso.stderr);
 
       final int codigo;
       try {
@@ -317,9 +325,9 @@ class EmpujeAislado {
       }
 
       // **Una sola espera con presupuesto, y la otra se suelta sin esperar.**
-      // El texto del hijo se mira en UN solo lugar —`_causaDe`, que clasifica
-      // sobre `stderr`—, así que el contenido de `stdout` no hace falta una
-      // vez que el proceso terminó: se drenó para que el hijo no se bloqueara
+      // El texto del hijo se mira en UN solo lugar —la clasificación, que
+      // corre sobre `stderr`—, así que `stdout` no hace falta una vez que el
+      // proceso terminó: se drenó para que el hijo no se bloqueara
       // escribiendo, y ese trabajo ya está hecho. Esperarlo también sería un
       // tercer presupuesto en serie por un texto que nadie lee.
       //
@@ -337,10 +345,10 @@ class EmpujeAislado {
       // espera de la salida más esta. Es el mismo valor a propósito —es la
       // misma pregunta, «¿esto termina?», en dos momentos del mismo
       // lanzamiento— y no un segundo número que ajustar por su cuenta.
-      final textoDeError = await salidaDeError.texto(presupuesto);
+      final senalesDeError = await salidaDeError.senales(presupuesto);
       await salidaEstandar.soltar();
       if (codigo == 0) return const Empujado();
-      return NoEmpujado(PushFailed(causa: _causaDe(textoDeError)));
+      return NoEmpujado(PushFailed(causa: _causaDeLasSenales(senalesDeError)));
     } finally {
       await sinGanchos.delete(recursive: true);
     }
@@ -368,6 +376,51 @@ class EmpujeAislado {
         .toString();
   }
 
+  /// Las señales que se buscan en el `stderr` del hijo, **en orden de
+  /// precedencia**, con la causa que cada grupo nombra.
+  ///
+  /// **Son una tabla y ya no una cadena de `if`, y eso es parte del arreglo.**
+  /// El texto de `stderr` ya no se conserva entero —ver [_SenalesDelError]—,
+  /// así que la misma lista la usan dos lectores: el que clasifica una cadena
+  /// completa ([_causaDe], que existe para la suite) y el que va marcando lo
+  /// que aparece mientras el flujo llega. Con dos listas, la clasificación en
+  /// vivo podría divergir de la que prueba la suite sin que nada lo notara.
+  ///
+  /// El orden es el que tenía la cadena de `if` y no es indiferente: un
+  /// rechazo por permisos suele traer también la palabra `rejected`, y
+  /// clasificarlo como rechazo de la forja diría que el remoto evaluó y dijo
+  /// que no, cuando lo que pasó es que no nos dejó entrar.
+  static const _senales = <(CausaDePublicacion, List<String>)>[
+    (
+      CausaDePublicacion.autenticacion,
+      ['authentication failed', 'invalid username or password'],
+    ),
+    (CausaDePublicacion.permisos, ['permission denied', 'denied to', '403']),
+    (
+      CausaDePublicacion.red,
+      [
+        'could not resolve host',
+        'failed to connect',
+        'connection refused',
+        'operation timed out',
+      ],
+    ),
+    (CausaDePublicacion.rechazoDeLaForja, ['rejected', 'non-fast-forward']),
+  ];
+
+  /// Todas las agujas, sin su causa: lo que hay que buscar mientras el flujo
+  /// llega.
+  static final List<String> _agujas = [
+    for (final (_, agujas) in _senales) ...agujas,
+  ];
+
+  /// El largo de la aguja más larga. Es lo que fija cuánto texto hay que
+  /// arrastrar entre un trozo y el siguiente para que una señal partida en
+  /// dos lecturas se siga encontrando.
+  static final int _largoDeLaAgujaMasLarga = _agujas
+      .map((a) => a.length)
+      .reduce((a, b) => a > b ? a : b);
+
   /// Clasifica **sin copiar nada**: lo que sale de acá es una causa cerrada, y
   /// `safeReason` se deriva de ella. El texto de `git` no se propaga.
   ///
@@ -375,27 +428,22 @@ class EmpujeAislado {
   /// hijo, que es un universo acotado por construcción. Un mensaje que no
   /// reconozca cae en `desconocida`, que es reintentable: el precio de errar
   /// es un reintento de más, nunca una publicación que se lea como completa.
-  static CausaDePublicacion _causaDe(String stderr) {
-    final t = stderr.toLowerCase();
-    if (t.contains('authentication failed') ||
-        t.contains('invalid username or password')) {
-      return CausaDePublicacion.autenticacion;
-    }
-    if (t.contains('permission denied') ||
-        t.contains('denied to') ||
-        t.contains('403')) {
-      return CausaDePublicacion.permisos;
-    }
-    if (t.contains('could not resolve host') ||
-        t.contains('failed to connect') ||
-        t.contains('connection refused') ||
-        t.contains('operation timed out')) {
-      return CausaDePublicacion.red;
-    }
-    if (t.contains('rejected') || t.contains('non-fast-forward')) {
-      return CausaDePublicacion.rechazoDeLaForja;
+  static CausaDePublicacion _causaDeLasSenales(Set<String> presentes) {
+    for (final (causa, agujas) in _senales) {
+      if (agujas.any(presentes.contains)) return causa;
     }
     return CausaDePublicacion.desconocida;
+  }
+
+  /// La misma clasificación sobre una cadena completa. La usa la suite, por
+  /// [causaDeParaLaPrueba]; el camino de producción ya no tiene la cadena
+  /// entera en ninguna parte.
+  static CausaDePublicacion _causaDe(String stderr) {
+    final t = stderr.toLowerCase();
+    return _causaDeLasSenales({
+      for (final aguja in _agujas)
+        if (t.contains(aguja)) aguja,
+    });
   }
 }
 
@@ -421,48 +469,40 @@ class EmpujeAislado {
 /// o sea sin cota: el proceso queda vivo hasta que el sistema corte el
 /// socket. Cancelar la suscripción es lo único que cierra el descriptor.
 ///
-/// **El texto ya leído se conserva** al soltar: se acumula a medida que
-/// llega, no al final, así que un vencimiento pierde lo que faltaba y no lo
-/// que ya había.
-final class _Drenaje {
-  final StringBuffer _acumulado = StringBuffer();
+/// **Lo que NO hace, y es el arreglo de esta ronda: acumular.** La versión
+/// anterior guardaba ENTERO lo que el hijo escribiera, en un `StringBuffer`, por
+/// los dos flujos. Un remoto locuaz —o uno hostil— producía memoria
+/// proporcional a lo que quisiera emitir durante los dos minutos del
+/// presupuesto, y el `stdout` que se guardaba así no lo leía nadie. Las dos
+/// subclases dicen qué se conserva de cada flujo, y ninguna conserva el texto.
+abstract base class _Drenaje {
   final Completer<void> _cerrado = Completer<void>();
-  late final StreamSubscription<String> _suscripcion;
+  late final StreamSubscription<Object?> _suscripcion;
 
-  /// **`allowMalformed`**, porque lo que sale de `git` son bytes y no una
-  /// promesa de UTF-8: un nombre de rama o un mensaje del remoto en otra
-  /// codificación haría que el decodificador estricto lanzara, y esa
-  /// excepción escaparía de `empujar` —que el puerto declara que no lanza—
-  /// en vez de convertirse en una causa.
-  ///
-  /// **Y un error del flujo termina el drenaje en vez de propagarse**: lo que
-  /// queda es el texto leído hasta ahí, que el clasificador lee como una
-  /// causa más pobre —un reintento de más—, nunca como una publicación
-  /// completa.
-  _Drenaje(Stream<List<int>> flujo) {
-    _suscripcion = const Utf8Decoder(allowMalformed: true)
-        .bind(flujo)
-        .listen(
-          _acumulado.write,
-          onError: (Object _) => _marcarCerrado(),
-          onDone: _marcarCerrado,
-          cancelOnError: true,
-        );
+  /// **Un error del flujo termina el drenaje en vez de propagarse**: lo que
+  /// queda es lo leído hasta ahí, que el clasificador lee como una causa más
+  /// pobre —un reintento de más—, nunca como una publicación completa.
+  void _escuchar<T>(Stream<T> flujo, void Function(T) alLlegar) {
+    _suscripcion = flujo.listen(
+      alLlegar,
+      onError: (Object _) => _marcarCerrado(),
+      onDone: _marcarCerrado,
+      cancelOnError: true,
+    );
   }
 
   void _marcarCerrado() {
     if (!_cerrado.isCompleted) _cerrado.complete();
   }
 
-  /// Lo que el hijo escribió, esperando a que el flujo termine **con
-  /// [presupuesto]**. Si vence, suelta la tubería y devuelve lo leído.
-  Future<String> texto(Duration presupuesto) async {
+  /// Espera a que el flujo termine **con [presupuesto]**; si vence, suelta la
+  /// tubería.
+  Future<void> _esperar(Duration presupuesto) async {
     try {
       await _cerrado.future.timeout(presupuesto);
     } on TimeoutException {
       await soltar();
     }
-    return _acumulado.toString();
   }
 
   /// Suelta la tubería **sin esperar a que termine**: cancela la suscripción,
@@ -474,5 +514,88 @@ final class _Drenaje {
   Future<void> soltar() async {
     await _suscripcion.cancel();
     _marcarCerrado();
+  }
+}
+
+/// El drenaje de `stdout`: **se lee y se tira**.
+///
+/// Leer es obligatorio —la tubería tiene un buffer finito en el núcleo y un
+/// hijo que la llena se bloquea escribiendo, que es el cuelgue que nos
+/// causaríamos nosotros—, pero conservar no: nadie mira el `stdout` de
+/// `git push` en este archivo ni fuera de él. Ni siquiera se decodifica; los
+/// bytes se descartan tal como llegan.
+final class _Sumidero extends _Drenaje {
+  _Sumidero(Stream<List<int>> flujo) {
+    _escuchar<List<int>>(flujo, (_) {});
+  }
+}
+
+/// El drenaje de `stderr`: **se lee y lo único que queda es QUÉ señales de
+/// [EmpujeAislado._senales] aparecieron**.
+///
+/// **Por qué evidencia y no una ventana de texto.** Una cola de los últimos N
+/// caracteres también acota la memoria, pero cambia el comportamiento: las
+/// cadenas que la clasificación busca suelen venir al PRINCIPIO —`git` dice
+/// «fatal: Authentication failed» y después escupe páginas de progreso y
+/// mensajes del remoto—, así que con una cola una salida larga dejaría afuera
+/// justamente la línea que nombra la causa, y el desenlace degradaría a
+/// `desconocida` sin que nada lo dijera. Marcar las señales a medida que
+/// pasan conserva la clasificación EXACTA de la versión que guardaba todo,
+/// con memoria constante: el conjunto tiene como mucho tantos elementos como
+/// agujas hay, y el arrastre entre trozos es de [EmpujeAislado._largoDeLaAgujaMasLarga]
+/// menos uno.
+///
+/// **Y el texto del hijo deja de existir en este proceso**, que es una
+/// propiedad que este archivo ya quería: lo único que sale de acá —y ahora lo
+/// único que entra a memoria— es una causa cerrada.
+///
+/// **`allowMalformed`**, porque lo que sale de `git` son bytes y no una
+/// promesa de UTF-8: un nombre de rama o un mensaje del remoto en otra
+/// codificación haría que el decodificador estricto lanzara, y esa excepción
+/// escaparía de `empujar` —que el puerto declara que no lanza— en vez de
+/// convertirse en una causa.
+///
+/// **Residuo declarado:** las agujas son ASCII y el texto se pasa a
+/// minúsculas por trozo, no de una vez. Una mayúscula cuya minúscula ocupe
+/// más de un carácter y caiga justo en el corte entre dos trozos podría
+/// leerse distinto de como la leería `toLowerCase()` sobre la cadena entera.
+/// Ninguna aguja tiene caracteres así, y el precio de errar sigue siendo una
+/// causa más pobre.
+final class _SenalesDelError extends _Drenaje {
+  final Set<String> _vistas = {};
+
+  /// El final del trozo anterior, ya en minúsculas: una aguja puede llegar
+  /// partida entre dos lecturas, y sin este arrastre esa señal no se
+  /// encontraría nunca. Mide [EmpujeAislado._largoDeLaAgujaMasLarga] menos
+  /// uno, que es el máximo que puede quedar de una aguja del lado de acá del
+  /// corte.
+  String _arrastre = '';
+
+  _SenalesDelError(Stream<List<int>> flujo) {
+    _escuchar<String>(
+      const Utf8Decoder(allowMalformed: true).bind(flujo),
+      _marcarLoQueAparezca,
+    );
+  }
+
+  void _marcarLoQueAparezca(String trozo) {
+    final ventana = (_arrastre + trozo).toLowerCase();
+    for (final aguja in EmpujeAislado._agujas) {
+      if (!_vistas.contains(aguja) && ventana.contains(aguja)) {
+        _vistas.add(aguja);
+      }
+    }
+    final aArrastrar = EmpujeAislado._largoDeLaAgujaMasLarga - 1;
+    _arrastre = ventana.length <= aArrastrar
+        ? ventana
+        : ventana.substring(ventana.length - aArrastrar);
+  }
+
+  /// Las señales que aparecieron, esperando a que el flujo termine **con
+  /// [presupuesto]**. Si vence, suelta la tubería y devuelve las que se
+  /// alcanzaron a ver.
+  Future<Set<String>> senales(Duration presupuesto) async {
+    await _esperar(presupuesto);
+    return _vistas;
   }
 }

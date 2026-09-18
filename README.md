@@ -2871,6 +2871,28 @@ sobrevive, y está declarado más abajo entre los residuos—, y el desenlace es
 `PushUnknown`: al interrumpirlo se pierde quien sabía cómo terminó, y el
 packfile puede haber llegado entero.
 
+**Drenar no es acumular, y esa distinción es de esta ronda.** Cada flujo se
+guardaba entero en un `StringBuffer`: un remoto locuaz —o uno hostil— producía
+memoria proporcional a todo lo que quisiera emitir durante los dos minutos del
+presupuesto, y el `stdout` que se guardaba así no lo lee nadie. Ahora `stdout`
+se lee y se tira sin siquiera decodificarlo, y de `stderr` no se conserva el
+texto sino **qué señales de la tabla del clasificador aparecieron**: un
+conjunto que ocupa lo mismo con diez bytes de salida que con diez gigabytes.
+Medido con 128 MiB por flujo, 256 MiB en total: **9 MiB** de crecimiento de la
+memoria residente drenando así, contra **211 MiB** volviendo a acumular, y hay
+una prueba que lo mide con `ProcessInfo.currentRss`.
+
+**Por qué señales y no una cola de texto.** Una ventana de los últimos N
+caracteres también acota la memoria, pero cambia el comportamiento: `git` dice
+«fatal: Authentication failed» al principio y después escupe páginas de
+progreso, así que con una cola esa línea se cae del final y el desenlace
+degrada a `desconocida` sin que nada lo diga. Marcando las señales a medida que
+pasan, la clasificación es **la misma** que con el texto entero —hay una prueba
+con la causa al principio de 32 MiB de relleno, y otra con la señal partida
+entre dos lecturas, que es lo que cubre el arrastre entre trozos—. Efecto
+lateral declarado y buscado: el texto de `git` ya no existe en este proceso, ni
+siquiera en memoria.
+
 El drenaje **posterior** a la salida también tiene presupuesto, y al vencer
 **suelta la tubería en vez de abandonarla**. La distinción no es de estilo y
 está medida: `Future.timeout` abandona el futuro pero **no cancela la
@@ -2884,12 +2906,12 @@ los **0,8 s** cancelando la suscripción. En producción ese nieto es el
 ayudante de transporte de `git` sobre una conexión muerta, o sea sin cota. Lo
 que se pierde al soltar es el final del texto con el que se clasifica la
 causa, que degrada a `desconocida` —un reintento de más— y nunca a una
-publicación que se lea como completa; el texto ya leído se conserva.
+publicación que se lea como completa; las señales ya vistas se conservan.
 
-Se espera **un solo** flujo, `stderr`, que es el único que alguien lee: la
-causa sale de ahí. `stdout` se drena mientras el proceso corre —para que no se
-bloquee escribiendo— y se suelta sin esperarlo cuando termina, así que no
-agrega una tercera espera por un texto que nadie mira. Y el `stdin` del hijo
+Se espera **un solo** flujo, `stderr`, que es el único del que sale algo: la
+causa. `stdout` se drena mientras el proceso corre —para que no se bloquee
+escribiendo— y se suelta sin esperarlo cuando termina, así que no agrega una
+tercera espera por un texto que nadie mira y que ya no se guarda. Y el `stdin` del hijo
 se cierra tras el lanzamiento, que es lo que `Process.run` hacía solo: sin
 eso, un `git` que leyera de ahí dejaba de fallar al instante y pasaba a
 colgarse hasta agotar el presupuesto.

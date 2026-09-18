@@ -779,6 +779,164 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
     );
   }, timeout: const Timeout(Duration(seconds: 30)));
 
+  group('la salida del hijo se drena sin acumularla', () {
+    /// Un programa que escribe [mib] mebibytes por cada flujo —opcionalmente
+    /// con [primeroEnError] antes de todo en `stderr`— y sale con [salida].
+    Future<String> charlatanDe({
+      required int mib,
+      String primeroEnError = '',
+      int salida = 0,
+    }) async {
+      final programa = File('${temporal.path}/charlatan-$mib-$salida.sh');
+      final bytes = mib * 1024 * 1024;
+      await programa.writeAsString(
+        '#!/bin/sh\n'
+        '${primeroEnError.isEmpty ? '' : 'printf "%s\\n" "$primeroEnError" >&2\n'}'
+        "head -c $bytes /dev/zero | tr '\\0' 'x'\n"
+        "head -c $bytes /dev/zero | tr '\\0' 'y' >&2\n"
+        'exit $salida\n',
+      );
+      await Process.run('chmod', ['+x', programa.path]);
+      return programa.path;
+    }
+
+    EmpujeAislado empujeCon(String programa) => EmpujeAislado(
+      directorio: '${temporal.path}/trabajo',
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': '${temporal.path}/casa',
+      }),
+      programa: programa,
+      presupuesto: const Duration(seconds: 60),
+    );
+
+    Future<ResultadoDeEmpuje> empujarCon(String programa) =>
+        empujeCon(programa).empujar(
+          urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+          credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+          revision: revisionDeLaCabeza,
+          rama: 'rebanada-1',
+        );
+
+    test(
+      'un remoto locuaz no hace crecer la memoria del proceso',
+      () async {
+        // **Se mide la memoria del proceso, no un contador nuestro.** Un
+        // contador diría lo que este archivo cree que retiene; la memoria
+        // residente dice lo que retiene de verdad, que es la propiedad que el
+        // autor reprodujo: cada `_Drenaje` guardaba en un `StringBuffer` todo
+        // lo que el hijo escribiera, por los DOS flujos, y el `stdout` que
+        // guardaba así no lo lee nadie.
+        //
+        // 128 MiB por flujo, 256 MiB en total. **Medido en esta plataforma,
+        // con esta misma prueba:** 9 MiB de crecimiento drenando sin
+        // conservar, contra 211 MiB volviendo a acumular en un
+        // `StringBuffer` —la forma anterior—. El umbral de 96 MiB está entre
+        // los dos con margen para el ruido de un recolector que no corre
+        // cuando uno quiere: no es una marca de rendimiento, es la diferencia
+        // entre retener una cantidad fija y retener lo que el otro lado
+        // quiera mandar.
+        final programa = await charlatanDe(mib: 128);
+
+        final antes = ProcessInfo.currentRss;
+        final r = await empujarCon(programa);
+        final crecimiento = ProcessInfo.currentRss - antes;
+
+        expect(
+          r,
+          isA<Empujado>(),
+          reason: 'el hijo salió con 0 después de escribir 256 MiB',
+        );
+        expect(
+          crecimiento,
+          lessThan(96 * 1024 * 1024),
+          reason:
+              'la memoria residente creció ${crecimiento ~/ (1024 * 1024)} '
+              'MiB con 256 MiB de salida: lo retenido es proporcional a lo '
+              'que el remoto quiera escribir, que es lo que un remoto hostil '
+              'necesita para llevarse la memoria de la corrida',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 120)),
+    );
+
+    test('la causa que llega al PRINCIPIO de una salida larga se sigue '
+        'encontrando', () async {
+      // **El riesgo de acotar la memoria con una cola.** Una ventana de los
+      // últimos N caracteres también acota lo retenido, pero `git` dice
+      // «fatal: Authentication failed» al principio y después escupe páginas
+      // de progreso: con una cola, esa línea se cae del final y el desenlace
+      // degrada a `desconocida` —un reintento de más— sin que nada lo diga.
+      // Por eso lo que se conserva son las SEÑALES vistas y no el texto.
+      final programa = await charlatanDe(
+        mib: 32,
+        primeroEnError:
+            "fatal: Authentication failed for 'http://127.0.0.1/x.git'",
+        salida: 128,
+      );
+
+      final r = await empujarCon(programa);
+
+      expect(r, isA<NoEmpujado>());
+      final desenlace = (r as NoEmpujado).desenlace;
+      expect(desenlace, isA<PushFailed>());
+      expect(
+        (desenlace as PushFailed).causa,
+        CausaDePublicacion.autenticacion,
+        reason:
+            'la línea que nombra la causa llegó primera y quedó 32 MiB '
+            'atrás: si la clasificación mirara solo el final de la salida, '
+            'esto sería `desconocida`',
+      );
+    }, timeout: const Timeout(Duration(seconds: 120)));
+
+    test(
+      'una señal partida entre dos lecturas se sigue encontrando',
+      () async {
+        // El flujo llega por trozos y el corte no lo elige nadie. Con la señal
+        // escrita en dos veces —y una pausa en el medio para que sean dos
+        // lecturas distintas—, clasificar trozo por trozo sin arrastrar el final
+        // del anterior se pierde la señal entera.
+        final partido = File('${temporal.path}/senal-partida.sh');
+        await partido.writeAsString(
+          '#!/bin/sh\n'
+          'printf "fatal: authenticat" >&2\n'
+          'sleep 1\n'
+          'printf "ion failed\\n" >&2\n'
+          'exit 128\n',
+        );
+        await Process.run('chmod', ['+x', partido.path]);
+
+        final r = await empujarCon(partido.path);
+
+        expect(r, isA<NoEmpujado>());
+        final desenlace = (r as NoEmpujado).desenlace;
+        expect(
+          (desenlace as PushFailed).causa,
+          CausaDePublicacion.autenticacion,
+          reason:
+              'la señal llegó partida entre dos lecturas: sin arrastrar el final '
+              'del trozo anterior, ninguna de las dos mitades la contiene',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+
+    test('una salida larga sin ninguna señal conocida sigue siendo '
+        'desconocida', () async {
+      // El control negativo: una clasificación que devolviera `autenticacion`
+      // porque sí pasaría las dos pruebas de arriba.
+      final programa = await charlatanDe(mib: 8, salida: 1);
+
+      final r = await empujarCon(programa);
+
+      expect(
+        ((r as NoEmpujado).desenlace as PushFailed).causa,
+        CausaDePublicacion.desconocida,
+      );
+    }, timeout: const Timeout(Duration(seconds: 60)));
+  });
+
   test(
     'el proceso TERMINA aunque un nieto conserve la tubería',
     () async {
