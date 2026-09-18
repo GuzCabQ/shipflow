@@ -14,7 +14,7 @@ import 'package:core/core.dart';
 import 'package:path/path.dart' as rutas;
 import 'package:test/test.dart';
 
-PullRequestDraft _draftDePrueba() => PullRequestDraft(
+PullRequestDraft _draftDePrueba({String base = 'base-1'}) => PullRequestDraft(
   runId: 'corrida-1',
   branch: 'rama',
   base: 'develop',
@@ -26,7 +26,7 @@ PullRequestDraft _draftDePrueba() => PullRequestDraft(
     ),
     candidato: CandidateIdentity(
       contentRevision: 'arbol-1',
-      baseRevision: 'base-1',
+      baseRevision: base,
     ),
     intent: 'sostener el arnés',
     plan: null,
@@ -37,6 +37,16 @@ PullRequestDraft _draftDePrueba() => PullRequestDraft(
 
 DocumentoDeCorrida documentoDePrueba() =>
     DocumentoDeCorrida.preparado(revision: 'a' * 40, draft: _draftDePrueba());
+
+/// Un documento `prepared` con la base y la revisión que pida la prueba —los
+/// dos datos que [decidirRecuperacion] compara contra el `HEAD` observado.
+DocumentoDeCorrida documentoPreparado({
+  required String base,
+  required String revision,
+}) => DocumentoDeCorrida.preparado(
+  revision: revision,
+  draft: _draftDePrueba(base: base),
+);
 
 void main() {
   late Directory temporal;
@@ -70,5 +80,21 @@ void main() {
     await huerfano.writeAsString('{"formatVersion":1,"estado":"prepared"');
     expect(await registro.leer('r-3'), isNull);
     expect(await huerfano.exists(), isTrue, reason: 'no se borra a escondidas');
+  });
+
+  test('los tres casos de HEAD, y ninguno más', () {
+    final doc = documentoPreparado(base: 'b' * 40, revision: 'r' * 40);
+    expect(
+      decidirRecuperacion(documento: doc, headActual: 'b' * 40),
+      QueHacerAlRecuperar.reintentarElCas,
+    );
+    expect(
+      decidirRecuperacion(documento: doc, headActual: 'r' * 40),
+      QueHacerAlRecuperar.promoverACommitted,
+    );
+    expect(
+      decidirRecuperacion(documento: doc, headActual: 'x' * 40),
+      QueHacerAlRecuperar.alguienMasAvanzo,
+    );
   });
 }

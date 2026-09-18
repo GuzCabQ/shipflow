@@ -59,3 +59,40 @@ class RegistroDeCorridas {
     );
   }
 }
+
+/// Qué hacer con una corrida interrumpida.
+enum QueHacerAlRecuperar {
+  /// Nada se movió: el CAS se puede reintentar tal cual.
+  reintentarElCas,
+
+  /// El CAS sí corrió antes de morir. El commit está en la rama.
+  promoverACommitted,
+
+  /// La rama avanzó a otra cosa. El candidato hay que reconstruirlo.
+  alguienMasAvanzo,
+}
+
+/// La comparación de §9. **Es una función de tres casos, no una búsqueda.**
+///
+/// Con [documento] llevando ya la revisión, los tres datos que hacen falta
+/// —la base, la revisión candidata y el `HEAD` observado— están todos sobre la
+/// mesa. Antes, sin la revisión persistida, esto tenía que salir a buscar qué
+/// commit podía ser el candidato.
+///
+/// **No lee el repositorio**: quien la llama ya leyó el `HEAD`. Así se puede
+/// probar los tres casos sin montar un repositorio por cada uno.
+///
+/// Si `base` y `revision` fueran iguales, el primer caso ganaría y se
+/// reintentaría un CAS que ya corrió. No puede pasar: una revisión es hija de
+/// su base, así que sus OIDs difieren siempre.
+QueHacerAlRecuperar decidirRecuperacion({
+  required DocumentoDeCorrida documento,
+  required String headActual,
+}) {
+  final base = documento.draft.artefacto.candidato.baseRevision;
+  if (headActual == base) return QueHacerAlRecuperar.reintentarElCas;
+  if (headActual == documento.revision) {
+    return QueHacerAlRecuperar.promoverACommitted;
+  }
+  return QueHacerAlRecuperar.alguienMasAvanzo;
+}
