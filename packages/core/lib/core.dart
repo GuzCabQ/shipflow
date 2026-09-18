@@ -13,6 +13,7 @@
 /// - **observación** — trazas y hallazgos inferenciales.
 /// - **desenlace** — el desenlace de un paso: [StepOutcome] sellado, y el
 ///   subconjunto propio [VerificationOutcome] que un verificador devuelve.
+/// - **corrida** — [ShipOutcome], el desenlace de una corrida de `ship`.
 /// - **credencial** — [Credential], el único tipo que no serializa.
 /// - **entorno** — [entornoSaneado], la lista blanca con la que se lanza
 ///   todo subproceso.
@@ -37,6 +38,7 @@
 library;
 
 export 'src/alcance.dart';
+export 'src/corrida.dart';
 export 'src/credencial.dart';
 export 'src/desenlace.dart';
 export 'src/entidades.dart';
