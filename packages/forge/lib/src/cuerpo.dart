@@ -48,6 +48,14 @@ const _longitudMaximaDelTitulo = 256;
 /// Si hay que cortar, se corta la intención, nunca la advertencia: un título
 /// que perdiera `PullRequestRequest.prefijoIncompleto` por el corte le diría
 /// a un revisor que la corrida salió verde cuando no fue así.
+///
+/// **Y el corte cae entre caracteres, no adentro de uno.** `String.length` y
+/// `substring` cuentan unidades UTF-16, y todo lo que está fuera del plano
+/// básico —un emoji, por ejemplo— ocupa DOS: cortar en el límite de 256
+/// unidades puede dejar media pareja suelta, que al codificarse a UTF-8 se
+/// convierte en `�` y le entrega a la forja un título terminado en un
+/// carácter que nadie escribió. No bloquea —la intención completa va en el
+/// cuerpo—, pero es el render mostrando algo que no es el dato.
 String tituloDeGitHub(PullRequestRequest solicitud) {
   final titulo = solicitud.titulo;
   if (titulo.length <= _longitudMaximaDelTitulo) return titulo;
@@ -57,8 +65,172 @@ String tituloDeGitHub(PullRequestRequest solicitud) {
       : '';
   final intencion = titulo.substring(prefijo.length);
   final maximoParaLaIntencion = _longitudMaximaDelTitulo - prefijo.length;
-  return '$prefijo${intencion.substring(0, maximoParaLaIntencion)}';
+  return '$prefijo${_truncarPorRunes(intencion, maximoParaLaIntencion)}';
 }
+
+/// Corta [texto] para que no pase de [maximoEnUnidades] unidades UTF-16 **sin
+/// partir ningún carácter**.
+///
+/// El límite sigue midiéndose en unidades UTF-16 porque es el que declara la
+/// forja para el título, y `String.length` es lo que cuenta lo mismo que
+/// cuenta ella; lo que cambia es dónde puede caer el corte: solo entre runas.
+///
+/// **Se trunca por RUNAS y no por grafemas, y eso tiene un precio declarado:**
+/// un emoji compuesto —una familia unida por `ZWJ`, una bandera, un tono de
+/// piel— es una sola cosa para quien lo lee y varias runas para el lenguaje,
+/// así que el corte puede dejar la primera mitad de esa secuencia y mostrar
+/// dos emojis donde había uno. Nunca deja media pareja suelta, que es el
+/// defecto que este corte cierra: lo que se ve sigue siendo un carácter que
+/// estaba en el dato. Cortar por grafemas pediría una dependencia externa
+/// —`characters`—, y `forge` hoy no tiene ninguna fuera del SDK.
+String _truncarPorRunes(String texto, int maximoEnUnidades) {
+  if (texto.length <= maximoEnUnidades) return texto;
+  final recortado = StringBuffer();
+  var usadas = 0;
+  for (final runa in texto.runes) {
+    // Una runa fuera del plano básico ocupa dos unidades UTF-16; el `if` de
+    // abajo es lo que impide que entre solo la primera.
+    final ancho = runa > 0xFFFF ? 2 : 1;
+    if (usadas + ancho > maximoEnUnidades) break;
+    recortado.writeCharCode(runa);
+    usadas += ancho;
+  }
+  return recortado.toString();
+}
+
+// ---------------------------------------------------------------------------
+// EL RENDER SEGURO: un dato que este archivo no escribió no puede cambiar la
+// ESTRUCTURA del cuerpo.
+//
+// **El defecto que esto cierra, reproducido por el autor:** con
+// `intent: '<!--'`, la intención abría un comentario HTML y la advertencia
+// obligatoria más las dos secciones obligatorias quedaban ADENTRO del
+// comentario — el comentario recién cerraba en el marcador final. O sea que un
+// dato de la corrida enterraba exactamente lo que la norma dice que no se
+// puede enterrar, y el cuerpo se leía como si no hubiera nada que mirar.
+//
+// **Por qué un render por CONTEXTO y no reemplazos sueltos.** La
+// neutralización es una sola —los caracteres de sintaxis pasan a entidades—,
+// pero el envoltorio cambia según dónde caiga el dato: un párrafo suelto
+// conserva sus renglones; un ítem de lista no puede tenerlos, porque un
+// renglón nuevo termina el ítem y lo que siga queda al mismo nivel que las
+// secciones de este archivo; y un identificador se muestra como código. Con
+// reemplazos dispersos, cada sitio de llamada vuelve a decidir, y el que se
+// olvide no lo nota nadie: por eso son TRES funciones —[_textoDeBloque],
+// [_textoEnLista], [_identificadorEnCodigo]— y ninguna interpolación cruda de
+// datos ajenos en `cuerpoDeGitHub`.
+//
+// **Qué NO existe: un canal de Markdown confiable.** El `plan` también se
+// escapa. Se podría argumentar que un plan quiere sus viñetas y sus títulos,
+// pero hoy ningún tipo declara «este texto es Markdown que su autor escribió a
+// propósito»: sería una propiedad de un campo `String` sostenida por prosa, o
+// sea la clase de promesa que este repositorio persigue. El día que haga
+// falta, el que tiene que declararlo es el tipo —un `MarkdownConfiable` que se
+// construya donde alguien pueda responder por su contenido—, no una excepción
+// en este render. Precio declarado: un plan escrito en Markdown se lee como
+// texto plano en el pull request.
+// ---------------------------------------------------------------------------
+
+/// Los caracteres que dejan de ser sintaxis al escribirse como entidad.
+///
+/// - `&` va primero por construcción —se reemplaza en una sola pasada—, para
+///   que un `&` del dato no se coma la entidad de los otros.
+/// - `<` es el que abre `<!--` y cualquier etiqueta HTML: es el del defecto
+///   reproducido.
+/// - `>` al principio de un renglón abre una cita, y `> [!WARNING]` es
+///   justamente la forma de la advertencia obligatoria: un dato podría
+///   falsificarla.
+/// - El acento grave abre código, y tres abren un bloque que se traga todo
+///   hasta el siguiente — otra forma de enterrar lo de abajo.
+/// - La tilde hace lo mismo que el acento grave con `~~~`, que es la segunda
+///   forma de cerca que Markdown reconoce.
+///
+/// GitHub decodifica estas entidades al renderizar, así que el revisor lee el
+/// carácter tal como venía en el dato; lo que no puede es actuar como
+/// sintaxis.
+const _entidades = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '`': '&#96;',
+  '~': '&#126;',
+};
+
+final _neutralizables = RegExp(r'[&<>`~]');
+
+String _comoEntidades(String texto) =>
+    texto.replaceAllMapped(_neutralizables, (m) => _entidades[m[0]!]!);
+
+/// Lo que ABRE un bloque cuando está al principio de un renglón: un título,
+/// una viñeta, una línea de tabla, un subrayado de título, una lista
+/// numerada. Hasta tres espacios de sangría siguen contando como principio de
+/// renglón en Markdown, así que la sangría entra en el patrón.
+///
+/// Ninguno de estos ENTIERRA nada —no abren una región que se trague lo que
+/// sigue, como sí hacen el comentario y la cerca—, pero sí FALSIFICAN
+/// estructura: un dato que empiece con `## Qué quedó cubierto` agrega una
+/// sección que nadie escribió, y un revisor no tiene desde dónde notar que esa
+/// sección la puso el dato y no el render.
+final _aperturaDeBloque = RegExp(r'^( {0,3})(\d{1,9}([.)])|[#\-+*=|_])');
+
+String _renglonDeBloque(String renglon) {
+  final texto = _comoEntidades(renglon);
+  final apertura = _aperturaDeBloque.firstMatch(texto);
+  if (apertura == null) return texto;
+  final sangria = apertura[1]!;
+  final marca = apertura[2]!;
+  final cierreDelNumero = apertura[3];
+  // La barra invertida escapa signos de puntuación ASCII y NO dígitos: en una
+  // lista numerada lo que hay que escapar es el punto o el paréntesis, no el
+  // número. Escapar el dígito dejaría una barra invertida visible en el
+  // cuerpo, que es ensuciar el dato en vez de neutralizarlo.
+  final neutra = cierreDelNumero == null
+      ? '\\$marca'
+      : '${marca.substring(0, marca.length - 1)}\\$cierreDelNumero';
+  return '$sangria$neutra${texto.substring(apertura.end)}';
+}
+
+final _finDeRenglon = RegExp(r'\r\n|\r|\n');
+
+/// Texto que ocupa su propio bloque: la intención, el alcance, el plan.
+/// **Conserva los renglones** —son del dato y el revisor los espera— y
+/// neutraliza el principio de cada uno.
+String _textoDeBloque(String texto) =>
+    texto.split(_finDeRenglon).map(_renglonDeBloque).join('\n');
+
+/// Texto que va DENTRO de un ítem de lista.
+///
+/// Además de las entidades, los renglones se juntan en uno solo: un renglón
+/// nuevo adentro de un ítem lo termina y lo que siga pasa a ser un bloque
+/// nuevo —con lo que el dato quedaría al mismo nivel que las secciones que
+/// escribe este archivo—. **Residuo declarado:** un `detalle` de varios
+/// renglones se lee en uno solo, separado por espacios.
+String _textoEnLista(String texto) =>
+    _comoEntidades(texto).split(_finDeRenglon).join(' ');
+
+/// Un identificador que se muestra como código: el sujeto, el id del control,
+/// el id de la afirmación.
+///
+/// **Va entre `<code>` y no entre acentos graves, y la diferencia no es de
+/// gusto.** Adentro de un tramo de código de Markdown las entidades NO se
+/// decodifican, así que ahí un `&lt;` se leería literal: para neutralizar un
+/// identificador hostil habría que jugar con el largo de la cerca, y eso
+/// alcanza solo contra los acentos. Contra `<!--` no alcanza, porque en
+/// CommonMark el HTML crudo tiene precedencia sobre el tramo de código —un
+/// `<!--` en un identificador y un `-->` en otro, en el mismo ítem, forman un
+/// comentario que se traga el detalle que hay entre los dos, que es
+/// exactamente lo que la norma prohíbe enterrar—.
+///
+/// Con `<code>`, en cambio, el contenido es HTML: las mismas entidades que
+/// [_textoEnLista] neutraliza se decodifican al renderizar, así que el
+/// revisor lee el identificador tal como vino y ningún carácter suyo puede
+/// actuar como sintaxis. Es una sola regla para todo el archivo —neutralizar
+/// con entidades— en vez de dos mecanismos que hay que recordar cuál protege
+/// de qué.
+///
+/// Los renglones se juntan por lo mismo que en [_textoEnLista].
+String _identificadorEnCodigo(String texto) =>
+    '<code>${_textoEnLista(texto)}</code>';
 
 /// Cómo se lee, en el cuerpo del PR, cada motivo por el que algo requiere
 /// criterio humano. **Traduce el nombre del enum, no lo resume, y no le
@@ -138,9 +310,11 @@ void _escribirLoQueQuedoCubierto(
       // una afirmación el día que tenga evidencia por sujeto, así que las
       // dos identidades se muestran, no solo la del control.
       buffer.writeln(
-        '- **${c.sujeto}** (control `${c.controlId}`, afirmación '
-        '`${c.afirmacion.id}`): ${c.afirmacion.demuestra}. No demuestra: '
-        '${c.afirmacion.noDemuestra}.',
+        '- **${_textoEnLista(c.sujeto)}** '
+        '(control ${_identificadorEnCodigo(c.controlId)}, afirmación '
+        '${_identificadorEnCodigo(c.afirmacion.id)}): '
+        '${_textoEnLista(c.afirmacion.demuestra)}. No demuestra: '
+        '${_textoEnLista(c.afirmacion.noDemuestra)}.',
       );
     }
   }
@@ -157,11 +331,15 @@ void _escribirLoQueRequiereCriterio(
     buffer.writeln('Nada quedó pendiente de criterio humano en esta corrida.');
   } else {
     for (final e in _sinSujetoPrimero(requiereCriterio)) {
-      final sujeto = e.sujeto == null ? '' : ' — sujeto `${e.sujeto}`';
-      final control = e.controlId == null ? '' : ' — control `${e.controlId}`';
+      final sujeto = e.sujeto == null
+          ? ''
+          : ' — sujeto ${_identificadorEnCodigo(e.sujeto!)}';
+      final control = e.controlId == null
+          ? ''
+          : ' — control ${_identificadorEnCodigo(e.controlId!)}';
       buffer.writeln(
         '- **${_nombreDeMotivo(e.motivo)}**$sujeto$control: '
-        '${e.detalle}',
+        '${_textoEnLista(e.detalle)}',
       );
     }
   }
@@ -186,7 +364,7 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
   final superficie = artefacto.superficie;
   final buffer = StringBuffer();
 
-  buffer.writeln(artefacto.alcanceDeLoAfirmado);
+  buffer.writeln(_textoDeBloque(artefacto.alcanceDeLoAfirmado));
   buffer.writeln();
 
   // El título trunca la intención al límite de GitHub (ver
@@ -196,7 +374,7 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
   // que el cuerpo del PR es la única superficie que le queda.
   buffer.writeln('## Intención');
   buffer.writeln();
-  buffer.writeln(artefacto.intent);
+  buffer.writeln(_textoDeBloque(artefacto.intent));
   buffer.writeln();
 
   if (solicitud.incompleto) {
@@ -224,13 +402,13 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
   if (artefacto.plan != null) {
     buffer.writeln('## Plan');
     buffer.writeln();
-    buffer.writeln(artefacto.plan);
+    buffer.writeln(_textoDeBloque(artefacto.plan!));
   } else {
     // Presente si y solo si no hay plan: sin esto, un artefacto sin plan
     // afirmaría por omisión que no hacía falta ninguno.
     buffer.writeln('## Por qué no hay plan');
     buffer.writeln();
-    buffer.writeln(artefacto.sinPlanPorque);
+    buffer.writeln(_textoDeBloque(artefacto.sinPlanPorque!));
   }
   buffer.writeln();
 

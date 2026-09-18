@@ -3059,6 +3059,54 @@ ciegas—. Lo mismo vale para un `Link` que apunte fuera del origen configurado:
 no se sigue, porque cada página se pide con el `Authorization` puesto y el
 destino lo habría elegido la respuesta y no la configuración.
 
+### Ningún dato de la corrida puede enterrar la advertencia obligatoria
+
+`cuerpoDeGitHub` interpolaba directo adentro del Markdown la intención, el
+plan, los detalles, los sujetos y los identificadores. Reproducido con
+`intent: '<!--'`: la intención abría un comentario HTML, **la advertencia y las
+dos secciones obligatorias quedaban adentro**, y el comentario recién cerraba
+al llegar al marcador final. O sea que un dato de la corrida enterraba
+exactamente lo que ADR-016 y la decisión 7 de ADR-022 dicen que no se puede
+enterrar, y el pull request se leía como si no hubiera nada que mirar.
+
+El arreglo no son reemplazos sueltos sino **un render por contexto**, y ninguna
+interpolación cruda: la neutralización es una sola —los caracteres que son
+sintaxis (`&`, `<`, `>`, el acento grave y la tilde) pasan a entidades, que
+GitHub decodifica al mostrar, así que el revisor lee el dato tal como vino—, y
+lo que cambia es el envoltorio. Un texto de **bloque** conserva sus renglones y
+se le escapa lo que abre bloque al principio de cada uno, para que un dato no
+fabrique un `## Qué quedó cubierto` que nadie escribió. Un texto **dentro de un
+ítem de lista** junta sus renglones en uno, porque un renglón nuevo termina el
+ítem y deja al dato al mismo nivel que las secciones. Un **identificador** va
+entre `<code>` y no entre acentos graves: adentro de un tramo de código las
+entidades no se decodifican, y en CommonMark el HTML crudo tiene precedencia
+sobre ese tramo, así que un `<!--` en un identificador y un `-->` en otro
+formarían un comentario que se traga el detalle entre los dos.
+
+**No hay canal de Markdown confiable, y el plan también se escapa.** Declararlo
+por campo sería una propiedad de un `String` sostenida por prosa; el día que un
+plan quiera sus viñetas, lo que tiene que declararlo es un tipo que se
+construya donde alguien pueda responder por el contenido. Precio: un plan
+escrito en Markdown se lee como texto plano.
+
+Lo que la suite mide no es que el texto salga escapado —eso lo cumple cualquier
+escape— sino que **la advertencia y las dos secciones se sigan leyendo**, una
+vez cada una, fuera de todo comentario y de toda cerca: once campos por ocho
+valores hostiles (`<!--`, `-->`, cercas de acentos y de tildes, un encabezado
+que falsifica una sección, una advertencia falsificada, saltos de línea,
+listas), más un control negativo que exige que el dato hostil se siga leyendo
+entero.
+
+**Y el título se trunca por runas, no por unidades UTF-16.** `String.length` y
+`substring` cuentan unidades, y un emoji ocupa dos: cortar en 256 podía dejar
+media pareja sustituta, que al codificarse a UTF-8 se vuelve `�` — un carácter
+que la intención no tenía. No bloqueaba nada —la intención completa va en el
+cuerpo—, pero era el render mostrando algo que no es el dato. **Residuo
+declarado:** por runas y no por grafemas, así que un emoji compuesto —una
+familia con `ZWJ`, una bandera— puede partirse en sus piezas; nunca en media
+pareja. Cortar por grafemas pediría una dependencia externa, y `forge` no tiene
+ninguna fuera del SDK.
+
 ### El PR no puede afirmar verificación sobre un árbol que los controles no vieron
 
 `PullRequestRequest` exige, en su constructor, que el árbol del commit al que
@@ -3074,14 +3122,19 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Veintidós hechos que esta rebanada deja escritos porque son límites reales,
+Veinticinco hechos que esta rebanada deja escritos porque son límites reales,
 no trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
   `stderr` de nuestro propio hijo.** Es un universo acotado por construcción
-  —el mensaje lo escribe `git`, no un tercero—, y lo que `_causaDe` no
+  —el mensaje lo escribe `git`, no un tercero—, y lo que el clasificador no
   reconoce cae en `desconocida`, que es reintentable: el precio de errar es un
-  reintento de más, nunca una publicación que se lea como completa.
+  reintento de más, nunca una publicación que se lea como completa. **Lo que
+  ese texto deja en memoria es solo la marca de qué señales pasaron**, y esas
+  señales se buscan por trozo con un arrastre del largo de la más larga menos
+  uno: las agujas son ASCII, así que pasar a minúsculas por trozo en vez de
+  sobre la cadena entera no cambia ninguna, pero es una diferencia declarada y
+  no una equivalencia que se dé por sentada.
 - **`/proc/<pid>/cmdline` deja ver el argv de nuestro propio `git`** —y con él,
   la credencial en la URL— en Linux. Es limitación de ambiente, no un fallo
   propio: a diferencia de entregarle el token a un programa que el usuario
@@ -3227,6 +3280,22 @@ no trabajo pendiente con fecha:
   `## Estructura` de este README contra `packages/` real.** Es una enumeración
   que dice enumerar y que nadie contrasta: hoy está al día —incluye `forge`—,
   pero nada además de una revisión humana lo sostiene.
+
+- **El `runId` viaja crudo adentro del comentario HTML del marcador estable.**
+  Un `runId` con `-->` cerraría ese comentario antes de tiempo y lo que
+  escribiera después se renderizaría. El marcador es la **última** línea del
+  cuerpo, así que no puede enterrar nada de lo que está arriba —que es lo que
+  el render seguro protege—, pero sí agregar texto al final. Sanearlo cambia la
+  forma del marcador, y el marcador es la clave de la búsqueda idempotente: el
+  render y la búsqueda tienen que seguir produciendo la misma cadena, así que
+  es un cambio de la clave y no un escape más.
+- **El título se trunca por runas, no por grafemas.** Un emoji compuesto puede
+  quedar partido en las piezas que lo componen. Lo que ya no puede quedar es
+  media pareja sustituta, que es lo que la forja recibía como `�`.
+- **El plan se renderiza como texto plano.** No existe hoy un tipo que declare
+  «esto es Markdown que su autor escribió a propósito», y declararlo por campo
+  sería sostener con prosa una propiedad de un `String`. Mientras no exista ese
+  tipo, un plan con viñetas se lee con sus viñetas literales.
 
 ### Lo que esta rebanada NO hace
 

@@ -1,6 +1,7 @@
 /// El render del cuerpo y el título del pull request de GitHub.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
@@ -59,6 +60,7 @@ ArtefactoDeRevision _artefacto({
   List<EntradaDeCriterio> requiereCriterio = const [],
   String intent = 'probar el render del cuerpo del PR',
   String? plan,
+  String alcance = ArtefactoDeRevision.alcanceSoloPR,
 }) => ArtefactoDeRevision(
   superficie: SuperficieDeVerificacion(
     cubierto: cubierto,
@@ -72,7 +74,7 @@ ArtefactoDeRevision _artefacto({
   intent: intent,
   plan: plan,
   sinPlanPorque: plan == null ? 'no hay elementos de trabajo' : null,
-  alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
+  alcanceDeLoAfirmado: alcance,
 );
 
 PullRequestRequest _solicitud(ArtefactoDeRevision artefacto) =>
@@ -167,6 +169,146 @@ PullRequestRequest solicitudIncompletaConIntencionLarga() => _solicitud(
   ),
 );
 
+/// Los renglones del cuerpo que un revisor LEE de verdad.
+///
+/// **`contains` no alcanza, y ese es el punto de estas pruebas.** El defecto
+/// que el autor reprodujo no borraba la advertencia: la metía adentro de un
+/// comentario HTML que abría la intención (`intent: '<!--'`) y recién cerraba
+/// en el marcador final. La advertencia seguía estando en el texto y no
+/// existía para quien abre el pull request, así que una aserción
+/// `contains('> [!WARNING]')` quedaba VERDE sobre un cuerpo que enterraba
+/// exactamente lo que la norma dice que no se puede enterrar.
+///
+/// Esta función saca las dos regiones de Markdown que se tragan lo que tienen
+/// adentro —el comentario HTML, de `<!--` a `-->`, y el bloque de código con
+/// cerca de acentos o de tildes— y devuelve lo que queda. No es un
+/// renderizador: es la respuesta a «¿esto se ve?», que es lo único que estas
+/// pruebas necesitan preguntar.
+List<String> renglonesVisibles(String cuerpo) {
+  final visibles = <String>[];
+  var enComentario = false;
+  String? cerca;
+  for (final renglon in cuerpo.split('\n')) {
+    if (cerca != null) {
+      if (renglon.trimLeft().startsWith(cerca)) cerca = null;
+      continue;
+    }
+    if (!enComentario) {
+      final apertura = RegExp(r'^ {0,3}(`{3,}|~{3,})').firstMatch(renglon);
+      if (apertura != null) {
+        cerca = apertura.group(1)!;
+        continue;
+      }
+    }
+    final limpio = StringBuffer();
+    var resto = renglon;
+    while (resto.isNotEmpty) {
+      if (enComentario) {
+        final fin = resto.indexOf('-->');
+        if (fin < 0) break;
+        enComentario = false;
+        resto = resto.substring(fin + '-->'.length);
+        continue;
+      }
+      final inicio = resto.indexOf('<!--');
+      if (inicio < 0) {
+        limpio.write(resto);
+        break;
+      }
+      limpio.write(resto.substring(0, inicio));
+      enComentario = true;
+      resto = resto.substring(inicio + '<!--'.length);
+    }
+    visibles.add(limpio.toString());
+  }
+  return visibles;
+}
+
+/// Los valores hostiles, cada uno con el mecanismo que abusa.
+const valoresAdversariales = <String, String>{
+  'abre un comentario HTML': '<!--',
+  'cierra un comentario HTML': '-->',
+  'abre una cerca de código': '```',
+  'abre una cerca de tildes': '~~~',
+  'un acento grave suelto': 'a`b',
+  'un encabezado que falsifica una sección':
+      'antes\n## Qué quedó cubierto\ndespués',
+  'una advertencia falsificada': 'antes\n> [!WARNING]\n> salió todo verde',
+  'una lista numerada y una viñeta': '1. uno\n- dos\n',
+};
+
+/// Un artefacto incompleto —para que la advertencia sea obligatoria— con
+/// [veneno] metido en el campo que nombre [donde].
+PullRequestRequest solicitudEnvenenada(String donde, String veneno) {
+  Afirmacion afirmacion() => Afirmacion(
+    id: donde == 'afirmacion.id' ? veneno : 'formato.conforme',
+    demuestra: donde == 'afirmacion.demuestra'
+        ? veneno
+        : 'coincide con la salida del formateador',
+    noDemuestra: donde == 'afirmacion.noDemuestra'
+        ? veneno
+        : 'comportamiento, lógica ni criterios',
+  );
+  final sujeto = donde == 'cubierto.sujeto' ? veneno : 'lib';
+  final cubierta = AfirmacionCubierta.desde(
+    control: _ControlDeclarado(
+      donde == 'cubierto.controlId' ? veneno : 'formateador',
+      afirmacion(),
+    ),
+    desenlace: Executed(
+      witness: Witness(
+        invocation: 'herramienta --sobre $sujeto',
+        subjects: [sujeto],
+        exitCode: 0,
+        finishedAt: DateTime.utc(2026),
+        omitted: const [],
+      ),
+      diagnostics: const [],
+    ),
+    sujeto: sujeto,
+  )!;
+
+  return _solicitud(
+    _artefacto(
+      estado: EstadoDeCorrida.noConcluyente,
+      intent: donde == 'intent' ? veneno : 'probar el render del cuerpo del PR',
+      plan: donde == 'plan' ? veneno : null,
+      alcance: donde == 'alcanceDeLoAfirmado'
+          ? veneno
+          : ArtefactoDeRevision.alcanceSoloPR,
+      cubierto: [cubierta],
+      requiereCriterio: [
+        EntradaDeCriterio(
+          motivo: MotivoDeCriterio.declaradoNoMirado,
+          sujeto: donde == 'criterio.sujeto' ? veneno : 'lib/uno',
+          controlId: donde == 'criterio.controlId' ? veneno : 'formateador',
+          detalle: donde == 'criterio.detalle'
+              ? veneno
+              : 'El control declaró que no miró este archivo.',
+        ),
+      ],
+    ),
+  );
+}
+
+/// Los campos que llegan de afuera y terminan adentro del Markdown. Es la
+/// lista de lo que `cuerpoDeGitHub` interpola: si alguien agrega uno nuevo y
+/// no lo agrega acá, esta suite no lo cubre — y ese hueco es el mismo que
+/// dejó el defecto original.
+const camposQueVienenDeAfuera = <String>[
+  'intent',
+  'plan',
+  'alcanceDeLoAfirmado',
+  'cubierto.sujeto',
+  'cubierto.controlId',
+  'afirmacion.id',
+  'afirmacion.demuestra',
+  'afirmacion.noDemuestra',
+  'criterio.sujeto',
+  'criterio.controlId',
+  'criterio.detalle',
+];
+
 void main() {
   test('el alcance va textual y la advertencia va antes de lo verde', () {
     final cuerpo = cuerpoDeGitHub(solicitudIncompleta());
@@ -255,9 +397,9 @@ void main() {
     expect(
       cuerpo,
       contains(
-        '- **lib** (control `formateador`, afirmación `formato.conforme`): '
-        'coincide con la salida del formateador. No demuestra: '
-        'comportamiento, lógica ni criterios.',
+        '- **lib** (control <code>formateador</code>, afirmación '
+        '<code>formato.conforme</code>): coincide con la salida del '
+        'formateador. No demuestra: comportamiento, lógica ni criterios.',
       ),
     );
   });
@@ -312,8 +454,9 @@ void main() {
     expect(
       cuerpo,
       contains(
-        '- **el control declaró que no lo miró** — sujeto `lib/uno` — '
-        'control `formateador`: El control declaró que no miró este archivo.',
+        '- **el control declaró que no lo miró** — sujeto '
+        '<code>lib/uno</code> — control <code>formateador</code>: El control '
+        'declaró que no miró este archivo.',
       ),
       reason: 'el sufijo del sujeto es lo que sostiene esa justificación',
     );
@@ -331,6 +474,180 @@ void main() {
           'propósito, así que si `_sinSujetoPrimero` no reordena —o '
           'reordena al revés— esto tiene que ponerse rojo',
     );
+  });
+
+  group(
+    'ningún dato de la corrida puede enterrar ni falsificar lo obligatorio',
+    () {
+      // **Lo que se mide es la VISIBILIDAD, no el escape.** Una suite que
+      // exigiera «el texto sale escapado» se podría satisfacer escapando de
+      // cualquier manera y seguiría sin decir si el revisor ve la advertencia.
+      // Acá cada caso arma el cuerpo con un valor hostil en un campo que viene
+      // de afuera y pregunta lo único que la norma exige: que la advertencia
+      // obligatoria y las DOS secciones obligatorias se sigan leyendo, una vez
+      // y sola una, fuera de todo comentario y de toda cerca.
+      for (final campo in camposQueVienenDeAfuera) {
+        for (final caso in valoresAdversariales.entries) {
+          test('$campo ${caso.key}', () {
+            final cuerpo = cuerpoDeGitHub(
+              solicitudEnvenenada(campo, caso.value),
+            );
+            final visibles = renglonesVisibles(cuerpo);
+
+            expect(
+              visibles.where((r) => r.startsWith('> [!WARNING]')),
+              hasLength(1),
+              reason:
+                  'la advertencia obligatoria quedó enterrada —o duplicada por '
+                  'el dato— con «${caso.value}» en $campo',
+            );
+            for (final seccion in const [
+              '## Qué requiere criterio humano',
+              '## Qué quedó cubierto',
+            ]) {
+              expect(
+                visibles.where((r) => r.trimRight() == seccion),
+                hasLength(1),
+                reason:
+                    'la sección «$seccion» no se lee exactamente una vez con '
+                    '«${caso.value}» en $campo: o quedó adentro de un '
+                    'comentario o de una cerca, o el dato fabricó una segunda',
+              );
+            }
+            expect(
+              visibles.indexWhere((r) => r.startsWith('> [!WARNING]')),
+              lessThan(
+                visibles.indexWhere(
+                  (r) => r.trimRight() == '## Qué requiere criterio humano',
+                ),
+              ),
+              reason:
+                  'la advertencia va antes de todo lo que se lea como verde',
+            );
+          });
+        }
+      }
+
+      test('el dato hostil se sigue LEYENDO: neutralizar no es borrar', () {
+        // El control negativo del grupo. Un render que tirara los caracteres
+        // raros —o el campo entero— pasaría todas las pruebas de arriba y le
+        // escondería al revisor parte de lo que la corrida dijo, que es el otro
+        // lado del mismo defecto.
+        final cuerpo = cuerpoDeGitHub(
+          solicitudEnvenenada('criterio.detalle', 'el marcador <!-- de acá'),
+        );
+        expect(cuerpo, contains('&lt;!--'));
+        expect(
+          cuerpo,
+          contains('el marcador &lt;!-- de acá'),
+          reason: 'el detalle tiene que seguir completo, solo que sin sintaxis',
+        );
+      });
+
+      test('el identificador hostil se muestra entero y adentro de su '
+          'código', () {
+        // El identificador va en `<code>` justamente para que su contenido sea
+        // HTML y las entidades lo neutralicen. Entre acentos graves no
+        // alcanzaría: en CommonMark el HTML crudo tiene precedencia sobre el
+        // tramo de código, así que un `<!--` en un identificador y un `-->` en
+        // otro forman un comentario que se traga el detalle que hay entre los
+        // dos — enterrar lo que requiere criterio es justamente lo prohibido.
+        final cuerpo = cuerpoDeGitHub(
+          solicitudEnvenenada('criterio.sujeto', 'lib/``raro`` <!--'),
+        );
+        expect(
+          cuerpo,
+          contains('sujeto <code>lib/&#96;&#96;raro&#96;&#96; &lt;!--</code>'),
+          reason:
+              'el identificador tiene que salir entero, con sus acentos y su '
+              'comentario neutralizados como entidades',
+        );
+      });
+
+      test(
+        'un texto sin nada hostil sale IGUAL que antes del render seguro',
+        () {
+          // La prueba de que neutralizar no ensucia el caso normal: el cuerpo de
+          // una corrida común no puede llenarse de barras invertidas ni de
+          // entidades.
+          final cuerpo = cuerpoDeGitHub(solicitudVerde());
+          expect(cuerpo, isNot(contains('&amp;')));
+          expect(cuerpo, isNot(contains('\\')));
+          expect(
+            cuerpo,
+            contains(
+              '- **lib** (control <code>formateador</code>, afirmación '
+              '<code>formato.conforme</code>): ',
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  group('el truncado del título no parte un carácter', () {
+    /// Una intención que pone un emoji justo encima del límite: el relleno
+    /// llega hasta una unidad UTF-16 antes del corte, así que la primera
+    /// pareja sustituta arranca pegada al límite y `substring` la parte al
+    /// medio.
+    PullRequestRequest solicitudConEmojiEnElBorde() {
+      final relleno =
+          'x' * (256 - PullRequestRequest.prefijoIncompleto.length - 1);
+      return _solicitud(
+        _artefacto(
+          estado: EstadoDeCorrida.noConcluyente,
+          intent: '$relleno${'😀' * 20}',
+          requiereCriterio: [
+            EntradaDeCriterio(
+              motivo: MotivoDeCriterio.entornoNoDerivado,
+              detalle: 'El entorno no se derivó.',
+            ),
+          ],
+        ),
+      );
+    }
+
+    test('el título truncado se puede codificar tal como está', () {
+      final titulo = tituloDeGitHub(solicitudConEmojiEnElBorde());
+
+      expect(
+        titulo.length,
+        lessThanOrEqualTo(256),
+        reason: 'el límite del proveedor sigue siendo el que era',
+      );
+      expect(
+        utf8.decode(utf8.encode(titulo)),
+        titulo,
+        reason:
+            'el título terminó en media pareja sustituta: al codificarlo a '
+            'UTF-8 se vuelve «�», o sea un carácter que la intención no '
+            'tenía. Con `substring` sobre unidades UTF-16 el corte cae adentro '
+            'del emoji.',
+      );
+      expect(
+        titulo,
+        isNot(contains('�')),
+        reason: 'el reemplazo es la marca de un carácter partido',
+      );
+      expect(
+        titulo,
+        startsWith(PullRequestRequest.prefijoIncompleto),
+        reason: 'el corte se come la intención, nunca la advertencia',
+      );
+    });
+
+    test('el corte no tira un carácter que sí entraba', () {
+      // El control negativo: truncar de más —cortar en la runa anterior aunque
+      // la siguiente entrara justa— también pasaría la prueba de arriba.
+      final titulo = tituloDeGitHub(solicitudConEmojiEnElBorde());
+      expect(
+        titulo.length,
+        greaterThanOrEqualTo(255),
+        reason:
+            'con el emoji en el borde entran 255 unidades: la 256 sería media '
+            'pareja, y la runa entera no entra',
+      );
+    });
   });
 
   test('el marcador estable es la última línea y lleva runId y revisión', () {
