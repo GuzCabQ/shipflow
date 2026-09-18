@@ -214,14 +214,18 @@ class EmpujeAislado {
         // remoto. Decir `PushUnknown` acá mandaba a buscar un efecto remoto
         // que no pudo existir: el desenlace es `PushFailed`.
         //
-        // **La causa se queda en `desconocida`, y es verdad y no pereza.**
-        // Este `catch` no mira la excepción a propósito (ver abajo), así que
-        // lo único que este código sabe es que el lanzamiento no ocurrió;
-        // por qué —un `git` que no está, un `PATH` sin él, un fork que no se
-        // pudo hacer— es exactamente lo que se eligió no averiguar. Y deja
-        // el desenlace reintentable, que es lo correcto para un fork que
-        // falló por recursos y apenas un reintento de más para un `git` que
-        // no está instalado.
+        // **La causa es `noSePudoLanzar` y no `desconocida`.** La primera
+        // versión de este arreglo dejó `desconocida` argumentando que, como
+        // este `catch` no mira la excepción, no se sabe qué pasó. Eso
+        // confundía NO LEER LA EXCEPCIÓN con NO SABER: *qué `catch` corrió*
+        // es información propia del código y no del texto de la excepción,
+        // así que nombrar el hecho no copia ni un byte de lo que esa
+        // excepción traiga. Y «no se pudo determinar la causa» sobre un
+        // `git` que no está en el `PATH` es falso y no accionable.
+        //
+        // Sigue siendo reintentable: un `fork` que falló por recursos puede
+        // andar en el próximo intento, y para un `git` que falta el precio
+        // es un reintento de más.
         //
         // **Esta excepción no se nombra, no se loguea, no se relanza y no se
         // encadena — nunca.** `ProcessException.arguments` es la lista de
@@ -234,8 +238,21 @@ class EmpujeAislado {
         // canal de este archivo que no es `Credential`. Lo único que sale de
         // este `catch` es una causa cerrada, igual que en el resto del
         // archivo.
-        return NoEmpujado(PushFailed(causa: CausaDePublicacion.desconocida));
+        return NoEmpujado(PushFailed(causa: CausaDePublicacion.noSePudoLanzar));
       }
+
+      // **El stdin del hijo se cierra, y esto restituye algo que `run` hacía
+      // solo.** `Process.run` cierra el stdin del hijo; `Process.start` lo
+      // deja ABIERTO. Un `git` que decidiera leer de ahí —un `askpass` mal
+      // configurado, una versión que pregunte algo— dejaba de fallar al
+      // instante y pasaba a colgarse hasta agotar el presupuesto, saliendo
+      // como `PushUnknown`: el cambio de lanzador habría convertido un fallo
+      // inmediato en una duda de dos minutos.
+      //
+      // Sin esperar y tragando el error: si el hijo ya salió, cerrar su
+      // stdin rompe la tubería y eso lanza, y una tubería rota del lado que
+      // NO íbamos a usar no es un desenlace de la publicación.
+      unawaited(proceso.stdin.close().catchError((Object _) {}));
 
       // **El drenaje empieza ANTES de esperar la salida, y no es opcional.**
       // Los dos flujos son tuberías con un buffer finito en el núcleo: un
@@ -272,8 +289,29 @@ class EmpujeAislado {
         return NoEmpujado(PushUnknown(causa: CausaDePublicacion.desconocida));
       }
 
-      final textoDeError = await salidaDeError;
-      await salidaEstandar;
+      // **También CON presupuesto, y por el mismo motivo que un `if` más
+      // arriba manda a no esperar los drenajes tras el `SIGKILL`.** El hijo
+      // salió, pero un descendiente suyo pudo heredar la tubería y
+      // conservarla abierta —`git` lanza `git-remote-https`—: entonces estos
+      // `await` no vuelven nunca y `empujar` se cuelga sin producir ningún
+      // desenlace, que es exactamente el cuelgue que esta ronda vino a
+      // cerrar, vuelto a entrar por la puerta de al lado.
+      //
+      // El respaldo es texto VACÍO y no una excepción: lo que se pierde es
+      // el texto con el que se clasifica la causa, así que un drenaje que no
+      // termina degrada a `desconocida` —un reintento de más— en vez de
+      // volverse un cuelgue o una excepción que escape del puerto.
+      //
+      // **El peor caso es el presupuesto dos veces**, y está declarado: la
+      // segunda espera solo ocurre cuando alguien conserva el descriptor
+      // después de que el hijo murió. Es el mismo valor a propósito —es la
+      // misma pregunta, «¿esto termina?», en dos momentos del mismo
+      // lanzamiento— y no un segundo número que ajustar por su cuenta.
+      final textoDeError = await salidaDeError.timeout(
+        presupuesto,
+        onTimeout: () => '',
+      );
+      await salidaEstandar.timeout(presupuesto, onTimeout: () => '');
       if (codigo == 0) return const Empujado();
       return NoEmpujado(PushFailed(causa: _causaDe(textoDeError)));
     } finally {

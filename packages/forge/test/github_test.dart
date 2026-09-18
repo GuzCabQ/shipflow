@@ -609,6 +609,102 @@ void main() {
       expect(forja.rutas, hasLength(1));
     });
 
+    /// Un servidor que contesta bien la PRIMERA página —con su `Link` a la
+    /// segunda— y le da a la segunda el tratamiento que diga [segunda].
+    ///
+    /// Existe porque «el presupuesto y la clasificación valen en CADA página»
+    /// era, hasta acá, una propiedad que solo sostenía la lectura del código:
+    /// todas las pruebas de fallo atacaban la PRIMERA página, así que un
+    /// `if (pagina == 1 && ...)` alrededor de la clasificación —o un
+    /// `.timeout` puesto solo en la primera— pasaba la suite entera en verde.
+    Future<({HttpServer servidor, List<String> metodos})> forjaConSegundaPagina(
+      Future<void> Function(HttpRequest pedido) segunda,
+    ) async {
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final metodos = <String>[];
+      servidor.listen((p) async {
+        metodos.add(p.method);
+        if (p.method != 'GET') {
+          await utf8.decoder.bind(p).join();
+          p.response
+            ..statusCode = 201
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode({'html_url': 'https://forja/pr/nuevo'}));
+          await p.response.close();
+          return;
+        }
+        if (p.uri.queryParameters['page'] == '2') {
+          await segunda(p);
+          return;
+        }
+        p.response.headers.add(
+          'link',
+          '<http://127.0.0.1:${servidor.port}/repos/duenio/repo/pulls'
+              '?page=2>; rel="next"',
+        );
+        p.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(const <Object?>[]));
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+      return (servidor: servidor, metodos: metodos);
+    }
+
+    test('la SEGUNDA página que contesta 401 se clasifica igual que la '
+        'primera', () async {
+      final forja = await forjaConSegundaPagina((p) async {
+        p.response
+          ..statusCode = HttpStatus.unauthorized
+          ..headers.contentType = ContentType.json
+          ..write('{"message":"Bad credentials"}');
+        await p.response.close();
+      });
+
+      final r = await construirSalida(forja.servidor.port).open(solicitud());
+
+      expect(r, isA<PullRequestFailed>());
+      expect(
+        (r as PullRequestFailed).causa,
+        CausaDePublicacion.autenticacion,
+        reason:
+            'la clasificación tiene que valer en CADA página. Aplicada solo '
+            'a la primera, el cuerpo de error de la segunda vuelve a fallar '
+            'en el cast y el desenlace vuelve a ser `red`.',
+      );
+      expect(
+        forja.metodos,
+        isNot(contains('POST')),
+        reason: 'la búsqueda no se pudo completar: crear sería a ciegas',
+      );
+    });
+
+    test(
+      'la SEGUNDA página que no contesta vence, y no cuelga la corrida',
+      () async {
+        // El pedido de la segunda página queda sin respuesta: ni se cierra ni
+        // se escribe nada. Sin el presupuesto aplicado a ESTA página, `open`
+        // espera para siempre.
+        final forja = await forjaConSegundaPagina((p) async {});
+
+        final r = await construirSalida(
+          forja.servidor.port,
+          presupuestoDeRed: const Duration(milliseconds: 200),
+        ).open(solicitud());
+
+        expect(r, isA<PullRequestFailed>());
+        expect(
+          (r as PullRequestFailed).causa,
+          CausaDePublicacion.red,
+          reason: 'un pedido que no contesta a tiempo es un fallo de red',
+        );
+        expect(r.retryable, isTrue);
+        expect(forja.metodos, isNot(contains('POST')));
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
+
     test('un `Link` que cicla no gira para siempre: se corta y se declara '
         'fallo', () async {
       // Un `Link` que apunta siempre a la misma página —un proxy roto, un

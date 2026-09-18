@@ -199,6 +199,20 @@ void main() {
           'buscar allá un efecto imposible, que es la clase de duda que este '
           'repositorio existe para no fabricar.',
     );
+    expect(
+      (r.desenlace as PushFailed).causa,
+      CausaDePublicacion.noSePudoLanzar,
+      reason:
+          '«no se pudo determinar la causa» sobre un programa que no está en '
+          'el `PATH` es falso y no accionable. Que este `catch` no LEA la '
+          'excepción no vuelve desconocido el hecho: qué rama corrió es '
+          'información propia del código, no del texto de la excepción.',
+    );
+    expect(
+      r.desenlace.retryable,
+      isTrue,
+      reason: 'un fork que falló por recursos puede andar en el próximo',
+    );
 
     // `ProcessException` de un programa ausente lleva `destino` —la URL
     // con la credencial en el `userinfo`— en `.arguments`, y su
@@ -660,6 +674,100 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );
+
+  test('un descendiente que conserva la tubería no cuelga el drenaje '
+      'posterior a la salida', () async {
+    // **El cuelgue que la propia ronda de arreglo reintrodujo por la puerta
+    // de al lado.** Con los flujos drenados pero esperados SIN presupuesto
+    // después de recibir el código de salida, basta con que un nieto herede
+    // el descriptor y lo conserve: `git` sale, `exitCode` llega, y los dos
+    // `await` del drenaje no vuelven nunca. `empujar` no produce ningún
+    // desenlace — que es exactamente el hallazgo 5 del autor.
+    //
+    // El `&` deja al `sleep` con el stdout y el stderr del padre heredados,
+    // y el padre sale de inmediato con 0: la situación exacta, en miniatura,
+    // de `git` saliendo mientras `git-remote-https` sigue vivo.
+    final conNieto = File('${temporal.path}/con-nieto.sh');
+    await conNieto.writeAsString(
+      '#!/bin/sh\nsleep 300 &\necho "\$!" > "${temporal.path}/pid-nieto"\n'
+      'exit 0\n',
+    );
+    await Process.run('chmod', ['+x', conNieto.path]);
+    addTearDown(() async {
+      final archivo = File('${temporal.path}/pid-nieto');
+      if (!archivo.existsSync()) return;
+      await Process.run('kill', ['-9', archivo.readAsStringSync().trim()]);
+    });
+
+    final empuje = EmpujeAislado(
+      directorio: '${temporal.path}/trabajo',
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': '${temporal.path}/casa',
+      }),
+      programa: conNieto.path,
+      presupuesto: const Duration(milliseconds: 300),
+    );
+
+    final r = await empuje.empujar(
+      urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+      credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+      revision: revisionDeLaCabeza,
+      rama: 'rebanada-1',
+    );
+
+    // El código de salida fue 0 y eso no cambia porque el texto se haya
+    // perdido: lo que el presupuesto del drenaje sacrifica es la clasificación
+    // de la causa, no el desenlace.
+    expect(
+      r,
+      isA<Empujado>(),
+      reason:
+          'el hijo salió con 0; lo único pendiente era una tubería que un '
+          'nieto no soltó',
+    );
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  test('el stdin del hijo se cierra: un programa que lee no se queda '
+      'esperando', () async {
+    // `Process.run` cerraba el stdin del hijo; `Process.start` lo deja
+    // abierto. Sin cerrarlo, un `git` que leyera de ahí dejaba de fallar al
+    // instante y pasaba a colgarse hasta agotar el presupuesto, saliendo como
+    // `PushUnknown`: el cambio de lanzador habría convertido un fallo
+    // inmediato en una duda de dos minutos.
+    //
+    // `cat` es el programa que hace justamente eso: lee hasta EOF. Con el
+    // stdin cerrado ve EOF de entrada y sale con 0; sin cerrar, espera.
+    final lector = File('${temporal.path}/lee-stdin.sh');
+    await lector.writeAsString('#!/bin/sh\ncat > /dev/null\nexit 0\n');
+    await Process.run('chmod', ['+x', lector.path]);
+
+    final empuje = EmpujeAislado(
+      directorio: '${temporal.path}/trabajo',
+      entornoDelPadre: EntornoDelProceso({
+        'PATH': Platform.environment['PATH']!,
+        'HOME': '${temporal.path}/casa',
+      }),
+      programa: lector.path,
+      presupuesto: const Duration(seconds: 2),
+    );
+
+    final r = await empuje.empujar(
+      urlDelRemoto: 'http://127.0.0.1:${servidor.port}/x.git',
+      credencial: const Credential('ghp_x', label: 'SHIPFLOW_GITHUB_TOKEN'),
+      revision: revisionDeLaCabeza,
+      rama: 'rebanada-1',
+    );
+
+    expect(
+      r,
+      isA<Empujado>(),
+      reason:
+          'el programa leyó stdin y salió con 0. Si esto da `PushUnknown`, su '
+          'stdin nunca se cerró: se quedó esperando una entrada que nadie le '
+          'iba a mandar hasta que venció el presupuesto.',
+    );
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }
 
 /// Una [Credential] que anota si alguien llegó a desenvolver el secreto.

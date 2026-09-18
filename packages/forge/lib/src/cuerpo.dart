@@ -14,12 +14,21 @@
 /// ordena, y ninguna es de estilo:
 ///
 /// 1. La advertencia va antes de cualquier sección que se lea como verde.
-/// 2. **Lo que requiere criterio humano va antes que lo cubierto.** La
-///    propuesta aceptada lo dice verbatim en §13 —«requiere criterio,
-///    completo y antes que lo cubierto»— y ADR-022 lo dice por el otro lado:
-///    lo que requiere criterio no va después de una conclusión
-///    tranquilizadora. Un revisor que lee primero la lista de lo cubierto ya
-///    decidió saltar cuando llega a lo que tendría que mirar él.
+/// 2. **Lo que requiere criterio humano va antes que lo cubierto.** Lo dice
+///    verbatim §13 de la propuesta aceptada —«El cuerpo, el JSON y el
+///    directorio»—: «requiere criterio, completo y antes que lo cubierto». Y
+///    lo dice por el otro lado la decisión 7 de ADR-022: la lista de lo que
+///    requiere criterio «no se entierra, no se resume y no va después de una
+///    conclusión tranquilizadora». Un revisor que lee primero la lista de lo
+///    cubierto ya decidió saltar cuando llega a lo que tendría que mirar él.
+///
+///    **Ninguno de los dos documentos vive en este árbol**, y por eso van con
+///    su ruta: los dos están en el repositorio del corpus, en
+///    `sdlc-agentico/borradores/PROPUESTA-ship-artefacto-y-forja.md` y
+///    `sdlc-agentico/adr/ADR-022-forja-y-credencial.md`. Una cita que quien
+///    lee no puede abrir es la misma clase de defecto que este orden vino a
+///    cerrar: la versión anterior de esta línea atribuía el orden CONTRARIO
+///    a ADR-016, y nadie podía contrastarlo sin salir del repositorio.
 /// 3. Ninguna sección resume o entierra lo que requiere criterio — cada
 ///    entrada sale completa, con su motivo y su detalle, nunca como un
 ///    conteo.
@@ -159,10 +168,11 @@ void _escribirLoQueRequiereCriterio(
   buffer.writeln();
 }
 
-/// El cuerpo completo del PR. **Arma las secciones en el orden que imponen la
-/// propuesta aceptada (§13) y ADR-022** —lo que requiere criterio, completo y
-/// ANTES que lo cubierto— y cierra con [marcadorEstable], que sigue viviendo
-/// en el módulo
+/// El cuerpo completo del PR. **Arma las secciones en el orden que imponen
+/// §13 de la propuesta aceptada y la decisión 7 de ADR-022** —lo que requiere
+/// criterio, completo y ANTES que lo cubierto; las dos citas, con su ruta en
+/// el repositorio del corpus, están en el doc comment de esta biblioteca— y
+/// cierra con [marcadorEstable], que sigue viviendo en el módulo
 /// vecino que habla con la API porque la clave de la búsqueda idempotente
 /// pertenece a quien busca.
 ///
@@ -203,11 +213,11 @@ String cuerpoDeGitHub(PullRequestRequest solicitud) {
   }
 
   // **Lo que requiere criterio va PRIMERO, y eso es la norma y no un
-  // gusto.** La propuesta aceptada lo dice verbatim en §13: «requiere
-  // criterio, completo y antes que lo cubierto». ADR-022 dice lo mismo por
-  // el otro lado: lo que requiere criterio no va después de una conclusión
-  // tranquilizadora. Este archivo tenía las dos llamadas al revés, y una
-  // prueba que exigía el orden equivocado atribuyéndoselo a ADR-016.
+  // gusto.** §13 de la propuesta aceptada
+  // (`sdlc-agentico/borradores/PROPUESTA-ship-artefacto-y-forja.md`, en el
+  // repositorio del corpus) lo dice verbatim: «requiere criterio, completo y
+  // antes que lo cubierto». Este archivo tenía las dos llamadas al revés, y
+  // una prueba que exigía el orden equivocado atribuyéndoselo a ADR-016.
   _escribirLoQueRequiereCriterio(buffer, superficie.requiereCriterio);
   _escribirLoQueQuedoCubierto(buffer, superficie.cubierto);
 

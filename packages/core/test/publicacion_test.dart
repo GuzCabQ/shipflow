@@ -47,6 +47,33 @@ void main() {
       PushFailed(causa: CausaDePublicacion.configuracionInsegura).nextAction,
       AccionSiguiente.corregirConfiguracion,
     );
+    // Una revisión que no es un OID tampoco se arregla reintentando: el
+    // mismo valor vuelve a no serlo. `retryable` ya estaba fijado por la
+    // prueba de abajo, pero la ACCIÓN —lo único que este desenlace le dice a
+    // quien lo recibe sobre qué hacer— no la fijaba nada, a diferencia de su
+    // hermana de arriba.
+    expect(
+      PushFailed(causa: CausaDePublicacion.revisionInvalida).nextAction,
+      AccionSiguiente.corregirConfiguracion,
+    );
+    // Y no poder lanzar el programa SÍ se reintenta: un `fork` que falló por
+    // recursos puede andar en el próximo intento.
+    expect(
+      PushFailed(causa: CausaDePublicacion.noSePudoLanzar).nextAction,
+      AccionSiguiente.reintentarPublicacion,
+    );
+  });
+
+  test('no poder lanzar el programa no se reporta como causa desconocida', () {
+    // La causa existe para no decirle «no se pudo determinar la causa» a
+    // alguien que no tiene el programa en el `PATH`: eso es falso y no deja
+    // nada que mirar. Y su razón no nombra el programa —llega por
+    // configuración y esta cadena se publica—, ni deja de ser reintentable.
+    final r = PushFailed(causa: CausaDePublicacion.noSePudoLanzar);
+    expect(r.retryable, isTrue);
+    expect(r.safeReason, isNot(contains('no se pudo determinar')));
+    expect(r.safeReason, contains('lanzar'));
+    expect(r.deliveryStatus, EstadoDeEntrega.incompletaReintentable);
   });
 
   test('un canal inseguro no es reintentable, y su razón no dice que la '
@@ -64,6 +91,11 @@ void main() {
 
   test('permisos no es reintentable y el cerrado tampoco', () {
     expect(PushFailed(causa: CausaDePublicacion.permisos).retryable, isFalse);
+    expect(
+      PushFailed(causa: CausaDePublicacion.revisionInvalida).retryable,
+      isFalse,
+      reason: 'la misma revisión vuelve a no ser un OID la próxima vez',
+    );
     expect(PullRequestClosed(url: 'u').retryable, isFalse);
     expect(PushFailed(causa: CausaDePublicacion.red).retryable, isTrue);
     expect(PushUnknown(causa: CausaDePublicacion.red).retryable, isTrue);

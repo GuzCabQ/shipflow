@@ -2865,21 +2865,41 @@ invariante de que el desenlace se declara. Ahora el lanzamiento es
 una: se drenan `stdout` y `stderr` desde el arranque —un hijo que llena la
 tubería se bloquea escribiendo, y entonces el presupuesto se dispararía por un
 cuelgue que causamos nosotros—, al vencer se manda `SIGKILL` y se espera la
-muerte del proceso —no queda huérfano, y hay una prueba que lo comprueba
-consultando el PID—, y el desenlace es `PushUnknown`: al interrumpirlo se
-pierde quien sabía cómo terminó, y el packfile puede haber llegado entero. Dos
+muerte **del proceso que lanzamos** —que no queda huérfano, y hay una prueba
+que lo comprueba consultando su PID; lo que ese proceso haya lanzado a su vez
+sobrevive, y está declarado más abajo entre los residuos—, y el desenlace es
+`PushUnknown`: al interrumpirlo se pierde quien sabía cómo terminó, y el
+packfile puede haber llegado entero.
+
+El drenaje **posterior** a la salida también tiene presupuesto, con respaldo
+vacío. Es el mismo peligro por la otra puerta: el hijo sale, pero un
+descendiente suyo pudo heredar la tubería y conservarla abierta, y entonces
+esperar el cierre sin límite deja el flujo otra vez sin ningún desenlace. Lo
+que se pierde al vencer es el texto con el que se clasifica la causa, así que
+degrada a `desconocida` —un reintento de más— en vez de colgarse. Y el `stdin`
+del hijo se cierra tras el lanzamiento, que es lo que `Process.run` hacía solo:
+sin eso, un `git` que leyera de ahí dejaba de fallar al instante y pasaba a
+colgarse hasta agotar el presupuesto.
+
+Dos
 minutos, y no treinta segundos como los pedidos de la API, porque un `push` no
 es un pedido y una respuesta sino una negociación más la subida de un
 packfile; y no más, porque el presupuesto de la corrida entera se mide en
 minutos.
 
-**Y no poder lanzar `git` es un fallo, no un efecto remoto desconocido.** Si
-`Process.start` no consigue el proceso, no hubo nada capaz de hablar con el
-remoto: el desenlace es `PushFailed` y no `PushUnknown`, que mandaba a buscar
-allá un efecto que no pudo ocurrir. La causa se queda en `desconocida` porque
-ese `catch` sigue sin mirar la excepción —`ProcessException.arguments` lleva
-la URL con la credencial adentro y su `toString()` la interpola verbatim—, así
-que lo único que este código sabe es que el lanzamiento no ocurrió.
+**Y no poder lanzar `git` es un fallo con nombre, no un efecto remoto
+desconocido.** Si `Process.start` no consigue el proceso, no hubo nada capaz de
+hablar con el remoto: el desenlace es `PushFailed` y no `PushUnknown`, que
+mandaba a buscar allá un efecto que no pudo ocurrir. Y la causa es
+`noSePudoLanzar`, no `desconocida`: ese `catch` sigue sin mirar la excepción
+—`ProcessException.arguments` lleva la URL con la credencial adentro y su
+`toString()` la interpola verbatim—, pero **no leer la excepción no es no
+saber**: qué rama corrió es información propia del código, no del texto de la
+excepción, así que nombrar el hecho no arriesga un byte del secreto. Decirle
+«no se pudo determinar la causa» a alguien que no tiene `git` en el `PATH` es
+falso y no deja nada que mirar. Es reintentable, a diferencia de
+`revisionInvalida`: un `fork` que falló por recursos puede andar en el próximo
+intento.
 
 **Y los dos canales que llevan la credencial exigen `https`, validado.** El
 `userinfo` del `git push` y el `Authorization: Bearer` del cliente de la API
@@ -2995,7 +3015,7 @@ otro adapter pudiera importar: lo instala `forja-en-su-adapter`.
 
 ### Residuos declarados
 
-Dieciséis hechos que esta rebanada deja escritos porque son límites reales, no
+Dieciocho hechos que esta rebanada deja escritos porque son límites reales, no
 trabajo pendiente con fecha:
 
 - **La clasificación de la causa de un `push` fallido mira el texto del
@@ -3065,6 +3085,12 @@ trabajo pendiente con fecha:
   que funciona por construcción y no por cobertura: si alguien cambiara esa
   serialización a índices, lo cazaría la prueba «un enum viaja por nombre, no
   por índice» de `core`, que no nombra este valor en particular.
+- **El peor caso del `push` es el presupuesto DOS veces.** El primero es la
+  espera del código de salida; el segundo, el del drenaje posterior, que solo
+  se agota cuando un descendiente conservó el descriptor después de que el
+  hijo murió. Es el mismo valor a propósito —es la misma pregunta, «¿esto
+  termina?», en dos momentos del mismo lanzamiento— y no un segundo número que
+  ajustar por su cuenta.
 - **El presupuesto del `push` mide tiempo TOTAL del proceso, no progreso.**
   Una subida grande pero sana que pase de dos minutos se corta igual, y el
   desenlace es `PushUnknown`. Cortar por falta de progreso pediría leer el
@@ -3088,6 +3114,10 @@ trabajo pendiente con fecha:
   tope significa que las páginas no se terminan —un `Link` que cicla—, no que
   haya demasiados. El tope existe porque el presupuesto POR PEDIDO no cubre un
   bucle en el que cada pedido contesta a tiempo.
+- **Perder el drenaje pierde la clasificación.** Si el drenaje posterior a la
+  salida se agota, el texto de `git` que decide la causa llega vacío y el
+  desenlace cae en `desconocida`, que es reintentable. Es el precio elegido: un
+  reintento de más antes que un cuelgue sin desenlace.
 - **La causa `revisionInvalida` usa `corregirConfiguracion` como acción
   siguiente, y quien tiene que corregir es el código que compuso la
   solicitud**, no una opción que el usuario haya configurado. Lo que las dos

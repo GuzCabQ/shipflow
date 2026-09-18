@@ -213,12 +213,20 @@ void main() {
 
   test('lo que requiere criterio va ANTES de lo cubierto', () {
     // **Esta prueba exigía lo contrario, y se lo atribuía a ADR-016.** La
-    // norma real dice al revés: la propuesta aceptada, §13, «requiere
-    // criterio, completo y antes que lo cubierto», y ADR-022 lo dice por el
-    // otro lado —lo que requiere criterio no va después de una conclusión
-    // tranquilizadora—. Lo que el comentario viejo afirmaba sobre ADR-016 no
-    // está en ADR-016: ese ADR regula que la advertencia preceda a lo verde
-    // y que lo que requiere criterio salga completo, no este orden.
+    // norma real dice al revés, y las dos fuentes viven en el repositorio
+    // del corpus, no en este árbol —van con su ruta justamente para que se
+    // puedan abrir—:
+    //
+    // - `sdlc-agentico/borradores/PROPUESTA-ship-artefacto-y-forja.md`, §13
+    //   «El cuerpo, el JSON y el directorio», verbatim: «requiere criterio,
+    //   completo y antes que lo cubierto».
+    // - `sdlc-agentico/adr/ADR-022-forja-y-credencial.md`, decisión 7: la
+    //   lista de lo que requiere criterio «no se entierra, no se resume y no
+    //   va después de una conclusión tranquilizadora».
+    //
+    // Lo que el comentario viejo afirmaba sobre ADR-016 no está en ADR-016:
+    // ese ADR regula que la advertencia preceda a lo verde y que lo que
+    // requiere criterio salga completo, no este orden.
     //
     // Es el caso exacto que este repositorio persigue: una prueba en verde
     // que PROTEGÍA la violación, con una cita que la hacía parecer

@@ -56,6 +56,27 @@ enum CausaDePublicacion {
   /// defecto es un cambio de dominio que esta ronda no hace.
   revisionInvalida,
 
+  /// El proceso que iba a hacer el trabajo **no se pudo lanzar**: no existe,
+  /// no está en el `PATH`, o el sistema no pudo crearlo.
+  ///
+  /// Es una causa propia y no [desconocida], y la distinción vale la pena por
+  /// lo que cada una le dice a quien la lee. «No se pudo determinar la causa»
+  /// sobre un `git` que no está instalado es falso y no accionable; esto
+  /// nombra el hecho y deja una cosa concreta que mirar.
+  ///
+  /// **Y no arriesga el secreto, que es la objeción que había que contestar.**
+  /// Quien produce esta causa es un `catch` que deliberadamente NO mira la
+  /// excepción —la de un lanzamiento fallido lleva el argv completo, con la
+  /// credencial adentro—. Pero *qué `catch` corrió* es información propia del
+  /// código, no del texto de la excepción: saber que se entró por la rama del
+  /// lanzamiento imposible no copia ni un byte de lo que esa excepción traiga.
+  ///
+  /// **Reintentable**, a diferencia de [revisionInvalida]: un `fork` que falló
+  /// por recursos puede andar en el próximo intento, y para un `git` que no
+  /// está instalado el precio es un reintento de más — nunca una publicación
+  /// que se lea como completa.
+  noSePudoLanzar,
+
   desconocida,
 }
 
@@ -300,6 +321,12 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
     CausaDePublicacion.revisionInvalida =>
       'la revisión a empujar no es un identificador de objeto completo de '
           'git, así que no se lanzó ningún proceso',
+    // Nombra el hecho —el programa no se pudo lanzar— y no el programa: el
+    // nombre del ejecutable llega por configuración y esta cadena se
+    // publica. Que el proceso no arrancara es lo accionable.
+    CausaDePublicacion.noSePudoLanzar =>
+      'no se pudo lanzar el programa que hacía falta, así que nada llegó a '
+          'ocurrir del otro lado',
     CausaDePublicacion.desconocida => 'no se pudo determinar la causa',
   };
 
@@ -314,6 +341,7 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
     CausaDePublicacion.red ||
     CausaDePublicacion.autenticacion ||
     CausaDePublicacion.rechazoDeLaForja ||
+    CausaDePublicacion.noSePudoLanzar ||
     CausaDePublicacion.desconocida => true,
   };
 
@@ -327,6 +355,7 @@ sealed class PublicacionConCausa extends PublicacionNoUtilizable {
     CausaDePublicacion.red ||
     CausaDePublicacion.autenticacion ||
     CausaDePublicacion.rechazoDeLaForja ||
+    CausaDePublicacion.noSePudoLanzar ||
     CausaDePublicacion.desconocida => AccionSiguiente.reintentarPublicacion,
   };
 }
