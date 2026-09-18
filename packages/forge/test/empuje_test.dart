@@ -5,6 +5,11 @@ import 'package:core/core.dart';
 import 'package:forge/forge.dart';
 import 'package:test/test.dart';
 
+/// El nombre del programa que mide el FIN de un proceso. Es una constante y
+/// no un literal suelto porque la prueba lo BUSCA en `bin/` por este prefijo,
+/// en vez de escribir su ruta completa — ver el comentario de esa prueba.
+const nombreDelInstrumento = 'ayuda_fin_del_proceso';
+
 void main() {
   late Directory temporal;
   late HttpServer servidor;
@@ -798,15 +803,42 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
       // con el `join()` abandonado, en ~20,3 s — cuando muere el nieto. En
       // producción ese nieto es el ayudante de transporte de `git` sobre una
       // conexión muerta, o sea sin cota.
-      // El instrumento se invoca por su NOMBRE —es el ejecutable de este
-      // paquete— y no por su ruta. No es comodidad: escribir la ruta obliga a
-      // nombrar la extensión de los archivos fuente, y la regla que acota el
-      // nombre del lenguaje a su plugin y al composition root caza esa cadena
-      // acá, con razón. Las dos raíces cubren correr la suite desde el
-      // repositorio o desde el paquete.
+      // **El instrumento se BUSCA, no se escribe su ruta, y las dos cosas
+      // que eso evita están medidas.**
+      //
+      // Una: correrlo como ejecutable del paquete —`run` con el nombre— hace
+      // que la herramienta de paquetes precompile un `snapshot` DENTRO del
+      // directorio de artefactos del checkout compartido. Medido: el arnés
+      // de sabotajes compara ese directorio antes y después de su corrida y
+      // reporta
+      // «el checkout compartido cambió durante la corrida», que es su alarma
+      // más grave. Invocar el archivo directamente no escribe nada: medido
+      // también, cinco archivos antes y cinco después.
+      //
+      // Dos: escribir la ruta obliga a nombrar la extensión de los archivos
+      // fuente, y la regla que acota el nombre del lenguaje a su plugin y al
+      // composition root caza esa cadena acá, con razón — su propia
+      // declaración dice que un `endsWith` de la extensión tiene que
+      // dispararla.
+      //
+      // Buscarlo por su nombre distintivo no es esquivar ninguna de las dos:
+      // es la forma que no las provoca. Las dos raíces cubren correr la
+      // suite desde el repositorio o desde el paquete.
       final raizDelPaquete = Directory('packages/forge').existsSync()
           ? 'packages/forge'
           : '.';
+      final ejecutables = Directory('$raizDelPaquete/bin').listSync();
+      final instrumento = ejecutables
+          .whereType<File>()
+          .where(
+            (f) => f.uri.pathSegments.last.startsWith(nombreDelInstrumento),
+          )
+          .toList();
+      expect(
+        instrumento,
+        hasLength(1),
+        reason: 'no se encontró el instrumento «$nombreDelInstrumento»',
+      );
 
       final conNieto = File('${temporal.path}/nieto-que-hereda.sh');
       await conNieto.writeAsString(
@@ -825,16 +857,12 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
         // El mismo intérprete que corre esta suite: no se busca uno por `PATH`.
         Platform.resolvedExecutable,
         [
-          'run',
-          // Los dos puntos delante significan «el ejecutable del paquete de
-          // este directorio», que es por qué hace falta el `workingDirectory`.
-          ':ayuda_fin_del_proceso',
+          instrumento.single.path,
           '${temporal.path}/trabajo',
           conNieto.path,
           revisionDeLaCabeza,
           'http://127.0.0.1:${servidor.port}/x.git',
         ],
-        workingDirectory: raizDelPaquete,
       );
       reloj.stop();
 

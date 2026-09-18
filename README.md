@@ -3136,12 +3136,13 @@ no trabajo pendiente con fecha:
 - **Que el proceso termine no lo sostiene una prueba de la suite, sino un
   proceso aparte.** Una suite no puede afirmar sobre su propio fin: corre
   hasta que terminan todas las pruebas. Por eso
-  el ejecutable `ayuda_fin_del_proceso` de `packages/forge/bin/` hace UN
+  el programa `ayuda_fin_del_proceso` de `packages/forge/bin/` hace UN
   `empujar` y vuelve de `main`, y la prueba mide cuánto tarda ESE proceso en
-  terminar. Vive en `bin/` y no en `test/` por el arnés: en `test/` sería un
-  huérfano para el grafo, y nombrar su ruta desde la suite obliga a escribir
-  la extensión de los archivos fuente, que `lenguaje-en-plugin-dart` caza
-  fuera de su adapter y del composition root. Lo que esa
+  terminar. Vive en `bin/` y no en `test/` porque en `test/` sería un huérfano
+  para el grafo; la suite lo BUSCA por su nombre en vez de escribir su ruta, y
+  lo invoca directamente en vez de correrlo como ejecutable del paquete —eso
+  último precompila un `snapshot` dentro del `.dart_tool` del checkout
+  compartido, que es exactamente lo que `probar_reglas.py` vigila—. Lo que esa
   medición no distingue es POR QUÉ terminó: afirma el efecto observable —el
   proceso termina con un nieto vivo del otro lado de la tubería— y no que la
   suscripción se haya cancelado, que es el mecanismo. Un mecanismo distinto
