@@ -325,9 +325,46 @@ void main() {
             revision: valida,
             arbolDeLaRevision: 'arbol-1',
           ).revision,
-          valida,
+          // **Canonicalizada, y esta aserción decía lo contrario.** Exigía que
+          // la revisión saliera tal como entró, o sea que las mayúsculas
+          // circularan: y circulando rompieron la búsqueda idempotente del
+          // adapter de la forja, que compara literal contra el `sha` que
+          // devuelve la forja —siempre en minúsculas— y contra el marcador
+          // estable. Reproducido por el autor: solicitud en mayúsculas, pull
+          // request existente en minúsculas, y se creaba un SEGUNDO pull
+          // request. Aceptar las dos escrituras sigue siendo correcto —git
+          // resuelve el mismo objeto—; dejarlas circular no lo era.
+          valida.toLowerCase(),
+          reason:
+              'un OID en mayúsculas se acepta y se guarda en la forma '
+              'canónica: una sola escritura río abajo',
         );
       }
+    });
+
+    test('un OID en mayúsculas es la MISMA solicitud que el mismo en '
+        'minúsculas', () {
+      // La prueba del efecto, no de la forma: lo que la canonicalización
+      // existe para sostener es que las tres cosas que se derivan de la
+      // revisión —la comparación con lo que devuelve la forja, el marcador
+      // estable del cuerpo y el refspec del push— no puedan discrepar según
+      // cómo alguien haya escrito el OID.
+      final mayusculas = PullRequestRequest(
+        draft: borrador(EstadoDeCorrida.verde),
+        revision: oidSha1.toUpperCase(),
+        arbolDeLaRevision: 'arbol-1',
+      );
+      final minusculas = PullRequestRequest(
+        draft: borrador(EstadoDeCorrida.verde),
+        revision: oidSha1,
+        arbolDeLaRevision: 'arbol-1',
+      );
+      expect(mayusculas.revision, minusculas.revision);
+      expect(
+        mayusculas.revision,
+        isNot(contains(RegExp('[A-F]'))),
+        reason: 'la forma canónica es la que imprime git: minúscula',
+      );
     });
 
     test('el título se deriva, y cuando está incompleto lo dice', () {

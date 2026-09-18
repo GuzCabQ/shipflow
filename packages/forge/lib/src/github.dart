@@ -217,7 +217,47 @@ class SalidaDePrDeGitHub implements PullRequestSink {
   /// Encabeza el pedido con la credencial. **Nunca la interpola fuera de
   /// [Credential.use]**: el encabezado se arma adentro, y lo que sale de acá
   /// es el pedido ya autenticado, nunca el secreto suelto.
+  ///
+  /// **Y apaga el seguimiento de redirects ANTES de adjuntarla, en la misma
+  /// función y no en cada sitio de llamada.** Un pedido con
+  /// `followRedirects = true` —el valor por omisión de `HttpClient`— sigue
+  /// por su cuenta el `3xx` que conteste el otro lado, y el destino de ese
+  /// salto lo elige la RESPUESTA, no la configuración. Esta es la única
+  /// función que pone el `Authorization`, así que apagarlo acá es lo que
+  /// hace imposible que un pedido salga autenticado y seguidor a la vez:
+  /// ponerlo en los dos sitios de llamada sería una disciplina que el
+  /// próximo pedido puede olvidar.
+  ///
+  /// **Lo que el SDK hace por su cuenta NO alcanza, y está medido.** Una
+  /// revisión anterior dio esto por seguro porque la biblioteca de entrada y
+  /// salida no copia el `authorization` cuando el redirect cambia de
+  /// esquema, host o puerto. La regla real es más ancha:
+  /// `_HttpClient.shouldCopyHeaderOnRedirect` copia TODOS los encabezados
+  /// —`authorization` incluido— cuando `_isSubdomain(destino, origen)`, y
+  /// esa función da verdadero si el host del destino **termina en `.` más el
+  /// host del origen**. Medido en esta plataforma con el SDK 3.12.0 del
+  /// lenguaje (la implementación del cliente HTTP en su biblioteca de entrada
+  /// y salida, `lib/_http/http_impl`), con la API en `http://localhost:<puerto>`
+  /// y un `302` —y un `303` para el `POST`— hacia
+  /// `http://sub.localhost:<el mismo puerto>`: el segundo destino recibió
+  /// `Authorization: Bearer <secreto>` en los dos métodos. O sea que el
+  /// filtro del SDK protege del salto a otro host, y no del salto a un
+  /// SUBDOMINIO del configurado, que es el que un `Location` hostil elige.
+  ///
+  /// **Y el `3xx` no se sigue a mano tampoco.** Se podría, validando esquema,
+  /// host y puerto exactos con [_mismoOrigen] antes de repetir el pedido;
+  /// no se hace porque un redirect DENTRO del mismo origen no agrega nada
+  /// que la API de esta forja necesite —sus dos URLs salen de
+  /// `baseDeLaApi`—, y cada camino que reintenta con la credencial adjunta
+  /// es un camino más donde revalidar. El `3xx` se trata como respuesta
+  /// fallida: en la búsqueda cae en la rama de «no es 200» —la búsqueda
+  /// quedó incompleta— y en la creación tiene su propia rama, porque ahí un
+  /// `303` puede venir DESPUÉS de haber creado el pull request.
   void _autenticar(HttpClientRequest pedido, Credential credencial) {
+    // Antes del encabezado, no después: lo que se está impidiendo es que
+    // este mismo pedido lleve la credencial a un destino que elija la
+    // respuesta.
+    pedido.followRedirects = false;
     pedido.headers.set(
       HttpHeaders.authorizationHeader,
       credencial.use((secreto) => 'Bearer $secreto'),
@@ -329,6 +369,16 @@ class SalidaDePrDeGitHub implements PullRequestSink {
   /// que eligió la respuesta y no la configuración — y `open` valida el canal
   /// UNA vez, sobre `baseDeLaApi`, precisamente porque hasta esta ronda todas
   /// las URLs salían de ella.
+  ///
+  /// **Exacta, y eso es el punto: un subdominio NO es el mismo origen.** Es
+  /// justamente donde la regla del SDK se queda corta —`_isSubdomain`, en la
+  /// implementación del cliente HTTP de su biblioteca de entrada y salida,
+  /// acepta cualquier host que termine en `.` más
+  /// el host original y por eso copia el `authorization` hacia
+  /// `sub.localhost`—. Acá los tres componentes se comparan por igualdad, así
+  /// que `api.forja` y `malo.api.forja` son orígenes distintos. Quien afloje
+  /// esta comparación a un sufijo reabre, por el camino del `Link`, el mismo
+  /// agujero que [_autenticar] cierra por el camino del redirect.
   static bool _mismoOrigen(Uri a, Uri b) =>
       a.scheme == b.scheme && a.host == b.host && a.port == b.port;
 
@@ -382,6 +432,14 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       // **Clasificar ANTES de decodificar.** Un cuerpo de error no es una
       // lista, y tratar de convertirlo en una borra la única información que
       // sí dice qué pasó: el código.
+      //
+      // **Un `3xx` entra por acá y eso es deliberado.** Con
+      // `followRedirects = false` —que pone [_autenticar]— la respuesta al
+      // redirect llega tal cual en vez de seguirse, y para la búsqueda un
+      // redirect es exactamente lo mismo que cualquier otra respuesta que no
+      // sea `200`: no trae la página que se pidió, así que la búsqueda quedó
+      // incompleta y `_causaDelCodigo` la deja en `desconocida`. Seguirlo
+      // sería mandar el `Bearer` adonde diga el `Location`.
       if (respuesta.statusCode != HttpStatus.ok) {
         final causa = _causaDelCodigo(respuesta.statusCode);
         // El cuerpo se descarta, no se lee: libera la conexión sin que su
@@ -434,7 +492,18 @@ class SalidaDePrDeGitHub implements PullRequestSink {
     for (final item in lista) {
       final pr = item as Map<String, Object?>;
       final cabeza = pr['head'] as Map<String, Object?>?;
-      if (cabeza?['sha'] != request.revision) continue;
+      // **Los dos lados de la comparación en la MISMA escritura.**
+      // `request.revision` ya viene canonicalizado a minúsculas por
+      // `PullRequestRequest` —ahí está escrito por qué la canonicalización
+      // vive en la frontera del dominio—, y el `sha` que llega en esta
+      // respuesta es un dato AJENO: la forja de hoy lo manda en minúsculas,
+      // pero eso es su costumbre y no un contrato que este cliente pueda
+      // exigir. Leerlo a la forma canónica es traducir una entrada ajena, no
+      // una segunda representación nuestra; sin eso, un `sha` en mayúsculas
+      // haría pasar por «no existe» al pull request que sí existe, y el
+      // desenlace sería un SEGUNDO pull request.
+      final sha = cabeza?['sha'];
+      if (sha is! String || sha.toLowerCase() != request.revision) continue;
       final cuerpoDelPr = pr['body'] as String? ?? '';
       if (!cuerpoDelPr.contains(marcador)) continue;
 
@@ -489,6 +558,21 @@ class SalidaDePrDeGitHub implements PullRequestSink {
       // segundo pull request; `unknown` es lo que lo manda de nuevo por la
       // búsqueda idempotente en vez de por una creación ciega.
       return PullRequestUnknown(causa: CausaDePublicacion.red);
+    }
+
+    if (codigo >= 300 && codigo < 400) {
+      // **El redirect no se sigue —lo apaga [_autenticar]— y acá se declara
+      // qué significa no haberlo seguido.** Va ANTES de mirar el
+      // `Content-Type` porque un `3xx` no trae cuerpo JSON y caería en la
+      // rama de abajo por el motivo equivocado: no es una respuesta ajena a
+      // la forja, es la forja mandando a otra parte.
+      //
+      // Es `unknown` y no `failed` porque un `303 See Other` es la forma
+      // documentada de contestar «lo creé, mirá allá»: el pull request pudo
+      // quedar creado del otro lado. Reportarlo como fallo haría que quien
+      // reintenta abriera un segundo pull request; `unknown` lo manda de
+      // vuelta por la búsqueda idempotente.
+      return PullRequestUnknown(causa: CausaDePublicacion.desconocida);
     }
 
     if (tipoDeContenido?.mimeType != 'application/json') {

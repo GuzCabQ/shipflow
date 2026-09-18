@@ -170,6 +170,15 @@ class EmpujeAislado {
     //
     // Es un desenlace cerrado y no una excepción, por el mismo motivo que el
     // rechazo de arriba: `PullRequestSink` declara que `open` no lanza.
+    //
+    // **Acá se valida y no se canonicaliza**, y la diferencia importa:
+    // `PullRequestRequest` ya entrega la revisión en minúsculas —es su
+    // frontera y su invariante—, así que el refspec que se arma abajo lleva
+    // la forma canónica en la ruta real. Un llamador directo que pase
+    // mayúsculas empuja igual el mismo objeto: para git las dos escrituras
+    // son el mismo OID, y lo que esta guarda existe para impedir es la
+    // revisión que NO identifica ningún objeto, no la que se escribió de
+    // otra manera.
     if (!esOidCompleto(revision)) {
       return NoEmpujado(PushFailed(causa: CausaDePublicacion.revisionInvalida));
     }

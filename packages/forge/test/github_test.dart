@@ -114,6 +114,18 @@ void main() {
     arbolDeLaRevision: 'arbol-1',
   );
 
+  PullRequestRequest solicitudConRevision(String revision) =>
+      PullRequestRequest(
+        draft: PullRequestDraft(
+          runId: 'corrida-1',
+          branch: 'rama-1',
+          base: 'main',
+          artefacto: artefacto(),
+        ),
+        revision: revision,
+        arbolDeLaRevision: 'arbol-1',
+      );
+
   String marcadorEsperado() => marcadorEstable(solicitud());
 
   SalidaDePrDeGitHub construirSalida(
@@ -121,6 +133,7 @@ void main() {
     Duration presupuestoDeRed = SalidaDePrDeGitHub.presupuestoDeRedPorDefecto,
     Uri? baseDeLaApi,
     CredentialSource? credenciales,
+    HttpClient Function()? clienteHttp,
   }) => SalidaDePrDeGitHub(
     configuracion: ConfiguracionDeGitHub(
       duenio: 'duenio',
@@ -145,6 +158,7 @@ void main() {
       programa: 'true',
     ),
     presupuestoDeRed: presupuestoDeRed,
+    clienteHttp: clienteHttp,
   );
 
   test('open repetido no crea un segundo PR', () async {
@@ -973,6 +987,237 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 90)),
   );
+
+  group('ningún redirect se lleva la credencial', () {
+    // **El agujero real, y la creencia falsa que lo tapaba.** Una revisión
+    // anterior dio por seguro este camino porque la biblioteca de entrada y
+    // salida no copia el `authorization` cuando el redirect cambia de
+    // esquema, host o puerto. La regla que el SDK aplica de verdad —medida en
+    // la implementación del cliente HTTP de su biblioteca de entrada y
+    // salida (`lib/_http/http_impl`), en el SDK 3.12.0 del lenguaje, en
+    // `_HttpClient.shouldCopyHeaderOnRedirect`— es más ancha: si
+    // `_isSubdomain(destino, origen)` da verdadero copia TODOS los
+    // encabezados, y esa función acepta cualquier host que TERMINE en `.` más
+    // el host del origen. O sea que `localhost` → `sub.localhost`, con el
+    // mismo esquema y el mismo puerto, conserva el `Bearer`.
+    //
+    // Reproducido antes del arreglo, con un `302` para el `GET` y un `303`
+    // para el `POST` —los dos únicos que el SDK sigue para cada método—: el
+    // segundo destino recibió `Authorization: Bearer <secreto>` en los dos.
+    //
+    // **El destino no se resuelve por DNS, a propósito.** El cliente se
+    // inyecta con un `connectionFactory` que manda toda conexión al servidor
+    // de esta prueba, así que `sub.localhost` llega como nombre —en el `Host`
+    // y en la decisión del SDK— sin depender de que el resolutor de la
+    // máquina invente subdominios de `localhost`. Lo que se mide es nuestro
+    // código, no el resolutor.
+    Future<
+      ({
+        HttpServer servidor,
+        List<({String metodo, String? host, String ruta, String? autorizacion})>
+        pedidos,
+        HttpClient Function() cliente,
+      })
+    >
+    forjaQueRedirige({required int codigoDelPost}) async {
+      final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final pedidos =
+          <
+            ({String metodo, String? host, String ruta, String? autorizacion})
+          >[];
+      servidor.listen((p) async {
+        pedidos.add((
+          metodo: p.method,
+          host: p.headers.value('host'),
+          ruta: p.uri.path,
+          autorizacion: p.headers.value(HttpHeaders.authorizationHeader),
+        ));
+        if (p.uri.path == '/trampa') {
+          // La trampa contesta como si fuera la forja: si el cliente la
+          // siguiera, la corrida seguiría su curso y solo esta lista diría
+          // que el secreto se fue a otro origen.
+          p.response
+            ..statusCode = p.method == 'GET' ? 200 : 201
+            ..headers.contentType = ContentType.json
+            ..write(
+              p.method == 'GET'
+                  ? jsonEncode(const <Object?>[])
+                  : jsonEncode({'html_url': 'https://forja/pr/de-la-trampa'}),
+            );
+          await p.response.close();
+          return;
+        }
+        if (p.method == 'GET' && codigoDelPost != 0) {
+          // El `GET` contesta vacío para que la corrida llegue al `POST`, que
+          // es lo que esta variante quiere medir.
+          p.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode(const <Object?>[]));
+          await p.response.close();
+          return;
+        }
+        if (p.method != 'GET') await utf8.decoder.bind(p).join();
+        p.response
+          ..statusCode = p.method == 'GET' ? HttpStatus.found : codigoDelPost
+          ..headers.set(
+            HttpHeaders.locationHeader,
+            'http://sub.localhost:${servidor.port}/trampa',
+          );
+        await p.response.close();
+      });
+      addTearDown(() => servidor.close(force: true));
+      return (
+        servidor: servidor,
+        pedidos: pedidos,
+        cliente: () => HttpClient()
+          ..connectionFactory = (uri, proxyHost, proxyPort) =>
+              Socket.startConnect(InternetAddress.loopbackIPv4, servidor.port),
+      );
+    }
+
+    void exigirQueNadieMasVioElSecreto(
+      List<({String metodo, String? host, String ruta, String? autorizacion})>
+      pedidos,
+      int puerto,
+    ) {
+      expect(
+        pedidos.where((p) => p.ruta == '/trampa'),
+        isEmpty,
+        reason:
+            'el destino del redirect recibió un pedido: el cliente lo siguió, '
+            'y el SDK copia el `Authorization` hacia un subdominio del origen '
+            'configurado',
+      );
+      for (final p in pedidos.where((p) => p.autorizacion != null)) {
+        expect(
+          p.host,
+          'localhost:$puerto',
+          reason:
+              'el `Bearer` llegó a «${p.host}», que no es el origen '
+              'configurado: el destino lo eligió la respuesta',
+        );
+      }
+    }
+
+    test('un 302 en la búsqueda no se sigue: el GET no lleva la credencial a '
+        'ningún otro destino', () async {
+      final forja = await forjaQueRedirige(codigoDelPost: 0);
+      final salida = construirSalida(
+        forja.servidor.port,
+        baseDeLaApi: Uri.parse('http://localhost:${forja.servidor.port}'),
+        clienteHttp: forja.cliente,
+      );
+
+      final r = await salida.open(solicitud());
+
+      exigirQueNadieMasVioElSecreto(forja.pedidos, forja.servidor.port);
+      expect(
+        r,
+        isA<PullRequestFailed>(),
+        reason:
+            'un `3xx` no trae la página que se pidió: la búsqueda quedó '
+            'incompleta, y eso es un fallo y no «no encontré nada»',
+      );
+      expect(
+        forja.pedidos.map((p) => p.metodo),
+        isNot(contains('POST')),
+        reason: 'con la búsqueda incompleta, crear sería a ciegas',
+      );
+    });
+
+    test('un 303 en la creación no se sigue: el POST no lleva la credencial a '
+        'ningún otro destino', () async {
+      // `303 See Other` y no `302`: para un `POST`, el SDK solo sigue el
+      // `303` —lo dice `isRedirect`, en esa misma implementación— y lo
+      // repite como
+      // `GET`. O sea que este es EL código con el que un `POST` autenticado
+      // se va a otro destino, y con `302` esta prueba no probaría nada.
+      final forja = await forjaQueRedirige(codigoDelPost: HttpStatus.seeOther);
+      final salida = construirSalida(
+        forja.servidor.port,
+        baseDeLaApi: Uri.parse('http://localhost:${forja.servidor.port}'),
+        clienteHttp: forja.cliente,
+      );
+
+      final r = await salida.open(solicitudConRevision(revisionDePrueba));
+
+      expect(
+        forja.pedidos.map((p) => p.metodo),
+        contains('POST'),
+        reason: 'sin el POST esta prueba no mide lo que dice medir',
+      );
+      exigirQueNadieMasVioElSecreto(forja.pedidos, forja.servidor.port);
+      expect(
+        r,
+        isA<PullRequestUnknown>(),
+        reason:
+            'un `303` puede ser «lo creé, mirá allá»: decir `failed` haría '
+            'que el reintento abriera un segundo pull request',
+      );
+      expect(r.retryable, isTrue);
+    });
+  });
+
+  group('la escritura del OID no parte la búsqueda idempotente', () {
+    // Reproducido por el autor: solicitud con el OID en MAYÚSCULAS, pull
+    // request existente con el mismo OID en minúsculas y el marcador
+    // correcto. La comparación era literal —`cabeza['sha'] != request.revision`—
+    // así que el existente se ignoraba y se intentaba un POST: un segundo
+    // pull request, que es lo único que la búsqueda idempotente existe para
+    // impedir. `esOidCompleto` acepta mayúsculas a propósito —git resuelve el
+    // mismo objeto—, así que el arreglo no es rechazarlas: es que no circulen
+    // dos escrituras del mismo objeto.
+
+    test('el OID de la solicitud en mayúsculas encuentra el PR que lo tiene '
+        'en minúsculas', () async {
+      prsExistentes.add({
+        'html_url': 'https://forja/pr/el-que-ya-existe',
+        'state': 'open',
+        'merged_at': null,
+        // El marcador se arma con la revisión canónica, que es lo que
+        // escribió la corrida anterior: si la canonicalización desapareciera,
+        // ni el `sha` ni el marcador coincidirían.
+        'body': marcadorEsperado(),
+        'head': {'sha': revisionDePrueba},
+      });
+
+      final r = await construirSalida(
+        api.port,
+      ).open(solicitudConRevision(revisionDePrueba.toUpperCase()));
+
+      expect(r, isA<PullRequestOpen>());
+      expect((r as PullRequestOpen).url, 'https://forja/pr/el-que-ya-existe');
+      expect(
+        creados,
+        0,
+        reason:
+            'se creó un SEGUNDO pull request para la misma revisión escrita '
+            'de otra manera',
+      );
+    });
+
+    test('el `sha` que devuelve la forja en mayúsculas tampoco parte la '
+        'búsqueda', () async {
+      // El otro lado de la misma moneda: el `sha` es un dato AJENO. La forja
+      // de hoy lo manda en minúsculas, pero eso es su costumbre y no un
+      // contrato que este cliente pueda exigir; si mandara mayúsculas, la
+      // comparación literal volvería a crear un segundo pull request.
+      prsExistentes.add({
+        'html_url': 'https://forja/pr/el-que-ya-existe',
+        'state': 'open',
+        'merged_at': null,
+        'body': marcadorEsperado(),
+        'head': {'sha': revisionDePrueba.toUpperCase()},
+      });
+
+      final r = await construirSalida(api.port).open(solicitud());
+
+      expect(r, isA<PullRequestOpen>());
+      expect((r as PullRequestOpen).url, 'https://forja/pr/el-que-ya-existe');
+      expect(creados, 0);
+    });
+  });
 
   test('un PR fusionado devuelve URL; uno cerrado da incompleto no '
       'reintentable', () async {

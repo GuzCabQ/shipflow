@@ -101,6 +101,12 @@ enum CausaDePublicacion {
 /// minúscula —es lo que git imprime—, así que esta tolerancia no relaja
 /// ninguna ruta de este repositorio: solo evita mentir sobre una entrada
 /// legítima.
+///
+/// **Y tolerar dos escrituras no es dejarlas circular:** quien acepta un OID
+/// en mayúsculas lo canonicaliza a minúsculas en la frontera —ver
+/// [PullRequestRequest.revision]—, porque río abajo hay comparaciones
+/// literales contra lo que devuelve la forja, y dos formas del mismo objeto
+/// ahí adentro se leen como dos objetos distintos.
 final RegExp _patronDeOidCompleto = RegExp(
   r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$',
 );
@@ -507,7 +513,28 @@ class PullRequestRequest {
 
   final PullRequestDraft draft;
 
-  /// El commit al que la rama va a apuntar.
+  /// El commit al que la rama va a apuntar. **En minúsculas siempre**, sea
+  /// cual sea la forma en que se lo haya pasado al constructor.
+  ///
+  /// **Canonicalizar es el arreglo, y la frontera del dominio es dónde.**
+  /// [esOidCompleto] acepta mayúsculas a propósito —git resuelve el mismo
+  /// objeto, así que rechazarlas sería afirmar que un OID válido no lo es—,
+  /// pero aceptar DOS escrituras del mismo objeto y dejarlas circular hace
+  /// que cada comparación literal río abajo sea un defecto latente. Ya hubo
+  /// uno reproducido: el adapter de la forja comparaba
+  /// `cabeza['sha'] != request.revision`, la solicitud traía el OID en
+  /// mayúsculas y el pull request que ya existía lo tenía en minúsculas, así
+  /// que la búsqueda idempotente no lo encontraba y se creaba un SEGUNDO
+  /// pull request — que es lo único que esa búsqueda existe para impedir.
+  ///
+  /// Se hace acá y no en el adapter porque río abajo hay TRES lugares que
+  /// tienen que decir lo mismo —la comparación con lo que devuelve la forja,
+  /// el marcador estable que se escribe en el cuerpo y se busca después, y el
+  /// refspec `<revisión>:refs/heads/<rama>`—, y con la canonicalización en
+  /// uno solo de ellos los otros dos siguen pudiendo discrepar. Minúscula y
+  /// no mayúscula porque es lo que imprime git y lo que devuelve la forja:
+  /// canonicalizar hacia la otra forma obligaría a convertir en cada
+  /// comparación con un valor ajeno.
   final String revision;
 
   /// **El árbol del commit tiene que ser el contenido que vieron los
@@ -518,9 +545,9 @@ class PullRequestRequest {
   /// tendría desde dónde notarlo.
   PullRequestRequest({
     required this.draft,
-    required this.revision,
+    required String revision,
     required String arbolDeLaRevision,
-  }) {
+  }) : revision = revision.toLowerCase() {
     // **Antes que la relación con el árbol**, porque esta condición es sobre
     // la revisión misma y la otra es sobre su vínculo con el contenido: una
     // revisión que no identifica ningún objeto no puede tener un árbol
@@ -533,7 +560,12 @@ class PullRequestRequest {
     // constructor validaba la relación con el árbol y no la revisión, así
     // que `revision: ''` se aceptaba y el borrado quedaba a una sola llamada
     // de distancia.
-    if (!esOidCompleto(revision)) {
+    //
+    // Se pregunta sobre el valor YA canonicalizado —el campo, no el
+    // parámetro— para que lo que se valida y lo que queda guardado sean la
+    // misma cadena; lo que se REPORTA, en cambio, es lo que escribió el
+    // llamador, que es lo que tiene que corregir.
+    if (!esOidCompleto(this.revision)) {
       throw ArgumentError.value(
         revision,
         'revision',

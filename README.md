@@ -2930,6 +2930,39 @@ acepta —no sale de la máquina, y exigirle TLS obligaría a cada suite que
 levanta un `HttpServer` local a montar un certificado propio, con lo que el
 control terminaría probándose contra un montaje que no es el de producción.
 
+### Ningún redirect se lleva la credencial, y el SDK no alcanzaba
+
+Los dos pedidos a la API salían con `followRedirects` en su valor por omisión
+—`true`—, así que un `3xx` lo seguía el cliente por su cuenta, con el
+`Authorization` puesto y hacia el destino que eligiera el `Location`. Una
+revisión anterior dio ese camino por seguro porque la biblioteca de entrada y
+salida no copia el `authorization` cuando el redirect cambia de esquema, host o
+puerto. **Eso es incompleto, y la diferencia es exactamente el agujero:**
+`_HttpClient.shouldCopyHeaderOnRedirect`, en `lib/_http/http_impl.dart` del SDK
+de Dart 3.12.0, copia **todos** los encabezados cuando `_isSubdomain(destino,
+origen)` da verdadero, y esa función acepta cualquier host que **termine en `.`
+más el host del origen**. Reproducido con la API servida en `http://localhost` y un
+redirect hacia `http://sub.localhost`, con el mismo esquema y el mismo puerto.
+El código fue `302` para el `GET` y `303` para el `POST` —el único que el SDK
+sigue para ese método—, y el segundo destino recibió
+`Authorization: Bearer <secreto>` en los dos.
+
+Ahora `followRedirects` se apaga **en la misma función que adjunta la
+credencial y antes de adjuntarla**, que es la única forma de que no exista un
+pedido autenticado y seguidor a la vez; ponerlo en cada sitio de llamada sería
+una disciplina que el próximo pedido puede olvidar. El `3xx` se trata como
+respuesta fallida: en la búsqueda cae en «no es 200», o sea búsqueda
+incompleta, que no autoriza a crear; en la creación tiene rama propia y es
+`PullRequestUnknown`, porque un `303 See Other` es la forma documentada de
+contestar «lo creé, mirá allá» y decir `failed` haría que el reintento abriera
+un segundo pull request. Tampoco se sigue a mano: se podría, validando esquema,
+host y puerto exactos, pero un redirect dentro del mismo origen no agrega nada
+que esta API necesite —sus dos URLs salen de `baseDeLaApi`— y cada camino que
+reintenta con la credencial adjunta es un camino más donde revalidar. La
+comparación de origen que sí existe —la del encabezado `Link` de la
+paginación— es por igualdad de los tres componentes, o sea que un **subdominio
+no es el mismo origen**: es justo donde la regla del SDK se queda corta.
+
 ### El desenlace de publicar es una jerarquía sellada, no dos enums que se puedan combinar mal
 
 `PublicationOutcome` (`packages/core/lib/src/publicacion.dart`) reemplaza lo
@@ -2978,6 +3011,19 @@ repositorios recién creados con git 2.50.1: **40** caracteres hexadecimales con
 se aceptan porque el repositorio puede ser de cualquiera de las dos, y también
 las mayúsculas: medido con `git cat-file -t`, git resuelve el mismo objeto, así
 que rechazarlas sería afirmar que un OID válido no lo es.
+
+**Y aceptar dos escrituras no es dejarlas circular: la revisión se canonicaliza
+a minúsculas en la frontera del dominio.** El defecto está reproducido: con la
+solicitud trayendo el OID en mayúsculas y el pull request que ya existía
+teniéndolo en minúsculas, la búsqueda idempotente —que comparaba literal contra
+el `sha` de la forja— no lo encontraba y salía a crear un SEGUNDO pull request,
+que es lo único que esa búsqueda existe para impedir. `PullRequestRequest`
+guarda la forma canónica, así que las tres cosas que se derivan de la revisión
+—la comparación con lo que devuelve la forja, el marcador estable del cuerpo y
+el refspec del push— usan **una sola** representación. El `sha` que llega en la
+respuesta es un dato ajeno y se lee a esa misma forma antes de comparar: que la
+forja de hoy lo mande en minúsculas es su costumbre, no un contrato que este
+cliente pueda exigir.
 
 ### La búsqueda idempotente mira todas las páginas, y lee el código antes que el cuerpo
 
