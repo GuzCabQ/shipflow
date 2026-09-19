@@ -1046,17 +1046,30 @@ int _emitirDesenlace(
 /// derivar el código, así que lo decide quien llama.
 ///
 /// **No es «no hubo corrida que describir», y decirlo así dejó de ser cierto.**
-/// Ese era el motivo cuando por acá salían solo las cuatro excepciones de una
-/// corrida NUEVA —la invocación que no se pudo interpretar, el preflight, el
-/// directorio de corridas desprotegido, el `.gitignore` ajeno—, que describen
-/// por qué no llegó a haber una. Desde que el reintento está cableado, por acá
-/// salen también sus seis respuestas sin desenlace, y **las seis son sobre una
-/// corrida que SÍ existió**: llevan su identificador, y el documento que las
-/// produjo la describe entera. Lo que no hay en ninguno de los dos casos es un
-/// desenlace —el de la corrida vieja no es de ESTA invocación, y una corrida
-/// que no se reintenta no produce ninguno nuevo—, y eso es lo que este camino
-/// tiene en común: la ausencia del valor del que se derivaría el código, no la
-/// ausencia de la corrida.
+/// Esa frase describía las detenciones de una corrida NUEVA —la invocación que
+/// no se pudo interpretar, el preflight, el directorio de corridas
+/// desprotegido, el `.gitignore` ajeno—, que sí explican por qué no llegó a
+/// haber una. Desde que el reintento está cableado, por acá salen también sus
+/// respuestas sin desenlace, y **ésas son sobre una corrida que SÍ existió**:
+/// llevan su identificador, y el documento que las produjo la describe entera.
+///
+/// Lo que vale para todo lo que sale por acá es más angosto, y no depende de
+/// enumerar nada: **no hay ningún [ShipOutcome] del que derivar el código**.
+/// Tampoco sirve el que el documento de la corrida vieja pueda llevar adentro:
+/// ése es de aquella invocación y ya salió con ella. La ausencia es la del
+/// valor, no la de la corrida.
+///
+/// **Y acá no va ninguna lista de quiénes llaman, a propósito.** La hubo dos
+/// veces y las dos veces el conteo era falso: «las cuatro» dejaba afuera la
+/// lectura de la rama y el remoto, y la ausencia de forja; «las diez», escrita
+/// para corregir a la primera, dejaba afuera esas dos más la lectura de la
+/// revisión adentro del reintento. La segunda envejeció una ronda después de
+/// escribirse. Un argumento que vale para cualquier camino que termine acá no
+/// necesita la lista, y la lista es una cosa más que se desactualiza sin que
+/// nada avise —un conteo de completitud es peor que una afirmación falsa,
+/// porque quien lo lee cree que alguien ya los revisó a todos y no vuelve a
+/// contar—. Quien agregue un llamador tiene que comprobar que el argumento le
+/// vale, no que un número siga cuadrando.
 int _detener(
   Impresora imp, {
   required int codigo,
@@ -1069,18 +1082,29 @@ int _detener(
     ResultEnvelope(
       command: nombreDeShip,
       exitCode: codigo,
-      // **Sin veredicto, y el argumento ya no es «antes de que hubiera
-      // corrida».** Era ése mientras por acá salían solo las cuatro
-      // excepciones de una corrida nueva; con el reintento cableado salen
-      // también sus seis respuestas, y ésas sí son sobre una corrida que
-      // existió. El argumento que vale para las diez es más angosto y más
-      // exacto: ESTA invocación no volvió a mirar ningún cambio. Ni las
-      // cuatro —que se detienen antes de preparar nada— ni las seis del
-      // reintento —que por diseño no vuelven a verificar nada, y la que
-      // publica no pasa por acá— miraron un solo archivo, así que ninguna
-      // tiene con qué afirmar un estado de verificación. Lo que el documento
-      // de la corrida vieja afirme es SUYO y ya salió con ella; repetirlo acá
-      // sería que esta invocación afirme una verificación que no hizo.
+      // **Sin veredicto, y el argumento no es «antes de que hubiera
+      // corrida».** Era ése mientras por acá salían solo detenciones de una
+      // corrida nueva; con el reintento cableado salen también respuestas
+      // sobre una corrida que existió. Lo que vale para todas —sin enumerar
+      // ninguna: ver el doc de esta función y por qué no hay lista— es que
+      // **ninguna corrió la cascada**, que es lo único que produce un estado
+      // de verificación.
+      //
+      // **«No miró nada» sería impreciso, y por eso no se dice así.** Los dos
+      // caminos de reconciliación SÍ leen el repositorio: el padre, el árbol y
+      // el mensaje de la revisión, el `HEAD`, y la comparación del índice
+      // contra el árbol del candidato. Lo que ninguno hace es volver a mirar
+      // el CONTENIDO del cambio: esas lecturas dicen en qué estado quedó el
+      // repositorio —qué commit hay en la rama, qué tiene anotado el índice—,
+      // no si lo que el cambio contiene pasa los controles. Y ni siquiera
+      // tocan el árbol de trabajo: la comparación del índice va en modo
+      // `--cached`, o sea índice contra árbol, dos objetos que la herramienta
+      // ya tiene resueltos. El único paso que vuelve a mirar el contenido es
+      // la cascada, y la corrida que la corre no termina acá.
+      //
+      // Lo que el documento de la corrida vieja afirme es SUYO y ya salió con
+      // ella; repetirlo acá sería que esta invocación afirme una verificación
+      // que no hizo.
       //
       // **La ayuda, más arriba en este archivo, mira todavía menos y sale con
       // 'ok'.** No es una regresión —sigue al `--help` que ya existía en la
