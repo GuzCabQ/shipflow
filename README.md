@@ -32,15 +32,18 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **La superficie de verificación se está implementando en esta rama.** Ver [La superficie de verificación](#la-superficie-de-verificación). El plan, tarea por tarea, está en [PLAN-superficie-de-verificacion.md](PLAN-superficie-de-verificacion.md), y el diseño que implementa vive en el otro repositorio.
 
-**La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien va a llamar a `PullRequestSink.open` de verdad, es la rebanada siguiente.
+**La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien llama a `PullRequestSink.open` de verdad, es la rebanada siguiente, y ya está construida.
 
-**El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y ninguno de los dos tiene productor todavía.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una sola fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación— y ninguna de las dos corre todavía: nadie llama a `ShipOutcome.derivar`.
+**El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y cuando se implementaron ninguno de los dos tenía productor.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una sola fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación—. **La 4b ya corre**, y con ella `ShipOutcome.derivar` ganó su productor; la 4c todavía no está construida.
 
-**El comando `ship` se está implementando en esta rama.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existen —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización y la compuerta. El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md).
+**El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
-commitear exactamente esos, con un compare-and-swap que falla cerrado. Pero
-**no existe `ship`**, ni el agente, ni los tickets, ni los ganchos.
+commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
+**`ship` ya lo consume**: la raíz de composición de `ship`
+(`packages/cli/lib/src/ship/composicion.dart`) arma el `RepositorioGit` real y
+la corrida lo usa. Lo que sigue sin existir es el agente, los tickets, los
+ganchos y `--retry-publication`.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
 control.
@@ -389,9 +392,12 @@ declaradas **se usaran**, y un review encontró tres en `cli` —`vcs`, `rules` 
 `agents`— con cero imports. Ninguna otra regla podía verlas: estaban permitidas,
 así que para `deps-hacia-core` no había nada mal.
 
-Una dependencia declarada y no importada afirma un uso que no existe. Leer
-`cli/pubspec.yaml` y encontrar `vcs` sugiere que el CLI hace cosas de
-repositorio, y no las hace — `ship` no existe todavía.
+Una dependencia declarada y no importada afirma un uso que no existe. Leer el
+manifiesto de `cli` y encontrar `vcs` sugería que el CLI hacía cosas de
+repositorio, y no las hacía — `ship` no existía todavía. **Hoy sí las hace**:
+`ship` importa `vcs` desde tres archivos de `cli/lib`, así que esa flecha ya
+no es una declaración sin uso. El ejemplo se deja porque el defecto que ilustra
+—declarar lo que no se usa— es lo que la regla caza, no porque siga vivo acá.
 
 **Escribir el check encontró dos más.** `rules` y `agents` declaraban `core` y no
 importan nada: son stubs de dos líneas que dicen «sin API todavía». Salieron con
@@ -587,6 +593,19 @@ hacía falta que también dijera con qué se fue el que ya no está. Hoy no hay
 etapa que lo consuma —no existe `ship`— así que no hay nada que probar
 contra un fake, y una suite de contrato con una sola implementación no
 contrasta nada: corre la misma lógica dos veces. El fake llega con `ship`.
+
+**Esa última frase ya no describe el árbol, y se corrige en vez de borrarse.**
+`ship` existe y usa las operaciones de este puerto: `correrShip`
+(`packages/cli/lib/src/ship/ship.dart`) prepara el candidato en su paso 2, lo
+materializa, lo commitea y lo limpia, y la raíz de composición arma el
+`RepositorioGit` real (`packages/cli/lib/src/ship/composicion.dart`). **Con una
+salvedad que hay que decir para no afirmar de más**: `correrShip` recibe el
+`RepositorioGit` concreto y no el puerto, a propósito y declarado en su propio
+doc —lo que sus pruebas fijan es que el commit NO ocurre en ciertos caminos, y
+eso contra un doble no prueba nada—, así que el consumidor existe pero todavía
+no está tipado contra `ChangeSink`. Lo que sigue faltando para la suite de
+contrato es, igual que antes, la segunda implementación; lo que cambió es que
+ya no se puede decir que nadie consuma estas operaciones.
 
 **El fake no reimplementa los patrones del real, a propósito.** Si los copiara,
 un error en ellos estaría en las dos implementaciones y la suite lo confirmaría
@@ -800,8 +819,11 @@ cada uno antes de creerle a la herramienta.
 Un sujeto omitido **no** vuelve rojo el paso: sale de «cubierto», que es donde
 importa, y queda en `omitted` con su motivo. Si una omisión debe detener algo
 es política de `orchestration` —*«orden, corte temprano y presupuesto son
-política de `orchestration`, no del plugin»*, `docs/03` §6—, y ese paquete
-todavía no existe.
+política de `orchestration`, no del plugin»*, `docs/03` §6—, y esa política
+todavía no existe. **Esta frase decía «ese paquete todavía no existe» y quedó
+vencida**: `packages/orchestration` existe —la cascada, la superficie y el
+remapeo viven ahí—; lo que no existe es el corte temprano ni el presupuesto de
+corrida, que es lo que decidiría detener por una omisión.
 
 Y había más, todos medidos:
 
@@ -1475,10 +1497,15 @@ pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
 
 ### Lo que esta rebanada NO hace
 
-- **No existe `ship`.** El candidato es un puerto; no hay comando que lo use,
-  ni preview, ni confirmación, ni compuerta por estado, ni PR. En particular,
-  **nadie persiste la revisión entre `createRevision` y `applyRevision`**: el
-  puerto deja el lugar, y el coordinador que lo va a ocupar todavía no existe.
+- **No existía `ship` cuando esta rebanada se escribió, y ya existe.** Se deja
+  la entrada con su corrección, no borrada: el candidato era un puerto sin
+  comando que lo usara, sin preview, sin confirmación, sin compuerta por estado
+  y sin PR, y **nadie persistía la revisión entre `createRevision` y
+  `applyRevision`**. Las seis cosas las construyó la rebanada de `ship` —ver
+  [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta)—; el
+  coordinador que quedaba vacante es `correrShip`
+  (`packages/cli/lib/src/ship/ship.dart`), y la revisión se persiste en el
+  documento de la corrida, entre crear el objeto y mover la referencia.
 - **Los assets de ejecución no se preparan.** El candidato materializa el árbol
   y nada más: sin `pubspec.lock` resuelto ni `.dart_tool`, correr la cascada
   ahí adentro todavía no está construido.
@@ -1487,8 +1514,10 @@ pruebas — es que el árbol ya está fijado y volver a stagear no cambia lo que
   `sub/../a` no escapa y también se declara: resolverlo exigiría reimplementar
   la resolución de enlaces del sistema. El motivo registrado lo dice así, y no
   afirma que el destino escape.
-- **`ChangeSink` sigue con una sola implementación y ningún fake**, por el
-  mismo motivo que ya estaba declarado: no hay etapa que lo consuma.
+- **`ChangeSink` sigue con una sola implementación y ningún fake.** El motivo
+  declarado acá —que no hay etapa que lo consuma— **dejó de ser cierto con
+  `ship`**, que sí lo consume; lo que sigue faltando es la segunda
+  implementación, y eso está corregido arriba, donde el puerto se declara.
 
 ---
 
@@ -1777,9 +1806,13 @@ monorepo sigue siendo una pregunta abierta, y esto la acota en vez de contestarl
   composición —preparar, derivar, comprobar, cascada, comprobar— vive en una
   prueba de `cli`, que es el único paquete que ve `vcs` y el plugin a la vez. Va
   declarado en `arquitectura.json` y en la tabla de puertos de más arriba.
-- **No hay implementación falsa del puerto**, y por el mismo motivo que
-  `ChangeSink` no la tiene: sin etapa que lo consuma, una suite de contrato con
-  una sola implementación corre la misma lógica dos veces.
+- **No hay implementación falsa del puerto.** El motivo que esta entrada daba
+  —igual que el de `ChangeSink`: sin etapa que lo consuma, una suite de
+  contrato con una sola implementación corre la misma lógica dos veces—
+  **caducó con `ship`**: `correrShip` recibe este puerto —el puerto, no una
+  clase concreta— y lo usa para derivar el entorno sobre la raíz del candidato
+  antes de correr la cascada, y la raíz de composición le pasa el `EntornoDart`
+  real. El hueco que queda es la segunda implementación, no el consumidor.
 - **Windows queda rechazado, no pendiente.** Ahí `Process.start` no usa el `PATH`
   del mapa de entorno para resolver el ejecutable, así que un entorno saneado no
   gobierna qué binario corre; y el cache de paquetes no se deriva de `HOME`. No se
@@ -1970,27 +2003,35 @@ primero. Lo que un camino decide es qué se vacía, no qué se nombra.
 
 ### Lo que esta rebanada NO hace
 
-- **No hay `ship`.** Nada arma la solicitud que un humano aprueba; esta
-  rebanada produce el material que esa composición futura necesitaría.
-- **No hay forja.** El artefacto no se publica en ningún lado — se deriva y
-  queda en memoria de quien lo pidió.
-- **No hay composición.** `ArtefactoDeRevision` es un tipo con su fábrica
-  validante y nada más: nadie lo arma todavía a partir de una corrida real de
-  `shipflow verify`. Es un tipo sin productor, y eso va declarado en vez de
-  quedar como un hueco sin nombrar.
-- **`derivarSuperficie` no tiene llamador.** Sale con su derivación completa y
-  probada motivo por motivo, y **cero invocaciones fuera de sus pruebas**:
-  ningún comando la corre, así que ninguna corrida de `shipflow verify` produce
-  hoy una superficie. Lo que arriba se describe en presente —«toma el desenlace
-  del entorno, las alteraciones y el resultado de la cascada»— es lo que la
-  función hace cuando se la llama, no algo que esté pasando en una corrida. El
-  llamador llega con la etapa que la use, y es la misma que necesita el
-  artefacto.
-- **`Verifier.afirmacion` no lo lee ningún camino productivo.** El miembro está
-  en el puerto y los dos pasos reales lo declaran, pero el único que lo lee es
+**Las cuatro entradas que siguen describían el árbol de entonces y ya no; se
+corrigen en lugar de borrarse, que es lo que deja ver qué rebanada cerró cada
+una.** Las cuatro las cerró `ship` —ver
+[El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta).
+
+- **No había `ship`.** Nada armaba la solicitud que un humano aprueba; esta
+  rebanada producía el material que esa composición necesitaría. **Hoy la arma
+  `correrShip`**, y el humano la aprueba en el paso 7.
+- **No había forja.** El artefacto no se publicaba en ningún lado — se derivaba
+  y quedaba en memoria de quien lo pidió. **Hoy viaja en el borrador que el
+  paso 15 publica.**
+- **No había composición.** `ArtefactoDeRevision` era un tipo con su fábrica
+  validante y nada más: nadie lo armaba a partir de una corrida real. **Hoy lo
+  arma el paso 6 de `correrShip`**, con la superficie de esa misma corrida.
+- **`derivarSuperficie` no tenía llamador.** Salía con su derivación completa y
+  probada motivo por motivo, y **cero invocaciones fuera de sus pruebas**.
+  **Hoy la llama el paso 6 de `correrShip`**, con las alteraciones reales del
+  candidato; `shipflow verify` sigue sin producir superficie. Lo que arriba se
+  describía en presente —«toma el desenlace del entorno, las alteraciones y el
+  resultado de la cascada»— y era lo que la función hacía cuando se la llamaba,
+  no algo que estuviera pasando en una corrida: hoy pasa en cada corrida de
+  `ship`.
+- **`Verifier.afirmacion` no lo leía ningún camino productivo.** El miembro
+  está en el puerto y los dos pasos reales lo declaran; el único que lo lee es
   `AfirmacionCubierta.desde`, y a ese solo lo llama `derivarSuperficie`. Un
-  puerto que crece un miembro que nadie consume se lee como capacidad; queda
-  escrito que todavía no lo es.
+  puerto que crece un miembro que nadie consume se lee como capacidad, y
+  quedaba escrito que todavía no lo era. **Ya lo es**: `derivarSuperficie`
+  tiene camino productivo desde el paso 6 de `correrShip`, así que la
+  afirmación de cada control se lee en cada corrida de `ship`.
 
 ## El falso rojo simétrico
 
@@ -2368,7 +2409,11 @@ valor solo se puede cambiar desde Dart.
 ### `PullRequestSlice.id` no tiene lectores
 
 Viaja en el dominio, se serializa, y ningún consumidor lo usa. **Se queda sin
-uso a propósito.** Es la llave natural para saber si una rebanada ya se aplicó,
+uso a propósito.** La rebanada de `ship` le dio un productor —`correrShip` lo
+asigna como `<runId>/1`, y no como el `runId` a secas, porque hoy hay una
+rebanada por corrida y el modelo final admite varias: igualar las dos
+identidades fusiona dos cosas que van a divergir— pero **sigue sin lectores**,
+y el motivo es el de abajo. Es la llave natural para saber si una rebanada ya se aplicó,
 pero usarla exige marcar el commit con su identidad —metadata nuestra en el
 historial del usuario, para siempre— y eso es una decisión de diseño que
 pertenece a la política de reanudación, que el corpus declara faltante
@@ -2715,8 +2760,10 @@ atestiguar— y el **fixture** sobre el que corren.
 
 La distancia que queda está en la palabra: hay pasos, no hay **cascada**. Nadie
 los ordena por costo, nadie corta temprano, nadie administra el presupuesto —
-eso es política de `orchestration`, que no existe. Y sin `vcs` ni ensamblado de
-PR no hay `ship`. Lo que sí se puede afirmar es lo de siempre: **ningún paso da
+eso es política de `orchestration`. **Las dos frases que seguían acá quedaron
+vencidas**: decían que `orchestration` no existía y que sin `vcs` ni ensamblado
+de PR no había `ship`; las tres cosas existen. Lo que sigue sin existir es el
+orden por costo, el corte temprano y el presupuesto de corrida. Lo que sí se puede afirmar es lo de siempre: **ningún paso da
 verde sobre algo que no miró.**
 
 Declarado en [`fixtures/app-minima/README.md`](fixtures/app-minima/README.md),
@@ -2817,10 +2864,11 @@ cada paquete, los tests y los `bin/`. Corregido el criterio, los huérfanos son
 
 ## La forja y el aislamiento de la credencial
 
-Le da a `ship` —que todavía no existe— dos cosas que necesita antes de poder
-publicar algo: un desenlace tipado para lo que le pasa a un pull request, y la
-garantía de que el token que lo abre no se filtra por ningún subproceso que
-este repositorio lance en el camino.
+Le da a `ship` —que cuando esta rebanada se escribió todavía no existía, y hoy
+sí— dos cosas que necesita antes de poder publicar algo: un desenlace tipado
+para lo que le pasa a un pull request, y la garantía de que el token que lo
+abre no se filtra por ningún subproceso que este repositorio lance en el
+camino.
 
 ### El token sale del entorno en un solo sitio, y por tipo
 
@@ -2947,8 +2995,9 @@ intento.
 
 **Y los dos canales que llevan la credencial exigen `https`, validado.** El
 `userinfo` del `git push` y el `Authorization: Bearer` del cliente de la API
-salen los dos de una URL que produce la raíz de composición —que no existe
-todavía—, y con `http://` el token viaja en claro por los dos.
+salen los dos de una URL que produce la raíz de composición —que cuando esta
+rebanada se escribió no existía, y hoy la produce la fábrica neutra de `forge`
+a partir del remoto—, y con `http://` el token viaja en claro por los dos.
 `esCanalSeguroParaLaCredencial` (`packages/forge/lib/src/empuje.dart`) lo
 rechaza **antes** de adjuntar nada, con un desenlace cerrado —`PushFailed` con
 causa `configuracionInsegura`, que no es reintentable y no nombra la URL
@@ -3017,7 +3066,10 @@ crear, en vez de abrir otro. **Mientras el reintento traiga el mismo `runId`:**
 el marcador lo lleva adentro, así que un reintento con un `runId` nuevo no
 encuentra el PR de la corrida anterior y abre uno segundo. Quien componga el
 reintento tiene que reusar el `runId` de la corrida que quedó en `unknown` —es
-de la rebanada de `ship`— y esa atadura hoy no la sostiene ningún control.
+de `--retry-publication`, o sea 4c, y no de la rebanada que construyó el
+comando— y esa atadura sigue sin sostenerla ningún control. Lo que 4b dejó para
+que sea posible es el documento persistido, que guarda el `runId` junto con la
+revisión.
 
 ### Una revisión que no es un OID no llega a ser un refspec
 
@@ -3249,7 +3301,12 @@ no trabajo pendiente con fecha:
   vieron los controles, pero no puede abrir el commit para comprobarlo por su
   cuenta. Quien componga `revision` y `arbolDeLaRevision` a partir de un
   repositorio real tiene que hacer que las dos nazcan de la misma operación
-  de git, y eso es trabajo de la rebanada de `ship`, no de esta.
+  de git, y eso era trabajo de la rebanada de `ship`, no de esta. **Ya está
+  hecho**: el paso 15 de `correrShip` pasa la revisión que devolvió
+  `createRevision` y el árbol de la identidad de **ese mismo candidato**, así
+  que las dos salen del objeto preparado único de la corrida. Sigue siendo una
+  invariante entre dos parámetros y no una verdad sobre git: ningún control
+  comprueba que el llamador no las componga de dos lugares distintos.
 - **La fase de conexión del `POST` no tiene prueba automatizada**, aislada de
   la del `GET`. Las dos URLs de `SalidaDePrDeGitHub` salen del mismo
   `baseDeLaApi`, y no se puede apuntar solo una a un host muerto sin cambiar
@@ -3411,19 +3468,27 @@ no trabajo pendiente con fecha:
 
 ### Lo que esta rebanada NO hace
 
-Queda para la rebanada de `ship`, y está declarado para que nadie lo lea como
-olvido:
+Quedaba para la rebanada de `ship`, y estaba declarado para que nadie lo
+leyera como olvido. **Cuatro de las cinco entradas ya no describen el árbol y
+se corrigen acá en vez de borrarse**, que es lo que permite ver qué rebanada
+cerró cada cosa:
 
-- **Nadie llama a `PullRequestSink.open` todavía.** La composición vive en las
-  pruebas de contrato; `ship` es quien la va a hacer productiva.
-- **`--retry-publication` no existe.** El desenlace ya sabe decir
-  `retryable`; el comando que lo consume es de la rebanada siguiente.
+- **Nadie llamaba a `PullRequestSink.open` todavía.** La composición vivía en
+  las pruebas de contrato. **Hoy la hace productiva `correrShip`** en su paso
+  15, con la salida que arma `salidaDePrDelRemoto`
+  (`packages/forge/lib/src/composicion.dart`).
+- **`--retry-publication` no existe**, y esta entrada sigue vigente. El
+  desenlace ya sabe decir `retryable`; el comando que lo consume es 4c.
 - **`ShipOutcome`, `EstadoPublicable` y `CausaDeNoIntento` no se construyen
-  acá.** Son §12 y §13 de la propuesta.
+  acá.** Son §12 y §13 de la propuesta; los construyó la rebanada del
+  desenlace, y la de `ship` es la primera que los produce de verdad.
 - **El código de salida `6` no se emite.** `packages/cli/lib/src/salida.dart`
-  no se toca en esta rebanada.
-- **La raíz de composición todavía no arma un `EntornoDelProceso` real y lo
-  pasa hacia abajo.** Las tres costuras no comparten un único mecanismo acá,
+  no se tocaba en esta rebanada. **Hoy se emite**: `Codigo.deShip` lo deriva
+  de `PublicacionIncompleta` y el comando lo devuelve.
+- **La raíz de composición todavía no armaba un `EntornoDelProceso` real y lo
+  pasaba hacia abajo** — la rebanada de `ship` cerró esto, y el detalle de
+  abajo se deja porque lo que describe de cada costura sigue siendo cierto.
+  Las tres costuras no comparten un único mecanismo acá,
   y hace falta decirlo por separado: `RepositorioGit._padre` y
   `EjecutorDelSistema._padre` (`packages/plugin_dart/lib/src/ejecutor.dart`)
   tienen, cada uno, el respaldo `_entornoDelPadre ?? EntornoDelProceso(Platform.environment)`
@@ -3431,9 +3496,14 @@ olvido:
   cada uno: `EjecutorDelSistema` sí tiene un llamador real que no inyecta,
   `cascadaPorDefecto` (`packages/cli/lib/src/verify.dart`), que construye
   `EjecutorDelSistema()` así y es el mismo `shipflow verify` que este README
-  muestra al principio; `RepositorioGit` todavía no tiene ninguno en
-  producción —hoy solo se construye desde pruebas—, porque quien lo compondría
-  ahí es `ship`, que no existe. `EmpujeAislado.entornoDelPadre`, en
+  muestra al principio; `RepositorioGit` todavía no tenía ninguno en
+  producción —solo se construía desde pruebas—, porque quien lo compondría
+  ahí es `ship`, que no existía. **Eso ya no es cierto**: la raíz de
+  composición de `ship` (`packages/cli/lib/src/ship/composicion.dart`) captura
+  el entorno del proceso una sola vez y se lo inyecta al `RepositorioGit`, a la
+  salida de pull requests y a la lectura de cambios ajenos, que es exactamente
+  lo que el último párrafo de esta entrada anticipaba.
+  `EmpujeAislado.entornoDelPadre`, en
   `forge`, no tiene respaldo ninguno —es `required` y no nulable—, porque no
   tiene ningún llamador que no inyecte: ahí olvidarlo no es un valor por
   defecto silencioso, es un error de compilación. Lo que las tres comparten,
@@ -3441,18 +3511,20 @@ olvido:
   respaldo —que dos tienen y una no— sino el **tipo**: ninguna de las tres
   acepta un `Map<String, String>` crudo, así que ningún llamador, inyecte o
   no, puede colarles el entorno del padre sin pasar por `paraHijos`. Quien
-  componga `ship` va a capturar el entorno real una vez, en la raíz, e
-  inyectarlo en las tres, en vez de dejar que alguna caiga en su respaldo.
+  compusiera `ship` iba a capturar el entorno real una vez, en la raíz, e
+  inyectarlo en las tres, en vez de dejar que alguna caiga en su respaldo — y
+  eso es lo que hizo.
 
 ## El desenlace de una corrida, y su documento
 
-Le da al `ship` de la rebanada siguiente el tipo que cierra qué le pasó a una
+Le da al `ship` de la rebanada siguiente —que ya está construida— el tipo que
+cierra qué le pasó a una
 corrida **completa** —no a un paso, no a una publicación: a la corrida
 entera— y el documento que la persiste para poder recuperarla si el proceso
 muere a la mitad. **Es la primera de tres**: 4b es el comando de punta a
-punta y 4c es `--retry-publication` con la reconciliación. Nada de acá
-compone una corrida; se prueba el tipo, la derivación, la serialización y la
-persistencia.
+punta —ya construido— y 4c es `--retry-publication` con la reconciliación, que
+no. Nada de acá compone una corrida; se prueba el tipo, la derivación, la
+serialización y la persistencia.
 
 ### `ShipOutcome` deriva de los hechos, no se ensambla a mano
 
@@ -3683,8 +3755,13 @@ medias sin detalle no dice qué hay que reparar.
 
 ### Residuos declarados
 
-- **Nada de esto tiene productor todavía.** `ShipOutcome.derivar` no lo llama
-  nadie —el comando llega en 4b—, y tampoco lo llama nada `Codigo.deShip`,
+- **Nada de esto tenía productor cuando la rebanada cerró, y hoy lo tiene:
+  el comando de 4b.** `correrShip` deriva el `ShipOutcome` de los hechos de la
+  corrida y `_emitirDesenlace` (`packages/cli/lib/src/ship/composicion.dart`)
+  saca de él el código, el veredicto, la acción y el payload. Lo que sigue
+  abajo es lo que esta rebanada midió, y se deja escrito porque lo que midió
+  —cuál suite ejercita a cada uno— sigue siendo cierto. `ShipOutcome.derivar`
+  no lo llamaba nadie, y tampoco lo llamaba nada `Codigo.deShip`,
   `accionDe`, `RegistroDeCorridas` ni `decidirRecuperacion`. A cada uno lo
   ejercita una suite, y acá está cuál: `Codigo.deShip` y `accionDe` en el
   grupo homónimo de `packages/cli/test/salida_test.dart`, `RegistroDeCorridas`
@@ -3697,10 +3774,15 @@ medias sin detalle no dice qué hay que reparar.
   siquiera una prueba, y reemplazar su cuerpo entero por `=> null` dejaba la
   suite completa en verde. Nombrar el archivo en vez de decir «su propia
   suite» es lo que vuelve comprobable la afirmación.
-- **`IndiceDesincronizado` tampoco tiene productor real todavía.** El único
-  lugar que hoy la lanza es `RepositorioGit.apply`, y el único llamador de
-  `apply` en el árbol es su propia suite de pruebas: no existe `ship`, que es
-  quien compondría un `RepositorioGit` real en producción.
+- **`IndiceDesincronizado` sigue sin productor real, y el motivo que esta
+  entrada daba dejó de ser el correcto.** Decía que no existía `ship`, que es
+  quien compondría un `RepositorioGit` real en producción. `ship` existe y lo
+  compone (`packages/cli/lib/src/ship/composicion.dart`), pero **no llama a
+  `apply`**: el paso 13 de `correrShip` va por `PreparedCandidate.applyRevision`,
+  que tiene su propio camino y lanza una excepción privada del candidato, no
+  esta. Medido: `apply` no tiene ningún llamador fuera de `test/` en el árbol.
+  Lo que sí tiene productor es `LocalInconsistente`, que es el desenlace
+  análogo del candidato.
 - **`rename` es atómico dentro del mismo sistema de archivos.** Si
   `.shipflow/` viviera en otro, la garantía de «entero o nada» no vale. Hoy
   no puede pasar sin tocar la clase, porque el temporal y el destino salen
@@ -3716,7 +3798,11 @@ medias sin detalle no dice qué hay que reparar.
   hacia un estado terminal: nada exige que `publicationComplete`,
   `publicationIncomplete`, `notApplied` o `localInconsistent` tengan un
   `ShipOutcome` que los respalde. Corresponde a quien escriba el documento en
-  cada paso de la corrida, que es 4b. **Lo que SÍ quedó cerrado es el otro
+  cada paso de la corrida, que es 4b. **Sigue sin imponerse después de 4b**:
+  `correrShip` escribe `desenlace` en la transición final, pero el tipo sigue
+  aceptando `desenlace: null` hacia un estado terminal, así que lo que hay es
+  una disciplina del único llamador y no un invariante. **Lo que SÍ quedó
+  cerrado es el otro
   lado, que era el peor**: un desenlace presente que afirme un estado distinto
   del que el documento declara ya no se construye —ver «El estado y el
   desenlace son el mismo hecho»—, así que el residuo que queda es la ausencia
@@ -3730,14 +3816,292 @@ medias sin detalle no dice qué hay que reparar.
 
 ### Lo que esta rebanada NO hace
 
-- **No existe `ship`.** Nadie compone `DocumentoDeCorrida`,
-  `RegistroDeCorridas` ni `decidirRecuperacion` en producción: las tres
-  cosas solo corren desde sus propias suites.
-- **`--retry-publication` no existe.** `decidirRecuperacion` y la transición
-  `publicationIncomplete → publicationComplete` están escritas para ese
-  comando, que es 4c.
+- **No existía `ship`, y la rebanada siguiente lo construyó.** Nadie componía
+  `DocumentoDeCorrida` ni `RegistroDeCorridas` en producción: las dos cosas
+  solo corrían desde sus propias suites. Hoy `correrShip` escribe el documento
+  en sus pasos 12, 14 y 16, y la raíz de composición arma el
+  `RegistroDeCorridas` sobre `.shipflow/` del repositorio de quien corre.
+  **`decidirRecuperacion` sigue sin productor**: es de 4c.
+- **`--retry-publication` no existe**, y sigue sin existir. `decidirRecuperacion`
+  y la transición `publicationIncomplete → publicationComplete` están escritas
+  para ese comando, que es 4c. Lo que 4b agregó es el documento persistido del
+  que 4c va a leer.
 - **La reconciliación de una publicación a medias no existe.** Es el otro
   contenido de 4c.
+
+## El comando `ship`, de punta a punta
+
+Todo lo anterior construyó piezas: el candidato que fija qué bytes se
+verifican, la cascada sobre una raíz arbitraria, el entorno derivado, la
+superficie de verificación, el artefacto de revisión, la forja con su empuje
+aislado, y el desenlace sellado con el documento que lo persiste. Ninguna
+tenía quien la llamara. **Esta rebanada las compone y agrega lo que ninguna
+tenía**: la entrada, el preflight, el remapeo de rutas, la previsualización, la
+compuerta por estado y la raíz de composición que arma los adapters de verdad.
+
+Es **la segunda de tres**. La primera fue el desenlace y su documento; la
+tercera es `--retry-publication` con la reconciliación, y **no está
+construida**.
+
+Los dieciséis pasos, en el orden en que `correrShip`
+(`packages/cli/lib/src/ship/ship.dart`) los llama:
+
+```
+ 1  preflight · entrada, credencial, rama, base
+ 2  preparar el CANDIDATO en almacén de objetos AISLADO
+ 3  materializar por plumbing
+ 4  correr la cascada SOBRE EL CANDIDATO · remapear rutas
+ 5  escanear secretos sobre el diff de ESE par de revisiones
+ 6  derivar superficie · componer artefacto en memoria
+ 7  PREVIEW
+ 8  compuerta por estado
+ 9  crear el .gitignore de las corridas · comprobar que runs/ está ignorado
+10  PROMOVER los objetos preparados, sin refiltrar
+11  crear la revisión                        ← NO mueve la rama
+12  persistir `prepared` CON la revisión
+13  compare-and-swap condicionado a la base
+14  persistir `committed` + proyecciones
+15  open(request) idempotente
+16  persistir el ShipOutcome final
+ ·  LIMPIEZA del candidato — en TODO camino
+```
+
+**Las tres decisiones que cortan están todas antes de la primera escritura**:
+el secreto (5), la confirmación (7) y la compuerta (8). Y la compuerta se
+evalúa **antes** de construir la previsualización: con un secreto encontrado o
+la compuerta cerrada no se arma ningún texto, porque no hay nada que autorizar.
+
+**Lo que no cabe en `ShipOutcome` sale por excepción tipada, y son cuatro.**
+`ShipOutcome` describe una corrida que llegó a existir; una invocación que no
+se pudo interpretar, un preflight rechazado, un directorio de corridas
+desprotegido y un `.gitignore` ajeno son detenciones **antes** de que hubiera
+corrida que describir.
+
+| Excepción | Cuándo | Código |
+|---|---|---|
+| `UsoInvalido` | La entrada no declara intención | `5` |
+| `PreflightRechazado` | El preflight rechazó, con su fallo entero | `4` |
+| `CorridasNoIgnoradas` | El documento iba a quedar donde `git` no lo ignora | `4` |
+| `GitignoreAjeno` | Ya hay un `.gitignore` ajeno en el directorio de corridas | `4` |
+
+Las cuatro las atrapa **el comando**, no la orquestación: decidir el código de
+proceso dos veces es cómo dos sitios terminan contestando distinto sobre la
+misma corrida.
+
+### La tarea que el plan no tenía
+
+El plan tenía once tareas y se ejecutaron doce. **La tarea 10 descubrió que
+`ship` corría de punta a punta hasta el paso 14 y que el 15 —la publicación—
+no tenía con qué**: la configuración del adapter de la forja exige dueño,
+repositorio, base de API y URL del remoto, y ninguno era derivable —no hay
+archivo de configuración, ni bandera, ni clave de entorno, y `vcs` no sabía
+leer el remoto.
+
+Se agregó una **tarea 10b** y la rebanada no cerró sin ella, porque la promesa
+de la rebanada es el comando `ship` y un `ship` que no puede publicar no es el
+comando. Está escrita en `PLAN-ship-el-comando.md`, justo antes de la tarea 11,
+con sus siete pasos: la lectura del remoto en `vcs`, la fábrica neutra y su
+parseo de URL, la composición, los cuatro campos del payload releídos del
+documento persistido, la salida por código de configuración cuando no hay
+repositorio, y el registro de la decisión en el manifiesto.
+
+**Que el plan gane una tarea durante la ejecución se declara en vez de
+disimularse.** Un plan que se cumple al pie de la letra cuando la ejecución
+encontró un hueco no es un plan cumplido: es un hueco tapado.
+
+### La tercera salida de `forja-en-su-adapter`
+
+El residuo declarado de esa regla anticipaba el choque —`SalidaDePrDeGitHub` y
+sus tres símbolos hermanos llevan la marca de la forja **adentro del nombre**,
+así que la raíz de composición no podía armarlos sin escribirla— y dejaba dos
+salidas: renombrar esos símbolos, o darle a la regla una excepción acotada a la
+raíz de composición. Decía que la elección era de esta rebanada.
+
+**Se eligió una tercera: una fábrica de nombre neutro dentro del paquete de la
+forja** (`packages/forge/lib/src/composicion.dart`), que recibe la URL de un
+remoto de `git` y devuelve un `PullRequestSink`, o nulo cuando ese remoto no es
+de un host que el adapter atienda. La `alternativa` de la propia regla ya la
+contenía —«el resto del árbol recibe un puerto, nunca el proveedor»—: lo que
+faltaba no era una excepción, era el constructor.
+
+**Por qué es mejor que las dos anticipadas.** La excepción habría abierto la
+raíz de composición a la marca **para siempre** —y a cualquier otra cosa que
+alguien escribiera ahí después— a cambio de ahorrar una función. Renombrar los
+símbolos habría movido el problema sin resolverlo: quien compone seguiría
+eligiendo al proveedor desde afuera del único paquete que puede saber quién
+atiende qué. Con la fábrica, la marca no cruza el límite ni una vez, la regla
+queda **intacta y sin residuo nuevo**, y el día que haya un segundo proveedor
+la selección ya vive donde tiene que vivir.
+
+**Lo que sigue cierto del párrafo viejo**: los cuatro símbolos siguen llevando
+la marca adentro del nombre —no se renombró ninguno—, y la regla sigue verde
+sobre `cli` **solo porque nada bajo su `lib/` ni su `bin/` los nombra**. Lo que
+cambió es que ahora hay una razón para que nunca los nombre, y no solo la
+suerte de que todavía no hiciera falta. El registro está en
+`arquitectura.json`, en el residuo de esa regla.
+
+### Un remoto que no puede llevar la credencial se rechaza antes de escribir nada
+
+De `git@host:duenio/repo` salen el dueño y el repositorio perfectamente, y de un
+remoto sin cifrar también: la búsqueda idempotente y la creación del pull
+request funcionarían con los dos. **Lo que no funciona es la publicación**, que
+se niega a adjuntar la credencial donde nada la protege. Atender esos remotos
+habría significado correr los catorce pasos previos —commit y documento
+incluidos— para fallar recién en el 15, que es exactamente lo que el preflight
+existe para evitar: *si algo falla, no se preparó nada*.
+
+Así que «saber atender» significa **el camino entero, no el parseo**, y la
+fábrica devuelve nulo. **Quien decide es el mismo predicado que aplica el paso
+de empuje** —`esCanalSeguroParaLaCredencial`—, sobre la misma URL que la
+publicación va a recibir. Con un predicado propio, o con una lista de esquemas
+escrita al lado, las dos definiciones podrían separarse sin que nada se pusiera
+rojo, y el día que se separaran volvería el mismo defecto: una corrida que
+prepara todo para fallar al final.
+
+**Y el mensaje lleva su alternativa, que es la regla dura del proyecto**:
+ninguna prohibición se instala sin decir qué hacer en su lugar. Dice cómo
+reescribir **el remoto propio** en su forma segura, no a dónde apuntarlo: la
+forma segura de ese mismo destino la sabe quien lo configuró, y proponerle una
+armada acá sería inventarle un destino que no eligió. El texto humano además
+distingue **quién** de **por dónde** —«esa forja no se conoce» contra «esa
+forja sí se conoce y el protocolo no sirve»—, porque son consejos distintos y
+un mensaje único manda a sospechar de la forja cuando la forja está soportada.
+La distinción vive en `CausaDeAusenciaDeForja`, del paquete de la forja, para
+que la raíz de composición no tenga que comparar contra un host que la regla le
+prohíbe conocer; y viaja también en el payload de máquina, con ese mismo
+vocabulario, para que quien lo lee no tenga que volver a parsear un mensaje
+pensado para una persona.
+
+**Y la URL no se imprime.** Un remoto puede llevar la credencial embebida en su
+parte de autoridad, y ese mensaje sale por la salida estándar **y** por el
+payload: nombrarla la publicaría. Se dice el hecho, no el valor.
+
+### El payload relee el documento, y distingue dos ausencias
+
+Cuatro campos del payload de máquina —la rama, la base, la revisión y el
+candidato— **no salen del desenlace: se releen del documento persistido de la
+corrida**. Viven en el registro y no en `ShipOutcome`, y releerlos de ahí deja
+una sola procedencia, la misma que va a leer `--retry-publication`. Meterlos en
+el tipo sellado habría obligado a `NoIntentado` a cargar cuatro nulos.
+
+**Que falten cuando la corrida no escribió documento no es una inconsistencia:
+es una ausencia honesta.** Una corrida que no intentó no *tiene* revisión, y un
+campo presente ahí sería el invento.
+
+Pero hay una segunda ausencia que se lee igual y no es lo mismo: **había
+documento y no se pudo leer**. La relectura está fuera del bloque que atrapa
+las detenciones y tolera el fallo a propósito —adentro, un documento corrupto
+**después** de una publicación exitosa subía a la frontera y salía `70`,
+perdiendo el hecho más caro de toda la corrida: que el pull request se abrió, el
+único que volver a correr no reconstruye—. Se atrapa todo y no una lista de
+tipos, que es la excepción a la regla del proyecto y por eso se argumenta: el
+fallo tiene tres familias —no se pudo leer el archivo, no es JSON, no tiene la
+forma esperada— y **la tercera llega como error y no como excepción**, así que
+una lista de tipos dejaría afuera justo el caso que motiva todo esto.
+
+**Y ya no se traga en silencio**: cuando el nulo vino de un lanzamiento y no de
+un documento inexistente, el payload lo dice con `documentUnreadable`. Las dos
+ausencias no pueden coincidir, así que no hace falta un tercer caso.
+
+### Residuos declarados
+
+- **La detección de secretos corre dos veces, y es deliberado.** El paso 5
+  escanea para que la previsualización vea el hallazgo —un secreto es un
+  desenlace de la corrida, `secretDetected`, no una excepción, y la fábrica lo
+  pone por encima de la confirmación, así que se ve aunque nadie haya pasado
+  `--yes`—. Y `createRevision` vuelve a escanear por su cuenta, que **no es la
+  misma garantía repetida**: cierra la ventana entre lo que se inspecciona y lo
+  que se commitea, que ninguna llamada anterior tapa.
+- **El remapeo toca `Diagnostic.file` y no el mensaje.** `Diagnostic.message`
+  es texto citado de la herramienta, sin reescribir (INV-6): si esa cita
+  menciona la ruta temporal del candidato, **la mención se queda**. Una ruta
+  rara en una cita es preferible a una cita adulterada — con la ruta rara,
+  quien revisa todavía puede reconocer qué dijo la herramienta; con el mensaje
+  reescrito, ya no. Y un archivo que no está bajo la raíz del candidato se deja
+  igual: remapearlo a la fuerza inventaría una ruta del usuario que no existe.
+- **La comprobación del `.gitignore` le pregunta a `git`**, no al sistema de
+  archivos. Que el archivo **exista** no dice que **aplique**: una regla de
+  negación más abajo, o un `core.excludesFile` que declare otro, lo dejarían
+  sin efecto, y el fallo sería el documento de la corrida terminando commiteado
+  dentro del pull request. Así que la pregunta es si `git` ignora **esa ruta**,
+  con el mismo lanzador saneado que usa el resto.
+- **Un remoto por un canal que no protege la credencial se rechaza antes de
+  cualquier escritura**, con el mismo predicado que aplica el paso de empuje,
+  para que las dos decisiones no puedan divergir. Ver la sección de arriba.
+- **Los cuatro campos del payload se releen del documento persistido**, y las
+  dos ausencias —no hay documento porque la corrida no escribió, contra había
+  documento y no se pudo leer— se distinguen. Ver la sección de arriba.
+- **La raíz de composición no está medida por ninguna prueba**, salvo por un
+  borde. De los colaboradores que arma `colaboradoresDelSistema`
+  (`packages/cli/lib/src/ship/composicion.dart`), **uno solo lo mide una
+  prueba**: la corrida fuera de un repositorio entra por ahí sin doble ninguno
+  y se cae leyendo la rama con el repositorio que esa función arma. Los demás
+  no: la única otra invocación que llega hasta ahí sale por error de uso antes
+  de que ninguno se use. La prueba del «comando hueco» mide algo real pero
+  **distinto** —que el comando no ignora los colaboradores que recibe—, no que
+  la raíz arme los adapters de verdad. Reemplazar el ambiente, la cascada, el
+  registro o la lectura de cambios ajenos por un doble **no pone roja ninguna
+  prueba hoy**. Cerrarlo pediría un proceso de verdad contra un repositorio
+  real sin que el binario de prueba lo intercepte, que ninguna otra parte de
+  esta suite hace.
+- **La base de la API de la forja es inyectable y hoy es solo una costura de
+  prueba**: quien compone de verdad no la pasa, así que la fábrica cae siempre
+  en el valor por omisión que declara el paquete de la forja —que vive ahí
+  adentro y no en la raíz de composición, porque es el host del proveedor. La abertura existe para poder probar sin
+  red —envolver algo con sus aberturas tapadas deja al envoltorio imposible de
+  probar—, no porque haya una segunda base viva.
+- **El paso 15 no se mide contra el adapter real de punta a punta.** La suite
+  del comando usa un doble del destino de pull requests. Lo que **no** es doble
+  es la decisión de quién atiende el remoto, que la toma la fábrica real.
+  Llegar al paso 15 con el adapter real contra un servidor local es otra tarea.
+- **Un servidor propio del proveedor no se atiende.** El host se compara contra
+  uno solo y entero —no por sufijo, porque `no-github.com` *termina* con el
+  texto del host atendido y no es él, y un control que preguntara `endsWith`
+  atendería el remoto de cualquiera que registrara un dominio así, con la
+  credencial adjunta—. Una instalación en un dominio de empresa vuelve nula
+  aunque hable exactamente la misma API: atenderla pide una superficie donde
+  declarar ese host, que es una decisión de configuración y no de esa función.
+- **No está impuesto que un estado terminal lleve desenlace.** `correrShip`
+  escribe el desenlace en la transición final por disciplina de su único
+  llamador, pero el tipo sigue aceptando `desenlace: null` hacia un estado
+  terminal. Lo que sí está cerrado es el otro lado, que era el peor: un
+  desenlace presente que afirme un estado distinto del que el documento declara
+  ya no se construye.
+- **El emparejamiento de rutas del remapeo es léxico**, y deja tres bordes sin
+  cubrir: una ruta igual a la raíz exacta no se remapea; una igual a la raíz
+  más barra daría un `file` vacío, que `Diagnostic` no valida; y una con `..`
+  que léxicamente arranca con el prefijo pero escapa se remapea a algo que no
+  existe.
+
+### Lo que esta rebanada NO hace
+
+- **`--retry-publication` no existe**, y con él tampoco la reconciliación de
+  una publicación a medias. Es 4c. Lo que esta rebanada deja para que sea
+  posible es el documento persistido: la revisión se anota **antes** de mover
+  la referencia, así que un proceso que muera en el medio no deja una revisión
+  que nadie anotó. `decidirRecuperacion` sigue sin productor.
+- **No hay superficie de configuración.** Las tres fuentes de la base son
+  explícita, configuración y rama por defecto de la forja; **la única viva es
+  `--base`**. No se rellena con `main`: adivinar la base es justo lo que la
+  causa `baseIndeterminada` del preflight existe para nombrar. Y la rama por
+  defecto de la forja pediría un pedido más a su API que hoy nadie hace —tener
+  compuesta la salida de pull requests no es tenerla preguntada.
+- **No hay agente, ni tickets, ni ganchos.** `ship` recibe la rebanada ya
+  declarada —por archivo o por la invocación—; nadie la deriva de un elemento
+  de trabajo.
+- **La cascada sigue sin corte temprano ni presupuesto de corrida.** Corren
+  todos los pasos, igual que en `verify`.
+- **El detector de secretos sigue sin reportar su omisión por corrida.** Lo
+  binario no se revisa, y eso es un límite declarado del método y no una
+  omisión informada en cada ejecución, que es lo que pide el corolario 5 de
+  ADR-011. El artefacto donde reportarla ya existe; lo que falta es que el
+  detector la produzca.
+- **`ChangeSink` y `VerificationEnvironment` siguen sin fake**, aunque ya
+  tengan consumidor. Lo que falta para sus suites de contrato es la segunda
+  implementación, no la etapa.
+- **`RepositorioGit.apply` sigue sin llamador de producción.** `ship` commitea
+  por el camino del candidato —`applyRevision`—, no por ése; medido: `apply` no
+  se llama desde ningún `lib/` ni `bin/` del árbol.
 
 ## Qué prometen estas fases y todavía no cumplen
 
@@ -3749,9 +4113,9 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **18 de los 28 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`ship`.** `verify` existe y corre, y `apply` ya consulta la política de artefactos y corta por secretos; falta el agente, los tickets, el ensamblado del PR y el artefacto de revisión | **Fase 2**, rebanadas siguientes |
+| **`ship`.** El comando existe y corre de punta a punta —preflight, candidato, cascada sobre ese candidato, superficie, artefacto, previsualización, compuerta, commit, documento y publicación—; falta `--retry-publication` con la reconciliación, el agente, los tickets y los ganchos | `--retry-publication`: **4c**. El resto: **fase 2**, rebanadas siguientes |
 | **`ProjectTopology` en `vcs`.** Declarada y no hecha: su única función descrita es «cortar commits por unidad coherente», que no está definida en el corpus, y la descomposición está asignada a `orchestration` y congelada por el plan | Cuando el corpus defina «unidad coherente» |
-| **La omisión del detector de secretos, por corrida.** Hoy es un límite declarado del método —lo binario no se revisa— y no una omisión reportada en cada ejecución, que es lo que pide el corolario 5 de ADR-011 | Con el artefacto de revisión, en `ship` |
+| **La omisión del detector de secretos, por corrida.** Hoy es un límite declarado del método —lo binario no se revisa— y no una omisión reportada en cada ejecución, que es lo que pide el corolario 5 de ADR-011. **El artefacto de revisión ya existe y `ship` ya lo compone**, así que lo que falta no es el lugar donde reportarla sino que el detector la produzca | Rebanadas siguientes |
 | **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |
 | Todo el producto: cascada, ganchos, capa C, intake, sensores | Fases 2 a 7 |
 
