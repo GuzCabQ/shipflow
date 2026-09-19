@@ -292,9 +292,15 @@ void main() {
   // **Más de una ruta, a propósito.** Con una sola, un `toJson` que
   // escribiera la primera y perdiera el resto produciría la misma lista de
   // un elemento a la ida y a la vuelta: el falso verde que ya costó dos
-  // rondas en otras clases de este archivo. Sin orden alfabético al pasarlas
-  // —el constructor las ordena— para que la instancia también ejercite esa
-  // normalización.
+  // rondas en otras clases de este archivo.
+  //
+  // **Sin orden alfabético al pasarlas, pero no para ejercitar nada de acá.**
+  // El constructor ordena antes de esta primera serialización —ver el
+  // párrafo del encabezado—, así que esta instancia no puede demostrar el
+  // invariante de orden: se pasan así solo porque es más parecido a como
+  // llega una lista real, sin garantía de orden de quien la arma. Quien
+  // sostiene ese invariante es la prueba «las rutas quedan ordenadas, sin
+  // importar en qué orden se declararon», en la suite de `publicacion`.
   final draft = PullRequestDraft(
     runId: 'corrida-para-el-documento',
     branch: 'rama-de-la-corrida',
