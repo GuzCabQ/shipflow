@@ -273,10 +273,29 @@ final class Ambigua extends Reconciliacion {
 /// los cuatro que se evaluara primero iba a fallar cerrado igual. Pero
 /// cuando fallan DOS a la vez —un padre ajeno sobre un árbol que además es
 /// otro, digamos— el orden deja de ser cosmético: decide cuál
-/// [CausaDeAmbiguedad] se reporta, y la causa es lo que decide qué acción
-/// recibe quien corre. Reportar «el mensaje no coincide» cuando el árbol
-/// TAMBIÉN difiere manda a mirar el commit equivocado. El orden de abajo va
-/// de lo más estructural a lo más circunstancial:
+/// [CausaDeAmbiguedad] se reporta.
+///
+/// **Entre padre, árbol y mensaje, lo que el orden cambia es cuál hecho se
+/// NOMBRA, no la acción.** Medido: los tres `detalle` de esas causas
+/// terminan en la misma recomendación —volver a correr `ship` desde el
+/// principio—, y nada fuera de esta función distingue una de otra para
+/// actuar distinto. Lo que el orden compra ahí es precisión diagnóstica:
+/// nombrar primero el hecho más estructural evita mandar a investigar un
+/// síntoma —el mensaje— cuando hay una causa más profunda —la ascendencia—
+/// y las dos fallan a la vez. Alcanza con eso para justificar el orden
+/// entre estas tres; no hace falta inventarle una diferencia de acción que
+/// hoy no tiene. Y si algún día esas tres causas ganan acciones distintas
+/// entre sí, esta premisa se vuelve MÁS fuerte, no más débil.
+///
+/// **Con el índice, la acción SÍ cambia, y ahí el argumento es más fuerte
+/// todavía.** Si el índice se comprobara antes que los tres estructurales y
+/// los dos fallaran a la vez, la acción que saldría sería «sincronizá el
+/// índice» sobre un commit que, por el padre, el árbol o el mensaje
+/// distintos, hay que reconstruir desde cero de todos modos: un consejo que
+/// no sirve para la conclusión real. Comprobarlo último es lo que evita dar
+/// ese consejo.
+///
+/// El orden de abajo va de lo más estructural a lo más circunstancial:
 ///
 /// 1. **El padre primero.** Habla del lugar del objeto en el grafo de
 ///    commits, no de lo que contiene. Si la revisión no desciende de la
