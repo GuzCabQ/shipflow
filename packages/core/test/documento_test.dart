@@ -304,6 +304,34 @@ void main() {
       );
     });
 
+    test('un borrador sin rutas es una forma más vieja del documento, y el '
+        'error NOMBRA la versión', () {
+      // Mismo motivo que el análogo de arriba con el desenlace: `rutas` es un
+      // campo nuevo (`--retry-publication`, tarea 3) y `versionActual` no
+      // subió cuando se agregó, porque nadie había publicado la forma vieja
+      // del borrador todavía. `PullRequestDraft.fromJson` ya nombra la
+      // PALABRA «formatVersion» en su propio mensaje —no puede nombrar el
+      // NÚMERO: no conoce cuál trae este documento, y conocerlo exigiría
+      // importar este archivo desde el suyo—. Sin envolverlo acá con el
+      // número concreto, los dos caminos de «esta es una forma más vieja» del
+      // mismo documento —el del desenlace, arriba, y este— quedaban dando
+      // diagnósticos distintos ante el mismo tipo de forma vieja.
+      final valido = preparado().toJson();
+      final draftSinRutas = Map<String, Object?>.from(valido['draft']! as Map)
+        ..remove('rutas');
+      final json = Map<String, Object?>.from(valido)..['draft'] = draftSinRutas;
+      expect(
+        () => DocumentoDeCorrida.fromJson(json),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'nombra formatVersion',
+            contains('formatVersion ${DocumentoDeCorrida.versionActual}'),
+          ),
+        ),
+      );
+    });
+
     test('un desenlace nulo nunca es incoherente: es «todavía no hay»', () {
       // Residuo declarado: que un estado TERMINAL pueda seguir llevando
       // desenlace nulo NO está impuesto acá. Quién escribe el desenlace en

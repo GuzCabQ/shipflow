@@ -32,10 +32,19 @@
 /// **Actualizado en la rebanada de `--retry-publication`, tarea 3:**
 /// `PullRequestDraft.rutas` se sumó a la lista. También transforma —ordena
 /// lo que recibe— y, a diferencia de `PullRequestRequest.revision`, SÍ
-/// serializa: por eso su instancia canónica no puede apoyarse en la
-/// normalización para demostrar el invariante de orden, y pasa las rutas
-/// fuera de orden a propósito (ver `draft`, más abajo) para ejercitar la
-/// transformación en vez de esconderla.
+/// serializa: cae de lleno en el residuo de arriba. El orden se resuelve en
+/// el constructor, ANTES de la primera serialización, así que para cuando
+/// `draft.toJson()` arma la instancia canónica las dos mitades de la
+/// igualdad ya parten del mismo valor —ya ordenado—. `draft` (más abajo)
+/// pasa las rutas fuera de orden, pero **eso no ejercita nada que este
+/// archivo pueda medir**: sacar el `.sort()` del constructor no rompería
+/// ninguna prueba de acá, estén las rutas de entrada ordenadas o no —se
+/// dejan así solo porque es más parecido a como llega una lista real, sin
+/// garantía de orden de quien la arma, no por cobertura—. **Quien sostiene
+/// el invariante de orden es la prueba «las rutas quedan ordenadas, sin
+/// importar en qué orden se declararon», en la suite de `publicacion` junto
+/// al resto de las pruebas del borrador**, que compara contra un resultado
+/// escrito a mano y no contra el propio `toJson`.
 ///
 /// **Y el mismo residuo del otro lado:** la precondición de arriba —ningún
 /// valor por defecto— OBLIGA a que todo campo anulable venga con valor en la

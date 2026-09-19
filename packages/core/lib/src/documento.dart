@@ -315,12 +315,29 @@ class DocumentoDeCorrida {
     // deja atrapar «este JSON no se puede leer» una sola vez.
     final mal = _incoherencia(estado, desenlace);
     if (mal != null) throw FormatException(mal);
+    PullRequestDraft draft;
+    try {
+      draft = PullRequestDraft.fromJson(
+        Map<String, Object?>.from(json['draft']! as Map),
+      );
+    } on FormatException catch (e) {
+      // **El mismo envoltorio que ya usa el desenlace, arriba, y por el mismo
+      // motivo.** `PullRequestDraft.fromJson` nombra la PALABRA
+      // «formatVersion» en su propio mensaje, pero no el NÚMERO: no conoce
+      // cuál trae este documento —conocerlo exigiría importar este archivo
+      // desde el suyo, y ya es este archivo el que importa a `publicacion`—.
+      // Sin agregarlo acá, los dos caminos de «esta es una forma más vieja»
+      // del mismo documento —el del desenlace y el del borrador— quedaban
+      // dando diagnósticos distintos ante el mismo tipo de forma vieja.
+      throw FormatException(
+        'El borrador de este documento (formatVersion $version) no tiene la '
+        'forma que este código exige: ${e.message}',
+      );
+    }
     return DocumentoDeCorrida._(
       estado: estado,
       revision: json['revision']! as String,
-      draft: PullRequestDraft.fromJson(
-        Map<String, Object?>.from(json['draft']! as Map),
-      ),
+      draft: draft,
       desenlace: desenlace,
     );
   }
