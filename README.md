@@ -38,7 +38,7 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y ya corre—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
-**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; desde `prepared`, `reconciliar` ya decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. Desde `localInconsistent`, `comprobarIndice` decide si la inconsistencia que dejó la corrida original ya no existe, también pura. Y la raíz de composición **ya la cablea**: la guardia temporal que la rechazaba se retiró, y el camino lee el repositorio de verdad —el padre, el árbol, el mensaje y el `HEAD` de la revisión, más la comparación del índice acotada a las rutas que la rebanada declaró—, corre la reconciliación que corresponda, reconstruye la solicitud del pull request desde el documento, publica sin volver a correr la cascada y sella el documento con el desenlace que salga. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
+**`--retry-publication` se implementó en esta rama, y corre de punta a punta.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta—. La bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` filtra por rama y por estado antes de dejar reconciliar o publicar nada; desde `prepared`, `reconciliar` decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. Desde `localInconsistent`, `comprobarIndice` decide si la inconsistencia que dejó la corrida original ya no existe, también pura. Y la raíz de composición la cablea: el camino lee el repositorio de verdad —el padre, el árbol, el mensaje y el `HEAD` de la revisión, más la comparación del índice acotada a las rutas que la rebanada declaró—, corre la reconciliación que corresponda, reconstruye la solicitud del pull request desde el documento, publica **sin volver a correr la cascada, la compuerta por estado ni la detección de secretos** —las cuatro decisiones que cortan una corrida nueva ya corrieron cuando ésta commiteó, y volver a evaluarlas sería decidir de nuevo algo ya decidido y registrado— y sella el documento con el desenlace que salga. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md); lo que le queda abierto está declarado como residuo en «El desenlace de una corrida, y su documento» y en «El comando `ship`, de punta a punta».
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
@@ -3855,6 +3855,54 @@ medias sin detalle no dice qué hay que reparar.
   fallo real de `reset` —disco lleno, permisos— pase por ese mismo camino:
   solo que, si pasa por ahí, sale como `IndiceDesincronizado` con la revisión
   como dato.
+- **La arista `localInconsistent → committed` que exige §9 estuvo en el mapa
+  cinco tareas sin poder tomarse nunca, y las pruebas que la fijaban no lo
+  delataban porque montaban una forma de documento que en disco no existe.**
+  `avanzarA` arrastraba el desenlace anterior sin mirar el destino: promover
+  sobre el documento que `ShipOutcome.derivar` de verdad persiste —el que
+  llega con `LocalInconsistente` puesto— construía uno que afirmaba
+  `committed` por su estado y `localInconsistent` por el desenlace que
+  seguía adentro, y el constructor lo rechazaba siempre. Las dos pruebas que
+  decían cubrir esa promoción pasaban igual porque usaban un documento **sin
+  desenlace**, que ninguna corrida real escribe —`ShipOutcome.derivar`
+  siempre deja uno puesto—. Se cierra con `_admiteDesenlace`
+  (`packages/core/lib/src/documento.dart`): un `switch` exhaustivo, imagen
+  inversa de `estadoQueAfirma`, que dice si el estado de destino admite
+  desenlace o lo descarta. El invariante pasa a ser estructural —lo decide el
+  destino, nunca quien llama, que hoy no tiene forma de pedir «ninguno» a
+  propósito— y las dos pruebas se corrigen para promover un documento con su
+  desenlace real.
+- **La proyección local de la revisión no se escribe cuando el reintento
+  promueve.** El paso 14 de una corrida nueva la deja al lado del documento;
+  un reintento que promueve desde `prepared` o desde `localInconsistent` no
+  pasa por ese paso, así que esa corrida termina con documento y sin
+  proyección. Declarado en `packages/cli/lib/src/ship/reintento.dart`, y no
+  cerrado acá a propósito: la proyección es evidencia de lo que la corrida
+  ORIGINAL miró —ésta no miró nada nuevo—, y escribirla desde dos lugares
+  distintos es cómo las dos empiezan a divergir.
+- **Un documento cuyo árbol declarado no es el de su revisión sale por error
+  interno del arnés, no por un código que lo nombre.** El constructor de la
+  solicitud del pull request valida esa relación contra el árbol que el
+  reintento lee del repositorio, y si no coincide lanza `ArgumentError`, que
+  sube sin atrapar hasta la red de último recurso. Solo es alcanzable
+  editando el documento a mano: el árbol de un objeto commit no cambia nunca,
+  así que sobre cualquier documento que haya escrito una corrida real el
+  valor medido y el declarado son el mismo. Atraparlo usaría como control de
+  flujo esperado una excepción documentada como «esto no se previó», y
+  comparar los dos valores antes de construir sería una tercera copia de la
+  misma regla que ya está en el paso 2 de la reconciliación y en el
+  constructor. Declarado en `packages/cli/lib/src/ship/reintento.dart`.
+- **La ventana de versión del documento sigue abierta, con dos cambios de
+  forma adentro y sin fecha de cierre todavía.** `formatVersion` se queda en
+  `1` porque las tres rebanadas de esta pila —el desenlace y el documento,
+  `ship`, `--retry-publication`— no se mergearon todavía: no existe ningún
+  documento en disco con una forma más vieja para la que este código tenga
+  que seguir sirviendo. La lista, con fecha, vive en el doc comment de
+  `DocumentoDeCorrida.versionActual` (`packages/core/lib/src/documento.dart`):
+  el campo `causa` de `NoAplicado` (2026-09-18) y las `rutas` de
+  `PullRequestDraft` (2026-09-19, de esta rebanada). Se cierra el día que la
+  pila entera se mergee; desde ese día, el PRÓXIMO cambio de forma sí tiene
+  que subir el número, no antes.
 
 ### Lo que esta rebanada NO hace
 
@@ -4086,6 +4134,16 @@ persona.
 parte de autoridad, y ese mensaje sale por la salida estándar **y** por el
 payload: nombrarla la publicaría. Se dice el hecho, no el valor.
 
+**Y el reintento hereda esta misma compuerta, no una copia de ella.**
+`--retry-publication` entra por la misma raíz de composición, y la rama que lo
+despacha a `correrReintento` está **después** de este control: `_puedePublicar`
+cuenta al reintento como un modo que sí puede llegar a publicar —no hace falta
+`--yes` para eso, porque la compuerta y la confirmación ya corrieron en la
+corrida original, y el intérprete de hecho rechaza pasarle `--yes`—, así que un
+remoto por un canal que la publicación no acepta detiene también al reintento,
+con el mismo código `4`, antes de que se lea el documento de la corrida que se
+quería terminar.
+
 ### El payload relee el documento, y distingue dos ausencias
 
 Cuatro campos del payload de máquina —la rama, la base, la revisión y el
@@ -4112,6 +4170,47 @@ una lista de tipos dejaría afuera justo el caso que motiva todo esto.
 **Y ya no se traga en silencio**: cuando el nulo vino de un lanzamiento y no de
 un documento inexistente, el payload lo dice con `documentUnreadable`. Las dos
 ausencias no pueden coincidir, así que no hace falta un tercer caso.
+
+### La idempotencia entre procesos, medida
+
+**Es lo más importante que esta rebanada estableció, y hasta acá no estaba
+medido: un reintento sobre una corrida cuyo pull request ya se abrió no abre
+un segundo.** §17 pedía la prueba y la búsqueda por marcador estable ya estaba
+escrita, pero nada la había ejercitado entre dos invocaciones distintas. El
+escenario es exactamente el que hace caro a este comando: el proceso original
+muere **después** de que la forja creó el pull request y **antes** de sellar
+el documento, así que lo único que el segundo reintento tiene para no abrir
+otro es que el marcador estable se reconstruye igual desde el disco y la
+búsqueda del adapter real lo encuentra —**no** que se acuerde de nada, porque
+no hay nada que recordar.
+
+`packages/cli/test/reintento_test.dart` monta ese escenario rebobinando el
+documento a `committed` después de una primera publicación y corriendo el
+reintento otra vez: la forja recibe una segunda solicitud —`m.forja.recibidas`
+sube a dos, porque el segundo reintento sí le pide publicar— y no abre un
+segundo pull request —`m.forja.pullRequestsAbiertos` se queda en uno—, porque
+la búsqueda idempotente del adapter real reconoce el marcador que dejó el
+primero.
+
+**Y «entre procesos» no significa dos procesos del sistema operativo.** La
+prueba corre en un solo binario: lo que aísla una corrida de la otra es que
+cada una arma un **adapter nuevo y, adentro, un cliente HTTP nuevo** —la misma
+fábrica de nombre neutro que compone la raíz de verdad, `salidaDePrDelRemoto`—
+en vez de reusar el que dejó la corrida anterior. Nada de lo que la primera
+publicación dejó en memoria sobrevive a la segunda; lo único que cruza de una
+llamada a la otra es lo que cruzaría de verdad entre dos ejecuciones de
+`shipflow` —el disco y el remoto—. Llamarlo «un segundo proceso» sin esta
+aclaración se leería como que la suite levanta un segundo proceso del sistema
+operativo, y no es lo que mide: mide que el mecanismo no depende de memoria
+compartida, con el mismo código de producción de los dos lados.
+
+**Y el doble de esta suite no es la forja: es la API del otro lado.** El
+puerto de publicación es el adapter real —el mismo que arma la raíz de
+composición—, envuelto solo para contar qué solicitud le llegó; lo que se
+reemplaza es el servidor HTTP contra el que ese adapter habla. Si el doble
+fuera el puerto, la búsqueda idempotente que la prueba del segundo reintento
+ejercita sería la del doble, y la prueba mediría el doble en vez de medir el
+mecanismo que hace segura esta rebanada entera.
 
 ### Residuos declarados
 
@@ -4192,10 +4291,17 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
   adentro y no en la raíz de composición, porque es el host del proveedor. La abertura existe para poder probar sin
   red —envolver algo con sus aberturas tapadas deja al envoltorio imposible de
   probar—, no porque haya una segunda base viva.
-- **El paso 15 no se mide contra el adapter real de punta a punta.** La suite
-  del comando usa un doble del destino de pull requests. Lo que **no** es doble
-  es la decisión de quién atiende el remoto, que la toma la fábrica real.
-  Llegar al paso 15 con el adapter real contra un servidor local es otra tarea.
+- **El paso 15 de una corrida NUEVA sigue sin medirse contra el adapter real de
+  punta a punta.** La suite del comando (`comando_test.dart`) usa un doble del
+  destino de pull requests. Lo que **no** es doble es la decisión de quién
+  atiende el remoto, que la toma la fábrica real. **Esto dejó de ser cierto
+  para el reintento**: `packages/cli/test/reintento_test.dart` sí llega al
+  `open` equivalente —adentro de `_publicar`, en
+  `packages/cli/lib/src/ship/reintento.dart`— con el adapter real
+  (`salidaDePrDelRemoto`), reemplazando solo el servidor HTTP del otro lado por
+  uno local; es justamente lo que vuelve medible la idempotencia entre
+  procesos de la sección de arriba. Falta la misma cobertura para la corrida
+  nueva.
 - **Un servidor propio del proveedor no se atiende.** El host se compara contra
   uno solo y entero —no por sufijo, porque `no-github.com` *termina* con el
   texto del host atendido y no es él, y un control que preguntara `endsWith`
@@ -4247,9 +4353,47 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
 - **`ChangeSink` y `VerificationEnvironment` siguen sin fake**, aunque ya
   tengan consumidor. Lo que falta para sus suites de contrato es la segunda
   implementación, no la etapa.
-- **`RepositorioGit.apply` sigue sin llamador de producción.** `ship` commitea
-  por el camino del candidato —`applyRevision`—, no por ése; medido: `apply` no
-  se llama desde ningún `lib/` ni `bin/` del árbol.
+- **`RepositorioGit.apply` sigue sin llamador de producción, y la duda que
+  esta entrada dejaba abierta ya tiene respuesta.** `ship` commitea por el
+  camino del candidato —`applyRevision`—, no por ése; medido: `apply` no se
+  llama desde ningún `lib/` ni `bin/` del árbol. La pregunta era si iba a ser
+  la superficie que `--retry-publication` necesitara, o un camino que el
+  candidato dejó obsoleto. **La responde §9 misma, por su nombre**: el
+  reintento no vuelve a ejecutar la operación de aplicar —rodea la distinción
+  entre «ya aplicada» y «plan mal declarado» en vez de resolverla, que es
+  justo lo que la guardia de `RebanadaNoAplicable` no puede hacer sin marcar
+  el commit— y no gana ningún llamador nuevo. Es el camino obsoleto, no la
+  superficie pendiente: lo único que 4c reusó de él fue la **forma**,
+  `reset --quiet -- <rutas>` acotado a las rutas de la rebanada, no la
+  función. Su retiro no es trabajo de esta rebanada; lo que corresponde acá es
+  dejar medido que sigue sin llamador, para que la próxima vez que alguien se
+  encuentre con esta duda no la vuelva a plantear desde cero.
+
+### Lo que `--retry-publication` NO hace
+
+De §14 de la propuesta, más lo que la ejecución de esta rebanada fue
+decidiendo:
+
+- **No hay modelo de corridas completo.** El reintento lee UN documento por
+  `runId`, con el filtro de estado y de rama que esta rebanada agrega; no hay
+  un catálogo de corridas, ni una forma de listarlas, ni de correlacionarlas
+  entre sí.
+- **No hay recuperación general, solo la de una corrida que ya commiteó.**
+  §9 es explícita: el reintento reconcilia o publica; no reconstruye un
+  candidato desde cero, no reintenta la cascada, y no cubre una corrida que
+  murió **antes** de conseguir un commit —para ésa, la acción siguiente sigue
+  siendo correr `ship` de nuevo, no reintentar la publicación de algo que
+  nunca llegó a existir.
+- **No hay `--abort`.** Una corrida a medias no se puede cancelar
+  explícitamente: queda en el estado en que murió hasta que alguien la
+  reintenta o la ignora.
+- **No hay una segunda forja.** El reintento publica por el mismo
+  `PullRequestSink` que arma la fábrica neutra de `forge`; atender un segundo
+  proveedor no es parte de esta rebanada.
+- **El retiro de `RepositorioGit.apply` no es de esta rebanada.** Se deja
+  medido y declarado —ver arriba—, no se toca: decidir si se retira del todo
+  o se reserva como superficie de un comando futuro (`start`, D-032) es una
+  decisión que esta rebanada puede cerrar pero no está obligada a tomar.
 
 ## Qué prometen estas fases y todavía no cumplen
 
