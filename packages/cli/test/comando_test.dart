@@ -252,7 +252,7 @@ void main() {
       );
     });
 
-    test('la causa que la precedencia descartó viaja igual', () {
+    test('el payload de un no-intentado lleva la causa Y la verificación', () {
       // El secreto gana sobre la compuerta, y el estado de la verificación
       // —que también habría detenido la corrida— no se pierde: viaja en el
       // payload, que es lo único que lo lleva.
@@ -284,25 +284,63 @@ void main() {
       expect(await ejecutarDePrueba(['ship']), Codigo.errorDeUso);
     });
 
-    test('la ayuda nombra a ship y sus banderas', () async {
+    test('la ayuda nombra la entrada de ship, con sus banderas', () async {
       final texto = await ayudaDePrueba();
+      // **Anclado a la entrada del comando, no al nombre suelto.** La primera
+      // línea de esta ayuda ya dice «shipflow», así que `contains('ship')`
+      // pasaría aunque se borrara la entrada entera de `ship` — sobrevivía
+      // solo porque las banderas viven nada más que en esa línea. Localizar
+      // la entrada primero hace que borrarla ponga roja esta prueba.
+      final inicio = texto.indexOf('ship [opciones]');
+      expect(
+        inicio,
+        isNot(-1),
+        reason: 'la ayuda de la frontera tiene que listar la entrada de ship',
+      );
+      final entrada = texto.substring(inicio, texto.indexOf('\n\n', inicio));
       for (final b in [
-        'ship',
         '--intent',
         '--file',
         '--slice',
-        '--yes',
+        '--branch',
+        '--base',
         '--dry-run',
+        '--yes',
         '--allow-incomplete',
       ]) {
-        expect(texto, contains(b), reason: b);
+        expect(entrada, contains(b), reason: b);
       }
     });
 
-    test('la ayuda nombra los códigos nuevos', () async {
+    test('la ayuda nombra los códigos nuevos en su línea de códigos', () async {
+      // Anclado a la línea de «Códigos:» y no al texto entero: cualquier
+      // dígito futuro en la prosa no tiene que poder aprobar esto.
       final texto = await ayudaDePrueba();
+      final inicio = texto.indexOf('Códigos:');
+      expect(inicio, isNot(-1));
+      final lineaDeCodigos = texto.substring(inicio);
       for (final c in ['3', '4', '6']) {
-        expect(texto, contains(c), reason: c);
+        expect(lineaDeCodigos, contains(c), reason: c);
+      }
+    });
+
+    test('la ayuda de ship nombra sus propios códigos, en su línea', () async {
+      // `ayudaDeShip` —la que lee quien corre `shipflow ship --help`— es un
+      // texto propio, no la de la frontera, y no tenía ninguna prueba de sus
+      // códigos.
+      final salida = StringBuffer();
+      await ejecutar(
+        const ['ship', '--help'],
+        directorio: '.',
+        salida: salida,
+        error: StringBuffer(),
+      );
+      final texto = salida.toString();
+      final inicio = texto.indexOf('Códigos:');
+      expect(inicio, isNot(-1));
+      final lineaDeCodigos = texto.substring(inicio);
+      for (final c in ['3', '4', '6']) {
+        expect(lineaDeCodigos, contains(c), reason: c);
       }
     });
 
@@ -457,6 +495,35 @@ void main() {
       expect(codigo, Codigo.exito);
       expect(mundo.commits, isEmpty);
     });
+
+    test(
+      'la confirmación sale por el canal de eventos, no solo al que responde',
+      () async {
+        // La prueba de arriba comprueba que se llamó a quien responde; esta
+        // comprueba que la PREGUNTA salió por el canal de eventos con su
+        // propio tipo, la misma afirmación que ya se cierra para la
+        // previsualización. Borrar la emisión de acá dejaría a esa otra
+        // prueba entera en verde.
+        final mundo = Mundo(responder: (_) async => false);
+        final (_, salida, _) = await mundo.correr([..._invocacion, '--json']);
+        final documentos = lineas(salida);
+        final confirmaciones = documentos
+            .where((d) => d['type'] == 'confirmation')
+            .toList();
+        expect(confirmaciones, hasLength(1));
+        expect(confirmaciones.single['schema'], esquemaDeSalida);
+        expect(confirmaciones.single['command'], 'ship');
+        expect(
+          (confirmaciones.single['data']! as Map)['question'],
+          contains('¿Se publica'),
+        );
+        expect(
+          documentos.last['type'],
+          'result',
+          reason: 'el resultado es el último, y la confirmación va antes',
+        );
+      },
+    );
   });
 
   group('las cuatro salidas por excepción', () {
