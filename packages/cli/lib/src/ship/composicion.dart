@@ -73,8 +73,10 @@ el pull request. Cada camino termina en un desenlace declarado.
                       la declara verde.
   --help, -h          Esto.
 
-Sin una terminal con quien hablar, la corrida se comporta como una
-previsualización: no se pregunta nada y no se escribe nada.
+Sin una terminal con quien hablar, una corrida NUEVA se comporta como una
+previsualización: no se pregunta nada y no se escribe nada. Un reintento NO:
+publica igual, porque la compuerta y la confirmación ya corrieron en la corrida
+que va a terminar —y por eso --yes no se acepta junto con --retry-publication—.
 
 Códigos: 0 verde · 1 diagnósticos bloqueantes · 2 no concluyente ·
          3 detención declarada · 4 falta configuración o credencial ·
@@ -534,6 +536,32 @@ Future<int> correrShipDelComando(
     final causa = urlDelRemoto == null
         ? null
         : causaDeAusenciaDeForja(urlDelRemoto);
+
+    // **Qué quedó escrito, y qué ensayo alternativo corre de verdad, dependen
+    // de cuál de los dos modos entró acá.** Este control es anterior a la
+    // bifurcación, así que lo atraviesan los dos, y lo que valía para una
+    // corrida nueva era falso para el otro:
+    //
+    // - «No quedó ni un objeto ni un commit» es la premisa AL REVÉS de un
+    //   reintento: un reintento existe justamente porque SÍ hay un commit. Lo
+    //   que se puede afirmar para los dos es más angosto —esta invocación no
+    //   escribió nada— y eso es lo que se dice.
+    // - `--dry-run` a secas no es un ensayo de esta invocación: por el camino
+    //   del reintento sale con error de uso, porque sin la bandera del
+    //   reintento la invocación no declara ningún archivo y este comando no
+    //   infiere el árbol de trabajo. Una prohibición se instala con su
+    //   alternativa, y una alternativa que no corre no es una.
+    final reintento = entrada.reintentarPublicacion;
+    final loQueNoSeEscribio = reintento == null
+        ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
+              'commit.'
+        : 'Se detuvo antes de pedirle nada a la forja: esta invocación no '
+              'escribió nada, y el commit que dejó la corrida «$reintento» '
+              'quedó donde estaba.';
+    final ensayo = reintento == null
+        ? '`shipflow ship --dry-run`'
+        : '`shipflow ship --retry-publication $reintento --dry-run`';
+
     return _detener(
       impresora,
       codigo: Codigo.errorDeConfiguracion,
@@ -552,9 +580,8 @@ Future<int> correrShipDelComando(
               'no podría abrir el pull request que promete.',
       },
       queHacer: sinRemoto
-          ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
-                'commit. Agregale el remoto al que querés publicar, o corré '
-                '`shipflow ship --dry-run`, que no necesita forja.'
+          ? '$loQueNoSeEscribio Agregale el remoto al que querés publicar, o '
+                'corré $ensayo, que no necesita forja.'
           // **Nombra las dos alternativas aunque el humano de arriba ya
           // haya elegido cuál aplica**, y no al revés: partir este texto en
           // dos repetiría en un segundo lugar la misma distinción que ya
@@ -565,14 +592,13 @@ Future<int> correrShipDelComando(
           // forma segura de ese mismo destino la sabe quien configuró el
           // remoto, y proponerle una armada acá sería inventarle un destino
           // que no eligió.
-          : 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
-                'commit. Si el remoto apunta a una forja que este comando no '
-                'conoce, apuntalo a una soportada. Si apunta a una que sí se '
-                'conoce pero por un canal que no puede llevar la credencial '
-                '—`ssh://`, la forma corta `usuario@host:duenio/repo`, o sin '
-                'cifrar—, reescribí ese mismo remoto en su forma `https` con '
-                '`git remote set-url`. O corré `shipflow ship --dry-run`, que '
-                'no necesita forja.',
+          : '$loQueNoSeEscribio Si el remoto apunta a una forja que este '
+                'comando no conoce, apuntalo a una soportada. Si apunta a una '
+                'que sí se conoce pero por un canal que no puede llevar la '
+                'credencial —`ssh://`, la forma corta '
+                '`usuario@host:duenio/repo`, o sin cifrar—, reescribí ese '
+                'mismo remoto en su forma `https` con `git remote set-url`. O '
+                'corré $ensayo, que no necesita forja.',
       datos: {
         'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
         // **El discriminador que el texto humano de arriba ya tenía y el
@@ -591,6 +617,11 @@ Future<int> correrShipDelComando(
         // vocabulario depende de por dónde se detuvo la corrida.
         if (causa != null) 'causaDeLaAusenciaDeForja': causa.name,
       },
+      // **Y la correlación, cuando la hay.** Una corrida nueva todavía no
+      // emitió identidad —inventarle una afirmaría una corrida que no
+      // ocurrió—; un reintento sí la trae, es la de la corrida que se quería
+      // terminar, y las demás detenciones de ese camino ya la mandan.
+      runId: reintento,
     );
   }
 

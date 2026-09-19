@@ -915,6 +915,23 @@ void main() {
           isNot(contains('error interno del arnés')),
           reason: 'es una precondición del entorno, no el arnés roto',
         );
+        // **Y la acción, no solo el texto humano.** Esta prueba afirmaba el
+        // hecho y nunca lo que hay que hacer con él, así que no delataba dos
+        // cosas falsas por este camino: que «no quedó ni un objeto ni un
+        // commit» —la premisa de un reintento es que SÍ hay commit— y una
+        // alternativa que no corre.
+        expect(
+          m.accion,
+          isNot(contains('no quedó ni un objeto ni un commit')),
+          reason: 'por este camino el commit existe: es la premisa entera',
+        );
+        expect(
+          m.accion,
+          contains('--retry-publication ${m.runId} --dry-run'),
+          reason:
+              'el ensayo alternativo tiene que ser el de ESTA invocación: '
+              'sin la bandera del reintento sale por error de uso',
+        );
         expect(await m.instantanea(), antes);
       },
     );
