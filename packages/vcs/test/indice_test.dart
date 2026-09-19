@@ -4,8 +4,8 @@
 /// **No hay doble de `git`, por el mismo motivo que en `repositorio_test`**:
 /// es determinista, está instalado y es rápido, y lo que hay que comprobar es
 /// justamente CÓMO responde la herramienta real ante mtimes tocados, rutas
-/// ajenas y borrados del índice — un doble solo repetiría lo que esta prueba
-/// ya supone.
+/// ajenas, borrados del índice y conflictos sin resolver — un doble solo
+/// repetiría lo que esta prueba ya supone.
 library;
 
 import 'dart:io';
@@ -29,7 +29,7 @@ class _PoliticaQueAceptaTodo implements ArtifactPolicy {
 void main() {
   const politica = _PoliticaQueAceptaTodo();
 
-  /// Un repositorio real con [archivos] commiteados como base, más tres
+  /// Un repositorio real con [archivos] commiteados como base, más los
   /// ayudantes que tocan el índice y el árbol de trabajo **por fuera** del
   /// adapter — con `git` de verdad, no con lo que se está probando — para que
   /// las pruebas puedan armar el estado que [RepositorioGit.rutasQueDifierenDelArbol]
@@ -45,6 +45,7 @@ void main() {
     void Function(String ruta) tocarSinCambiarContenido,
     void Function(String ruta) quitarDelIndice,
     void Function(String ruta) borrarYCommitear,
+    void Function(String ruta) dejarConflictoSinResolver,
   })
   repoConArchivos(Map<String, String> archivos) {
     final raiz = Directory.systemTemp.createTempSync('indice_');
@@ -96,12 +97,38 @@ void main() {
       git(['commit', '--quiet', '-m', 'borra $ruta']);
     }
 
+    /// Deja [ruta] con un conflicto **sin resolver** en el índice real: la
+    /// entrada queda sin fusionar, con sus tres etapas, que es lo que produce
+    /// un `merge`, un `rebase` o un `cherry-pick` que no cerró.
+    ///
+    /// **Se arma con la herramienta de verdad y no escribiendo el índice a
+    /// mano**, por lo mismo que el resto de esta suite: lo que hay que medir
+    /// es cómo responde la herramienta real ante ese estado, y un índice
+    /// fabricado solo repetiría lo que la prueba ya supone.
+    ///
+    /// El `merge` falla a propósito —ése es el punto—, así que es la única
+    /// invocación de esta suite que no exige código cero.
+    void dejarConflictoSinResolver(String ruta) {
+      final contenido = File('${raiz.path}/$ruta').readAsStringSync();
+      git(['switch', '--quiet', '-c', 'de-al-lado']);
+      File('${raiz.path}/$ruta').writeAsStringSync('$contenido — de al lado\n');
+      git(['commit', '--quiet', '-am', 'de al lado']);
+      git(['switch', '--quiet', 'main']);
+      File('${raiz.path}/$ruta').writeAsStringSync('$contenido — de acá\n');
+      git(['commit', '--quiet', '-am', 'de acá']);
+      Process.runSync('git', [
+        'merge',
+        'de-al-lado',
+      ], workingDirectory: raiz.path);
+    }
+
     return (
       repo: RepositorioGit(directorio: raiz.path, politica: politica),
       escribirYPreparar: escribirYPreparar,
       tocarSinCambiarContenido: tocarSinCambiarContenido,
       quitarDelIndice: quitarDelIndice,
       borrarYCommitear: borrarYCommitear,
+      dejarConflictoSinResolver: dejarConflictoSinResolver,
     );
   }
 
@@ -221,6 +248,37 @@ void main() {
         ['a.txt'],
       );
     });
+
+    test(
+      'una entrada SIN FUSIONAR es una diferencia, no una excepción',
+      () async {
+        // **El conflicto sin resolver, con la herramienta de verdad.** Un
+        // `merge`, un `rebase` o un `cherry-pick` que no cerró deja la entrada
+        // con sus tres etapas, y la comparación del índice la marca con la
+        // letra `U` — medido con la herramienta instalada, y declarado en su
+        // manual de la salida cruda.
+        //
+        // Antes de esta prueba, esa letra llegaba al parser compartido, que
+        // falla cerrado ante lo que no conoce: la excepción no es de la familia
+        // que la composición atrapa, así que subía hasta la red de último
+        // recurso y salía «se rompió el arnés, reportalo con la traza» sobre
+        // una corrida donde lo único que pasa es que quien corre tiene un
+        // conflicto sin resolver.
+        //
+        // Un índice sin fusionar **es** una diferencia: esa ruta no coincide
+        // con ningún árbol, porque el índice todavía no decidió qué contiene.
+        final r = repoConArchivos({'a.txt': 'uno', 'b.txt': 'dos'});
+        r.dejarConflictoSinResolver('a.txt');
+        final arbol = await r.repo.arbolDe(await r.repo.head);
+        expect(
+          await r.repo.rutasQueDifierenDelArbol(
+            arbol: arbol,
+            rutas: ['a.txt', 'b.txt'],
+          ),
+          ['a.txt'],
+        );
+      },
+    );
 
     test('con más de una ruta distinta, el resultado sale ORDENADO y no en el '
         'orden en que se prepararon', () async {

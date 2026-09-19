@@ -231,6 +231,7 @@ class MundoDeReintento {
     bool sinRemoto = false,
     bool laForjaRechaza = false,
     bool ramaAvanzada = false,
+    bool conflictoSinResolver = false,
   }) async {
     final raiz = Directory.systemTemp.createTempSync('ship_reintento_');
     addTearDown(() => raiz.deleteSync(recursive: true));
@@ -270,6 +271,21 @@ class MundoDeReintento {
       escribir('otro.txt', 'de otra persona\n');
       git(['add', '-A']);
       git(['commit', '-m', 'trabajo de al lado']);
+    }
+
+    if (conflictoSinResolver) {
+      // Un `merge` que no cerró sobre la MISMA ruta que la rebanada declaró.
+      // No mueve el `HEAD` —un merge con conflicto no commitea nada—, así que
+      // la revisión que el documento afirma sigue siendo la de la rama: lo
+      // único que cambia es que el índice queda con una entrada sin fusionar.
+      git(['switch', '-c', 'de-al-lado', '$revision^']);
+      escribir(_archivo, 'de al lado\n');
+      git(['commit', '-am', 'de al lado']);
+      git(['switch', 'trabajo']);
+      Process.runSync('git', [
+        'merge',
+        'de-al-lado',
+      ], workingDirectory: raiz.path);
     }
 
     final mundo = MundoDeReintento._(
@@ -314,8 +330,10 @@ class MundoDeReintento {
     bool sinRemoto = false,
     bool laForjaRechaza = false,
     bool ramaAvanzada = false,
+    bool conflictoSinResolver = false,
   }) => nuevo(
     estado: estado,
+    conflictoSinResolver: conflictoSinResolver,
     verificacion: verificacion,
     mensajeDelCommit: mensajeDelCommit,
     arbolDeclarado: arbolDeclarado,
@@ -794,6 +812,34 @@ void main() {
       expect(m.forja.recibidas, isEmpty);
       expect(m.accion, contains('git reset'));
       expect(m.accion, contains('lib/b.txt'));
+      expect(await m.instantanea(), antes);
+    });
+
+    test('un conflicto SIN RESOLVER sale como índice distinto, no como el '
+        'arnés roto', () async {
+      // **La misma ruta de la rebanada, con un `merge` que no cerró.** La
+      // lectura del índice está ANTES de la bifurcación entre las dos
+      // reconciliaciones, así que este estado alcanzaba a las dos: la letra
+      // de una entrada sin fusionar llegaba al parser compartido, que falla
+      // cerrado, y su excepción no es de la familia que la composición
+      // atrapa — subía hasta la red de último recurso y salía «se rompió el
+      // arnés, reportalo con la traza» sobre una corrida donde lo único que
+      // pasa es que quien corre tiene un conflicto.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.localInconsistent,
+        conflictoSinResolver: true,
+      );
+      final antes = await m.instantanea();
+      final r = await m.correr(m.runId);
+      expect(m.codigo(r), Codigo.errorDeConfiguracion);
+      expect(
+        m.mensaje,
+        isNot(contains('error interno del arnés')),
+        reason: 'un conflicto sin resolver no es el arnés roto',
+      );
+      expect(m.accion, contains('git reset'));
+      expect(m.accion, contains(_archivo));
+      expect(m.forja.recibidas, isEmpty);
       expect(await m.instantanea(), antes);
     });
 

@@ -25,19 +25,18 @@ part of 'repositorio.dart';
 /// a pedirle al parser que ya existe la lista de alteraciones y quedarse solo
 /// con la ruta.
 ///
-/// **Por qué el pathspec tiene que estar acotado al árbol, y no es un
-/// detalle de quien llama.** `leerDiffRaw` falla cerrado ante una letra que
-/// no sea `M`, `D` o `T` a propósito: contra el índice AISLADO del
-/// candidato —su único llamador hasta que existió esta función— una ruta
-/// ausente del árbol es inalcanzable, porque ese índice se lee del mismo
-/// árbol que se compara. Con el índice REAL y un árbol arbitrario, esa
-/// ausencia SÍ es alcanzable —una revisión candidata que borró la ruta, y
-/// quien corre la volvió a preparar— y `git` la marca con `A` (agregada),
-/// que el parser no conoce y rechaza con `PromesaIncumplida`. Ensanchar el
-/// parser compartido para admitirla aflojaría, del lado del candidato, una
+/// **Por qué quien llama tiene que acotar lo que le manda, y no es un
+/// detalle suyo.** `leerDiffRaw` falla cerrado ante una letra que no sea
+/// `M`, `D` o `T` a propósito: contra el índice AISLADO del candidato —su
+/// único llamador hasta que existió esta función— ni una ruta ausente del
+/// árbol ni una entrada sin fusionar son alcanzables, porque ese índice se
+/// lee del mismo árbol que se compara y no fusiona nada. Con el índice REAL
+/// y un árbol arbitrario las dos SÍ lo son, y `git` las marca con letras que
+/// el parser no conoce y rechaza con `PromesaIncumplida`. Ensanchar el
+/// parser compartido para admitirlas aflojaría, del lado del candidato, una
 /// garantía que ahí sí vale; por eso [RepositorioGit.rutasQueDifierenDelArbol]
-/// nunca le pide `diff-index` por una ruta que el árbol no tiene, y resuelve
-/// esas por su cuenta, sin pasar por acá.
+/// las resuelve por su cuenta antes de llegar acá —**el argumento completo,
+/// letra por letra y con su fuente, está en el doc de esa función**—.
 ///
 /// **[declaradas] de [leerDiffRaw] se le pasa vacío, a propósito.** Ese
 /// descuento existe para el candidato, que materializa a propósito algunos

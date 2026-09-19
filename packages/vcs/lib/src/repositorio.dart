@@ -931,14 +931,40 @@ class RepositorioGit implements ChangeSink {
   /// hacer»: dice `fatal: Unable to process path` y sale con `128`— sería
   /// código que una mutación no puede matar, y este archivo no lo escribe.
   ///
-  /// **`diff-index` solo se le pide por las rutas que [arbol] YA TIENE.** Una
-  /// ruta ausente del árbol y presente en el índice real —el árbol candidato
-  /// la borró, y quien corre la volvió a preparar— es una diferencia
-  /// legítima, pero `git` la marca con la letra `A` (agregada), que
-  /// [rutasDeDiffRaw] no conoce: ver su doc para el porqué. En vez de
-  /// pedirle a ese parser que la entienda, esta ruta ni siquiera llega a
-  /// `diff-index`: se resuelve preguntándole a `ls-files` si el índice real
-  /// la tiene, y si la tiene, es una diferencia sin más trámite.
+  /// **De las ocho letras del formato, dos no pueden llegar al parser, y de
+  /// dónde sale esa lista está dicho.** La lista NO es una intuición sobre
+  /// qué puede pasar: es la enumeración cerrada que el manual de
+  /// `git-diff-index(1)` declara en su sección de la salida cruda —«possible
+  /// status letters»—, leída de la herramienta instalada: `A`, `C`, `D`, `M`,
+  /// `R`, `T`, `U` y `X`. Sobre esas ocho, y solo sobre esas, se argumenta
+  /// cuáles alcanzan a [rutasDeDiffRaw] desde acá:
+  ///
+  /// - `M`, `D` y `T` son las tres que ese parser conoce, y son el caso
+  ///   normal de este control.
+  /// - `A` es alcanzable con el índice REAL y un árbol arbitrario —el árbol
+  ///   candidato borró la ruta y quien corre la volvió a preparar—, y por eso
+  ///   esa ruta ni siquiera llega a `diff-index`: se resuelve preguntándole a
+  ///   `ls-files` si el índice real la tiene, y si la tiene, es una
+  ///   diferencia sin más trámite.
+  /// - `U` es alcanzable con un `merge`, un `rebase` o un `cherry-pick` con
+  ///   conflicto sin resolver en una de estas rutas, y se resuelve por
+  ///   nombre antes de la comparación cruda, que la excluye con el filtro en
+  ///   minúscula.
+  /// - `R` y `C` piden detección de renombres o de copias, que esta
+  ///   invocación no pide. **Y no alcanza con no pasar `-M`**: está medido
+  ///   que este comando de plomería tampoco lee la configuración que
+  ///   enciende esa detección para los comandos de porcelana —con esa
+  ///   configuración puesta, la salida sigue trayendo un borrado y un
+  ///   agregado, no un renombre—.
+  /// - `X` la declara el propio manual como «un tipo de cambio desconocido,
+  ///   casi seguro un error» de la herramienta. Ésa sí tiene que seguir
+  ///   fallando cerrado: no hay ninguna lectura correcta que darle.
+  ///
+  /// **Lo que esta lista promete es lo que se pudo argumentar, no que el
+  /// futuro esté cubierto.** Una versión nueva de la herramienta que agregue
+  /// una letra la deja fuera de este razonamiento, y lo que pasa entonces es
+  /// que el parser falla cerrado: ruidoso y no silencioso, que es el modo
+  /// correcto de envejecer para un control que decide si se publica.
   Future<List<String>> rutasQueDifierenDelArbol({
     required String arbol,
     required List<String> rutas,
@@ -956,10 +982,40 @@ class RepositorioGit implements ChangeSink {
 
     final diferentes = <String>{};
     if (enElArbol.isNotEmpty) {
+      // **Las entradas sin fusionar se resuelven ACÁ y no en el parser**, por
+      // lo mismo que la ruta ausente del árbol: ensanchar el parser
+      // compartido aflojaría, del lado del candidato, una garantía que ahí
+      // sí vale. Se piden por nombre —sin la forma cruda— y la comparación
+      // de abajo las excluye con el filtro en minúscula, así que la letra
+      // que las marca no llega nunca al parser.
+      //
+      // **Y son una diferencia, no un fallo.** Una entrada sin fusionar no
+      // coincide con ningún árbol: el índice todavía no decidió qué
+      // contiene. Sale como índice distinto, con el código de configuración
+      // y el comando de reparación que le corresponden a cualquier otra
+      // diferencia, en vez de subir como excepción hasta la red de último
+      // recurso sobre una corrida donde lo único que pasa es que quien corre
+      // tiene un conflicto sin resolver.
+      final sinFusionar = (await _exigirCrudo([
+        'diff-index',
+        '-z',
+        '--name-only',
+        '--diff-filter=U',
+        '--cached',
+        arbol,
+        '--',
+        ...enElArbol,
+      ])).split('\u0000').where((s) => s.isNotEmpty);
+      diferentes.addAll(sinFusionar);
+
       final crudo = await _exigirBytes([
         'diff-index',
         '--raw',
         '-z',
+        // La minúscula EXCLUYE esa letra de la salida, y es lo que deja al
+        // parser con el dominio que su contrato declara. Medido con la
+        // herramienta instalada, no supuesto.
+        '--diff-filter=u',
         '--cached',
         arbol,
         '--',
