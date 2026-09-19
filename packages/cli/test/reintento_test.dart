@@ -1302,6 +1302,48 @@ void main() {
       expect((d! as Publicado).pr.url, contains('/pr/1'));
     });
 
+    test('la forja de esta suite particiona por repositorio', () async {
+      // **El ancla de la partición, y hace falta porque nada más la sostiene.**
+      // Medido: colapsando el almacén de la forja doble a una sola lista, las
+      // pruebas de esta suite siguen verdes salvo ésta — y la de acá abajo
+      // pasaría a fallar por «se le pidió algo a la forja» en vez de por «se
+      // abrió un SEGUNDO pull request», que es una afirmación mucho más débil
+      // y no es la que la revisión humana pidió medir. El contador de
+      // repositorios existe para que eso sea contable, y con una lista única
+      // devuelve uno para siempre.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      await m.correr(m.runId);
+      expect(m.forja.pullRequestsAbiertos, 1);
+
+      // LA MISMA solicitud —mismo marcador estable, mismo runId— contra OTRO
+      // repositorio. Una forja que contestara sin mirar a quién se le
+      // pregunta encontraría el pull request de arriba y no crearía ninguno.
+      final doc = await m.documento();
+      final otro = m.forja.puerto(
+        directorio: m.raiz.path,
+        url: 'https://github.com/otro/repositorio.git',
+      );
+      await otro.open(
+        PullRequestRequest(
+          draft: doc.draft,
+          revision: doc.revision,
+          arbolDeLaRevision: m.arbolLeidoDelRepo,
+        ),
+      );
+
+      expect(
+        m.forja.pullRequestsAbiertos,
+        2,
+        reason:
+            'el pull request de un repositorio no puede contestar la búsqueda '
+            'de otro: si contestara, la prueba de la mudanza del remoto '
+            'mediría el doble y no el arreglo',
+      );
+      expect(m.forja.repositoriosConPullRequest, 2);
+    });
+
     test(
       'con el remoto mudado a OTRO repositorio, el reintento NO publica',
       () async {
@@ -1356,6 +1398,36 @@ void main() {
               'ninguna prohibición sin su alternativa: el mensaje nombra el '
               'destino de la corrida y el de ahora, para que quien lo lea '
               'sepa cuál devolver',
+        );
+      },
+    );
+
+    test(
+      'una corrida YA PUBLICADA con el remoto mudado sale con ÉXITO y con su '
+      'URL',
+      () async {
+        // **De punta a punta, porque el costo de haberlo convertido en fallo
+        // era de punta a punta**: sin la URL, quien movió el remoto por un
+        // motivo ajeno a esta corrida pierde la única forma de preguntar dónde
+        // quedó aquella publicación. Este camino no toca la forja, así que no
+        // hay ninguna publicación que la comparación pueda guardar.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.publicationComplete,
+        );
+        m.mudarElRemoto('https://github.com/otro/repositorio.git');
+        final d = await m.correr(m.runId);
+        expect(m.codigo(d), Codigo.exito);
+        expect(m.forja.recibidas, isEmpty);
+        expect(
+          m.accion,
+          allOf(
+            contains(_urlYaAnotada),
+            contains('duenio/repo'),
+            contains('otro/repositorio'),
+          ),
+          reason:
+              'la URL, más el aviso de que es del destino de aquella corrida '
+              'y no del que hay configurado ahora',
         );
       },
     );
