@@ -475,8 +475,16 @@ class ResultEnvelope {
 
   final Map<String, Object?> data;
 
-  /// La corrida que lo produjo, o `null` si el comando no llegó a componer
-  /// ni a correr una cascada.
+  /// A qué corrida pertenece este resultado, o `null` cuando no hay ninguna
+  /// que nombrar.
+  ///
+  /// **No afirma que esa corrida exista**, y desde que el reintento está
+  /// cableado la diferencia importa. Una corrida nueva lo emite cuando llega
+  /// a componerse, y ahí el identificador nace de algo que ocurrió; un
+  /// reintento lo devuelve tal como lo pidió quien corre, y una de sus
+  /// respuestas es precisamente que no hay ningún documento con ese
+  /// identificador. Lo que esta clave promete es correlación —a qué pedido
+  /// pertenece esta salida— y nada más.
   final String? runId;
 
   const ResultEnvelope({

@@ -1079,10 +1079,15 @@ int _emitirDesenlace(
 /// **No es «no hubo corrida que describir», y decirlo así dejó de ser cierto.**
 /// Esa frase describía las detenciones de una corrida NUEVA —la invocación que
 /// no se pudo interpretar, el preflight, el directorio de corridas
-/// desprotegido, el `.gitignore` ajeno—, que sí explican por qué no llegó a
-/// haber una. Desde que el reintento está cableado, por acá salen también sus
-/// respuestas sin desenlace, y **ésas son sobre una corrida que SÍ existió**:
-/// llevan su identificador, y el documento que las produjo la describe entera.
+/// desprotegido, el `.gitignore` ajeno—, que sí
+/// explican por qué no llegó a haber una. Desde que el reintento está
+/// cableado, por acá salen también sus respuestas sin desenlace, y **ésas no
+/// comparten ningún hecho sobre la corrida**: dos de las seis dicen
+/// exactamente lo contrario —que no hay ninguna corrida con ese
+/// identificador, o que hay un archivo que ninguna lectura pudo convertir en
+/// documento—, y en ninguna de las dos hay un documento que describa nada. El
+/// identificador que llevan es **el que pidió quien corre**, no la prueba de
+/// que algo haya existido.
 ///
 /// Lo que vale para todo lo que sale por acá es más angosto, y no depende de
 /// enumerar nada: **no hay ningún [ShipOutcome] del que derivar el código**.
@@ -1115,8 +1120,10 @@ int _detener(
       exitCode: codigo,
       // **Sin veredicto, y el argumento no es «antes de que hubiera
       // corrida».** Era ése mientras por acá salían solo detenciones de una
-      // corrida nueva; con el reintento cableado salen también respuestas
-      // sobre una corrida que existió. Lo que vale para todas —sin enumerar
+      // corrida nueva. Con el reintento cableado ya no hay un solo hecho
+      // sobre la corrida detrás de todas: unas contestan por qué no se
+      // terminó la que estaba, y otras que no se encontró ninguna que
+      // terminar. Lo que vale para todas —sin enumerar
       // ninguna: ver el doc de esta función y por qué no hay lista— es que
       // **ninguna corrió la cascada**, que es lo único que produce un estado
       // de verificación.

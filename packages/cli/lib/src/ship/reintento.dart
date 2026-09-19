@@ -49,8 +49,11 @@ import '../corrida.dart';
 ///
 /// **No salen por excepción**, a diferencia de las cuatro detenciones de una
 /// corrida nueva. Aquéllas describen por qué no llegó a haber corrida; éstas
-/// son respuestas del reintento sobre una corrida que sí existió y que el
-/// documento describe entera. Que viajen como valor es lo que deja que la
+/// contestan un pedido de terminar una, y **lo que contestan no es siempre
+/// sobre una corrida que exista**: dos de las seis variantes sin desenlace de
+/// abajo —contadas sobre esta misma jerarquía sellada— informan justamente lo
+/// contrario, que no hay ningún documento con ese identificador o que hay uno
+/// que ninguna lectura pudo interpretar. Que viajen como valor es lo que deja que la
 /// raíz de composición las despache con un `switch` exhaustivo: una variante
 /// nueva no compila hasta que alguien decida su código.
 sealed class ResultadoDelReintento {
