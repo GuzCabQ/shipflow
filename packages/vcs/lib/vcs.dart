@@ -6,5 +6,6 @@
 /// —remoto, un proveedor—: acá vive solo el primero.
 library;
 
+export 'src/indice.dart';
 export 'src/repositorio.dart';
 export 'src/secretos.dart';

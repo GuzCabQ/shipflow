@@ -23,6 +23,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'indice.dart';
 import 'secretos.dart';
 
 part 'candidato.dart';
@@ -894,6 +895,49 @@ class RepositorioGit implements ChangeSink {
   Future<String> mensajeDe(String revision) async {
     final salida = await _exigirCrudo(['log', '-1', '--format=%B', revision]);
     return salida.replaceFirst(RegExp(r'\n+$'), '');
+  }
+
+  /// Las rutas, de entre [rutas], donde el índice de quien corre NO coincide
+  /// con [arbol]. **Vacía significa que coincide.**
+  ///
+  /// **Acotada a [rutas] a propósito, y no el índice entero.** Comparar el
+  /// índice entero rechazaría cambios preparados ajenos que la operación de
+  /// aplicar promete preservar: el reintento no es dueño del índice de quien
+  /// corre, y solo puede opinar sobre las rutas que la rebanada declaró.
+  ///
+  /// **Con [rutas] vacía devuelve vacío, y no «todas».** Un alcance vacío es
+  /// el más angosto que existe, no el más ancho; leerlo al revés convertiría
+  /// este control en uno que mira el repositorio entero sin que nadie se lo
+  /// haya pedido.
+  ///
+  /// **Sin `update-index --refresh`, y está medido que no hace falta.** El
+  /// trío que usa [_CandidatoGit.alteraciones] lo necesita porque compara el
+  /// árbol de TRABAJO contra un árbol —ahí el `mtime` en disco decide si hay
+  /// que releer un archivo—. Acá se compara con `--cached`: índice contra
+  /// árbol, dos objetos que `git` ya tiene resueltos, sin tocar el disco. Con
+  /// un archivo cuyo `mtime` se adelantó un mes y el contenido intacto,
+  /// `diff-index --raw -z --cached` no reporta nada, CON o SIN refresco
+  /// previo: la comparación nunca mira el reloj del archivo, mira el blob que
+  /// el índice ya tiene anotado desde el último `add`. Agregar el refresco
+  /// —que además exige filtrar antes con `ls-files`, porque sobre una ruta
+  /// que ya salió del índice `update-index --refresh` no dice «nada que
+  /// hacer»: dice `fatal: Unable to process path` y sale con `128`— sería
+  /// código que una mutación no puede matar, y este archivo no lo escribe.
+  Future<List<String>> rutasQueDifierenDelArbol({
+    required String arbol,
+    required List<String> rutas,
+  }) async {
+    if (rutas.isEmpty) return const [];
+    final crudo = await _exigirBytes([
+      'diff-index',
+      '--raw',
+      '-z',
+      '--cached',
+      arbol,
+      '--',
+      ...rutas,
+    ]);
+    return rutasDeDiffRaw(crudo);
   }
 
   /// El código con el que `git remote get-url` dice que **ese remoto no está
