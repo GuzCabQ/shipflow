@@ -38,7 +38,7 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y ya corre—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
-**`--retry-publication` se implementó en esta rama, y corre de punta a punta.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta—. La bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` filtra por rama, por destino y por estado antes de dejar reconciliar o publicar nada —el destino es la identidad saneada y neutral del remoto al que aquella corrida iba a publicar, persistida en su documento: si el remoto de hoy nombra otro, el reintento se detiene, porque la búsqueda que impide abrir un SEGUNDO pull request es una búsqueda EN el destino y contra otro no encuentra nada—; desde `prepared`, `reconciliar` decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. Desde `localInconsistent`, `comprobarIndice` decide si la inconsistencia que dejó la corrida original ya no existe, también pura. Y la raíz de composición la cablea: el camino lee el repositorio de verdad —el padre, el árbol, el mensaje y el `HEAD` de la revisión, más la comparación del índice acotada a las rutas que la rebanada declaró—, corre la reconciliación que corresponda, reconstruye la solicitud del pull request desde el documento, publica **sin volver a correr la cascada** —el documento ya lleva el borrador completo que ella hubiera producido— **y sin volver a evaluar las tres decisiones que cortan una corrida nueva antes de la primera escritura: el secreto, la compuerta por estado y la confirmación** —ya corrieron cuando esta corrida commiteó, y volver a evaluarlas sería decidir de nuevo algo ya decidido y registrado— y sella el documento con el desenlace que salga. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md); lo que le queda abierto está declarado como residuo en [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento) y en [Lo que `--retry-publication` NO hace](#lo-que---retry-publication-no-hace).
+**`--retry-publication` se implementó en esta rama, y corre de punta a punta.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta—. La bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` filtra por rama, por destino y por estado antes de dejar reconciliar o publicar nada —el destino es la identidad saneada y neutral del remoto al que aquella corrida iba a publicar, persistida en su documento: si el remoto de hoy nombra otro, los caminos que PUBLICAN se detienen, porque la búsqueda que impide abrir un SEGUNDO pull request es una búsqueda EN el destino y contra otro no encuentra nada; los que no publican contestan lo de siempre, y el de una corrida ya publicada sigue dando la URL del pull request con el aviso de que es del destino de aquella corrida—; desde `prepared`, `reconciliar` decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. Desde `localInconsistent`, `comprobarIndice` decide si la inconsistencia que dejó la corrida original ya no existe, también pura. Y la raíz de composición la cablea: el camino lee el repositorio de verdad —el padre, el árbol, el mensaje y el `HEAD` de la revisión, más la comparación del índice acotada a las rutas que la rebanada declaró—, corre la reconciliación que corresponda, reconstruye la solicitud del pull request desde el documento, publica **sin volver a correr la cascada** —el documento ya lleva el borrador completo que ella hubiera producido— **y sin volver a evaluar las tres decisiones que cortan una corrida nueva antes de la primera escritura: el secreto, la compuerta por estado y la confirmación** —ya corrieron cuando esta corrida commiteó, y volver a evaluarlas sería decidir de nuevo algo ya decidido y registrado— y sella el documento con el desenlace que salga. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md); lo que le queda abierto está declarado como residuo en [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento) y en [Lo que `--retry-publication` NO hace](#lo-que---retry-publication-no-hace).
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
@@ -4471,13 +4471,24 @@ decidiendo:
   documento persiste la identidad del destino al que aquella corrida iba a
   publicar —saneada, sin la credencial que la autoridad de una URL puede
   traer, y producida por la misma puerta neutra de `forge` que arma la
-  salida—. Si el remoto de hoy nombra otro destino, o ninguno, el reintento se
-  detiene con `4` y nombra los dos: no reescribe la configuración de nadie, y
-  no publica en un repositorio que nadie eligió para esa corrida. El mismo
-  repositorio escrito de otra forma —con o sin el sufijo de repositorio
-  desnudo, por `https` o por la forma corta de `ssh`— es el mismo destino: la
-  identidad es canónica entre protocolos a propósito, porque cambiar de
-  camino no es cambiar de destino.
+  salida—. Si el remoto de hoy nombra otro destino, o ninguno, **los caminos
+  que publican** se detienen con `4` nombrando los dos: no se reescribe la
+  configuración de nadie, y no se publica en un repositorio que nadie eligió
+  para esa corrida. **Los que no publican no cambian**: sobre una corrida ya
+  publicada ahí no hay ninguna publicación que guardar, así que la respuesta
+  sigue siendo la de siempre —éxito, con la URL del pull request— más un aviso
+  de que esa URL es del destino de aquella corrida y no del que hay
+  configurado ahora. Convertirla en fallo se llevaba puesta la única forma que
+  tiene de preguntar quien movió el remoto por un motivo ajeno.
+- **El mismo repositorio escrito de otra forma es el mismo destino.** Con o
+  sin el sufijo de repositorio desnudo, por `https` o por la forma corta de
+  `ssh`, con el host en otra caja: la identidad es canónica entre protocolos a
+  propósito, porque cambiar de camino no es cambiar de destino. **El puerto SÍ
+  distingue** —dos instalaciones en el mismo host y distinto puerto son dos
+  destinos—, y el dueño y el repositorio distinguen por caja: este árbol no
+  puede saber si la forja de turno la pliega ahí, y plegarla haría que dos
+  repositorios realmente distintos dieran la misma identidad. Falla cerrado, y
+  el mensaje dice cómo devolver el remoto.
 - **El retiro de `RepositorioGit.apply` no es de esta rebanada.** Se deja
   medido y declarado —ver arriba—, no se toca: decidir si se retira del todo
   o se reserva como superficie de un comando futuro (`start`, D-032) es una

@@ -341,17 +341,93 @@ void main() {
     expect((p as NoSeReintenta).causa, CausaDeNoReintento.destinoDistinto);
   });
 
-  test('el destino se comprueba ANTES que el estado', () {
-    // **Incluido el estado que sale con ÉXITO.** «Ya está publicado» sería
-    // cierto sobre el destino de aquella corrida y falso como respuesta a
-    // «¿qué pasa si reintento acá?»: sin esta precedencia, un reintento
-    // contra otro repositorio salía con cero diciendo que ya estaba hecho.
+  test('el destino gana sobre el estado en los caminos que publican', () {
+    // Los CUATRO estados que despachan a un camino de publicación, contados
+    // sobre el `switch` de la puerta: los dos que reconcilian y los dos que
+    // publican directo. En los cuatro, el destino manda.
+    const publican = [
+      EstadoDelDocumento.prepared,
+      EstadoDelDocumento.committed,
+      EstadoDelDocumento.publicationIncomplete,
+      EstadoDelDocumento.localInconsistent,
+    ];
+    for (final estado in publican) {
+      final p = puertaDelReintento(
+        documento: documentoEn(estado),
+        ramaActual: ramaDeLosDocumentosDePrueba,
+        destinoActual: 'otra-forja/otro/repositorio',
+      );
+      expect(
+        (p as NoSeReintenta).causa,
+        CausaDeNoReintento.destinoDistinto,
+        reason: estado.name,
+      );
+    }
+  });
+
+  test(
+    'sobre una corrida YA PUBLICADA el destino movido no la vuelve un fallo',
+    () {
+      // **Acá no hay ninguna publicación que guardar**: este camino no lee el
+      // repositorio ni le pide nada a la forja. Convertirlo en un rechazo
+      // cambiaba un hecho cierto —dónde quedó el pull request— por un fallo, y
+      // se llevaba puesta la URL, que es justo lo que necesita quien movió el
+      // remoto por un motivo ajeno a esta corrida.
+      final p = puertaDelReintento(
+        documento: documentoEn(EstadoDelDocumento.publicationComplete),
+        ramaActual: ramaDeLosDocumentosDePrueba,
+        destinoActual: 'otra-forja/otro/repositorio',
+      );
+      expect((p as NoSeReintenta).causa, CausaDeNoReintento.yaPublicado);
+      expect(
+        p.detalle,
+        contains('https://forja.ejemplo/pr/1'),
+        reason: 'la URL sigue estando: es la única forma de preguntar',
+      );
+      expect(
+        p.detalle,
+        allOf(
+          contains(destinoDeLosDocumentosDePrueba),
+          contains('otra-forja/otro/repositorio'),
+        ),
+        reason:
+            'y va con su aviso, que es lo que impide leerla como si fuera del '
+            'remoto de ahora',
+      );
+    },
+  );
+
+  test('sin remoto, una corrida ya publicada igual dice dónde quedó', () {
     final p = puertaDelReintento(
       documento: documentoEn(EstadoDelDocumento.publicationComplete),
       ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: null,
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.yaPublicado);
+    expect(p.detalle, contains('https://forja.ejemplo/pr/1'));
+  });
+
+  test('con el destino intacto, la respuesta de siempre y SIN aviso', () {
+    // El control negativo del aviso: pegado sin condición, sería ruido en
+    // todas las corridas que no movieron nada.
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.publicationComplete),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: destinoDeLosDocumentosDePrueba,
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.yaPublicado);
+    expect(p.detalle, isNot(contains('Ojo')));
+  });
+
+  test('un CAS rechazado con el destino movido sigue diciendo lo mismo', () {
+    // Tampoco publica: la alternativa —volver a correr `ship`— es cierta
+    // cualquiera sea el remoto de hoy.
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.notApplied),
+      ramaActual: ramaDeLosDocumentosDePrueba,
       destinoActual: 'otra-forja/otro/repositorio',
     );
-    expect((p as NoSeReintenta).causa, CausaDeNoReintento.destinoDistinto);
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.nadaQueEntregar);
   });
 
   test('la rama se comprueba ANTES que el destino', () {

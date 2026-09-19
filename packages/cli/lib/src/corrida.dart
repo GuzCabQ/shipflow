@@ -593,6 +593,11 @@ enum CausaDeNoReintento {
   /// iba a publicar. Publicar acá abriría un pull request en otro
   /// repositorio, y la búsqueda que impide abrir un SEGUNDO correría contra
   /// un destino donde el primero no está.
+  ///
+  /// **Solo sale por los caminos que PUBLICAN.** Una corrida que ya publicó,
+  /// o cuyo compare-and-swap fue rechazado, contesta lo suyo con el remoto
+  /// movido o sin él: ahí no hay ninguna publicación que esta causa pueda
+  /// guardar, y taparlas con ella cambiaría un hecho cierto por un fallo.
   destinoDistinto,
 
   /// Ya hay un pull request utilizable: no queda nada que publicar de nuevo.
@@ -659,15 +664,39 @@ String? _urlYaPublicada(DocumentoDeCorrida documento) {
   return desenlace is Publicado ? desenlace.pr.url : null;
 }
 
-NoSeReintenta _yaPublicado(DocumentoDeCorrida documento) {
+/// **El aviso que acompaña a la URL cuando el remoto ya no es el de aquella
+/// corrida**, o vacío cuando sí lo es.
+///
+/// **Existe para no tener que elegir entre mentir y callar.** El riesgo real
+/// de dar la URL con el remoto movido es que quien la lea la tome por un pull
+/// request del destino de AHORA; la respuesta a eso es decir de dónde es, no
+/// convertir en fallo una información verdadera. Quien movió el remoto por un
+/// motivo ajeno a esta corrida sigue necesitando saber dónde quedó, y sin la
+/// URL pierde la única forma de preguntarlo.
+String _avisoDeDestinoMovido(
+  DocumentoDeCorrida documento,
+  String? destinoActual,
+) {
+  if (destinoActual == documento.destino) return '';
+  return ' Ojo: esa publicación es en «${documento.destino}», y el remoto de '
+      'este repositorio apunta ahora a '
+      '${destinoActual == null ? "ningún destino que se pueda nombrar" : "«$destinoActual»"}: '
+      'la URL de arriba NO es del destino que tenés configurado.';
+}
+
+NoSeReintenta _yaPublicado(
+  DocumentoDeCorrida documento, {
+  required String? destinoActual,
+}) {
   final url = _urlYaPublicada(documento);
+  final aviso = _avisoDeDestinoMovido(documento, destinoActual);
   return NoSeReintenta(
     causa: CausaDeNoReintento.yaPublicado,
     detalle: url == null
         ? 'Esta corrida ya publicó, y el documento no registra dónde. No '
-              'hace falta reintentar nada: ya está hecho.'
+              'hace falta reintentar nada: ya está hecho.$aviso'
         : 'Esta corrida ya publicó: $url. No hace falta reintentar nada: ya '
-              'está hecho.',
+              'está hecho.$aviso',
   );
 }
 
@@ -680,9 +709,8 @@ const _nadaQueEntregar = NoSeReintenta(
 );
 
 /// La puerta de `--retry-publication`: filtra por rama, por destino y por
-/// estado antes de
-/// dejar pasar a [decidirRecuperacion] o a los caminos de reconciliación que
-/// arrancan desde ella.
+/// estado antes de dejar pasar a [decidirRecuperacion] o a los caminos de
+/// reconciliación que arrancan desde ella.
 ///
 /// **Por qué llega temprano, medido.** En cinco de los seis estados de
 /// [DocumentoDeCorrida], la respuesta de la comparación de tres casos es
@@ -711,25 +739,34 @@ const _nadaQueEntregar = NoSeReintenta(
 /// hacer» sobre una corrida que no tiene nada que ver con la rama en la que
 /// está parada.
 ///
-/// **Por qué el DESTINO se comprueba después de la rama y antes del estado.**
-/// Es el mismo argumento que sostiene a la rama, sobre el otro eje: si el
-/// remoto ya no nombra el destino de esta corrida, lo que [documento] afirma
-/// no es sobre el lugar donde este reintento publicaría. La diferencia con la
-/// rama es qué se rompe cuando se ignora, y acá es lo más caro que este
-/// camino puede romper: la búsqueda idempotente que impide abrir un SEGUNDO
-/// pull request es una búsqueda EN EL DESTINO, así que contra un destino
-/// nuevo no encuentra nada —correctamente: ahí no hay nada— y publica otra
-/// vez. Va después de la rama porque quien se cambió de rama tampoco está
-/// mirando este documento; va antes del estado por lo mismo que la rama: el
-/// estado describe una corrida hecha contra OTRO destino, y cualquier cosa
-/// que diga es una respuesta cierta sobre otra pregunta — incluido «ya está
-/// publicado», que sería cierto allá y no acá.
+/// **Por qué el DESTINO gana sobre el estado, pero SOLO en los caminos que
+/// publican.** Lo que esta comparación guarda es una publicación: la búsqueda
+/// idempotente que impide abrir un SEGUNDO pull request es una búsqueda EN EL
+/// DESTINO, así que contra un destino nuevo no encuentra nada —correctamente:
+/// ahí no hay nada— y se publica otra vez, en un repositorio que nadie
+/// eligió. Por eso, cuando el estado despacha a [Reconciliar] o a
+/// [PublicarDirecto], el destino manda: esas dos respuestas describen una
+/// corrida hecha contra OTRO destino y obedecerlas publicaría acá.
+///
+/// **Y por eso NO gana sobre las respuestas que ya son [NoSeReintenta].**
+/// Ahí no hay ninguna publicación que guardar —ni se lee el repositorio, ni se
+/// le pide nada a la forja—, así que comparar destinos solo puede cambiar una
+/// respuesta verdadera por un fallo. El caso concreto es el más caro de los
+/// dos: sobre una corrida ya publicada, la respuesta lleva la URL del pull
+/// request, y quien movió el remoto por un motivo ajeno a esta corrida sigue
+/// necesitando esa URL para preguntar qué pasó. El riesgo de darla —que se la
+/// lea como si fuera del remoto de ahora— se cubre con un aviso al lado, ver
+/// [_avisoDeDestinoMovido], y no convirtiendo en fallo un hecho cierto.
+///
+/// **La rama, en cambio, gana sobre los SEIS.** No es una inconsistencia: la
+/// rama decide si lo que [documento] afirma es sobre el repositorio que se
+/// está mirando, así que ahí ni siquiera la URL de una publicación anterior es
+/// una respuesta a la pregunta que se hizo.
 ///
 /// **[destinoActual] es nulo cuando el remoto de hoy no nombra ningún
 /// destino** —no hay remoto, o el que hay no se puede leer como uno—. Nulo
 /// nunca es igual al destino de un documento, así que ese caso entra por la
-/// misma puerta y con el mismo texto: no se puede afirmar que se siga
-/// publicando donde se publicaba.
+/// misma puerta y con el mismo texto.
 ///
 /// **El `switch` sobre [EstadoDelDocumento] es exhaustivo y sin `default`.**
 /// Es el mismo criterio que ya instaló la compuerta por estado de la
@@ -756,7 +793,22 @@ PuertaDelReintento puertaDelReintento({
           'equivocada: cambiá a «$ramaDeLaCorrida» antes de reintentar.',
     );
   }
-  if (destinoActual != documento.destino) {
+  final porElEstado = switch (documento.estado) {
+    EstadoDelDocumento.prepared => const Reconciliar(),
+    EstadoDelDocumento.committed => const PublicarDirecto(),
+    EstadoDelDocumento.publicationIncomplete => const PublicarDirecto(),
+    EstadoDelDocumento.publicationComplete => _yaPublicado(
+      documento,
+      destinoActual: destinoActual,
+    ),
+    EstadoDelDocumento.notApplied => _nadaQueEntregar,
+    EstadoDelDocumento.localInconsistent => const Reconciliar(),
+  };
+  // **El destino gobierna los caminos que PUBLICAN, y solo ésos.** Ver el
+  // doc de esta función: sobre una respuesta que ya es «no se reintenta» no
+  // hay ninguna publicación que guardar, y convertirla en otro rechazo cambia
+  // una respuesta verdadera por un fallo.
+  if (porElEstado is! NoSeReintenta && destinoActual != documento.destino) {
     return NoSeReintenta(
       causa: CausaDeNoReintento.destinoDistinto,
       detalle:
@@ -771,12 +823,5 @@ PuertaDelReintento puertaDelReintento({
           'el principio si lo que querés es publicar en el destino de ahora.',
     );
   }
-  return switch (documento.estado) {
-    EstadoDelDocumento.prepared => const Reconciliar(),
-    EstadoDelDocumento.committed => const PublicarDirecto(),
-    EstadoDelDocumento.publicationIncomplete => const PublicarDirecto(),
-    EstadoDelDocumento.publicationComplete => _yaPublicado(documento),
-    EstadoDelDocumento.notApplied => _nadaQueEntregar,
-    EstadoDelDocumento.localInconsistent => const Reconciliar(),
-  };
+  return porElEstado;
 }
