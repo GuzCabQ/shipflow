@@ -272,6 +272,37 @@ void main() {
       }
     });
 
+    test('un NoAplicado sin causa es una forma más vieja del documento, y '
+        'el error NOMBRA la versión', () {
+      // La forma vieja de `NoAplicado` no tenía `causa` —ver su historia en
+      // el archivo del desenlace—, y `versionActual` no subió cuando el campo
+      // se agregó porque nadie había publicado esa forma todavía (ver el doc
+      // de [DocumentoDeCorrida.versionActual]). Un documento con esa forma vieja
+      // hoy PASA el portón de `formatVersion` entero —es el mismo número— y
+      // recién explota releyendo el desenlace. Sin nombrar la versión ahí, el
+      // error que sale lee como «este JSON está roto» y no como lo que es:
+      // una forma que a este código todavía le falta, o le sobra, describir.
+      final valido = llegarA(
+        EstadoDelDocumento.notApplied,
+        porEstado[EstadoDelDocumento.notApplied],
+      ).toJson();
+      final desenlaceSinCausa = Map<String, Object?>.from(
+        valido['desenlace']! as Map,
+      )..remove('causa');
+      final json = Map<String, Object?>.from(valido)
+        ..['desenlace'] = desenlaceSinCausa;
+      expect(
+        () => DocumentoDeCorrida.fromJson(json),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'nombra formatVersion',
+            contains('formatVersion ${DocumentoDeCorrida.versionActual}'),
+          ),
+        ),
+      );
+    });
+
     test('un desenlace nulo nunca es incoherente: es «todavía no hay»', () {
       // Residuo declarado: que un estado TERMINAL pueda seguir llevando
       // desenlace nulo NO está impuesto acá. Quién escribe el desenlace en

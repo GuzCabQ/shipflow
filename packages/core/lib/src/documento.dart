@@ -40,6 +40,32 @@ EstadoDelDocumento _estadoPorNombre(Object? leido) {
 class DocumentoDeCorrida {
   /// **Del documento, no del envelope de salida.** Son dos contratos con
   /// ciclos de vida distintos.
+  ///
+  /// **Por qué seguir en `1` es seguro, hoy.** Esta clase y su forma son de
+  /// 4a —la rebanada del desenlace y su documento—, y 4a todavía no se
+  /// mergeó: no existe ningún documento escrito por una corrida real con la
+  /// forma vieja de un desenlace —`NoAplicado` sin `causa`, por ejemplo, la
+  /// que tenía antes de que este mismo grupo de arreglos la exigiera—, y por
+  /// lo tanto no hay ningún lector para el que esta versión tenga que seguir
+  /// sirviendo. Corregir la forma en el lugar, sin subir el número, es
+  /// correcto exactamente porque nada publicado depende de la forma anterior.
+  ///
+  /// **Cuándo deja de serlo.** El día que 4a se integre, esa garantía
+  /// desaparece: cualquier corrida de `ship` que haya corrido después —en
+  /// cualquier repositorio, de cualquiera— pudo haber escrito un documento
+  /// con la forma de ese día, y ese documento pasa a ser un lector real.
+  /// Desde ese día, el PRÓXIMO cambio de forma —agregar un campo, sacar uno,
+  /// volverlo obligatorio— tiene que subir este número: ya no es «nadie lo
+  /// vio todavía» sino «alguien puede tenerlo en el disco».
+  ///
+  /// **Por qué no alcanza con acordarse.** Esta nota tiene que vivir acá y no
+  /// en la cabeza de quien integró 4a: dentro de un año, quien le agregue un
+  /// campo a un desenlace no tiene por qué saber que hubo una ventana —antes
+  /// de este merge— donde cambiar su forma no pagaba versión, ni en qué commit
+  /// se cerró esa ventana. El día del merge, lo que tiene que pasar es borrar
+  /// este párrafo y tratar la forma de ese momento como la primera que
+  /// alguien puede tener guardada — y eso solo se puede seguir si queda
+  /// escrito acá, no si depende de que alguien se acuerde.
   static const versionActual = 1;
 
   /// **Campo fijo, no un parámetro del constructor** —el mismo motivo que ya
@@ -240,9 +266,35 @@ class DocumentoDeCorrida {
     }
     final crudo = json['desenlace'];
     final estado = _estadoPorNombre(json['estado']);
-    final desenlace = crudo == null
-        ? null
-        : ShipOutcome.fromJson(Map<String, Object?>.from(crudo as Map));
+    ShipOutcome? desenlace;
+    if (crudo != null) {
+      try {
+        desenlace = ShipOutcome.fromJson(
+          Map<String, Object?>.from(crudo as Map),
+        );
+      } on FormatException catch (e) {
+        // **Nombra la versión, para que esto no lea como «JSON roto».**
+        // `formatVersion` compara por igualdad exacta contra un solo número,
+        // y hoy ese número no distingue formas: un campo puede agregarse a un
+        // desenlace sin subir [versionActual] —es la misma decisión que esta
+        // ronda tomó con `causa` en `NoAplicado`, ver su doc— porque todavía
+        // no hay ningún lector de la forma vieja allá afuera. Un documento
+        // escrito con esa forma vieja coincide en `formatVersion` igual, así
+        // que pasa el portón de arriba entero y explota acá, más adentro. Sin
+        // nombrar la versión en ESTE mensaje, lo único que le llega a quien
+        // lo lee es un `FormatException` que no distingue «esto se corrompió»
+        // de «esto es de antes de que este campo existiera» — y acordarse de
+        // esa diferencia no alcanza: quien relee un documento meses después
+        // no tiene por qué recordar en qué commit se agregó cada campo.
+        throw FormatException(
+          'El desenlace de este documento (formatVersion $version) no tiene '
+          'la forma que este código exige: ${e.message} Como formatVersion '
+          'no subió con ese campo, esto no es necesariamente un documento '
+          'corrupto: puede ser una forma más vieja que un campo nuevo dejó '
+          'atrás.',
+        );
+      }
+    }
     // **Antes de construir, y con `FormatException`.** Es la misma exigencia
     // que el constructor, por el camino por el que de verdad llegaba el
     // estado contradictorio: un documento que ya está en el disco. Que salga
