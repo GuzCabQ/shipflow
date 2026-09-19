@@ -367,7 +367,10 @@ void main() {
       expect(veredictoDeShip(desenlaceDePrueba()), 'ok');
       expect(
         veredictoDeShip(
-          ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'abc123'),
+          ShipOutcome.noAplicadoParaLaPrueba(
+            causa: CausaDeNoAplicacion.baseMovida,
+            headObservado: 'abc123',
+          ),
         ),
         isNull,
         reason:

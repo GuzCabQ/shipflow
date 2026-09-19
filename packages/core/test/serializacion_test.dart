@@ -541,7 +541,10 @@ void main() {
           NoIntentado.fromJson,
         ),
         'NoAplicado': (
-          ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'c' * 40).toJson(),
+          ShipOutcome.noAplicadoParaLaPrueba(
+            causa: CausaDeNoAplicacion.baseMovida,
+            headObservado: 'c' * 40,
+          ).toJson(),
           NoAplicado.fromJson,
         ),
         'LocalInconsistente': (

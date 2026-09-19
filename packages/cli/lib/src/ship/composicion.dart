@@ -795,9 +795,13 @@ String _enTexto(ShipOutcome desenlace) => switch (desenlace) {
   NoIntentado(:final causa, :final verificacion) =>
     'ship: no se publicó nada — ${causa.name}. La verificación quedó en '
         '${verificacion.name}.',
-  NoAplicado(:final headObservado) =>
+  NoAplicado(causa: CausaDeNoAplicacion.baseMovida, :final headObservado) =>
     'ship: la rama avanzó a $headObservado mientras se verificaba, así que '
         'no se aplicó nada.',
+  NoAplicado(causa: CausaDeNoAplicacion.ramaCambiada, :final headObservado) =>
+    'ship: la rama puesta cambió mientras se verificaba, así que no se '
+        'intentó aplicar nada: $headObservado es el HEAD de la rama de ahora, '
+        'no de aquella.',
   LocalInconsistente(:final revision) =>
     'ship: el commit $revision existe y el índice quedó sin sincronizar.',
   Publicado(:final pr, :final verificacion) =>

@@ -156,6 +156,13 @@ class MundoDePrueba {
   /// ventana real: verificar tarda, y nada congela el repositorio entretanto.
   final bool headSeMueveAntesDelCas;
 
+  /// Quien corre se cambia de rama mientras la corrida verifica. **Es la OTRA
+  /// causa de no aplicar, y no es la misma**: la rama de la corrida no se
+  /// movió, no se intenta ningún compare-and-swap, y el `HEAD` observado es
+  /// el de otra rama. Es alcanzable porque la promoción comprueba que la rama
+  /// de ahora sea la de antes y una cascada real dura lo suficiente.
+  final bool laRamaCambiaAntesDelCas;
+
   /// La cascada lanza en vez de devolver un desenlace. No es un paso roto —eso
   /// la cascada lo convierte en `Broken`—: es el observador de alcance
   /// fallando, que sí sube.
@@ -226,6 +233,7 @@ class MundoDePrueba {
     this.conSecreto = false,
     this.estado = EstadoDeCorrida.verde,
     this.headSeMueveAntesDelCas = false,
+    this.laRamaCambiaAntesDelCas = false,
     this.laCascadaExplota = false,
     this.candidatoAlterado = false,
     this.sinCredencial = false,
@@ -333,6 +341,12 @@ class MundoDePrueba {
       _git(['commit', '-m', 'trabajo ajeno']);
       _cabezaEsperada = _git(['rev-parse', 'refs/heads/trabajo']);
       _mios.add(_cabezaEsperada);
+    }
+    if (laRamaCambiaAntesDelCas) {
+      // Crear la rama nueva y ponerla NO toca el árbol de trabajo —queda en
+      // el mismo commit—, así que lo único que cambia es cuál está puesta:
+      // exactamente lo que `applyRevision` comprueba antes de mover nada.
+      _git(['switch', '-c', 'otra']);
     }
     if (laCascadaExplota) {
       // Un sujeto que la tabla no declara: el observador falso se niega a
@@ -557,16 +571,39 @@ void main() {
     expect(mundo.pullRequests, isEmpty);
   });
 
-  test('el CAS rechazado da NoAplicado y la rama no se movió', () async {
+  test('el CAS rechazado da NoAplicado por baseMovida, y la rama no se '
+      'movió', () async {
     final mundo = MundoDePrueba(headSeMueveAntesDelCas: true);
     final r = await mundo.correr(yes: true);
     expect(r, isA<NoAplicado>());
+    expect((r as NoAplicado).causa, CausaDeNoAplicacion.baseMovida);
     expect(mundo.ramaSeMovio, isFalse);
     // **Y el documento quedó sellado.** Sin esta aserción, devolver el
     // desenlace sin persistirlo pasaba: el documento se quedaría en
     // `prepared`, afirmando una corrida en curso que ya terminó.
     expect(mundo.documento!.estado, EstadoDelDocumento.notApplied);
     expect(mundo.documento!.desenlace, isA<NoAplicado>());
+  });
+
+  test('cambiarse de rama da NoAplicado por ramaCambiada, y el desenlace NO '
+      'dice que la rama avanzó', () async {
+    // **La otra causa, y la que el desenlace estaba tapando.** Acá no se
+    // intenta ningún compare-and-swap: la promoción comprueba primero que la
+    // rama puesta sea la de antes. El `HEAD` observado es el de la OTRA rama,
+    // así que el consejo de «la rama avanzó a …, volvé a correr» reconstruiría
+    // el candidato sobre esa otra y commitearía ahí.
+    final mundo = MundoDePrueba(laRamaCambiaAntesDelCas: true);
+    final r = await mundo.correr(yes: true);
+    expect(r, isA<NoAplicado>());
+    expect((r as NoAplicado).causa, CausaDeNoAplicacion.ramaCambiada);
+    expect(mundo.ramaSeMovio, isFalse);
+    expect(mundo.commits, isEmpty);
+    expect(mundo.pullRequests, isEmpty);
+    expect(mundo.documento!.estado, EstadoDelDocumento.notApplied);
+    // Y lo que sale por la salida y por la acción siguiente dice la verdad de
+    // ESTA causa: la rama de la corrida no avanzó a ningún lado.
+    expect(accionDe(r), isNot(contains('avanzó')));
+    expect(accionDe(r), contains('--branch'));
   });
 
   test(

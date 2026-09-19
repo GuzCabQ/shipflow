@@ -127,6 +127,7 @@ void main() {
     // cerrarlo.
     final porEstado = <EstadoDelDocumento, ShipOutcome>{
       EstadoDelDocumento.notApplied: ShipOutcome.noAplicadoParaLaPrueba(
+        causa: CausaDeNoAplicacion.baseMovida,
         headObservado: 'c' * 40,
       ),
       EstadoDelDocumento.localInconsistent:

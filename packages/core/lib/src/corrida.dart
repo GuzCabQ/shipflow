@@ -224,7 +224,14 @@ sealed class ShipOutcome {
     required bool soloPreview,
     required bool autorizaIncompleto,
     PublicationOutcome? remoto,
-    String? headQueRechazoElCas,
+
+    /// El rechazo tal como lo informó quien intentó aplicar, **entero y no
+    /// una mitad**. Antes acá entraba solo el `HEAD` observado, y con eso el
+    /// desenlace perdía la causa —el único dato que distingue «la rama
+    /// avanzó» de «te cambiaste de rama»— antes de que nadie la pudiera
+    /// leer. Pasar el desenlace medido en vez de un campo suelto es también
+    /// lo que hace imposible armar acá una combinación que nadie midió.
+    NotApplied? casRechazado,
     String? revisionConIndiceSucio,
   }) {
     NoIntentado sinIntentar(CausaDeNoIntento causa) =>
@@ -255,8 +262,11 @@ sealed class ShipOutcome {
     if (!seConfirmo) return sinIntentar(CausaDeNoIntento.confirmationMissing);
 
     // A partir de acá la corrida sí intentó escribir.
-    if (headQueRechazoElCas != null) {
-      return NoAplicado._(headObservado: headQueRechazoElCas);
+    if (casRechazado != null) {
+      return NoAplicado._(
+        causa: casRechazado.causa,
+        headObservado: casRechazado.headObservado,
+      );
     }
     if (revisionConIndiceSucio != null) {
       return LocalInconsistente._(revision: revisionConIndiceSucio);
@@ -288,8 +298,10 @@ sealed class ShipOutcome {
     required EstadoDeCorrida verificacion,
   }) => NoIntentado._(causa: causa, verificacion: verificacion);
 
-  static NoAplicado noAplicadoParaLaPrueba({required String headObservado}) =>
-      NoAplicado._(headObservado: headObservado);
+  static NoAplicado noAplicadoParaLaPrueba({
+    required CausaDeNoAplicacion causa,
+    required String headObservado,
+  }) => NoAplicado._(causa: causa, headObservado: headObservado);
 
   static LocalInconsistente localInconsistenteParaLaPrueba({
     required String revision,
@@ -346,18 +358,33 @@ final class NoIntentado extends ShipOutcome {
   }
 }
 
-/// El CAS fue rechazado porque `HEAD` se movió. **Nada más lo produce**: un
-/// fallo de permisos o de entrada y salida no es una detención benigna.
+/// La revisión no se aplicó. **Nada más lo produce**: un fallo de permisos o
+/// de entrada y salida no es una detención benigna.
 ///
 /// La garantía es «la rama y `HEAD` no se movieron», **no «cero commit»**:
-/// `commit-tree` corre antes del CAS, así que cuando el CAS falla el objeto
+/// `commit-tree` corre antes del CAS, así que cuando no se aplica el objeto
 /// existe, inalcanzable desde cualquier referencia y recogible por el `gc`.
+///
+/// **Lleva la [causa], y eso no es un adorno del payload.** Las dos causas se
+/// arreglan distinto y una de las dos ni siquiera intentó el
+/// compare-and-swap. Sin ella, este desenlace afirmaba «la rama avanzó a
+/// [headObservado]» para las dos —y con `ramaCambiada` la rama NO avanzó: el
+/// `HEAD` observado es el de OTRA rama, la que quien corre se puso durante la
+/// cascada—. El consejo que salía de ahí era peor que inútil: volver a correr
+/// reconstruye el candidato sobre esa otra rama y commitea ahí. Un desenlace
+/// derivado no puede afirmar un hecho que nadie midió, y por eso el que sí se
+/// midió viaja hasta acá.
 final class NoAplicado extends ShipOutcome {
-  /// Qué `HEAD` se encontró. Es lo que le permite a quien reintente saber
-  /// sobre qué se va a reconstruir el candidato.
+  /// Por qué no se aplicó. Es el mismo valor que informó quien lo intentó, no
+  /// una reconstrucción.
+  final CausaDeNoAplicacion causa;
+
+  /// Qué `HEAD` se encontró. **Qué significa depende de [causa]**: con
+  /// `baseMovida` es dónde quedó la rama de la corrida; con `ramaCambiada` es
+  /// el `HEAD` de la rama que está puesta ahora, que es otra.
   final String headObservado;
 
-  const NoAplicado._({required this.headObservado});
+  const NoAplicado._({required this.causa, required this.headObservado});
 
   @override
   final String kind = 'noAplicado';
@@ -365,12 +392,21 @@ final class NoAplicado extends ShipOutcome {
   @override
   Map<String, Object?> toJson() => {
     'kind': kind,
+    'causa': causa.name,
     'headObservado': headObservado,
   };
 
   factory NoAplicado.fromJson(Map<String, Object?> json) {
     ShipOutcome._exigirKind(json['kind'], 'noAplicado');
-    return NoAplicado._(headObservado: json['headObservado']! as String);
+    return NoAplicado._(
+      causa: ShipOutcome._porNombre(
+        CausaDeNoAplicacion.values,
+        json['causa'],
+        'causa',
+        'NoAplicado',
+      ),
+      headObservado: json['headObservado']! as String,
+    );
   }
 }
 

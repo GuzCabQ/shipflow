@@ -44,7 +44,12 @@ List<ShipOutcome> todosLosDesenlaces() => [
   for (final causa in CausaDeNoIntento.values)
     for (final estado in EstadoDeCorrida.values)
       ShipOutcome.noIntentadoParaLaPrueba(causa: causa, verificacion: estado),
-  ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
+  // **Las dos causas, no una.** Las propiedades de abajo son sobre el
+  // dominio ENTERO, y `NoAplicado` dejó de ser una sola fila el día que se
+  // le puso la causa adentro: con una muestra de una, «ningún código
+  // distinto de cero se queda mudo» volvería a cubrir menos de lo que dice.
+  for (final causa in CausaDeNoAplicacion.values)
+    ShipOutcome.noAplicadoParaLaPrueba(causa: causa, headObservado: 'a' * 40),
   ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
   for (final publicable in EstadoPublicable.values) ...[
     ShipOutcome.publicadoParaLaPrueba(
@@ -244,7 +249,10 @@ void main() {
           causa: CausaDeNoIntento.verificationGate,
           verificacion: EstadoDeCorrida.noConcluyente,
         ),
-        3: ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
+        3: ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'a' * 40,
+        ),
         6: ShipOutcome.publicacionIncompletaParaLaPrueba(
           remoto: PushUnknown(causa: CausaDePublicacion.red),
           verificacion: EstadoPublicable.verde,
@@ -408,7 +416,10 @@ void main() {
       // corra `--retry-publication`, que es justo lo que su mensaje correcto
       // prohíbe: no hay entrega que recuperar.
       final perdioElCas = accionDe(
-        ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'c' * 40),
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'c' * 40,
+        ),
       )!;
       expect(perdioElCas, contains('c' * 40));
       expect(perdioElCas, contains('Volvé a correr ship'));
@@ -429,6 +440,54 @@ void main() {
         indiceSucio,
         isNot(contains('No sirve')),
         reason: 'acá el reintento SÍ es el camino, después de reparar',
+      );
+    });
+
+    test('las DOS causas de no aplicar no dicen lo mismo, y la segunda no '
+        'afirma que la rama avanzó', () {
+      // **El hecho medido.** Con `ramaCambiada` no se intentó ningún
+      // compare-and-swap y la rama de la corrida no se movió: el `HEAD`
+      // observado es el de OTRA rama, la que quien corre se puso durante la
+      // cascada. El mensaje único decía «la rama avanzó a …, volvé a correr»
+      // para las dos, y ahí el consejo es peor que inútil: volver a correr
+      // reconstruye el candidato sobre esa otra rama y, sin la bandera que
+      // fija la rama, commitea ahí.
+      final baseMovida = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'c' * 40,
+        ),
+      )!;
+      final ramaCambiada = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.ramaCambiada,
+          headObservado: 'c' * 40,
+        ),
+      )!;
+
+      expect(
+        ramaCambiada,
+        isNot(baseMovida),
+        reason: 'dos hechos distintos con el mismo consejo es el defecto',
+      );
+      expect(
+        baseMovida,
+        contains('La rama avanzó'),
+        reason: 'acá sí avanzó: el compare-and-swap se rechazó por eso',
+      );
+      expect(
+        ramaCambiada,
+        isNot(contains('avanzó')),
+        reason:
+            'la rama de la corrida no se movió, y decir que avanzó es '
+            'afirmar un hecho que nadie midió',
+      );
+      // Y la prohibición no va sola: la alternativa viaja con ella.
+      expect(ramaCambiada, contains('--branch'));
+      expect(
+        ramaCambiada,
+        contains('Volvé a la rama'),
+        reason: '«no vuelvas a correrlo sin más» necesita su «hacé esto»',
       );
     });
 

@@ -357,7 +357,7 @@ Future<ShipOutcome> correrShip({
     // distinto sobre la misma corrida.
     ShipOutcome desenlaceDeLoEscrito({
       PublicationOutcome? remoto,
-      String? headQueRechazoElCas,
+      NotApplied? casRechazado,
       String? revisionConIndiceSucio,
     }) => ShipOutcome.derivar(
       verificacion: superficie.estado,
@@ -366,7 +366,7 @@ Future<ShipOutcome> correrShip({
       soloPreview: false,
       autorizaIncompleto: entrada.allowIncomplete,
       remoto: remoto,
-      headQueRechazoElCas: headQueRechazoElCas,
+      casRechazado: casRechazado,
       revisionConIndiceSucio: revisionConIndiceSucio,
     );
 
@@ -396,12 +396,16 @@ Future<ShipOutcome> correrShip({
     // 13 · El compare-and-swap, condicionado a la base.
     final aplicado = await candidato.applyRevision();
     switch (aplicado) {
-      case NotApplied(:final headObservado):
+      // **Viaja entero, no su `HEAD`.** Las dos causas se arreglan distinto y
+      // una de las dos ni siquiera intentó el compare-and-swap: quedarse con
+      // el `HEAD` observado las igualaba, y el desenlace terminaba afirmando
+      // «la rama avanzó» sobre una rama que no se movió.
+      case NotApplied():
         return await _sellar(
           registro,
           runId,
           documento,
-          desenlaceDeLoEscrito(headQueRechazoElCas: headObservado),
+          desenlaceDeLoEscrito(casRechazado: aplicado),
         );
       case LocalInconsistent(revision: final revisionConIndiceSucio):
         return await _sellar(

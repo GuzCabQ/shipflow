@@ -130,10 +130,24 @@ String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
   NoIntentado(causa: CausaDeNoIntento.verificationGate) =>
     'Arreglá lo que la verificación señaló, o autorizá publicarla incompleta '
         'con --allow-incomplete.',
-  NoAplicado(:final headObservado) =>
+  // **Las dos causas de no aplicar se dicen distinto, y la segunda es la que
+  // estaba mintiendo.** Con `ramaCambiada` la rama NO avanzó: no se intentó
+  // mover ninguna referencia, y el `HEAD` observado es el de otra rama. El
+  // consejo de «volvé a correr ship» era peor que inútil ahí —reconstruye el
+  // candidato sobre esa otra rama y commitea ahí—, así que la alternativa
+  // viaja con la advertencia y no después de ella.
+  NoAplicado(causa: CausaDeNoAplicacion.baseMovida, :final headObservado) =>
     'La rama avanzó a $headObservado. Volvé a correr ship: el candidato se '
         'reconstruye sobre el HEAD nuevo. No sirve --retry-publication: no hay '
         'entrega que recuperar.',
+  NoAplicado(causa: CausaDeNoAplicacion.ramaCambiada, :final headObservado) =>
+    'La rama puesta dejó de ser la de la corrida, así que no se intentó mover '
+        'ninguna referencia: $headObservado es el HEAD de la rama en la que '
+        'estás ahora, no de aquella. Volvé a la rama sobre la que empezaste y '
+        'corré ship de nuevo, y pasale --branch con ese nombre: así la corrida '
+        'se detiene en el preflight en vez de commitear donde estés parado. '
+        'Volver a correrlo sin más reconstruye el candidato sobre esta otra '
+        'rama. No sirve --retry-publication: no hay entrega que recuperar.',
   LocalInconsistente(:final revision) =>
     'El commit $revision existe y el índice quedó sin sincronizar. Reparalo '
         'y después --retry-publication, que comprueba que el índice ya '

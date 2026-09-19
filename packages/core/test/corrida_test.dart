@@ -134,7 +134,10 @@ void main() {
           causa: CausaDeNoIntento.previewOnly,
           verificacion: EstadoDeCorrida.verde,
         ),
-        ShipOutcome.noAplicadoParaLaPrueba(headObservado: 'a' * 40),
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'a' * 40,
+        ),
         ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
         ShipOutcome.publicadoParaLaPrueba(
           pr: PullRequestMerged(url: 'https://forja/pr/2'),
@@ -186,6 +189,7 @@ void main() {
           verificacion: EstadoDeCorrida.verde,
         ).toJson(),
         'noAplicado': ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.ramaCambiada,
           headObservado: 'a' * 40,
         ).toJson(),
         'localInconsistente': ShipOutcome.localInconsistenteParaLaPrueba(
@@ -361,7 +365,7 @@ void main() {
       bool soloPreview = false,
       bool autorizaIncompleto = false,
       PublicationOutcome? remoto,
-      String? headQueRechazoElCas,
+      NotApplied? casRechazado,
       String? revisionConIndiceSucio,
     }) => ShipOutcome.derivar(
       verificacion: verificacion,
@@ -370,8 +374,18 @@ void main() {
       soloPreview: soloPreview,
       autorizaIncompleto: autorizaIncompleto,
       remoto: remoto,
-      headQueRechazoElCas: headQueRechazoElCas,
+      casRechazado: casRechazado,
       revisionConIndiceSucio: revisionConIndiceSucio,
+    );
+
+    /// Un rechazo como lo informa quien intenta aplicar: **medido, no armado
+    /// a mano**. Es la forma en que la causa llega al desenlace.
+    NotApplied rechazo(CausaDeNoAplicacion causa, String head) => NotApplied(
+      revision: 'e' * 40,
+      causa: causa,
+      baseEsperada: 'f' * 40,
+      headObservado: head,
+      ramaObservada: causa == CausaDeNoAplicacion.ramaCambiada ? 'otra' : null,
     );
 
     test('el arnés roto gana sobre TODO lo demás', () {
@@ -476,10 +490,18 @@ void main() {
       expect((r as NoIntentado).causa, CausaDeNoIntento.previewOnly);
     });
 
-    test('el CAS rechazado da NoAplicado con el head que se vio', () {
-      final r = derivar(headQueRechazoElCas: 'c' * 40);
-      expect(r, isA<NoAplicado>());
-      expect((r as NoAplicado).headObservado, 'c' * 40);
+    test('el rechazo da NoAplicado con LA CAUSA y el head que se vieron', () {
+      // **Las dos causas, y no una sola.** Con el `HEAD` como único dato de
+      // entrada, la causa se perdía antes de que nadie la pudiera leer y el
+      // desenlace afirmaba «la rama avanzó» también para el caso en que no
+      // se intentó mover ninguna referencia. Un desenlace derivado no puede
+      // afirmar un hecho que nadie midió.
+      for (final causa in CausaDeNoAplicacion.values) {
+        final r = derivar(casRechazado: rechazo(causa, 'c' * 40));
+        expect(r, isA<NoAplicado>(), reason: causa.name);
+        expect((r as NoAplicado).causa, causa);
+        expect(r.headObservado, 'c' * 40);
+      }
     });
 
     test('el índice sucio da LocalInconsistente con la revisión', () {
