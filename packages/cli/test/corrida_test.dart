@@ -14,9 +14,12 @@ import 'package:core/core.dart';
 import 'package:path/path.dart' as rutas;
 import 'package:test/test.dart';
 
-PullRequestDraft _draftDePrueba({String base = 'base-1'}) => PullRequestDraft(
+PullRequestDraft _draftDePrueba({
+  String base = 'base-1',
+  String branch = 'rama',
+}) => PullRequestDraft(
   runId: 'corrida-1',
-  branch: 'rama',
+  branch: branch,
   base: 'develop',
   artefacto: ArtefactoDeRevision(
     superficie: SuperficieDeVerificacion(
@@ -48,6 +51,64 @@ DocumentoDeCorrida documentoPreparado({
   revision: revision,
   draft: _draftDePrueba(base: base),
 );
+
+/// La rama de todo documento que [documentoEn] construye. Las pruebas de la
+/// puerta del reintento pasan este mismo valor como `ramaActual` cuando
+/// quieren que coincida, y otra cosa cuando quieren que no.
+const ramaDeLosDocumentosDePrueba = 'feature/x';
+
+/// Un documento en [estado], con el desenlace que ese estado exige cuando lo
+/// tiene.
+///
+/// Vive acá y no repetido en cada prueba porque una de ellas recorre los
+/// SEIS valores de [EstadoDelDocumento] y construir cada uno a mano ahí
+/// mismo repetiría la misma cascada de [DocumentoDeCorrida.avanzarA] seis
+/// veces. Los estados no terminales de esta cascada —`prepared`,
+/// `committed`— no llevan desenlace porque el documento real tampoco lo
+/// tiene ahí: la corrida todavía no terminó.
+DocumentoDeCorrida documentoEn(EstadoDelDocumento estado) {
+  final preparado = DocumentoDeCorrida.preparado(
+    revision: 'a' * 40,
+    draft: _draftDePrueba(branch: ramaDeLosDocumentosDePrueba),
+  );
+  return switch (estado) {
+    EstadoDelDocumento.prepared => preparado,
+    EstadoDelDocumento.committed => preparado.avanzarA(
+      EstadoDelDocumento.committed,
+    ),
+    EstadoDelDocumento.publicationIncomplete =>
+      preparado
+          .avanzarA(EstadoDelDocumento.committed)
+          .avanzarA(
+            EstadoDelDocumento.publicationIncomplete,
+            desenlace: ShipOutcome.publicacionIncompletaParaLaPrueba(
+              remoto: PushFailed(causa: CausaDePublicacion.red),
+              verificacion: EstadoPublicable.verde,
+            ),
+          ),
+    EstadoDelDocumento.publicationComplete =>
+      preparado
+          .avanzarA(EstadoDelDocumento.committed)
+          .avanzarA(
+            EstadoDelDocumento.publicationComplete,
+            desenlace: ShipOutcome.publicadoParaLaPrueba(
+              pr: PullRequestOpen(url: 'https://forja.ejemplo/pr/1'),
+              verificacion: EstadoPublicable.verde,
+            ),
+          ),
+    EstadoDelDocumento.notApplied => preparado.avanzarA(
+      EstadoDelDocumento.notApplied,
+      desenlace: ShipOutcome.noAplicadoParaLaPrueba(
+        causa: CausaDeNoAplicacion.baseMovida,
+        headObservado: 'b' * 40,
+      ),
+    ),
+    EstadoDelDocumento.localInconsistent => preparado.avanzarA(
+      EstadoDelDocumento.localInconsistent,
+      desenlace: ShipOutcome.localInconsistenteParaLaPrueba(revision: 'a' * 40),
+    ),
+  };
+}
 
 void main() {
   late Directory temporal;
@@ -117,6 +178,124 @@ void main() {
     expect(
       decidirRecuperacion(documento: doc, headActual: 'x' * 40),
       QueHacerAlRecuperar.alguienMasAvanzo,
+    );
+  });
+
+  test(
+    'los SEIS estados tienen respuesta, y ninguna es un error de estado',
+    () {
+      for (final estado in EstadoDelDocumento.values) {
+        expect(
+          () => puertaDelReintento(
+            documento: documentoEn(estado),
+            ramaActual: ramaDeLosDocumentosDePrueba,
+          ),
+          returnsNormally,
+          reason: estado.name,
+        );
+      }
+    },
+  );
+
+  test('desde commiteado se publica directo', () {
+    expect(
+      puertaDelReintento(
+        documento: documentoEn(EstadoDelDocumento.committed),
+        ramaActual: ramaDeLosDocumentosDePrueba,
+      ),
+      isA<PublicarDirecto>(),
+    );
+  });
+
+  test('desde una publicación incompleta también', () {
+    expect(
+      puertaDelReintento(
+        documento: documentoEn(EstadoDelDocumento.publicationIncomplete),
+        ramaActual: ramaDeLosDocumentosDePrueba,
+      ),
+      isA<PublicarDirecto>(),
+    );
+  });
+
+  test('desde preparado se reconcilia', () {
+    expect(
+      puertaDelReintento(
+        documento: documentoEn(EstadoDelDocumento.prepared),
+        ramaActual: ramaDeLosDocumentosDePrueba,
+      ),
+      isA<Reconciliar>(),
+    );
+  });
+
+  test(
+    'desde el estado inconsistente TAMBIÉN se reconcilia, por el otro camino',
+    () {
+      expect(
+        puertaDelReintento(
+          documento: documentoEn(EstadoDelDocumento.localInconsistent),
+          ramaActual: ramaDeLosDocumentosDePrueba,
+        ),
+        isA<Reconciliar>(),
+      );
+    },
+  );
+
+  test('una publicación completa NO se reintenta, y lo dice', () {
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.publicationComplete),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+    );
+    expect(p, isA<NoSeReintenta>());
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.yaPublicado);
+    expect(
+      p.detalle,
+      contains('https://forja.ejemplo/pr/1'),
+      reason:
+          'una publicación completa dice dónde quedó, no solo que ya '
+          'pasó',
+    );
+  });
+
+  test('un CAS rechazado NO se reintenta: no hay entrega que recuperar', () {
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.notApplied),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.nadaQueEntregar);
+    expect(
+      p.detalle,
+      contains('ship'),
+      reason:
+          'la regla dura del proyecto es que ninguna prohibición se '
+          'instala sin decir qué hacer en cambio, y acá lo que hay que '
+          'hacer es volver a correr ship',
+    );
+  });
+
+  test('parado en OTRA rama no se reintenta, aunque el HEAD coincida', () {
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.committed),
+      ramaActual: 'otra-rama',
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.ramaDistinta);
+    expect(
+      p.detalle,
+      allOf(contains(ramaDeLosDocumentosDePrueba), contains('otra-rama')),
+      reason: 'un mensaje que no nombra las dos ramas no dice qué hacer',
+    );
+  });
+
+  test('la rama se comprueba ANTES que el estado', () {
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.publicationComplete),
+      ramaActual: 'otra-rama',
+    );
+    expect(
+      (p as NoSeReintenta).causa,
+      CausaDeNoReintento.ramaDistinta,
+      reason:
+          'estar en otra rama vuelve irrelevante cualquier cosa que el '
+          'estado diga: lo que se leyó no es del repositorio que se mira',
     );
   });
 }

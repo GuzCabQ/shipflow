@@ -123,10 +123,12 @@ enum QueHacerAlRecuperar {
 /// como [QueHacerAlRecuperar.promoverACommitted], que es una arista que el
 /// grafo del documento no tiene.
 ///
-/// **Asegurar la precondición es del llamador**, y ese llamador es
-/// `--retry-publication`, que todavía no existe: filtrar por estado es una
-/// decisión de esa rebanada, no de esta. Lo que corresponde acá es declarar la
-/// ausencia en vez de dejarla implícita.
+/// **Asegurar la precondición es del llamador**, y ese llamador ya existe:
+/// es [puertaDelReintento]. Filtra por rama y por estado ANTES de invocar
+/// esta función, así que quien llega hasta acá ya la tiene asegurada. Lo que
+/// corresponde acá sigue siendo declarar la precondición en vez de dejarla
+/// implícita —no repetir adentro el filtro que [puertaDelReintento] ya hizo
+/// una vez, sobre el mismo dato, con la misma respuesta.
 ///
 /// Si `base` y `revision` fueran iguales, el primer caso ganaría y se
 /// reintentaría un CAS que ya corrió. No puede pasar: una revisión es hija de
@@ -141,4 +143,155 @@ QueHacerAlRecuperar decidirRecuperacion({
     return QueHacerAlRecuperar.promoverACommitted;
   }
   return QueHacerAlRecuperar.alguienMasAvanzo;
+}
+
+/// Por qué el reintento **no** actúa. Cada valor nace con un `detalle` en el
+/// sitio donde se construye [NoSeReintenta] —ver ahí— porque la regla de este
+/// proyecto es que ninguna prohibición se instala sin decir qué hacer en
+/// cambio, y acá hay tres prohibiciones distintas, cada una con su propia
+/// alternativa.
+enum CausaDeNoReintento {
+  /// Quien corre no está parado en la rama de esta corrida. Reintentar
+  /// movería la rama en la que está parado, no la de la corrida: no son la
+  /// misma referencia solo porque hoy apunten al mismo commit.
+  ramaDistinta,
+
+  /// Ya hay un pull request utilizable: no queda nada que publicar de nuevo.
+  yaPublicado,
+
+  /// El compare-and-swap fue rechazado. Nunca hubo un commit propio en la
+  /// rama, así que no hay ninguna entrega que recuperar.
+  nadaQueEntregar,
+}
+
+/// Qué hace `--retry-publication` con una corrida interrumpida, **con la
+/// rama y el estado del documento ya filtrados**.
+///
+/// Es la precondición que [decidirRecuperacion] declara como propia y no
+/// asegura —ver su doc—: esta puerta es lo único que se interpone entre esa
+/// función de tres casos y un documento en un estado para el que sus tres
+/// respuestas no significan nada, o significan algo falso.
+sealed class PuertaDelReintento {
+  const PuertaDelReintento();
+}
+
+/// Hay que reconstruir la confianza en el candidato antes de publicar.
+///
+/// **Cuál de los dos caminos de reconciliación de §9** —los cinco pasos
+/// desde `prepared`, o la comprobación del índice desde
+/// `localInconsistent`— no viaja acá adentro: lo decide quien reciba esta
+/// variante, volviendo a mirar [DocumentoDeCorrida.estado]. Cargar esa
+/// elección como un campo de esta clase pondría el mismo hecho —qué estado
+/// tiene el documento— en dos lugares que podrían llegar a discrepar entre
+/// sí; esta puerta ya lo consultó una vez para decidir que tocaba
+/// reconciliar, y con eso alcanza.
+final class Reconciliar extends PuertaDelReintento {
+  const Reconciliar();
+}
+
+/// El commit ya existe en la rama, verificado o no reconciliable de otra
+/// forma: publicar directo, sin reconstruir nada.
+final class PublicarDirecto extends PuertaDelReintento {
+  const PublicarDirecto();
+}
+
+/// El reintento no actúa. [detalle] siempre nombra la alternativa: qué hacer
+/// en cambio de reintentar, nunca solo que no se puede.
+final class NoSeReintenta extends PuertaDelReintento {
+  final CausaDeNoReintento causa;
+  final String detalle;
+
+  const NoSeReintenta({required this.causa, required this.detalle});
+}
+
+/// La URL del pull request que ya dejó esta corrida, o nula si este
+/// documento no la tiene.
+///
+/// **Nula es un caso real, no un error de esta función.** El propio doc de
+/// [DocumentoDeCorrida.estado] declara como residuo que un estado terminal
+/// puede cargar un desenlace nulo cuando quien avanza no vuelve a pasarlo.
+/// Ningún camino de producción de hoy deja `publicationComplete` así —el
+/// sellado siempre pasa el desenlace que afirma ese estado—, pero esta
+/// función no puede asumirlo por quien la llama mañana: lee lo que hay y
+/// devuelve nulo en vez de forzar un cast que reventaría por la red de
+/// último recurso, sobre una corrida donde no se rompió nada.
+String? _urlYaPublicada(DocumentoDeCorrida documento) {
+  final desenlace = documento.desenlace;
+  return desenlace is Publicado ? desenlace.pr.url : null;
+}
+
+NoSeReintenta _yaPublicado(DocumentoDeCorrida documento) {
+  final url = _urlYaPublicada(documento);
+  return NoSeReintenta(
+    causa: CausaDeNoReintento.yaPublicado,
+    detalle: url == null
+        ? 'Esta corrida ya publicó, y el documento no registra dónde. No '
+              'hace falta reintentar nada: ya está hecho.'
+        : 'Esta corrida ya publicó: $url. No hace falta reintentar nada: ya '
+              'está hecho.',
+  );
+}
+
+const _nadaQueEntregar = NoSeReintenta(
+  causa: CausaDeNoReintento.nadaQueEntregar,
+  detalle:
+      'El compare-and-swap fue rechazado y nunca hubo un commit propio en '
+      'la rama: no hay ninguna entrega que recuperar. La forma de seguir es '
+      'volver a correr `ship` desde el principio.',
+);
+
+/// La puerta de `--retry-publication`: filtra por rama y por estado antes de
+/// dejar pasar a [decidirRecuperacion] o a los caminos de reconciliación que
+/// arrancan desde ella.
+///
+/// **Por qué llega temprano, medido.** En cinco de los seis estados de
+/// [DocumentoDeCorrida], la respuesta de la comparación de tres casos es
+/// inútil o falsa, y en cuatro de esos cinco obedecerla termina en una
+/// transición que [DocumentoDeCorrida.avanzarA] rechaza —un `StateError` que
+/// sale por la red de último recurso del CLI diciendo que se rompió el
+/// arnés, sobre una corrida donde no se rompió nada—.
+///
+/// **Por qué la rama se comprueba ANTES que el estado.** La operación que
+/// aplica la revisión candidata compara la rama puesta contra la esperada
+/// antes que cualquier otra cosa: es la misma precedencia que esta puerta
+/// respeta. Sin ella, alguien parado en OTRA rama cuyo `HEAD` casualmente
+/// coincida con la base de esta corrida recibiría «reintentá el
+/// compare-and-swap» en cuanto el estado fuera `prepared` —y reintentarlo
+/// movería la rama en la que está parado, no la de la corrida—. Mirar
+/// primero el estado no arregla esto: un documento `committed` con la rama
+/// puesta equivocada diría igual «publicá directo», y publicar abre un pull
+/// request sobre la rama ajena.
+///
+/// **El `switch` sobre [EstadoDelDocumento] es exhaustivo y sin `default`.**
+/// Es el mismo criterio que ya instaló la compuerta por estado de la
+/// cascada, después de que una comparación con `!=` dejara compilar un
+/// estado nuevo entero y reventara recién después de commitear y abrir el
+/// pull request: acá, un estado nuevo no compila hasta que alguien decida
+/// qué hace el reintento con él. Agregarle una rama `default` volvería a
+/// abrir exactamente ese agujero, y no lo delataría ninguna prueba de esta
+/// suite —los seis valores de hoy siguen cayendo en su propio `case`, y el
+/// `default` queda muerto sin que nada lo ejercite—: lo único que fuerza la
+/// decisión es el compilador, no el arnés de pruebas.
+PuertaDelReintento puertaDelReintento({
+  required DocumentoDeCorrida documento,
+  required String ramaActual,
+}) {
+  final ramaDeLaCorrida = documento.draft.branch;
+  if (ramaActual != ramaDeLaCorrida) {
+    return NoSeReintenta(
+      causa: CausaDeNoReintento.ramaDistinta,
+      detalle:
+          'Estás parado en «$ramaActual», pero esta corrida se preparó y '
+          'commiteó en «$ramaDeLaCorrida». Reintentar acá movería la rama '
+          'equivocada: cambiá a «$ramaDeLaCorrida» antes de reintentar.',
+    );
+  }
+  return switch (documento.estado) {
+    EstadoDelDocumento.prepared => const Reconciliar(),
+    EstadoDelDocumento.committed => const PublicarDirecto(),
+    EstadoDelDocumento.publicationIncomplete => const PublicarDirecto(),
+    EstadoDelDocumento.publicationComplete => _yaPublicado(documento),
+    EstadoDelDocumento.notApplied => _nadaQueEntregar,
+    EstadoDelDocumento.localInconsistent => const Reconciliar(),
+  };
 }
