@@ -60,6 +60,14 @@ const _lineaConSecreto = 'password = "no-deberia-estar-acá-nunca"';
 class EntornoFalso implements VerificationEnvironment {
   String? raizDelCandidato;
 
+  /// Qué pasa en el árbol del candidato MIENTRAS se deriva el entorno. Es la
+  /// ventana que solo la primera lectura de integridad puede ver: lo que se
+  /// escriba acá y se deshaga antes de la cascada no deja rastro para la
+  /// segunda.
+  final void Function(String raizDelCandidato)? alDerivar;
+
+  EntornoFalso({this.alDerivar});
+
   @override
   Future<ResultadoDeEntorno> derivar(
     String candidateRoot, {
@@ -67,6 +75,7 @@ class EntornoFalso implements VerificationEnvironment {
     required Duration presupuesto,
   }) async {
     raizDelCandidato = candidateRoot;
+    alDerivar?.call(candidateRoot);
     return EntornoDerivado(
       paquetes: 1,
       raices: 1,
@@ -100,8 +109,11 @@ class RepoQueAnota extends RepositorioGit {
 class CandidatoQueAnota implements PreparedCandidate {
   final PreparedCandidate _real;
 
-  /// Cada alteración que este candidato informó, por ruta. **Es lo que la
-  /// superficie recibió**: la orquestación le pasa lo que salió de acá.
+  /// Cada alteración que este candidato DEVOLVIÓ, por ruta. **No es lo que la
+  /// superficie recibió**: entre una cosa y la otra está la acumulación por
+  /// ruta que hace la orquestación, y quien lea este registro no puede saber
+  /// si ese argumento llegó. Lo que la superficie recibió se observa por su
+  /// producto —el artefacto publicado—, nunca por una sonda en producción.
   final Map<String, AlteracionDelCandidato> alteracionesInformadas = {};
 
   bool liberado = false;
@@ -192,11 +204,16 @@ class MundoDePrueba {
   /// remoto nunca la ve.
   final bool conCambioAjeno;
 
+  /// Alguien escribe en el árbol del candidato MIENTRAS se deriva el entorno,
+  /// y lo deshace antes de la cascada. **Solo la primera lectura de
+  /// integridad lo ve**: para la segunda, el árbol volvió a coincidir.
+  final bool alteracionSoloAntesDeLaCascada;
+
   late final Directory _raiz;
   late final RepoQueAnota repo;
   late final RegistroDeCorridas registro;
 
-  final EntornoFalso ambiente = EntornoFalso();
+  late final EntornoFalso ambiente;
   final SalidaDePrFalsa forja = SalidaDePrFalsa(
     respuesta: PullRequestOpen(url: 'https://forja.invalida/pr/1'),
   );
@@ -231,7 +248,15 @@ class MundoDePrueba {
     this.documentoVersionado = false,
     this.gitignoreAjeno = false,
     this.conCambioAjeno = false,
+    this.alteracionSoloAntesDeLaCascada = false,
   }) {
+    ambiente = EntornoFalso(
+      alDerivar: alteracionSoloAntesDeLaCascada
+          ? (raiz) => File(
+              '$raiz/$_archivo',
+            ).writeAsStringSync('alguien escribió mientras se derivaba\n')
+          : null,
+    );
     _raiz = Directory.systemTemp.createTempSync('ship_orquestacion_');
     addTearDown(() => _raiz.deleteSync(recursive: true));
     _escribir(_archivo, 'antes\n');
@@ -303,6 +328,14 @@ class MundoDePrueba {
   /// ocurre justo acá: entre que el candidato quedó fijado y que el
   /// compare-and-swap corre.
   Cascada _cascada(String raizDelCandidato) {
+    if (alteracionSoloAntesDeLaCascada) {
+      // Se deshace, byte por byte: a partir de acá el árbol vuelve a coincidir
+      // con la revisión que el candidato fijó, y la segunda lectura no tiene
+      // nada que informar.
+      File(
+        '$raizDelCandidato/$_archivo',
+      ).writeAsStringSync(_contenidoDeLaRebanada);
+    }
     if (candidatoAlterado) {
       File(
         '$raizDelCandidato/$_archivo',
@@ -359,7 +392,7 @@ class MundoDePrueba {
     Future<bool> Function(String previsualizacion)? confirmar,
     bool sinIntencion = false,
   }) async {
-    _escribir(_archivo, conSecreto ? '$_lineaConSecreto\n' : 'después\n');
+    _escribir(_archivo, _contenidoDeLaRebanada);
     _objetosAntes = _objetos();
     final cabezaAlEmpezar = _git(['rev-parse', 'refs/heads/trabajo']);
     _cabezaEsperada = cabezaAlEmpezar;
@@ -429,9 +462,21 @@ class MundoDePrueba {
     documento = await registro.leer(runId);
   }
 
-  /// Las alteraciones que la superficie recibió: las que el candidato informó.
-  List<AlteracionDelCandidato> get superficieRecibio =>
+  /// Lo que el contenido de la rebanada dice en esta corrida.
+  String get _contenidoDeLaRebanada =>
+      conSecreto ? '$_lineaConSecreto\n' : 'después\n';
+
+  /// Las alteraciones que el candidato DEVOLVIÓ. El nombre dice exactamente
+  /// eso: qué llegó a `derivarSuperficie` se observa por el artefacto que la
+  /// corrida publicó, que es su único producto visible.
+  List<AlteracionDelCandidato> get alteracionesQueDevolvioElCandidato =>
       repo.candidato?.alteracionesInformadas.values.toList() ?? const [];
+
+  /// La superficie que la corrida publicó, tal como viajó en el artefacto.
+  /// **Es el argumento de `derivarSuperficie` visto por su producto**, no una
+  /// sonda: si la llamada recibiera una lista vacía, acá no habría nada.
+  SuperficieDeVerificacion get superficiePublicada =>
+      forja.recibidas.single.draft.artefacto.superficie;
 
   List<PullRequestRequest> get pullRequests => forja.recibidas;
 
@@ -703,6 +748,45 @@ void main() {
     final mundo = MundoDePrueba(candidatoAlterado: true);
     final r = await mundo.correr(yes: true);
     expect(r, isA<NoIntentado>());
-    expect(mundo.superficieRecibio, isNotEmpty);
+    expect(mundo.alteracionesQueDevolvioElCandidato, isNotEmpty);
+  });
+
+  test(
+    'la alteración viaja al artefacto que se publica, no solo al estado',
+    () async {
+      // La aserción de arriba mira lo que el candidato DEVOLVIÓ, y con
+      // `alteraciones: const []` en la llamada a `derivarSuperficie` seguiría
+      // verde: lo que la redime es el desenlace. Acá se mira el argumento por
+      // su producto — la superficie que viajó en el artefacto publicado—, que
+      // es lo único que un revisor remoto llega a leer.
+      final mundo = MundoDePrueba(candidatoAlterado: true);
+      expect(
+        await mundo.correr(yes: true, allowIncomplete: true),
+        isA<Publicado>(),
+      );
+      expect(
+        mundo.superficiePublicada.requiereCriterio
+            .where((e) => e.motivo == MotivoDeCriterio.candidatoAlterado)
+            .map((e) => e.sujeto),
+        contains(_archivo),
+      );
+      // Y con la alteración a la vista, nada queda dado por cubierto: no se
+      // sabe cuál de los dos árboles vio cada control.
+      expect(mundo.superficiePublicada.cubierto, isEmpty);
+    },
+  );
+
+  test('la PRIMERA lectura de integridad cuenta: se acumula por ruta', () async {
+    // La alteración ocurre mientras se deriva el entorno y se deshace antes
+    // de la cascada, así que la SEGUNDA lectura no ve nada. Sin la primera, la
+    // corrida publicaría un cambio cuyo árbol dejó de coincidir con el que
+    // dice representar en la ventana donde la derivación ya lo había leído.
+    final mundo = MundoDePrueba(alteracionSoloAntesDeLaCascada: true);
+    final r = await mundo.correr(yes: true);
+    expect(r, isA<NoIntentado>());
+    expect((r as NoIntentado).causa, CausaDeNoIntento.verificationGate);
+    expect(r.verificacion, EstadoDeCorrida.noConcluyente);
+    expect(mundo.commits, isEmpty);
+    expect(mundo.pullRequests, isEmpty);
   });
 }
