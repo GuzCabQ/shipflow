@@ -13,11 +13,12 @@
 ///
 /// **Y los dobles que ya existen se reusan**: `SalidaDePrFalsa`,
 /// `FuenteDeCredencialFalsa`, `PoliticaDeArtefactosFalsa` y
-/// `ObservadorDeAlcanceFalso` de `plugin_fake`, y `Paso` de `apoyo`. Un doble
-/// nuevo al lado de uno que ya existe es una segunda definición del mismo
-/// contrato, y divergen. El único que se escribe acá es el del entorno de
-/// verificación, porque `plugin_fake` no declara ninguno y agregárselo es una
-/// decisión de ese paquete, no de esta prueba.
+/// `ObservadorDeAlcanceFalso` de `plugin_fake`, y `Paso` y `EntornoFalso` de
+/// `apoyo`. Un doble nuevo al lado de uno que ya existe es una segunda
+/// definición del mismo contrato, y divergen. `EntornoFalso` vive en `apoyo` y
+/// no en `plugin_fake` porque agregarle un doble de ese puerto es una decisión
+/// de aquel paquete, no de una suite; y no vive acá porque la suite del comando
+/// necesita el mismo, y dos copias del mismo doble divergen igual.
 library;
 
 import 'dart:io';
@@ -49,42 +50,6 @@ const _ajeno = 'ajeno.txt';
 /// asigna, no por la forma del valor: no se parece a la credencial de ningún
 /// proveedor y aun así es exactamente lo que no se commitea.
 const _lineaConSecreto = 'password = "no-deberia-estar-acá-nunca"';
-
-/// Un entorno de verificación que siempre deriva, y registra sobre qué raíz lo
-/// hicieron.
-///
-/// **No reimplementa nada**: el entorno real corre una toolchain sobre el
-/// candidato, y lo que estas pruebas miden no es eso. Lo que sí aporta es el
-/// hecho que el mundo necesita para ubicar el almacén temporal del candidato
-/// sin que el puerto tenga que exponerlo.
-class EntornoFalso implements VerificationEnvironment {
-  String? raizDelCandidato;
-
-  /// Qué pasa en el árbol del candidato MIENTRAS se deriva el entorno. Es la
-  /// ventana que solo la primera lectura de integridad puede ver: lo que se
-  /// escriba acá y se deshaga antes de la cascada no deja rastro para la
-  /// segunda.
-  final void Function(String raizDelCandidato)? alDerivar;
-
-  EntornoFalso({this.alDerivar});
-
-  @override
-  Future<ResultadoDeEntorno> derivar(
-    String candidateRoot, {
-    required List<String> archivos,
-    required Duration presupuesto,
-  }) async {
-    raizDelCandidato = candidateRoot;
-    alDerivar?.call(candidateRoot);
-    return EntornoDerivado(
-      paquetes: 1,
-      raices: 1,
-      toolchain: IdentidadDeToolchain(
-        version: const QuotedText('doble 0.0.0', source: 'prueba'),
-      ),
-    );
-  }
-}
 
 /// El repositorio REAL, que además anota qué rebanada se le pidió y devuelve
 /// un candidato que anota lo suyo.

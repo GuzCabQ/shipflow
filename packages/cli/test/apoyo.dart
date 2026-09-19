@@ -21,6 +21,42 @@ Witness testigo({
   finishedAt: DateTime.utc(2026),
 );
 
+/// Un entorno de verificación que siempre deriva, y registra sobre qué raíz lo
+/// hicieron.
+///
+/// **No reimplementa nada**: el entorno real corre una toolchain sobre el
+/// candidato, y lo que estas pruebas miden no es eso. Lo que sí aporta es el
+/// hecho que el mundo necesita para ubicar el almacén temporal del candidato
+/// sin que el puerto tenga que exponerlo.
+class EntornoFalso implements VerificationEnvironment {
+  String? raizDelCandidato;
+
+  /// Qué pasa en el árbol del candidato MIENTRAS se deriva el entorno. Es la
+  /// ventana que solo la primera lectura de integridad puede ver: lo que se
+  /// escriba acá y se deshaga antes de la cascada no deja rastro para la
+  /// segunda.
+  final void Function(String raizDelCandidato)? alDerivar;
+
+  EntornoFalso({this.alDerivar});
+
+  @override
+  Future<ResultadoDeEntorno> derivar(
+    String candidateRoot, {
+    required List<String> archivos,
+    required Duration presupuesto,
+  }) async {
+    raizDelCandidato = candidateRoot;
+    alDerivar?.call(candidateRoot);
+    return EntornoDerivado(
+      paquetes: 1,
+      raices: 1,
+      toolchain: IdentidadDeToolchain(
+        version: const QuotedText('doble 0.0.0', source: 'prueba'),
+      ),
+    );
+  }
+}
+
 /// Un paso de doble propósito: sus fábricas cubren `subjects` tal como
 /// llegan, así que sirven con cualquier alcance que la corrida les dé, no
 /// solo con uno fijado de antemano.
