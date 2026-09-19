@@ -14,6 +14,7 @@
 /// doble sin reimplementar `git`.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cli/cli.dart';
@@ -50,6 +51,22 @@ const remotoAtendidoSinCanalSeguro = 'git@github.com:duenio/repo.git';
 
 /// Un remoto bien formado que **ninguna forja conocida atiende**.
 const remotoAjeno = 'https://una.forja.desconocida/duenio/repo.git';
+
+/// El host de ese remoto, aparte, porque las pruebas de fuga afirman sobre él:
+/// la URL entera es tan secreta como la credencial que puede traer adentro.
+const hostDelRemotoAjeno = 'una.forja.desconocida';
+
+/// Lo que ese remoto puede traer embebido en su autoridad. Quien lo configuró
+/// no autorizó publicarlo por ningún canal.
+///
+/// **Distinto del que lleva la credencial de la forja en esta suite**, a
+/// propósito: con el mismo texto, una fuga de uno se leería como del otro y la
+/// prueba señalaría el canal equivocado.
+const secretoDelRemoto = 'secreto-embebido-en-el-remoto';
+
+/// El mismo remoto ajeno, con la credencial adentro.
+const remotoConCredencial =
+    'https://usuario:$secretoDelRemoto@$hostDelRemotoAjeno/d/r.git';
 
 /// El desenlace que el payload tiene que saber describir. Es el del diseño:
 /// entrega incompleta, reintentable, sobre una verificación verde.
@@ -725,15 +742,52 @@ void main() {
       expect(salida, contains('https'));
     });
 
-    test('la URL del remoto NO se imprime', () async {
-      // Un remoto puede llevar la credencial embebida en su autoridad, y este
-      // mensaje sale por la salida estándar y por el payload de máquina.
-      final mundo = Mundo(
-        remoto: 'https://usuario:un-secreto@una.forja.desconocida/d/r.git',
+    test('la URL del remoto NO se imprime por la salida estándar', () async {
+      // **Primero el canal, después la ausencia.** Un remoto puede llevar la
+      // credencial embebida en su autoridad, y esta detención es el único
+      // texto de la corrida que tiene la URL a mano. Afirmar solo las dos
+      // ausencias dejaría la prueba verde con el mensaje borrado entero, o
+      // con el comando muerto antes de llegar a él: dos cambios que no
+      // arreglan ninguna fuga. Por eso se exige el código y se exige que el
+      // mensaje ESTÉ, y recién sobre ese mensaje se afirma lo que no lleva.
+      final mundo = Mundo(remoto: remotoConCredencial);
+      final (codigo, salida, _) = await mundo.correr([..._invocacion, '--yes']);
+      expect(codigo, Codigo.errorDeConfiguracion);
+      expect(salida, contains('ninguna forja conocida sepa atender'));
+      expect(salida, isNot(contains(secretoDelRemoto)));
+      expect(salida, isNot(contains(hostDelRemotoAjeno)));
+    });
+
+    test('ni la lleva ninguna clave del payload de máquina', () async {
+      // La variante de arriba corre SIN el protocolo de máquina, así que el
+      // payload no sale y nadie lo mira: sin esta, «tampoco por el payload»
+      // sería una afirmación sobre un canal que la prueba nunca abrió. Acá el
+      // payload existe —se exige que exista— y se lo recorre entero, claves y
+      // valores, porque una fuga no elige por dónde sale.
+      final mundo = Mundo(remoto: remotoConCredencial);
+      final (codigo, salida, _) = await mundo.correr([
+        ..._invocacion,
+        '--yes',
+        '--json',
+      ]);
+      expect(codigo, Codigo.errorDeConfiguracion);
+      final eventos = lineas(salida);
+      final resultado = eventos.last;
+      expect(
+        resultado['exitCode'],
+        Codigo.errorDeConfiguracion,
+        reason: 'el payload que se revisa es el de ESTA detención',
       );
-      final (_, salida, _) = await mundo.correr([..._invocacion, '--yes']);
-      expect(salida, isNot(contains('un-secreto')));
-      expect(salida, isNot(contains('una.forja.desconocida')));
+      expect(
+        resultado['nextAction'],
+        isNotNull,
+        reason:
+            'la acción siguiente viaja en el payload: es donde una URL '
+            'nombrada se filtraría sin pasar por la salida humana',
+      );
+      final crudo = jsonEncode(eventos);
+      expect(crudo, isNot(contains(secretoDelRemoto)));
+      expect(crudo, isNot(contains(hostDelRemotoAjeno)));
     });
 
     test('un ensayo corre igual: por construcción no publica', () async {
