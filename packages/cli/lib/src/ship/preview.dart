@@ -1,9 +1,11 @@
 /// Qué se le muestra a quien corre `ship` antes de preguntar.
 ///
 /// **Qué estados autorizan publicar NO se decide acá.** La compuerta es lógica
-/// de dominio y vive donde vive la fábrica del desenlace, en `core`; esta
-/// previsualización la llama para saber si hay algo que mostrar. Ver la nota
-/// al pie de este archivo.
+/// de dominio y vive donde vive la fábrica del desenlace, en `core`; quien la
+/// llama es el paso 8 del comando, ANTES de construir este texto — no esta
+/// previsualización, que nunca la evalúa: recibe la rama y la base ya
+/// resueltas, el artefacto ya compuesto y los cambios ajenos, y arma el texto
+/// con eso. Ver la nota al pie de este archivo.
 ///
 /// **La previsualización es texto para una persona, no un protocolo.** Nadie
 /// la parsea: la lee quien está por confirmar un `--yes`, y por eso muestra
@@ -112,5 +114,10 @@ String previsualizacion({
 // `autoriza` está en `core`, al lado de la fábrica del desenlace: acá había
 // una copia exhaustiva y allá un `!= verde`, y nada sostenía que las dos
 // contestaran lo mismo. Duplicarla exhaustiva de los dos lados tampoco lo
-// sostendría: dos exhaustivas siguen siendo dos. La previsualización la
-// LLAMA, y no la reimplementa.
+// sostendría: dos exhaustivas siguen siendo dos. Por eso hay una sola función
+// y una sola decisión — pero esta previsualización no es quien la llama.
+// Quien la llama es el paso 8 del comando, ANTES de construir este texto: lo
+// construye —invocando esta función— solo si `autoriza` dijo que sí y no
+// hubo secreto. Esta función no ve ese resultado ni le hace falta: recibe la
+// rama y la base ya resueltas, el artefacto ya compuesto y los cambios
+// ajenos, nunca un booleano de la compuerta.
