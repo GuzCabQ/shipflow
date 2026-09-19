@@ -156,9 +156,9 @@ enum CausaDeNoIntento {
 /// de la tabla de códigos quedaría inalcanzable, que es una cobertura de un
 /// caso que no existe.
 ///
-/// **Los constructores son privados, y hay DOS fábricas — nunca una tercera
-/// forma de ensamblar esto a mano.** Cada una responde a un conjunto de
-/// hechos que no se solapa con el del otro:
+/// **Los constructores son privados, y hay DOS fábricas que DERIVAN un
+/// desenlace de los hechos.** Cada una responde a un conjunto de hechos que
+/// no se solapa con el del otro:
 ///
 /// - [ShipOutcome.derivar] es para una corrida que TODAVÍA no pasó sus
 ///   compuertas: el secreto, la compuerta por estado y la confirmación son
@@ -170,9 +170,22 @@ enum CausaDeNoIntento {
 ///   publicación — [Publicado] y [PublicacionIncompleta] —, porque los
 ///   hechos que producen las otras tres ya no pueden ocurrir en ese punto.
 ///
-/// Las entradas `…ParaLaPrueba` existen para que la suite pueda construir
-/// variantes sin pasar por ninguna de las dos derivaciones; es el mismo
-/// precedente que `RepositorioGit.identidadCapturadaParaLaPrueba`.
+/// **Y no son la única forma de ensamblar uno: este archivo lo desmiente
+/// cinco líneas más abajo.** Las entradas `…ParaLaPrueba` —una por variante,
+/// las cinco públicas en esta misma interfaz— existen para que la suite pueda
+/// construir variantes sin pasar por ninguna de las dos derivaciones; es el
+/// mismo precedente que `RepositorioGit.identidadCapturadaParaLaPrueba`. Una
+/// oración absoluta que el propio archivo refuta es peor que ninguna, así que
+/// lo que se escribe es lo que SÍ se garantiza:
+///
+/// **Qué:** todo desenlace que llegue a un documento persistido o a una
+/// salida del comando sale de una de las dos fábricas. **Dónde:** en
+/// `lib/` y `bin/` de los nueve paquetes del árbol. **Qué lo sostiene:** que
+/// ahí esas cinco entradas no se llaman desde ningún lado — medido buscando
+/// sus nombres sobre esos directorios, donde solo aparecen sus propias
+/// declaraciones, y usadas únicamente por las suites de dos paquetes,
+/// `core` y `cli`. Lo sostiene la revisión y no un check, así que lo que esta
+/// línea promete es dónde mirar, no que sea imposible romperlo.
 sealed class ShipOutcome {
   const ShipOutcome();
 

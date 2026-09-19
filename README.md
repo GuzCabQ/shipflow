@@ -3551,7 +3551,7 @@ serialización y la persistencia.
 `ShipOutcome` (`packages/core/lib/src/corrida.dart`) es una jerarquía sellada
 de cinco variantes —`NoIntentado`, `NoAplicado`, `LocalInconsistente`,
 `Publicado`, `PublicacionIncompleta`— con constructores **privados**, y DOS
-fábricas —nunca una tercera forma de ensamblar esto a mano—. `ShipOutcome.derivar`
+fábricas que las DERIVAN de los hechos. `ShipOutcome.derivar`
 es para la corrida que todavía no pasó sus compuertas, y de ahí sale
 cualquiera de las cinco variantes, con una precedencia explícita:
 
@@ -3599,6 +3599,22 @@ ahí solo pueden salir las dos variantes de publicación, `Publicado` y
 `PublicacionIncompleta`: los hechos que producen las otras tres —el secreto,
 el CAS rechazado, el índice sucio— ya no pueden ocurrir en un punto donde la
 corrida ya commiteó.
+
+**Y esas dos no son la única forma de ensamblar un desenlace — el archivo lo
+dice cinco líneas debajo de donde lo decía.** `ShipOutcome` expone además
+**cinco** entradas `…ParaLaPrueba`, una por variante, públicas en la interfaz
+del núcleo. La frase que decía «nunca una tercera forma de ensamblar esto a
+mano» era nueva de 4c —antes decía que la única entrada real era la
+derivación, y no prometía inexistencia— y el propio archivo la refutaba. Lo
+que sí se garantiza, y es lo que importa:
+
+- **Qué**: todo desenlace que llega a un documento persistido o a una salida
+  del comando sale de una de las dos fábricas.
+- **Dónde**: en `lib/` y `bin/` de los nueve paquetes.
+- **Qué lo sostiene**: que ahí esas cinco entradas no se llaman desde ningún
+  lado. Medido buscando sus nombres sobre esos directorios —solo aparecen sus
+  propias declaraciones— y sobre las suites, donde las usan **ocho archivos de
+  dos paquetes**, `core` y `cli`. Lo sostiene la revisión, no un check.
 
 ### El ruling sobre las cuatro causas
 
