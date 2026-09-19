@@ -828,6 +828,53 @@ class RepositorioGit implements ChangeSink {
   /// error: quien la use tiene que poder distinguirlo.
   Future<String> get ramaActual => _exigir(['branch', '--show-current']);
 
+  /// El código con el que `git remote get-url` dice que **ese remoto no está
+  /// configurado**.
+  ///
+  /// **Medido, no supuesto**: `git` 2.50.1 contesta `2` y escribe
+  /// «error: No such remote» —no `fatal:`— tanto cuando no hay ningún remoto
+  /// como cuando se pregunta por un nombre que nadie configuró, que son el
+  /// mismo hecho. Lo sostiene la prueba del nombre inexistente: si una
+  /// versión futura cambiara ese código, esa prueba se pone roja en vez de
+  /// dejar pasar un fallo leído como ausencia.
+  static const _remotoNoConfigurado = 2;
+
+  /// La URL del remoto [nombre], o **nulo cuando no hay ninguno**.
+  ///
+  /// **El nombre no dice «forja», y eso no es timidez.** Lo que vuelve de acá
+  /// es una URL de `git`: puede apuntar a una forja, a un espejo, a un
+  /// directorio del disco o a nada que sepamos atender. Quién de esos
+  /// destinos tiene una API con pull requests lo decide el adapter de la
+  /// forja, que es el único paquete que puede saberlo; `vcs` solo lee la
+  /// configuración y la entrega tal cual.
+  ///
+  /// **Nulo es un hecho, no un fallo.** No tener remoto es la configuración
+  /// legítima de un repositorio que todavía no publica, y preguntar por un
+  /// nombre que nadie configuró es ese mismo hecho por otra puerta. Lanzar
+  /// obligaría a quien compone a atrapar una excepción para enterarse de algo
+  /// que puede ramificar.
+  ///
+  /// **Y NO se degrada a nulo cualquier fallo.** Fuera de un repositorio
+  /// `git` contesta otra cosa, y eso sale como [GitFallo]: confundir «no pude
+  /// preguntar» con «no hay remoto» haría que la raíz de composición dijera
+  /// que este repositorio no tiene forja cuando lo que no hay es repositorio.
+  Future<String?> urlDelRemoto({String nombre = 'origin'}) async {
+    final r = await _git(['remote', 'get-url', nombre]);
+    if (r.exitCode == _remotoNoConfigurado) return null;
+    if (r.exitCode != 0) {
+      throw GitFallo(
+        '$programa --literal-pathspecs remote get-url $nombre',
+        r.exitCode,
+        '${r.stdout}${r.stderr}'.trim(),
+      );
+    }
+    // **Vacía es nulo.** Un remoto declarado sin URL no identifica ningún
+    // destino, y devolver la cadena vacía obligaría a cada llamador a volver
+    // a preguntar lo mismo.
+    final url = (r.stdout as String).trim();
+    return url.isEmpty ? null : url;
+  }
+
   /// Si el árbol tiene cambios sin commitear.
   Future<bool> get sucio async =>
       (await _exigir(['status', '--porcelain'])).isNotEmpty;

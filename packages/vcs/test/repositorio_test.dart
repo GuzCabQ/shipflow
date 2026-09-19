@@ -145,6 +145,52 @@ exec git "\$@"
   /// exactamente el archivo que ese repositorio deja modificado.
   final rebanadaDePrueba = rebanada(['a.txt']);
 
+  group('la URL del remoto', () {
+    test('la devuelve cuando hay uno configurado', () async {
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      expect(await repo.urlDelRemoto(), 'https://un.host/duenio/repo.git');
+    });
+
+    test('sin remoto configurado es nulo, y eso es un hecho', () async {
+      // No tener remoto no es un fallo: es la configuración de un
+      // repositorio que todavía no publica. Quien componga tiene que poder
+      // ramificar sobre eso en vez de atrapar una excepción.
+      expect(await repo.urlDelRemoto(), isNull);
+    });
+
+    test('un nombre de remoto que no existe también es nulo', () async {
+      // Mismo hecho por la otra puerta: preguntar por un remoto que nadie
+      // configuró no es distinto de no tener ninguno.
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      expect(await repo.urlDelRemoto(nombre: 'upstream'), isNull);
+    });
+
+    test('un remoto que no es el primero se lee por su nombre', () async {
+      // Sin esto, una implementación que ignorara `nombre` y leyera siempre
+      // `origin` pasaría las tres pruebas de arriba.
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      git(['remote', 'add', 'upstream', 'https://otro.host/arriba/repo.git']);
+      expect(
+        await repo.urlDelRemoto(nombre: 'upstream'),
+        'https://otro.host/arriba/repo.git',
+      );
+    });
+
+    test('fuera de un repositorio NO es nulo: es un fallo de git', () async {
+      // La distinción que sostiene todo lo anterior. Si «no se pudo
+      // preguntar» se leyera como «no hay remoto», la raíz de composición
+      // diría que el repositorio no tiene forja cuando lo que pasa es que
+      // no hay repositorio.
+      final afuera = Directory.systemTemp.createTempSync('vcs_sin_repo_');
+      addTearDown(() => afuera.deleteSync(recursive: true));
+      final sinRepo = RepositorioGit(
+        directorio: afuera.path,
+        politica: politica,
+      );
+      expect(() => sinRepo.urlDelRemoto(), throwsA(isA<GitFallo>()));
+    });
+  });
+
   group('la rama', () {
     test('se crea si no existe', () async {
       await repo.useBranch('shipflow/algo');
