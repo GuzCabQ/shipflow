@@ -38,7 +38,7 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
-**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; la raíz de composición todavía la rechaza a propósito, porque lo que falta es la reconciliación en sí y el cableado que la ejecute de punta a punta. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
+**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; desde `prepared`, `reconciliar` ya decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. La raíz de composición todavía la rechaza a propósito, porque falta el otro camino —el índice desde el estado inconsistente— y el cableado que lea el repositorio de verdad y ejecute las dos reconciliaciones de punta a punta. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
@@ -3868,10 +3868,12 @@ medias sin detalle no dice qué hay que reparar.
   `decidirRecuperacion` y la transición `publicationIncomplete →
   publicationComplete` se escribieron para ese comando, que es 4c. **Hoy la
   bandera existe, parseada y con su filtro por rama y por estado ya
-  puesto** —`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`)—; lo
+  puesto** —`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`)—, y
+  desde `prepared` los cinco pasos que reconstruyen la confianza en el
+  candidato ya se deciden —`reconciliar`, pura sobre hechos ya leídos—; lo
   que 4b agregó fue el documento persistido del que 4c lee, y lo que 4c
-  todavía no tiene es la reconciliación y el cableado que publique de
-  verdad.
+  todavía no tiene es el camino de reconciliación por el índice y el
+  cableado que publique de verdad.
 - **La reconciliación de una publicación a medias no existe.** Es el otro
   contenido de 4c.
 
