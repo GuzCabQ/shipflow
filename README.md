@@ -3915,17 +3915,18 @@ medias sin detalle no dice qué hay que reparar.
   comparar los dos valores antes de construir sería una tercera copia de la
   misma regla que ya está en el paso 2 de la reconciliación y en el
   constructor. Declarado en `packages/cli/lib/src/ship/reintento.dart`.
-- **La ventana de versión del documento sigue abierta, con dos cambios de
+- **La ventana de versión del documento sigue abierta, con TRES cambios de
   forma adentro y sin fecha de cierre todavía.** `formatVersion` se queda en
   `1` porque las tres rebanadas de esta pila —el desenlace y el documento,
   `ship`, `--retry-publication`— no se mergearon todavía: no existe ningún
   documento en disco con una forma más vieja para la que este código tenga
   que seguir sirviendo. La lista, con fecha, vive en el doc comment de
-  `DocumentoDeCorrida.versionActual` (`packages/core/lib/src/documento.dart`):
-  el campo `causa` de `NoAplicado` (2026-09-18) y las `rutas` de
-  `PullRequestDraft` (2026-09-19, de esta rebanada). Se cierra el día que la
-  pila entera se mergee; desde ese día, el PRÓXIMO cambio de forma sí tiene
-  que subir el número, no antes.
+  `DocumentoDeCorrida.versionActual` (`packages/core/lib/src/documento.dart`),
+  y es la fuente: el campo `causa` de `NoAplicado` (2026-09-18), las `rutas`
+  de `PullRequestDraft` (2026-09-19, de esta rebanada) y el `destino` del
+  propio documento (2026-09-19, de la revisión humana de esta rebanada). Se
+  cierra el día que la pila entera se mergee; desde ese día, el PRÓXIMO cambio
+  de forma sí tiene que subir el número, no antes.
 
 ### Lo que esta rebanada NO hace
 

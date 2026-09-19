@@ -330,9 +330,10 @@ Future<ResultadoDelReintento> correrReintento({
   );
   switch (puerta) {
     case NoSeReintenta():
-      // Antes de leer nada del repositorio: los tres motivos de no reintentar
-      // se contestan con el documento y la rama, y una corrida que no se
-      // reintenta no tiene por qué pagar una lectura más.
+      // Antes de leer nada del repositorio: los cuatro motivos de no
+      // reintentar se contestan con el documento, la rama y el destino —tres
+      // hechos que ya están sobre la mesa—, y una corrida que no se reintenta
+      // no tiene por qué pagar una lectura más.
       return ReintentoRechazado(puerta);
 
     case PublicarDirecto():

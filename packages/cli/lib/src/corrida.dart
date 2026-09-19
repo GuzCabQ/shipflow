@@ -581,8 +581,8 @@ IndiceDelReintento comprobarIndice({
 /// Por qué el reintento **no** actúa. Cada valor nace con un `detalle` en el
 /// sitio donde se construye [NoSeReintenta] —ver ahí— porque la regla de este
 /// proyecto es que ninguna prohibición se instala sin decir qué hacer en
-/// cambio, y acá hay tres prohibiciones distintas, cada una con su propia
-/// alternativa.
+/// cambio, y acá hay CUATRO prohibiciones distintas —contadas sobre los
+/// valores de abajo, uno por uno—, cada una con su propia alternativa.
 enum CausaDeNoReintento {
   /// Quien corre no está parado en la rama de esta corrida. Reintentar
   /// movería la rama en la que está parado, no la de la corrida: no son la

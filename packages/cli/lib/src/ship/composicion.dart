@@ -1083,14 +1083,14 @@ Future<int> _correrElReintento(
             'shipflow ship: el reintento de «$runId» no actúa '
             '(${porQue.causa.name}).',
         // **El detalle entero va como acción siguiente, y no partido en dos.**
-        // Cada uno de los tres se escribió con su alternativa adentro —es la
+        // Cada uno de los cuatro se escribió con su alternativa adentro —es la
         // regla de este proyecto: ninguna prohibición se instala sin decir qué
         // hacer en cambio—, así que cortarlo para repartirlo entre las dos
         // líneas de la salida dejaría a una de las dos mintiendo por omisión.
         queHacer: porQue.detalle,
         datos: {
           // **La clave `error` solo sale cuando el código dice que hubo
-          // uno.** De las tres causas de este rechazo, una sale con éxito
+          // uno.** De las cuatro causas de este rechazo, una sale con éxito
           // —«ya está publicado»: lo que se pidió ya es cierto—, y mandar
           // `error` junto con un código cero obliga a un consumidor
           // automático a elegir cuál de los dos le cree. Es la misma regla
