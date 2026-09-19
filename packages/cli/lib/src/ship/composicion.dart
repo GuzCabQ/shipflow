@@ -169,6 +169,20 @@ class ColaboradoresDeShip {
 /// que preguntarle, así que la única fuente viva es `--base`. Rellenarlas con
 /// un valor cómodo —`main`— sería adivinar la base, que es justo lo que la
 /// causa `baseIndeterminada` del preflight existe para nombrar.
+///
+/// **Residuo declarado: ninguna prueba mide que ESTA función arme los
+/// adapters de verdad.** Bajo la suite, la única invocación que llega hasta
+/// acá es la del comando sin argumentos, y esa sale por error de uso —dentro
+/// de `resolverRebanada`— antes de que ninguno de los cinco colaboradores que
+/// se arman acá se llegue a usar. La prueba del «comando hueco», en la suite
+/// del comando, mide algo real pero distinto: que
+/// `correrShipDelComando` no ignora los colaboradores que recibe. No mide que
+/// esta función, la que los construye, los construya contra el mundo real —
+/// reemplazar cualquiera de los cinco por un doble no pone roja ninguna
+/// prueba hoy. Cerrarlo pediría un proceso de verdad corriendo contra un
+/// repositorio real sin que el binario de prueba lo intercepte, que ninguna
+/// otra parte de esta suite hace; queda como residuo, con la misma
+/// honestidad que los cuatro de más arriba.
 ColaboradoresDeShip colaboradoresDelSistema(String directorio, Globales g) {
   final entorno = EntornoDelProceso(Platform.environment);
   // Los controles salen de una cascada armada sobre el directorio del usuario y
@@ -347,6 +361,16 @@ Future<int> correrShipDelComando(
       const ResultEnvelope(
         command: nombreDeShip,
         exitCode: Codigo.exito,
+        // **'ok', y no es que la ayuda haya mirado algo.** Contrastalo con el
+        // veredicto nulo de `_detener`, más abajo en este archivo: los dos
+        // caminos no miraron ningún cambio y la ayuda mira todavía menos —ni
+        // siquiera llega a interpretar la invocación—, y sin embargo acá se
+        // afirma 'ok'. No es una inconsistencia que esta ronda introduzca: la
+        // ayuda de la frontera (en el despachador) y la de `verify` ya usaban
+        // 'ok' antes de que `ship` existiera. Queda sin unificar a propósito:
+        // hacerlo tocaría esos dos archivos además de este, y es un cambio de
+        // convención que no le pertenece a la ronda de arreglos de un solo
+        // comando.
         verdict: 'ok',
         data: {'help': ayudaDeShip},
       ),
@@ -450,6 +474,18 @@ Future<int> correrShipDelComando(
     );
     return _emitirDesenlace(impresora, runId, desenlace);
   } on UsoInvalido catch (e) {
+    // **Hoy es defensivo: inalcanzable por construcción.** La única guardia
+    // que lanza `UsoInvalido` dentro de la función compuesta es la de la
+    // intención nula, y para cuando la ejecución llega ahí ya pasaron
+    // `interpretarShip` y `resolverRebanada` —más arriba, ANTES de este
+    // `try`— que garantizan una intención no nula por los dos caminos de
+    // entrada: uno la exige junto con `--file`, el otro la lee ya validada
+    // del archivo de la rebanada. Este `catch` se queda porque la tabla de
+    // códigos del doc de `correrShip` lo declara, y sacarlo la dejaría
+    // mintiendo sobre un código que ya no se traduce en ningún lado. Se
+    // volvería alcanzable si `correrShip` ganara una tercera forma de armar
+    // una `EntradaDeShip` que no pasara por esas dos garantías, o si alguna
+    // de las dos dejara de sostener la intención antes de este punto.
     return _detener(
       impresora,
       codigo: Codigo.errorDeUso,
@@ -534,7 +570,12 @@ int _detener(
       exitCode: codigo,
       // **Sin veredicto, y es el mismo hueco declarado del error de uso:** una
       // detención antes de que hubiera corrida no miró ningún cambio, así que
-      // no tiene nada que afirmar sobre él.
+      // no tiene nada que afirmar sobre él. **La ayuda, más arriba en este
+      // archivo, mira todavía menos y sale con 'ok'.** No es una regresión —
+      // sigue al `--help` que ya existía en la frontera y en `verify`— pero
+      // las dos reglas conviven sin que nada más las distinga; se documentan
+      // cruzadas en vez de unificarse porque unificarlas es una decisión de
+      // convención que excede esta ronda de un solo comando.
       verdict: null,
       nextAction: queHacer,
       runId: runId,
