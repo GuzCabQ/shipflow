@@ -32,8 +32,29 @@ class RegistroDeCorridas {
 
   Directory get _directorio => Directory(rutas.join(raiz, 'runs'));
 
-  File _archivo(String runId) =>
-      File(rutas.join(_directorio.path, '$runId.json'));
+  /// Dónde va el documento autoritativo de [runId].
+  String documentoDe(String runId) =>
+      rutas.join(_directorio.path, '$runId.json');
+
+  /// Dónde va la proyección local de la revisión de [runId].
+  String proyeccionDe(String runId) =>
+      rutas.join(_directorio.path, '$runId.revision.json');
+
+  /// **Cada archivo que una corrida deja en el disco.** Es lo que mira el
+  /// control del paso 9, y por eso la lista vive acá y no en quien lo corre.
+  ///
+  /// El criterio de ese control es «ningún archivo de la corrida termina
+  /// commiteado», y miraba una sola ruta mientras el paso 14 escribe dos: un
+  /// control que decide sobre una representación más pobre que su criterio.
+  /// Hoy no divergen porque el contenido del `.gitignore` ignora todo, pero
+  /// eso es una coincidencia del contenido, no del mecanismo — y la próxima
+  /// proyección que alguien agregue entra por acá o no la mira nadie.
+  List<String> rutasDe(String runId) => [
+    documentoDe(runId),
+    proyeccionDe(runId),
+  ];
+
+  File _archivo(String runId) => File(documentoDe(runId));
 
   Future<void> escribir(String runId, DocumentoDeCorrida documento) async {
     await _directorio.create(recursive: true);

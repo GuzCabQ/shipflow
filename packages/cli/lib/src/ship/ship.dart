@@ -30,7 +30,6 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
-import 'package:path/path.dart' as rutas;
 import 'package:vcs/vcs.dart';
 
 import '../corrida.dart';
@@ -139,10 +138,27 @@ typedef ResultadoDeShip = ({ShipOutcome desenlace, bool documentoNoEscrito});
 /// | [CorridasNoIgnoradas] | El documento iba a quedar donde `git` no lo ignora | `4` |
 /// | [GitignoreAjeno] | Ya hay un `.gitignore` ajeno en el directorio de corridas | `4` |
 ///
-/// Las tres últimas son **cero escrituras persistentes** y por eso comparten
-/// el `4`: nada está mal en el código, nada se corrompió, y lo que falta es
-/// una precondición del entorno. [UsoInvalido] es `5` porque lo que no se
-/// pudo interpretar es la invocación.
+/// Las tres últimas comparten el `4` porque **lo que falta es una
+/// precondición del entorno**: nada está mal en el código y nada se
+/// corrompió. [UsoInvalido] es `5` porque lo que no se pudo interpretar es la
+/// invocación.
+///
+/// **Ese motivo NO es «cero escrituras persistentes», y decirlo era falso**
+/// para una de las tres. [PreflightRechazado] y [GitignoreAjeno] sí dejan el
+/// disco como estaba —el primero corre antes de que nada escriba; el segundo
+/// necesita que el `.gitignore` ajeno ya exista, o sea que el directorio ya
+/// estaba—. [CorridasNoIgnoradas], en cambio, se lanza DESPUÉS de
+/// [asegurarGitignore], que crea el directorio de corridas y escribe su regla
+/// antes de devolver: en el primer uso, que es el caso común, quedan un
+/// directorio y un archivo.
+///
+/// **Y quedan, no se borran.** Deshacerlos sería un rollback en el momento
+/// exacto en que el entorno ya está dando problemas, sobre un archivo que
+/// puede venir de una corrida anterior; y comprobar antes de asegurar no es
+/// una opción, porque la regla que se comprueba es justamente la que esa
+/// función escribe —sin ella, el primer uso no podría pasar nunca—. Lo que
+/// queda es inerte: un directorio con una regla que hace que `git` no vea
+/// nada de lo que haya adentro. El mensaje lo dice así.
 Future<ResultadoDeShip> correrShip({
   required EntradaDeShip entrada,
   required String runId,
@@ -402,10 +418,16 @@ Future<ResultadoDeShip> correrShip({
     // 9 · El `.gitignore` del directorio de corridas, y su comprobación.
     //     Acá y no en el preflight: `.shipflow/` no existe en el primer uso, y
     //     exigirlo antes impediría exactamente ese primer uso.
+    //
+    //     **Se comprueban LAS DOS rutas que el paso 14 escribe**, y la lista
+    //     la da el registro: el criterio es «ningún archivo de la corrida
+    //     termina commiteado», y mirar solo el documento era decidirlo sobre
+    //     una representación más pobre que ese criterio.
     await asegurarGitignore(registro.raiz);
-    final rutaDelDocumento = rutas.join(registro.raiz, 'runs', '$runId.json');
-    if (!await corridasIgnoradas(repo, rutaDelDocumento)) {
-      throw CorridasNoIgnoradas(rutaDelDocumento);
+    for (final ruta in registro.rutasDe(runId)) {
+      if (!await corridasIgnoradas(repo, ruta)) {
+        throw CorridasNoIgnoradas(ruta);
+      }
     }
 
     // 10 y 11 · Promover los objetos preparados y crear la revisión. **No
@@ -563,9 +585,9 @@ Future<void> _proyectarLaRevision(
   String runId,
   DocumentoDeCorrida documento,
 ) async {
-  final destino = File(
-    rutas.join(registro.raiz, 'runs', '$runId.revision.json'),
-  );
+  // La ruta la da el registro, que es quien la declara: si la compusiera acá,
+  // el control del paso 9 comprobaría una ruta y este paso escribiría otra.
+  final destino = File(registro.proyeccionDe(runId));
   await destino.parent.create(recursive: true);
   final temporal = File('${destino.path}.tmp');
   // El mapa, con nombre y en una línea por clave: interpolado entero adentro

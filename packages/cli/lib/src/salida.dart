@@ -46,7 +46,16 @@ abstract final class Codigo {
   /// forma del circuit breaker.
   static const detencionDeclarada = 3;
 
-  /// Falta configuración o credencial, y se dice cuál. **Cero escrituras.**
+  /// Falta una precondición del entorno, y se dice cuál. **Cero commits, cero
+  /// pull requests.**
+  ///
+  /// **No es «cero escrituras», y decirlo así era falso.** Una de las
+  /// detenciones que sale por acá —el documento de la corrida que `git` no
+  /// ignora— ocurre después de que se creó el directorio de corridas con su
+  /// regla de exclusión, porque esa regla es justamente la que se comprueba.
+  /// Lo que queda es inerte, y el mensaje de esa detención lo nombra. Lo que
+  /// este código sí promete en todos sus caminos es que el trabajo no avanzó:
+  /// ni commit, ni pull request, ni documento de corrida.
   ///
   /// Se clasifica por fase: una credencial ausente o rechazada en el preflight
   /// es `4`; expirada o rechazada después del commit es

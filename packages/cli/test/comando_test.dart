@@ -129,6 +129,11 @@ class Mundo {
   /// corrida escribe todo como siempre y la relectura del payload falla.
   final bool documentoIlegible;
 
+  /// El documento de esta corrida ya está en el índice de `git`, así que
+  /// `check-ignore` lo declara NO ignorado y la corrida se detiene en el paso
+  /// 9 — después de que ese mismo paso creó el directorio de corridas.
+  final bool documentoVersionado;
+
   /// El remoto que este repositorio tiene configurado, o **nulo si no tiene
   /// ninguno**. Se escribe en el repositorio de verdad, y de ahí lo lee la
   /// composición: sin eso, «hay remoto» sería un hecho que la prueba le
@@ -158,6 +163,7 @@ class Mundo {
     this.sinCredencial = false,
     this.conCambioAjeno = false,
     this.documentoIlegible = false,
+    this.documentoVersionado = false,
     this.remoto = remotoAtendible,
     this.responder,
   }) {
@@ -180,6 +186,13 @@ class Mundo {
         ? _RegistroQueNoSeDejaReleer(raiz: '${raiz.path}/.shipflow')
         : RegistroDeCorridas(raiz: '${raiz.path}/.shipflow');
     if (conCambioAjeno) _escribir(_ajeno, 'trabajo de al lado\n');
+    if (documentoVersionado) {
+      // El índice es lo que cuenta: se agrega y se borra del árbol, así que
+      // la ruta queda seguida sin dejar en el disco un documento ilegible.
+      _escribir('.shipflow/runs/$runId.json', '{}\n');
+      _git(['add', '-f', '.shipflow/runs/$runId.json']);
+      File('${raiz.path}/.shipflow/runs/$runId.json').deleteSync();
+    }
   }
 
   String _git(List<String> args) {
@@ -807,6 +820,31 @@ void main() {
         expect(mundo.commits, isEmpty);
       },
     );
+
+    test('el documento no ignorado sale 4, y el consejo dice QUÉ quedó '
+        'escrito', () async {
+      // **El texto que mentía.** El paso 9 llama a `asegurarGitignore` antes
+      // del control que lanza, y esa función crea el directorio de corridas y
+      // escribe su regla antes de devolver: en el primer uso quedan las dos
+      // cosas. El consejo decía «No se escribió nada», justo donde alguien lo
+      // lee para decidir si tiene que limpiar algo.
+      final mundo = Mundo(documentoVersionado: true);
+      final (codigo, salida, _) = await mundo.correr([..._invocacion, '--yes']);
+      expect(codigo, Codigo.errorDeConfiguracion);
+      expect(mundo.commits, isEmpty);
+      expect(
+        salida,
+        isNot(contains('No se escribió nada')),
+        reason: 'es falso: el directorio de corridas y su regla quedaron',
+      );
+      expect(salida, contains('directorio de corridas'));
+      expect(salida, contains('inerte'));
+      // Y el disco lo confirma, que es lo que vuelve comprobable al texto.
+      expect(
+        File('${mundo.raiz.path}/.shipflow/.gitignore').existsSync(),
+        isTrue,
+      );
+    });
 
     test('un remoto de una forja atendida por un canal que no lo es: 4 y cero '
         'escrituras', () async {

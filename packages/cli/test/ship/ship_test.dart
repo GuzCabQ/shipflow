@@ -206,6 +206,12 @@ class MundoDePrueba {
   /// ninguna regla— y terminaría commiteado dentro del pull request.
   final bool documentoVersionado;
 
+  /// La PROYECCIÓN de esta corrida ya está en el índice de `git`, y el
+  /// documento no. Es la ruta que el control no miraba: el paso 14 escribe
+  /// dos archivos y el criterio es «ningún archivo de la corrida termina
+  /// commiteado».
+  final bool proyeccionVersionada;
+
   /// Ya hay un `.gitignore` en el directorio de corridas, con un contenido
   /// que este mecanismo no escribiría. No se pisa: puede ser deliberado.
   final bool gitignoreAjeno;
@@ -252,6 +258,12 @@ class MundoDePrueba {
 
   /// Lo que quedó, una vez que la corrida terminó —o explotó—.
   Set<String> objetosPersistentes = const {};
+
+  /// **Todo lo que quedó bajo `.shipflow/`, no solo bajo `runs/`.** Es la
+  /// medida de «no se escribió nada»: el paso 9 crea el directorio de
+  /// corridas y su `.gitignore` ANTES del control que puede detener la
+  /// corrida, así que el camino que dice no dejar nada deja dos cosas.
+  List<String> escrituras = const [];
   List<String> commits = const [];
   List<String> temporalesQueQuedaron = const [];
   List<String> proyeccionesEscritas = const [];
@@ -267,6 +279,7 @@ class MundoDePrueba {
     this.candidatoAlterado = false,
     this.sinCredencial = false,
     this.documentoVersionado = false,
+    this.proyeccionVersionada = false,
     this.gitignoreAjeno = false,
     this.conCambioAjeno = false,
     this.alteracionSoloAntesDeLaCascada = false,
@@ -304,6 +317,13 @@ class MundoDePrueba {
       _escribir('.shipflow/runs/r-1.json', '{}\n');
       _git(['add', '-f', '.shipflow/runs/r-1.json']);
       File('${_raiz.path}/.shipflow/runs/r-1.json').deleteSync();
+    }
+    if (proyeccionVersionada) {
+      // Igual que arriba, pero sobre la OTRA ruta: el documento queda
+      // ignorado y la proyección no. Mirando una sola, la corrida seguía.
+      _escribir('.shipflow/runs/r-1.revision.json', '{}\n');
+      _git(['add', '-f', '.shipflow/runs/r-1.revision.json']);
+      File('${_raiz.path}/.shipflow/runs/r-1.revision.json').deleteSync();
     }
     if (conCambioAjeno) {
       _escribir(_ajeno, 'trabajo de al lado, sin commitear\n');
@@ -492,6 +512,12 @@ class MundoDePrueba {
           Directory(raizDelCandidato).parent.existsSync())
         Directory(raizDelCandidato).parent.path,
     ];
+    final raizDeShipflow = Directory(registro.raiz);
+    escrituras = [
+      if (raizDeShipflow.existsSync())
+        for (final e in raizDeShipflow.listSync(recursive: true))
+          e.path.substring(_raiz.path.length + 1),
+    ]..sort();
     final corridas = Directory('${registro.raiz}/runs');
     proyeccionesEscritas = [
       if (corridas.existsSync())
@@ -877,6 +903,81 @@ void main() {
               (e) => e.ruta,
               'ruta',
               endsWith('.shipflow/runs/r-1.json'),
+            ),
+          ),
+        );
+        expect(mundo.commits, isEmpty);
+        expect(mundo.pullRequests, isEmpty);
+      },
+    );
+
+    test(
+      'el documento no ignorado SÍ deja escrito el directorio de corridas, y '
+      'es inerte',
+      () async {
+        // **«No se escribió nada» era falso, y esta prueba lo mide.** El paso
+        // 9 llama a `asegurarGitignore` ANTES del control que lanza, y esa
+        // función crea el directorio de corridas y escribe su `.gitignore`
+        // antes de devolver. En el primer uso —el caso común— quedan un
+        // directorio y un archivo en el disco, y el consejo que salía por la
+        // salida estándar y por el payload decía que no quedaba nada.
+        //
+        // Ninguna prueba lo medía: las que hay afirman el código y que no
+        // hubo commits ni pull requests, que es cierto y es otra cosa.
+        final mundo = MundoDePrueba(documentoVersionado: true);
+        await expectLater(
+          mundo.correr(yes: true),
+          throwsA(isA<CorridasNoIgnoradas>()),
+        );
+        expect(
+          mundo.escrituras,
+          contains('.shipflow/.gitignore'),
+          reason: 'el paso 9 lo escribe antes del control que detiene',
+        );
+        // Y es inerte: lo único que quedó es el directorio con su regla, sin
+        // documento de corrida ni proyección adentro.
+        expect(
+          mundo.escrituras.where((r) => r.endsWith('.json')),
+          isEmpty,
+          reason: 'la detención es anterior a cualquier documento',
+        );
+        expect(mundo.commits, isEmpty);
+        expect(mundo.pullRequests, isEmpty);
+        expect(mundo.objetosPersistentes, isEmpty);
+      },
+    );
+
+    test('el preflight rechazado sí deja el disco intacto', () async {
+      // El otro lado de la misma medición, y lo que hace que la de arriba
+      // signifique algo: acá la detención es anterior al paso 9, así que
+      // `.shipflow/` ni siquiera existe. Sin esta, «quedó escrito» sería
+      // indistinguible de «esta suite nunca mira el disco».
+      final mundo = MundoDePrueba(sinCredencial: true);
+      await expectLater(
+        mundo.correr(yes: true),
+        throwsA(isA<PreflightRechazado>()),
+      );
+      expect(mundo.escrituras, isEmpty);
+    });
+
+    test(
+      'una PROYECCIÓN que git no ignora también detiene la corrida',
+      () async {
+        // **El control miraba una ruta y el paso 14 escribe dos.** El
+        // criterio es «ningún archivo de la corrida termina commiteado», y
+        // con el documento ignorado y la proyección seguida la corrida
+        // llegaba hasta el final y commiteaba la proyección dentro del pull
+        // request. Hoy no divergen por el contenido del `.gitignore`, que
+        // ignora todo; lo que esta prueba fija es el MECANISMO, poniendo una
+        // de las dos rutas en el índice.
+        final mundo = MundoDePrueba(proyeccionVersionada: true);
+        await expectLater(
+          mundo.correr(yes: true),
+          throwsA(
+            isA<CorridasNoIgnoradas>().having(
+              (e) => e.ruta,
+              'ruta',
+              endsWith('.shipflow/runs/r-1.revision.json'),
             ),
           ),
         );

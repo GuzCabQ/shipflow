@@ -657,10 +657,18 @@ Future<int> correrShipDelComando(
       impresora,
       codigo: Codigo.errorDeConfiguracion,
       humano: 'shipflow ship: $e',
+      // **Qué quedó escrito se dice, y no se afirma que no quedó nada.** Esta
+      // detención ocurre después de `asegurarGitignore`, que crea el
+      // directorio de corridas y escribe su regla antes de devolver: en el
+      // primer uso quedan las dos cosas. Decir «no se escribió nada» era
+      // falso justo donde alguien lo va a leer para decidir si tiene que
+      // limpiar algo.
       queHacer:
           'Agregá «${e.ruta}» a lo que git ignora —o sacala del índice, que '
           'es lo que hace que ninguna regla la ignore— y volvé a correr. No '
-          'se escribió nada.',
+          'hay commit, ni pull request, ni documento de corrida: lo único '
+          'que quedó en el disco es el directorio de corridas con su regla '
+          'de exclusión, que es inerte y la vuelve a usar la próxima corrida.',
       datos: {'error': 'el documento de la corrida no está ignorado'},
       runId: runId,
     );
