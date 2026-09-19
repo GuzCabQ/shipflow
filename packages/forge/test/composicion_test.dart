@@ -1,8 +1,9 @@
 /// La fábrica neutra: **lo único que la raíz de composición nombra de este
 /// paquete**.
 ///
-/// Mide CINCO cosas que ninguna otra suite puede medir — contadas sobre los
-/// grupos de abajo, una por una. La primera, que de
+/// Mide CINCO cosas que ninguna otra suite puede medir, **contadas sobre las
+/// cinco ordinales de este mismo párrafo y no sobre los grupos de abajo** —
+/// que son seis y dos pruebas sueltas, y no se reparten una por cosa. La primera, que de
 /// una URL de `git` salen el dueño y el repositorio —y nulo, nunca una
 /// excepción, cuando no sale—. La segunda, que «saber atender» quiere decir el
 /// camino entero y no el parseo: una forma que se lee perfectamente pero que
