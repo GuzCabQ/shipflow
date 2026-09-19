@@ -950,6 +950,27 @@ void main() {
     });
 
     test(
+      'y desde PREPARADO también: el conflicto llega por la misma lectura',
+      () async {
+        // El otro camino de reconciliación, con el mismo estado del índice. No
+        // es una repetición: lo que fija es que la lectura compartida está
+        // ANTES de la bifurcación, así que cerrar esto de un solo lado no
+        // alcanzaba. Acá el conflicto sale por el paso 4 de los cinco.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.prepared,
+          conflictoSinResolver: true,
+        );
+        final antes = await m.instantanea();
+        final r = await m.correr(m.runId);
+        expect(m.codigo(r), Codigo.errorDeConfiguracion);
+        expect(m.mensaje, contains(CausaDeAmbiguedad.indiceDistinto.name));
+        expect(m.accion, contains('git reset'));
+        expect(m.forja.recibidas, isEmpty);
+        expect(await m.instantanea(), antes);
+      },
+    );
+
+    test(
       'parado en OTRA rama el reintento no actúa, y dice a cuál cambiarse',
       () async {
         final m = await MundoDeReintento.conDocumentoEn(
