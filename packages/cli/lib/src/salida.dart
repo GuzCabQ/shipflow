@@ -196,6 +196,23 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 /// documento: repetirlo acá es el mismo hecho escrito dos veces, y dos
 /// escrituras del mismo hecho divergen.
 ///
+/// **Los cuatro campos del documento SE RELEEN, no se agregan al desenlace.**
+/// `branch`, `base`, `revision` y `candidate` están en el diseño de este
+/// payload y ninguno es un campo de ningún [ShipOutcome]. El documento de la
+/// corrida es el registro de lo que pasó y ya los lleva todos —para eso lo
+/// construyó la rebanada anterior, y es el mismo que va a releer
+/// `--retry-publication`—, así que se leen de ahí. Meterlos en el desenlace
+/// obligaría a la variante que no intentó a cargar cuatro nulos, que es
+/// exactamente el dato inventado que este payload existe para no producir.
+///
+/// **Que falten cuando no hay documento NO es una inconsistencia.** Una
+/// corrida que no intentó no TIENE revisión ni candidato: no llegó a
+/// construirlos. La ausencia de la clave es el dato honesto; la clave presente
+/// con nulo adentro afirmaría que se miró y no había, que es otra cosa. Las
+/// dos corridas que no dejan documento son la previsualización y la que se
+/// detiene antes del candidato — ver `DocumentoDeCorrida.estadoQueAfirma`, que
+/// declara por qué [NoIntentado] no afirma ningún estado del documento.
+///
 /// **QUÉ CAUSA SECUNDARIA VIAJA, Y CUÁL NO.** La precedencia de
 /// [ShipOutcome.derivar] devuelve UNA causa, y la del estado de verificación
 /// sobrevive igual: [NoIntentado] lleva su `verificacion` entera, así que una
@@ -206,11 +223,32 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 /// escribe, así que un campo que los informara estaría inventando el dato en
 /// vez de reportarlo. Cerrarlo pide que el desenlace conserve los hechos que
 /// descartó, que es un cambio del tipo del dominio y no de esta función.
-Map<String, Object?> payloadDeShip(ShipOutcome desenlace) => {
+Map<String, Object?> payloadDeShip(
+  ShipOutcome desenlace, {
+  DocumentoDeCorrida? documento,
+}) => {
   'payloadVersion': payloadVersionDeShip,
   ...desenlace.toJson(),
   ...?_publicacionDe(desenlace),
+  ...?_deLaCorrida(documento),
 };
+
+/// Lo que solo el documento de la corrida sabe, o **nulo cuando no hay
+/// documento**.
+///
+/// Va DESPUÉS del `toJson` del desenlace a propósito: [LocalInconsistente]
+/// escribe su propia `revision`, y las dos son el mismo commit —el documento
+/// lo persiste desde que existe el objeto—. Que la del documento gane deja una
+/// sola procedencia para esa clave en vez de dos que pueden divergir.
+Map<String, Object?>? _deLaCorrida(DocumentoDeCorrida? documento) {
+  if (documento == null) return null;
+  return {
+    'branch': documento.draft.branch,
+    'base': documento.draft.base,
+    'revision': documento.revision,
+    'candidate': documento.draft.artefacto.candidato.toJson(),
+  };
+}
 
 /// Los derivados del desenlace remoto, o nulo cuando no hubo ninguno.
 ///

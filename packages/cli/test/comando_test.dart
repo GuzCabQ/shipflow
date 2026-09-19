@@ -232,6 +232,9 @@ class Mundo {
     return (codigo, salida.toString(), error.toString());
   }
 
+  /// La revisión a la que apunta [referencia], leída del repositorio real.
+  String revisionDe(String referencia) => _git(['rev-parse', referencia]);
+
   /// Los commits que la corrida dejó en la rama.
   List<String> get commits {
     final r = _git(['rev-list', 'main..refs/heads/trabajo']);
@@ -311,6 +314,58 @@ void main() {
             'darle un veredicto sería afirmar algo que nadie miró',
       );
     });
+  });
+
+  group('los cuatro campos que se releen del documento', () {
+    test('una corrida que publicó los lleva los cuatro', () async {
+      final mundo = Mundo();
+      final (codigo, salida, _) = await mundo.correr([
+        ..._invocacion,
+        '--yes',
+        '--json',
+      ]);
+      expect(codigo, Codigo.exito);
+      final datos = lineas(salida).last['data']! as Map;
+      expect(datos['branch'], 'trabajo');
+      expect(datos['base'], 'main');
+      expect(
+        datos['revision'],
+        mundo.commits.single,
+        reason:
+            'la revisión es la del commit que la corrida dejó en la rama, no '
+            'una que el payload arme por su cuenta',
+      );
+      final candidato = datos['candidate']! as Map;
+      expect(candidato['contentRevision'], isNotEmpty);
+      expect(
+        candidato['baseRevision'],
+        mundo.revisionDe('main'),
+        reason: 'el candidato se construyó sobre la base que el CAS exigió',
+      );
+    });
+
+    test(
+      'una corrida que no intentó no lleva NINGUNO, y sin claves en nulo',
+      () async {
+        // Una corrida que no intentó no TIENE revisión: un campo presente con
+        // nulo adentro sería el invento. Y `--dry-run` no escribe documento, que
+        // es de donde se releen los cuatro.
+        final mundo = Mundo();
+        final (_, salida, _) = await mundo.correr([
+          ..._invocacion,
+          '--dry-run',
+          '--json',
+        ]);
+        final datos = lineas(salida).last['data']! as Map;
+        for (final clave in const ['branch', 'base', 'revision', 'candidate']) {
+          expect(
+            datos.containsKey(clave),
+            isFalse,
+            reason: 'la clave «$clave» no tiene que estar, ni siquiera en nulo',
+          );
+        }
+      },
+    );
   });
 
   group('la frontera conoce el comando', () {

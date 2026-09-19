@@ -564,7 +564,14 @@ Future<int> correrShipDelComando(
       baseConfigurada: colaboradores.baseConfigurada,
       baseDeLaForja: colaboradores.baseDeLaForja,
     );
-    return _emitirDesenlace(impresora, runId, desenlace);
+    // **El documento se RELEE, no se recuerda.** Los cuatro campos que el
+    // payload agrega —la rama, la base, la revisión y el candidato— viven en
+    // el registro de la corrida y no en el desenlace; releerlos de ahí deja
+    // una sola procedencia, la misma que va a leer `--retry-publication`. Y
+    // es nulo cuando la corrida no escribió ninguno, que es el caso en el que
+    // esos cuatro campos no existen.
+    final documento = await colaboradores.registro.leer(runId);
+    return _emitirDesenlace(impresora, runId, desenlace, documento);
   } on UsoInvalido catch (e) {
     // **Hoy es defensivo: inalcanzable por construcción.** La única guardia
     // que lanza `UsoInvalido` dentro de la función compuesta es la de la
@@ -626,7 +633,12 @@ Future<int> correrShipDelComando(
 /// Emite el desenlace: **el código, el veredicto, la acción y el payload salen
 /// todos del mismo [ShipOutcome]**, cada uno por su derivación. Ningún sitio de
 /// retorno elige uno a mano.
-int _emitirDesenlace(Impresora imp, String runId, ShipOutcome desenlace) {
+int _emitirDesenlace(
+  Impresora imp,
+  String runId,
+  ShipOutcome desenlace,
+  DocumentoDeCorrida? documento,
+) {
   final codigo = Codigo.deShip(desenlace);
   final accion = accionDe(desenlace);
   final humano = _enTexto(desenlace);
@@ -637,7 +649,7 @@ int _emitirDesenlace(Impresora imp, String runId, ShipOutcome desenlace) {
       verdict: veredictoDeShip(desenlace),
       nextAction: accion,
       runId: runId,
-      data: payloadDeShip(desenlace),
+      data: payloadDeShip(desenlace, documento: documento),
     ),
     accion == null ? humano : '$humano\n  → $accion',
   );
