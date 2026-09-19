@@ -251,16 +251,25 @@ const _nadaQueEntregar = NoSeReintenta(
 /// sale por la red de último recurso del CLI diciendo que se rompió el
 /// arnés, sobre una corrida donde no se rompió nada—.
 ///
-/// **Por qué la rama se comprueba ANTES que el estado.** La operación que
-/// aplica la revisión candidata compara la rama puesta contra la esperada
-/// antes que cualquier otra cosa: es la misma precedencia que esta puerta
-/// respeta. Sin ella, alguien parado en OTRA rama cuyo `HEAD` casualmente
-/// coincida con la base de esta corrida recibiría «reintentá el
-/// compare-and-swap» en cuanto el estado fuera `prepared` —y reintentarlo
-/// movería la rama en la que está parado, no la de la corrida—. Mirar
-/// primero el estado no arregla esto: un documento `committed` con la rama
-/// puesta equivocada diría igual «publicá directo», y publicar abre un pull
-/// request sobre la rama ajena.
+/// **Por qué la rama se comprueba ANTES que el estado.** No es solo que
+/// reintentar mueva la rama equivocada —esa lectura alcanza para `prepared`
+/// y `committed`, pero no dice nada de los tres estados terminales, que ya
+/// no tocan ninguna rama—. El motivo que vale para los SEIS es más simple:
+/// si quien corre está parado en otra rama, lo que [documento] afirma **no
+/// es sobre el repositorio que se está mirando**. `documento.estado` describe
+/// una corrida hecha sobre la rama del propio documento, no sobre
+/// [ramaActual]; leer ese estado con la rama puesta equivocada es leer una
+/// respuesta cierta, pero sobre otra pregunta —así que cualquier cosa que
+/// diga es irrelevante, sea cual sea el estado—. Los casos concretos son
+/// consecuencia de esto y no el motivo en sí: alguien parado en OTRA rama
+/// cuyo `HEAD` casualmente coincida con la base de esta corrida recibiría
+/// «reintentá el compare-and-swap» si el estado fuera `prepared` —y
+/// reintentarlo movería la rama en la que está parado, no la de la
+/// corrida; es la misma precedencia que respeta la operación que aplica la
+/// revisión candidata—, y esa misma persona frente a un documento
+/// `publicationComplete` recibiría «ya está publicado, no hay nada que
+/// hacer» sobre una corrida que no tiene nada que ver con la rama en la que
+/// está parada.
 ///
 /// **El `switch` sobre [EstadoDelDocumento] es exhaustivo y sin `default`.**
 /// Es el mismo criterio que ya instaló la compuerta por estado de la

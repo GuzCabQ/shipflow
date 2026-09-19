@@ -46,9 +46,9 @@ class EntradaDeShip {
   /// —volver a declararlos acá sería una segunda fuente del mismo hecho, y no
   /// una preferencia entre dos formas válidas—. `--branch` entra en esa lista
   /// aunque el resto de este archivo la trate como una ASERCIÓN y no como una
-  /// declaración: acá igual sobra, porque el filtro por estado de una tarea
-  /// posterior comprueba la rama del reintento contra la del documento sin
-  /// condición, así que la bandera no compraría ninguna garantía. Solo
+  /// declaración: acá igual sobra, porque `puertaDelReintento` comprueba la
+  /// rama del reintento contra la del documento sin condición, así que la
+  /// bandera no compraría ninguna garantía. Solo
   /// `--dry-run` convive: un ensayo del reintento no escribe nada, y eso no
   /// contradice a ningún documento. Viaja como un campo más de esta misma
   /// clase, y no como un tipo aparte, por lo mismo que las demás: el resto de
@@ -184,9 +184,9 @@ EntradaDeShip interpretarShip(List<String> args) {
   // **`--branch` no es una excepción por ser una ASERCIÓN y no una
   // declaración** —así distingue el resto de este archivo a `--branch` del
   // resto, con razón; ver `_resolverBranch`, más abajo—. Acá igual se excluye,
-  // porque el filtro por estado de una tarea posterior comprueba la rama del
-  // reintento contra la del documento SIN condición: la bandera no sumaría
-  // ninguna garantía que esa comprobación no dé ya, solo un segundo lugar
+  // porque `puertaDelReintento` comprueba la rama del reintento contra la del
+  // documento SIN condición: la bandera no sumaría ninguna garantía que esa
+  // comprobación no dé ya, solo un segundo lugar
   // donde el mismo hecho puede discrepar. Y una aserción que no aporta nada es
   // peor que ninguna: quien la pasa cree estar comprando una comprobación
   // extra que no existe.

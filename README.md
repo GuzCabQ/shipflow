@@ -38,12 +38,17 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
+**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; la raíz de composición todavía la rechaza a propósito, porque lo que falta es la reconciliación en sí y el cableado que la ejecute de punta a punta. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
+
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
 **`ship` ya lo consume**: la raíz de composición de `ship`
 (`packages/cli/lib/src/ship/composicion.dart`) arma el `RepositorioGit` real y
 la corrida lo usa. Lo que sigue sin existir es el agente, los tickets, los
-ganchos y `--retry-publication`.
+ganchos y la publicación real de `--retry-publication`: la bandera se
+interpreta y ya tiene su filtro por rama y por estado, pero la raíz de
+composición la rechaza a propósito hasta que la orquestación que reconcilia y
+publica exista de verdad.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
 control.
@@ -3481,16 +3486,20 @@ no trabajo pendiente con fecha:
 ### Lo que esta rebanada NO hace
 
 Quedaba para la rebanada de `ship`, y estaba declarado para que nadie lo
-leyera como olvido. **Cuatro de las cinco entradas ya no describen el árbol y
-se corrigen acá en vez de borrarse**, que es lo que permite ver qué rebanada
+leyera como olvido. **Las cinco entradas ya no describen el árbol y se
+corrigen acá en vez de borrarse**, que es lo que permite ver qué rebanada
 cerró cada cosa:
 
 - **Nadie llamaba a `PullRequestSink.open` todavía.** La composición vivía en
   las pruebas de contrato. **Hoy la hace productiva `correrShip`** en su paso
   15, con la salida que arma `salidaDePrDelRemoto`
   (`packages/forge/lib/src/composicion.dart`).
-- **`--retry-publication` no existe**, y esta entrada sigue vigente. El
-  desenlace ya sabe decir `retryable`; el comando que lo consume es 4c.
+- **`--retry-publication` no existía.** El desenlace ya sabía decir
+  `retryable`; nadie lo consumía. **Hoy la bandera se interpreta y ya tiene
+  su filtro por rama y por estado** —`puertaDelReintento`
+  (`packages/cli/lib/src/corrida.dart`), de 4c—, y la raíz de composición la
+  rechaza a propósito hasta que exista la orquestación que de verdad
+  reconcilia y publica.
 - **`ShipOutcome`, `EstadoPublicable` y `CausaDeNoIntento` no se construyen
   acá.** Son §12 y §13 de la propuesta; los construyó la rebanada del
   desenlace, y la de `ship` es la primera que los produce de verdad.
@@ -3744,10 +3753,14 @@ significan algo sobre una corrida que murió antes del CAS o justo después.
 documento persistido se relee entero—, así que una corrida que murió en
 `publicationComplete` con `HEAD` igual a su revisión sale de acá como «promover
 a `committed`», que es una arista que el grafo del documento no tiene.
-**Asegurar la precondición es del llamador**, y ese llamador es
-`--retry-publication`, que es 4c: filtrar por estado es una decisión de esa
-rebanada. Lo que corresponde a ésta es declarar la ausencia, acá y en el doc
-comment de la función, en vez de dejarla implícita.
+**Asegurar la precondición es del llamador**, y ese llamador ya existe: es
+`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`, de 4c). Filtra por
+rama y por estado antes de invocar a `decidirRecuperacion`, así que quien
+llega hasta acá ya la tiene asegurada. **Sigue sin productor de producción,
+igual que `decidirRecuperacion`**: nada en el camino real de `ship` llama
+todavía a ninguno de los dos —eso es del cableado que falta, más adelante en
+4c—, pero la ausencia que esta sección declaraba ya no es la del filtro: es
+la de quien lo invoque de verdad.
 
 Antes de que el documento llevara la revisión, esto tenía que salir a
 **buscar** qué commit podía ser el candidato; con los tres datos ya sobre la
@@ -3834,10 +3847,14 @@ medias sin detalle no dice qué hay que reparar.
   en sus pasos 12, 14 y 16, y la raíz de composición arma el
   `RegistroDeCorridas` sobre `.shipflow/` del repositorio de quien corre.
   **`decidirRecuperacion` sigue sin productor**: es de 4c.
-- **`--retry-publication` no existe**, y sigue sin existir. `decidirRecuperacion`
-  y la transición `publicationIncomplete → publicationComplete` están escritas
-  para ese comando, que es 4c. Lo que 4b agregó es el documento persistido del
-  que 4c va a leer.
+- **`--retry-publication` no existía cuando esta rebanada cerró.**
+  `decidirRecuperacion` y la transición `publicationIncomplete →
+  publicationComplete` se escribieron para ese comando, que es 4c. **Hoy la
+  bandera existe, parseada y con su filtro por rama y por estado ya
+  puesto** —`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`)—; lo
+  que 4b agregó fue el documento persistido del que 4c lee, y lo que 4c
+  todavía no tiene es la reconciliación y el cableado que publique de
+  verdad.
 - **La reconciliación de una publicación a medias no existe.** Es el otro
   contenido de 4c.
 
@@ -4180,11 +4197,13 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
 
 ### Lo que esta rebanada NO hace
 
-- **`--retry-publication` no existe**, y con él tampoco la reconciliación de
-  una publicación a medias. Es 4c. Lo que esta rebanada deja para que sea
-  posible es el documento persistido: la revisión se anota **antes** de mover
-  la referencia, así que un proceso que muera en el medio no deja una revisión
-  que nadie anotó. `decidirRecuperacion` sigue sin productor.
+- **`--retry-publication` no existía en esta rebanada**, y con él tampoco la
+  reconciliación de una publicación a medias. Lo que esta rebanada dejó para
+  que fuera posible es el documento persistido: la revisión se anota
+  **antes** de mover la referencia, así que un proceso que muera en el medio
+  no deja una revisión que nadie anotó. **Hoy la bandera existe y ya tiene su
+  filtro por rama y por estado** —`puertaDelReintento`, de 4c—; la
+  reconciliación y `decidirRecuperacion` siguen sin productor de producción.
 - **No hay superficie de configuración.** La cadena de la base tiene cuatro
   fuentes: explícita, la del archivo de rebanada, configuración y rama por
   defecto de la forja —la explícita y la de la rebanada se fusionan, con la
