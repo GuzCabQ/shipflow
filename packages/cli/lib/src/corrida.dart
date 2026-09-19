@@ -394,6 +394,89 @@ Reconciliacion reconciliar({
   return const Inequivoca(QueHacerAlRecuperar.promoverACommitted);
 }
 
+/// El resultado de comprobar el índice desde el estado inconsistente: o
+/// coincide con la revisión y se puede promover, o no coincide y hay que
+/// decir con qué comando repararlo.
+///
+/// **Sellada y con dos variantes, no un booleano.** Un booleano «¿coincide?»
+/// más una lista de rutas al costado deja construible el par imposible «no
+/// coincide, y no hay ninguna ruta que nombrar»: acá, [IndiceNoCoincide]
+/// exige sus rutas en el propio constructor, y [IndiceCoincide] no lleva
+/// ninguna.
+sealed class IndiceDelReintento {
+  const IndiceDelReintento();
+}
+
+/// El índice de quien corre ya coincide con la revisión, en todas las rutas
+/// que esta rebanada declaró: se puede promover a `committed` y publicar.
+final class IndiceCoincide extends IndiceDelReintento {
+  const IndiceCoincide();
+}
+
+/// El índice no coincide, y [detalle] nombra la reparación concreta —nunca
+/// solo que hace falta una—, porque promover sobre un índice desincronizado
+/// dejaría `git status` mintiendo sobre lo que se acaba de commitear.
+final class IndiceNoCoincide extends IndiceDelReintento {
+  /// Las rutas donde el índice no coincide con el árbol de la revisión.
+  final List<String> rutas;
+
+  /// El texto que se le muestra a quien reintenta: nombra [rutas] y el
+  /// comando que las sincroniza.
+  final String detalle;
+
+  const IndiceNoCoincide({required this.rutas, required this.detalle});
+}
+
+/// La comprobación de §9 desde `localInconsistent`: el reintento **no vuelve
+/// a aplicar la revisión** —esa operación ya corrió, y volver a correrla
+/// obligaría a distinguir «ya aplicada» de «el plan estaba mal declarado»,
+/// una distinción que esa operación no puede hacer sin marcar el commit—.
+/// Lo que sí puede hacer es comprobar si el problema que dejó la corrida
+/// original ya no existe: si el índice de quien corre coincide con la
+/// revisión que el commit ya tiene, no queda nada que reparar.
+///
+/// **Recibe [rutasQueDifieren] ya calculadas, y no lee ningún repositorio.**
+/// Es la misma partición que ya separa la comparación de los tres casos, y
+/// la de los cinco pasos, de quien les consigue los hechos: la decisión se
+/// prueba sin montar un repositorio por cada caso, y quien sí lo lee es la
+/// composición que llama a esta función.
+///
+/// **Precondición: [documento] tiene que estar en `localInconsistent`.**
+/// Fuera de ese estado, las dos respuestas de esta función no significan
+/// nada —o significan algo falso—: es la puerta de UN solo estado, la misma
+/// idea que ya declara [decidirRecuperacion] al dejar la comprobación de
+/// estado y de rama en manos de quien la llama. Ahí esa comprobación queda
+/// afuera porque [puertaDelReintento] ya la asegura antes; acá, en cambio, no
+/// hay ningún llamador que la asegure todavía, así que se comprueba adentro
+/// y se lanza si falla: usar esta función sobre otro estado promovería por
+/// una arista que ese estado no tiene, y eso no es un hecho del dominio que
+/// quien llama tenga que poder ramificar —es un defecto de quien la
+/// invocó—.
+IndiceDelReintento comprobarIndice({
+  required DocumentoDeCorrida documento,
+  required List<String> rutasQueDifieren,
+}) {
+  if (documento.estado != EstadoDelDocumento.localInconsistent) {
+    throw StateError(
+      'comprobarIndice es la puerta de un solo estado: '
+      '«${EstadoDelDocumento.localInconsistent.name}». Este documento está '
+      'en «${documento.estado.name}»: usarla acá promovería por una arista '
+      'que ese estado no tiene.',
+    );
+  }
+  if (rutasQueDifieren.isEmpty) return const IndiceCoincide();
+  final rutas = rutasQueDifieren.join(' ');
+  return IndiceNoCoincide(
+    rutas: rutasQueDifieren,
+    detalle:
+        'El índice de quien corre no coincide con la revisión '
+        '«${documento.revision}» en: ${rutasQueDifieren.join(", ")}. No se '
+        'puede promover con el índice desincronizado: corré `git reset '
+        '${documento.revision} -- $rutas`, que reescribe el índice en esas '
+        'rutas sin tocar el árbol de trabajo, y reintentá.',
+  );
+}
+
 /// Por qué el reintento **no** actúa. Cada valor nace con un `detalle` en el
 /// sitio donde se construye [NoSeReintenta] —ver ahí— porque la regla de este
 /// proyecto es que ninguna prohibición se instala sin decir qué hacer en

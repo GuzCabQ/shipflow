@@ -119,6 +119,24 @@ DocumentoDeCorrida documentoEn(EstadoDelDocumento estado) {
   };
 }
 
+/// Un documento en `localInconsistent`, **sin desenlace adjunto**.
+///
+/// Uno real que llega a este estado sí carga un desenlace —ver
+/// [documentoEn]—, pero acarrearlo acá impediría probar la promoción de §9:
+/// [DocumentoDeCorrida.avanzarA] arrastra el desenlace del documento anterior
+/// cuando no se le pasa uno nuevo, así que promover a `committed` con ese
+/// desenlace todavía puesto construiría un documento que afirma `committed` y
+/// el estado anterior a la vez, y el constructor lo rechaza. Un desenlace
+/// nulo nunca es incoherente con ningún estado, así que dejarlo afuera es lo
+/// que deja construible el camino que [comprobarIndice] necesita probar, sin
+/// que esta prueba tenga que inventarle a esa función una dependencia del
+/// desenlace que su firma no pide: solo lee el estado y la revisión del
+/// documento.
+DocumentoDeCorrida documentoInconsistente() => DocumentoDeCorrida.preparado(
+  revision: 'a' * 40,
+  draft: _draftDePrueba(branch: ramaDeLosDocumentosDePrueba),
+).avanzarA(EstadoDelDocumento.localInconsistent);
+
 void main() {
   late Directory temporal;
 
@@ -523,4 +541,49 @@ void main() {
           'índice sobre un commit que, además, no es el nuestro',
     );
   });
+
+  test('el índice que coincide deja promover', () {
+    final d = documentoInconsistente();
+    expect(
+      comprobarIndice(documento: d, rutasQueDifieren: const []),
+      isA<IndiceCoincide>(),
+    );
+  });
+
+  test('el índice que no coincide falla cerrado y NOMBRA las rutas', () {
+    final d = documentoInconsistente();
+    final r = comprobarIndice(
+      documento: d,
+      rutasQueDifieren: const ['lib/a.dart', 'lib/b.dart'],
+    );
+    expect(r, isA<IndiceNoCoincide>());
+    expect((r as IndiceNoCoincide).rutas, ['lib/a.dart', 'lib/b.dart']);
+  });
+
+  test('la promoción desde el estado inconsistente es legal', () {
+    final d = documentoInconsistente();
+    expect(
+      d.avanzarA(EstadoDelDocumento.committed).estado,
+      EstadoDelDocumento.committed,
+      reason:
+          'sin la arista de la tarea 4 esto lanza, y el camino de §9 no '
+          'sería construible',
+    );
+  });
+
+  test(
+    'sobre un documento que NO está en ese estado, no se comprueba nada',
+    () {
+      expect(
+        () => comprobarIndice(
+          documento: documentoEn(EstadoDelDocumento.committed),
+          rutasQueDifieren: const [],
+        ),
+        throwsStateError,
+        reason:
+            'esta comprobación es la puerta de UN estado; usarla en otro '
+            'promovería por una arista que ese estado no tiene',
+      );
+    },
+  );
 }
