@@ -505,9 +505,26 @@ Future<int> correrShipDelComando(
           ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
                 'commit. Agregale el remoto al que querés publicar, o corré '
                 '`shipflow ship --dry-run`, que no necesita forja.'
+          // **Dos salidas y no una**, porque hay dos causas y quien corre no
+          // puede distinguirlas desde afuera: puede ser QUIÉN está del otro
+          // lado —una forja que nadie sabe atender— o puede ser POR DÓNDE
+          // —una forja que sí se atiende, alcanzada por un canal que no
+          // protege la credencial—. Decir solo «apuntalo a una forja
+          // soportada» es falso en el segundo caso y deja a quien corre
+          // buscando un problema que no tiene.
+          //
+          // Y se dice cómo reescribir EL SUYO, no a dónde apuntarlo: la
+          // forma segura de ese mismo destino la sabe quien configuró el
+          // remoto, y proponerle una armada acá sería inventarle un destino
+          // que no eligió.
           : 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
-                'commit. Apuntá el remoto a una forja soportada, o corré '
-                '`shipflow ship --dry-run`, que no necesita forja.',
+                'commit. Si el remoto apunta a una forja que este comando no '
+                'conoce, apuntalo a una soportada. Si apunta a una que sí se '
+                'conoce pero por un canal que no puede llevar la credencial '
+                '—`ssh://`, la forma corta `usuario@host:duenio/repo`, o sin '
+                'cifrar—, reescribí ese mismo remoto en su forma `https` con '
+                '`git remote set-url`. O corré `shipflow ship --dry-run`, que '
+                'no necesita forja.',
       datos: {
         'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
       },

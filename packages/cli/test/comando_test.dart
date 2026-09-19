@@ -42,6 +42,12 @@ const _lineaConSecreto = 'password = "no-deberia-estar-acá-nunca"';
 /// con esta URL es leerla y decidir.
 const remotoAtendible = 'https://github.com/duenio/repo.git';
 
+/// La MISMA forja del remoto atendible, alcanzada por un canal que no puede
+/// llevar la credencial. Se lee perfectamente —salen el dueño y el
+/// repositorio— y aun así no se atiende: la publicación la rechazaría, y
+/// preparar la corrida entera para eso es lo que el preflight evita.
+const remotoAtendidoSinCanalSeguro = 'git@github.com:duenio/repo.git';
+
 /// Un remoto bien formado que **ninguna forja conocida atiende**.
 const remotoAjeno = 'https://una.forja.desconocida/duenio/repo.git';
 
@@ -696,6 +702,28 @@ void main() {
         expect(mundo.commits, isEmpty);
       },
     );
+
+    test('un remoto de una forja atendida por un canal que no lo es: 4 y cero '
+        'escrituras', () async {
+      // **El caso que antes se preparaba entero para fallar al final.** De
+      // esta forma salen el dueño y el repositorio, así que la fábrica
+      // devolvía una salida y la corrida escribía el commit y el documento
+      // para morir recién en la publicación. Lo que esta prueba mide es lo
+      // que el preflight promete: si algo falla, no se preparó nada.
+      final mundo = Mundo(remoto: remotoAtendidoSinCanalSeguro);
+      final (codigo, salida, _) = await mundo.correr([..._invocacion, '--yes']);
+      expect(codigo, Codigo.errorDeConfiguracion);
+      expect(mundo.commits, isEmpty, reason: 'cero escrituras');
+      // La regla dura: ninguna prohibición se instala sin su alternativa, y
+      // acá hay DOS causas posibles. Decir solo «apuntalo a una forja
+      // soportada» sería falso para este remoto, cuya forja sí se soporta.
+      expect(
+        salida,
+        contains('git remote set-url'),
+        reason: 'el mensaje dice cómo cambiar el remoto propio',
+      );
+      expect(salida, contains('https'));
+    });
 
     test('la URL del remoto NO se imprime', () async {
       // Un remoto puede llevar la credencial embebida en su autoridad, y este
