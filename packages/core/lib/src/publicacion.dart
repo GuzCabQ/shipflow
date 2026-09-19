@@ -110,6 +110,15 @@ enum AccionSiguiente {
 /// Dos enums independientes admitían el producto cartesiano —`push: failed,
 /// pullRequest: succeeded`— y `succeeded` no distinguía abierto de cerrado ni
 /// de fusionado.
+///
+/// **Una hoja nueva bajo [PublicacionUtilizable] o [PublicacionNoUtilizable]
+/// tiene que sumarse también a la lista de desenlaces canónicos que ejercita
+/// `ShipOutcome.derivarReintento` en la suite de `corrida`.** No hay forma de
+/// derivar esa lista acá adentro sin traer algo que este paquete no puede
+/// tener —reflexión, o un registro que se llena en tiempo de ejecución—, así
+/// que la garantía queda escrita en vez de forzada: agregar una hoja no rompe
+/// ningún compilador, y una lista que no crece con ella deja de cubrir «todas
+/// las formas» para cubrir silenciosamente «todas las de antes».
 sealed class PublicationOutcome {
   PublicationOutcome();
 

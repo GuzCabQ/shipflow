@@ -355,6 +355,14 @@ sealed class ShipOutcome {
   /// **[verificacion] no es un campo nuevo del documento.** Viaja adentro del
   /// artefacto del borrador que la corrida original ya persistió, así que acá
   /// solo se lee, nunca se vuelve a decidir.
+  ///
+  /// **Que [verificacion] sea [EstadoPublicable] y no [EstadoDeCorrida] ya es
+  /// la garantía de que acá no entra un estado no publicable.** No hace falta
+  /// una prueba que lo compruebe en tiempo de ejecución: `errorInterno` no
+  /// tiene equivalente en [EstadoPublicable], así que un valor así ni
+  /// siquiera compila como argumento. Una prueba de ejecución sobre esto no
+  /// podría fallar nunca, y una prueba que no puede fallar es la garantía
+  /// menos fuerte de las dos, no una adicional.
   static ShipOutcome derivarReintento({
     required EstadoPublicable verificacion,
     required PublicationOutcome remoto,

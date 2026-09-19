@@ -583,13 +583,20 @@ void main() {
       }
     });
 
-    test('la fábrica del reintento no acepta un estado no publicable', () {
-      // EstadoPublicable no tiene errorInterno: la garantía es del TIPO y esta
-      // prueba fija que sigue siéndolo, no que alguien la compruebe.
-      expect(
-        EstadoPublicable.values.map((e) => e.name),
-        isNot(contains('errorInterno')),
+    test('el estado no concluyente también se ejercita, con la '
+        'verificación intacta', () {
+      // Las dos pruebas de arriba cubren `rojo` y `verde`; sin esta, el
+      // tercer estado publicable —`noConcluyente`— no lo ejercitaba ninguna
+      // prueba de este grupo. A diferencia de la que reemplaza —que
+      // comprobaba una garantía de TIPO sin llamar nunca a la fábrica—, esta
+      // sí la llama, y muere si algún día `derivarReintento` dejara de
+      // reenviar la verificación tal como la recibió.
+      final d = ShipOutcome.derivarReintento(
+        verificacion: EstadoPublicable.noConcluyente,
+        remoto: PullRequestMerged(url: 'https://forja/pr/4'),
       );
+      expect(d, isA<Publicado>());
+      expect((d as Publicado).verificacion, EstadoPublicable.noConcluyente);
     });
   });
 }
