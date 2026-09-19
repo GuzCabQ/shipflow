@@ -1,11 +1,13 @@
 /// La fábrica neutra: **lo único que la raíz de composición nombra de este
 /// paquete**.
 ///
-/// Mide tres cosas que ninguna otra suite puede medir. La primera, que de una
-/// URL de `git` salen el dueño y el repositorio en todas las formas con las
-/// que `git` escribe un remoto —y nulo, nunca una excepción, cuando no sale—.
-/// La segunda, que una credencial embebida en la autoridad de esa URL no
-/// termina adentro de lo que se construye. Y la tercera, la que justifica que
+/// Mide cuatro cosas que ninguna otra suite puede medir. La primera, que de
+/// una URL de `git` salen el dueño y el repositorio —y nulo, nunca una
+/// excepción, cuando no sale—. La segunda, que «saber atender» quiere decir el
+/// camino entero y no el parseo: una forma que se lee perfectamente pero que
+/// la publicación rechazaría vuelve nula acá, antes de que la corrida escriba
+/// nada. La tercera, que una credencial embebida en la autoridad de esa URL no
+/// termina adentro de lo que se construye. Y la cuarta, la que justifica que
 /// esta suite exista: que **envolver al adapter no le tapó las costuras**. El
 /// adapter recibe una fábrica de cliente y dos presupuestos a propósito, para
 /// que sus pruebas no salgan a la red ni esperen minutos; una fábrica que los
@@ -100,9 +102,6 @@ void main() {
       ('https con sufijo', 'https://github.com/duenio/repo.git'),
       ('https sin sufijo', 'https://github.com/duenio/repo'),
       ('https con barra final', 'https://github.com/duenio/repo/'),
-      ('la forma corta de ssh', 'git@github.com:duenio/repo.git'),
-      ('la forma corta de ssh sin sufijo', 'git@github.com:duenio/repo'),
-      ('ssh explícito', 'ssh://git@github.com/duenio/repo.git'),
       (
         'con credencial en la autoridad',
         'https://x-access-token:$secretoDePrueba@github.com/duenio/repo.git',
@@ -134,11 +133,67 @@ void main() {
       ('una ruta local, que no es de ninguna forja', '/un/directorio/repo.git'),
       ('texto que no es una URL', 'no es una url'),
       ('vacía', ''),
+      // El esquema es el del canal que sí se atiende, pero no hay autoridad:
+      // lo que parece el host es en realidad la primera parte de la ruta.
+      // Atenderla armaría un destino con un host inventado.
+      ('el esquema atendido sin autoridad', 'https:duenio/repo'),
     ]) {
       test('$nombre → nulo', () {
         expect(construir(url), isNull, reason: url);
       });
     }
+  });
+
+  group('un canal por el que el empuje no publicaría no se atiende', () {
+    // **Estas formas se leen bien y AUN ASÍ vuelven nulas**, que es lo que las
+    // separa del grupo de arriba: de todas salen el dueño y el repositorio, y
+    // de todas el empuje se negaría a publicar porque adjunta la credencial en
+    // la parte de usuario de la URL y ahí no la protege nada. Atenderlas
+    // significaría correr la corrida entera —commit y documento incluidos—
+    // para fallar recién en la publicación, que es justo lo que el preflight
+    // existe para evitar. Quien decide es el MISMO predicado que decide el
+    // empuje, así que las dos no pueden divergir.
+    for (final (nombre, url) in const [
+      ('la forma corta de ssh', 'git@github.com:duenio/repo.git'),
+      ('la forma corta de ssh sin sufijo', 'git@github.com:duenio/repo'),
+      ('ssh explícito', 'ssh://git@github.com/duenio/repo.git'),
+      (
+        'la forma corta con una contraseña adentro',
+        'usuario:$secretoDePrueba@github.com:duenio/repo.git',
+      ),
+      (
+        'el protocolo propio de git, sin cifrar',
+        'git://github.com/duenio/repo',
+      ),
+      ('el esquema sin cifrar', 'http://github.com/duenio/repo.git'),
+      (
+        'el esquema sin cifrar con la credencial adentro',
+        'http://x-access-token:$secretoDePrueba@github.com/duenio/repo.git',
+      ),
+    ]) {
+      test('$nombre → nulo', () {
+        expect(construir(url), isNull, reason: url);
+      });
+    }
+
+    test('y el predicado es el del empuje, no una copia', () {
+      // La prueba que impide que las dos definiciones se separen: lo que esta
+      // función atiende tiene que ser exactamente lo que `empujar` acepta. Si
+      // alguien ensancha una de las dos sin la otra, esto se pone rojo.
+      for (final url in const [
+        'https://github.com/duenio/repo.git',
+        'http://github.com/duenio/repo.git',
+        'git@github.com:duenio/repo.git',
+        'ssh://git@github.com/duenio/repo.git',
+        'git://github.com/duenio/repo',
+      ]) {
+        expect(
+          construir(url) != null,
+          esCanalSeguroParaLaCredencial(url),
+          reason: url,
+        );
+      }
+    });
   });
 
   test('la credencial de la URL no entra en lo que se construye', () {

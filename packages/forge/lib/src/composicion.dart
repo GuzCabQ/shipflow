@@ -41,13 +41,6 @@ final _baseDeLaApiPorOmision = Uri.parse('https://api.github.com');
 /// termine así, con la credencial adjunta.
 const _hostAtendido = 'github.com';
 
-/// Los esquemas de URL que se reconocen como remotos de una forja.
-///
-/// `file` y una ruta del disco no están: un clon local no tiene API con pull
-/// requests, y devolver una salida para él prometería una publicación que no
-/// existe.
-const _esquemasReconocidos = {'https', 'http', 'ssh', 'git'};
-
 /// La salida de pull requests que atiende [urlDelRemoto], o **nulo cuando
 /// ninguna de las que este paquete conoce lo atiende**.
 ///
@@ -59,10 +52,11 @@ const _esquemasReconocidos = {'https', 'http', 'ssh', 'git'};
 /// **La credencial de la URL no sobrevive a esta función.** Un remoto puede
 /// traerla embebida en la autoridad, y lo que se construye acá guarda esa URL
 /// para empujar: si viajara entera, cualquier mensaje o volcado que la nombre
-/// publicaría el secreto de quien la configuró. Se le quita la parte de
-/// usuario SIEMPRE, cualquiera sea la forma: la credencial con la que se
-/// empuja es la que sale de [credenciales], nunca la que ya estuviera escrita
-/// en la configuración del remoto.
+/// publicaría el secreto de quien la configuró. El secreto se va SIEMPRE,
+/// cualquiera sea la forma: la credencial con la que se empuja es la que sale
+/// de [credenciales], nunca la que ya estuviera escrita en la configuración
+/// del remoto. En una URL con esquema se va la parte de usuario entera,
+/// porque ahí ese lugar ES la credencial y no identifica ningún destino.
 ///
 /// **Lo que se deja inyectable es exactamente lo que el adapter ya dejaba**
 /// —la fábrica de cliente, el presupuesto de red, el presupuesto del empuje y
@@ -70,13 +64,24 @@ const _esquemasReconocidos = {'https', 'http', 'ssh', 'git'};
 /// deja al envoltorio imposible de probar sin red, que es el costo que esas
 /// aberturas existen para evitar.
 ///
-/// **Residuo declarado: un remoto que no es `https` se atiende igual acá y
-/// falla al empujar.** De `git@host:duenio/repo` salen el dueño y el
-/// repositorio perfectamente, así que la búsqueda idempotente y la creación
-/// del pull request funcionarían; el empuje no, porque adjunta la credencial
-/// en la parte de usuario de la URL y ahí no significa nada —lo dice
-/// `EmpujeAislado`—. No se traduce a su forma `https` porque eso sería
-/// inventarle a quien corre un destino que no configuró.
+/// **«Saber atender» quiere decir el camino ENTERO, no el parseo.** De
+/// `git@host:duenio/repo` salen el dueño y el repositorio perfectamente, y de
+/// un remoto sin cifrar también: la búsqueda idempotente y la creación del
+/// pull request funcionarían con los dos. Lo que no funciona es la
+/// publicación, que se niega a adjuntar la credencial donde nada la protege.
+/// Devolver una salida para esas formas haría correr la preparación entera
+/// —commit y documento incluidos— para fallar recién al publicar, que es
+/// exactamente lo que el preflight existe para evitar: si algo falla, no se
+/// preparó nada.
+///
+/// Por eso quien decide acá es [esCanalSeguroParaLaCredencial], **la misma
+/// función que decide la publicación**, aplicada a la misma URL que la
+/// publicación va a recibir. Con un predicado propio —o con una lista de
+/// esquemas escrita al lado— las dos definiciones podrían separarse sin que
+/// nada se pusiera rojo, y el día que se separaran volvería el mismo defecto:
+/// una corrida que prepara todo para fallar al final. Un clon local queda
+/// cubierto por el mismo control y por el mismo motivo: no hay API con pull
+/// requests del otro lado.
 ///
 /// **Residuo declarado: un servidor propio del proveedor no se atiende.** El
 /// host se compara contra uno solo, así que una instalación en un dominio de
@@ -97,6 +102,10 @@ PullRequestSink? salidaDePrDelRemoto({
 }) {
   final remoto = _RemotoLeido.de(urlDelRemoto);
   if (remoto == null) return null;
+  // Sobre `sinCredencial` y no sobre lo que llegó, porque `sinCredencial` es
+  // el texto que va a recibir la publicación: preguntarle al predicado por
+  // otra cosa sería volver a abrir la distancia que este control cierra.
+  if (!esCanalSeguroParaLaCredencial(remoto.sinCredencial)) return null;
   if (remoto.host.toLowerCase() != _hostAtendido) return null;
   return SalidaDePrDeGitHub(
     configuracion: ConfiguracionDeGitHub(
@@ -134,7 +143,9 @@ class _RemotoLeido {
   final String duenio;
   final String repositorio;
 
-  /// La URL tal como vino, **menos la parte de usuario**.
+  /// La URL tal como vino, **menos lo que de ella sea un secreto**, y por eso
+  /// es la que se guarda para empujar y la que se le muestra al predicado que
+  /// decide si este canal puede llevar la credencial.
   final String sinCredencial;
 
   const _RemotoLeido({
@@ -156,20 +167,30 @@ class _RemotoLeido {
       final host = corta.group(2)!;
       final partes = _duenioYRepositorio(corta.group(3)!);
       if (partes == null) return null;
+      // **Se le saca la contraseña y se le DEJA el nombre de usuario**, que
+      // es la única forma de que lo que queda siga nombrando el mismo
+      // destino: en esta forma el usuario no es la credencial sino la cuenta
+      // con la que el protocolo resuelve la conexión, y tirarlo produciría
+      // una URL que apunta a otro lado. La contraseña sí es un secreto y no
+      // identifica nada, así que se va siempre.
+      //
+      // Lo que queda alcanza para lo único que se hace con él: preguntarle al
+      // predicado de la publicación si este canal protege la credencial. La
+      // respuesta es que no —esta forma ni siquiera tiene esquema—, así que
+      // este texto no llega nunca a lo que se construye.
+      final usuario = corta.group(1);
+      final sinContrasenia = usuario == null
+          ? ''
+          : '${usuario.split(':').first}@';
       return _RemotoLeido(
         host: host,
         duenio: partes.duenio,
         repositorio: partes.repositorio,
-        // Sin el `usuario@`: ver el doc de [salidaDePrDelRemoto]. En esta
-        // forma ese lugar suele llevar un nombre de usuario y no un secreto,
-        // pero puede llevar los dos, y una regla con excepciones que hay que
-        // recordar es la que se olvida.
-        sinCredencial: '$host:${corta.group(3)}',
+        sinCredencial: '$sinContrasenia$host:${corta.group(3)}',
       );
     }
     final uri = Uri.tryParse(url.trim());
     if (uri == null) return null;
-    if (!_esquemasReconocidos.contains(uri.scheme)) return null;
     if (uri.host.isEmpty) return null;
     final partes = _duenioYRepositorio(uri.path);
     if (partes == null) return null;
