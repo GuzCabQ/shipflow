@@ -562,8 +562,9 @@ Future<int> correrShipDelComando(
   // esté acá sube a la frontera, que lo convierte en `70` con su resultado: un
   // `catch` ancho acá convertiría un fallo del arnés en una detención declarada,
   // que es la mentira más cara de esta tabla.
+  final ShipOutcome desenlace;
   try {
-    final desenlace = await correrShip(
+    desenlace = await correrShip(
       entrada: entrada,
       runId: runId,
       repo: colaboradores.repo,
@@ -581,14 +582,6 @@ Future<int> correrShipDelComando(
       baseConfigurada: colaboradores.baseConfigurada,
       baseDeLaForja: colaboradores.baseDeLaForja,
     );
-    // **El documento se RELEE, no se recuerda.** Los cuatro campos que el
-    // payload agrega —la rama, la base, la revisión y el candidato— viven en
-    // el registro de la corrida y no en el desenlace; releerlos de ahí deja
-    // una sola procedencia, la misma que va a leer `--retry-publication`. Y
-    // es nulo cuando la corrida no escribió ninguno, que es el caso en el que
-    // esos cuatro campos no existen.
-    final documento = await colaboradores.registro.leer(runId);
-    return _emitirDesenlace(impresora, runId, desenlace, documento);
   } on UsoInvalido catch (e) {
     // **Hoy es defensivo: inalcanzable por construcción.** La única guardia
     // que lanza `UsoInvalido` dentro de la función compuesta es la de la
@@ -645,6 +638,36 @@ Future<int> correrShipDelComando(
       runId: runId,
     );
   }
+
+  // **El documento se RELEE, no se recuerda.** Los cuatro campos que el
+  // payload agrega —la rama, la base, la revisión y el candidato— viven en el
+  // registro de la corrida y no en el desenlace; releerlos de ahí deja una
+  // sola procedencia, la misma que va a leer `--retry-publication`. Y es nulo
+  // cuando la corrida no escribió ninguno, que es el caso en el que esos
+  // cuatro campos no existen.
+  //
+  // **Afuera del bloque de arriba, y tolerando el fallo.** Adentro, un
+  // documento ilegible o corrupto DESPUÉS de una publicación exitosa subía a
+  // la frontera y salía `70` —«se rompió el arnés, reportalo con la traza»—,
+  // perdiendo que el pull request se abrió. Ese hecho es el más caro de perder
+  // de toda la corrida: es el único que volver a correr no reconstruye, porque
+  // la publicación ya ocurrió del otro lado. Sin los cuatro campos el payload
+  // queda en la forma que ya tiene declarada —la de la corrida que no escribió
+  // documento—; sin el desenlace no queda nada.
+  //
+  // **Se atrapa todo y no una lista de tipos**, que es la excepción a la regla
+  // de arriba y por eso se argumenta: el fallo tiene tres familias —no se pudo
+  // leer el archivo, no es JSON, no tiene la forma esperada— y la tercera
+  // llega como error y no como excepción. Una lista de tipos dejaría afuera
+  // justamente el caso que motiva esto. El precio de atrapar de más está
+  // acotado a esta línea, que no decide nada: solo enriquece.
+  DocumentoDeCorrida? documento;
+  try {
+    documento = await colaboradores.registro.leer(runId);
+  } catch (_) {
+    documento = null;
+  }
+  return _emitirDesenlace(impresora, runId, desenlace, documento);
 }
 
 /// Emite el desenlace: **el código, el veredicto, la acción y el payload salen

@@ -97,6 +97,20 @@ Future<String> ayudaDePrueba() async {
   return salida.toString();
 }
 
+/// Un registro que escribe como el de verdad y **no se deja releer**: es el
+/// documento ilegible o corrupto DESPUÉS de que la publicación ya ocurrió.
+///
+/// Lanza un error y no una excepción a propósito: la familia de fallos que
+/// produce un documento con la forma equivocada llega así, y es justamente la
+/// que una lista de tipos atrapados dejaría afuera.
+class _RegistroQueNoSeDejaReleer extends RegistroDeCorridas {
+  _RegistroQueNoSeDejaReleer({required super.raiz});
+
+  @override
+  Future<DocumentoDeCorrida?> leer(String runId) async =>
+      throw StateError('el documento de $runId no se puede leer');
+}
+
 /// Un repositorio de verdad y los colaboradores de una corrida de `ship`.
 ///
 /// **Los dobles son los que ya existen** —`SalidaDePrFalsa`,
@@ -110,6 +124,10 @@ class Mundo {
   final bool conSecreto;
   final bool sinCredencial;
   final bool conCambioAjeno;
+
+  /// Si el documento de la corrida se deja releer al final. En falso, la
+  /// corrida escribe todo como siempre y la relectura del payload falla.
+  final bool documentoIlegible;
 
   /// El remoto que este repositorio tiene configurado, o **nulo si no tiene
   /// ninguno**. Se escribe en el repositorio de verdad, y de ahí lo lee la
@@ -139,6 +157,7 @@ class Mundo {
     this.conSecreto = false,
     this.sinCredencial = false,
     this.conCambioAjeno = false,
+    this.documentoIlegible = false,
     this.remoto = remotoAtendible,
     this.responder,
   }) {
@@ -157,7 +176,9 @@ class Mundo {
       directorio: raiz.path,
       politica: PoliticaDeArtefactosFalsa(),
     );
-    registro = RegistroDeCorridas(raiz: '${raiz.path}/.shipflow');
+    registro = documentoIlegible
+        ? _RegistroQueNoSeDejaReleer(raiz: '${raiz.path}/.shipflow')
+        : RegistroDeCorridas(raiz: '${raiz.path}/.shipflow');
     if (conCambioAjeno) _escribir(_ajeno, 'trabajo de al lado\n');
   }
 
@@ -386,6 +407,33 @@ void main() {
             isFalse,
             reason: 'la clave «$clave» no tiene que estar, ni siquiera en nulo',
           );
+        }
+      },
+    );
+
+    test(
+      'un documento que no se deja releer NO borra la publicación',
+      () async {
+        // La relectura es un enriquecimiento y corre después de que el pull
+        // request ya se abrió. Si su fallo subiera como los de la corrida,
+        // esta invocación saldría `70` —«se rompió el arnés»— y se perdería el
+        // único hecho que volver a correr no reconstruye, porque ya ocurrió
+        // del otro lado. Lo que se pierde son los cuatro campos, y nada más.
+        final mundo = Mundo(documentoIlegible: true);
+        final (codigo, salida, _) = await mundo.correr([
+          ..._invocacion,
+          '--yes',
+          '--json',
+        ]);
+        expect(
+          codigo,
+          Codigo.exito,
+          reason: 'el desenlace publicado sobrevive a la relectura',
+        );
+        expect(mundo.forja.recibidas, hasLength(1));
+        final datos = lineas(salida).last['data']! as Map;
+        for (final clave in const ['branch', 'base', 'revision', 'candidate']) {
+          expect(datos.containsKey(clave), isFalse);
         }
       },
     );
