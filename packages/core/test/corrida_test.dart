@@ -1,6 +1,21 @@
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
+/// Las siete variantes de [PublicationOutcome], una por una. **No existía en
+/// ningún lado del árbol** — se agrega acá porque `derivarReintento` necesita
+/// ejercitarse contra las siete, y una tabla que solo cubriera algunas
+/// dejaría sin medir justo la que un día se le agregue a [PublicationOutcome]
+/// sin que esta lista crezca con ella.
+final desenlacesRemotosCanonicos = <PublicationOutcome>[
+  PullRequestOpen(url: 'https://forja/pr/1'),
+  PullRequestMerged(url: 'https://forja/pr/2'),
+  PullRequestClosed(url: 'https://forja/pr/3'),
+  PushFailed(causa: CausaDePublicacion.red),
+  PushUnknown(causa: CausaDePublicacion.red),
+  PullRequestFailed(causa: CausaDePublicacion.red),
+  PullRequestUnknown(causa: CausaDePublicacion.red),
+];
+
 void main() {
   group('la compuerta por estado', () {
     test('estado por estado, y --allow-incomplete solo compra lo que '
@@ -525,6 +540,56 @@ void main() {
       // Quedarse callada acá inventaría un desenlace: la corrida pasó todas
       // las compuertas y nadie dijo qué pasó con la publicación.
       expect(() => derivar(), throwsArgumentError);
+    });
+  });
+
+  group('ShipOutcome.derivarReintento', () {
+    test('un reintento que publica da Publicado, sin pasar por ninguna '
+        'compuerta', () {
+      final d = ShipOutcome.derivarReintento(
+        verificacion: EstadoPublicable.rojo,
+        remoto: PullRequestOpen(url: 'https://forja/pr/1'),
+      );
+      expect(d, isA<Publicado>());
+      expect(
+        (d as Publicado).verificacion,
+        EstadoPublicable.rojo,
+        reason:
+            'la corrida era roja y se autorizó en su momento; volver a '
+            'evaluarlo sería decidir de nuevo algo ya decidido y registrado',
+      );
+    });
+
+    test('un reintento cuya publicación no es utilizable da entrega '
+        'incompleta', () {
+      final d = ShipOutcome.derivarReintento(
+        verificacion: EstadoPublicable.verde,
+        remoto: PushUnknown(causa: CausaDePublicacion.red),
+      );
+      expect(d, isA<PublicacionIncompleta>());
+    });
+
+    test('de esta fábrica NO pueden salir las otras tres variantes', () {
+      for (final remoto in desenlacesRemotosCanonicos) {
+        final d = ShipOutcome.derivarReintento(
+          verificacion: EstadoPublicable.verde,
+          remoto: remoto,
+        );
+        expect(
+          d,
+          anyOf(isA<Publicado>(), isA<PublicacionIncompleta>()),
+          reason: '$remoto',
+        );
+      }
+    });
+
+    test('la fábrica del reintento no acepta un estado no publicable', () {
+      // EstadoPublicable no tiene errorInterno: la garantía es del TIPO y esta
+      // prueba fija que sigue siéndolo, no que alguien la compruebe.
+      expect(
+        EstadoPublicable.values.map((e) => e.name),
+        isNot(contains('errorInterno')),
+      );
     });
   });
 }

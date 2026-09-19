@@ -156,11 +156,23 @@ enum CausaDeNoIntento {
 /// de la tabla de códigos quedaría inalcanzable, que es una cobertura de un
 /// caso que no existe.
 ///
-/// **Los constructores son privados y la única entrada real es
-/// [ShipOutcome.derivar]**, más abajo en este mismo archivo.
+/// **Los constructores son privados, y hay DOS fábricas — nunca una tercera
+/// forma de ensamblar esto a mano.** Cada una responde a un conjunto de
+/// hechos que no se solapa con el del otro:
+///
+/// - [ShipOutcome.derivar] es para una corrida que TODAVÍA no pasó sus
+///   compuertas: el secreto, la compuerta por estado y la confirmación son
+///   hechos que esta fábrica todavía tiene que evaluar, y de ahí sale
+///   cualquiera de las cinco variantes.
+/// - [ShipOutcome.derivarReintento] es para una corrida que YA las pasó y ya
+///   commiteó: volver a evaluarlas sería decidir de nuevo algo que ya está
+///   decidido y registrado, y de ahí solo pueden salir las dos variantes de
+///   publicación — [Publicado] y [PublicacionIncompleta] —, porque los
+///   hechos que producen las otras tres ya no pueden ocurrir en ese punto.
+///
 /// Las entradas `…ParaLaPrueba` existen para que la suite pueda construir
-/// variantes sin pasar por la derivación; es el mismo precedente que
-/// `RepositorioGit.identidadCapturadaParaLaPrueba`.
+/// variantes sin pasar por ninguna de las dos derivaciones; es el mismo
+/// precedente que `RepositorioGit.identidadCapturadaParaLaPrueba`.
 sealed class ShipOutcome {
   const ShipOutcome();
 
@@ -220,9 +232,12 @@ sealed class ShipOutcome {
     );
   }
 
-  /// **La única entrada real.** Cada variante tiene constructor privado, así
-  /// que nadie puede ensamblar un desenlace eligiendo la combinación que le
-  /// convenga: se derivan de los hechos.
+  /// **Una de las DOS fábricas —no la única—, y esta es la que corre las
+  /// compuertas.** Cada variante tiene constructor privado, así que nadie
+  /// puede ensamblar un desenlace eligiendo la combinación que le convenga:
+  /// se derivan de los hechos. La otra fábrica es
+  /// [ShipOutcome.derivarReintento], para una corrida cuyas compuertas ya
+  /// corrieron — ver el doc de la clase para cuál usar cuándo.
   ///
   /// **La precedencia es por gravedad del hecho, no por el camino de
   /// autorización.** Que el usuario no fuera a confirmar no vuelve menos cierto
@@ -318,7 +333,45 @@ sealed class ShipOutcome {
     };
   }
 
-  // Entradas para la suite. La derivación real es `ShipOutcome.derivar`.
+  /// El desenlace de una corrida **cuyas compuertas son historia**.
+  ///
+  /// **Por qué existe, y por qué no es un parámetro más de [derivar].** Una
+  /// corrida que llegó a commitear ya pasó el secreto, la compuerta por
+  /// estado y la confirmación: que hayan pasado es lo que su estado
+  /// SIGNIFICA. Volverlas a evaluar es volver a decidir algo ya decidido y ya
+  /// registrado, y la única forma de que [derivar] conteste bien sobre un
+  /// reintento sería pasarle hechos fabricados —«se confirmó», «autoriza
+  /// incompleto»— que nadie midió en esa corrida. Los constructores privados
+  /// impiden elegir la variante; alimentar a [derivar] con hechos falsos es
+  /// elegirla igual, un nivel más arriba — exactamente el defecto que los
+  /// constructores privados existen para impedir.
+  ///
+  /// **De acá salen dos variantes y no cinco**, porque los hechos que
+  /// producen las otras tres ya no pueden ocurrir en este punto: la compuerta
+  /// no se vuelve a correr, el compare-and-swap ya corrió —si no hubiera
+  /// corrido, no habría revisión que reintentar— y el índice se comprueba
+  /// antes de llegar acá.
+  ///
+  /// **[verificacion] no es un campo nuevo del documento.** Viaja adentro del
+  /// artefacto del borrador que la corrida original ya persistió, así que acá
+  /// solo se lee, nunca se vuelve a decidir.
+  static ShipOutcome derivarReintento({
+    required EstadoPublicable verificacion,
+    required PublicationOutcome remoto,
+  }) => switch (remoto) {
+    PublicacionUtilizable() => Publicado._(
+      pr: remoto,
+      verificacion: verificacion,
+    ),
+    PublicacionNoUtilizable() => PublicacionIncompleta._(
+      remoto: remoto,
+      verificacion: verificacion,
+    ),
+  };
+
+  // Entradas para la suite. La derivación real es `ShipOutcome.derivar` o
+  // `ShipOutcome.derivarReintento`, según de cuál de las dos corridas se
+  // trate.
   static NoIntentado noIntentadoParaLaPrueba({
     required CausaDeNoIntento causa,
     required EstadoDeCorrida verificacion,
