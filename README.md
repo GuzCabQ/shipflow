@@ -399,6 +399,18 @@ repositorio, y no las hacía — `ship` no existía todavía. **Hoy sí las hace
 no es una declaración sin uso. El ejemplo se deja porque el defecto que ilustra
 —declarar lo que no se usa— es lo que la regla caza, no porque siga vivo acá.
 
+**Y el canario de esta regla se volvió legítimo dos veces.** El sabotaje que
+comprueba que sabe fallar era `cli` declarando `vcs` sin importarlo. La primera
+vez dejó de sabotear cuando una prueba de `cli` importó `vcs`; la segunda,
+cuando `ship` lo importó desde `lib/`. **La segunda además no se vio por lo que
+era**: el manifiesto del sabotaje había quedado atrás del real —sin `forge`, sin
+`path`, con `plugin_fake` del lado de producción— así que el check se ponía rojo
+por `plugin_fake` y no por la flecha sin uso, que es un rojo que no prueba nada.
+Hoy el canario es `agents`, que ningún archivo de `cli` importa, y el resto del
+manifiesto del sabotaje copia al real. La lección tiene dos mitades: **un
+canario que se vuelve legítimo es un sabotaje perdido**, y **el sabotaje tiene
+que seguir al archivo real o el rojo lo produce otra cosa**.
+
 **Escribir el check encontró dos más.** `rules` y `agents` declaraban `core` y no
 importan nada: son stubs de dos líneas que dicen «sin API todavía». Salieron con
 el mismo criterio, y `pubspec.lock` no se movió en ninguno de los dos casos.

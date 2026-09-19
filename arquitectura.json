@@ -626,8 +626,10 @@
       "alternativa": "Sacala del pubspec. `deps-hacia-core.permitidas` ya declara que la flecha esta permitida, asi que la arquitectura no cambia; la dependencia vuelve en el mismo commit que la importe.",
       "por_que": [
         "Una dependencia declarada y no importada afirma un uso que no existe. Leer",
-        "`cli/pubspec.yaml` y encontrar `vcs` sugiere que el CLI hace cosas de",
-        "repositorio, y no las hace: `ship` no existe todavia.",
+        "el manifiesto de `cli` y encontrar `vcs` sugeria que el CLI hacia cosas",
+        "de repositorio, y no las hacia: `ship` no existia todavia. Hoy si las",
+        "hace —`ship` importa `vcs` desde `cli/lib`—, asi que ese ejemplo ya no",
+        "esta vivo; el defecto que ilustra si.",
         "",
         "Es la misma enfermedad que `puertos-sin-implementacion` trata del lado de",
         "los tipos —una superficie completa se lee como un sistema con esas",
@@ -649,10 +651,10 @@
         "residuo_declarado": "Una directiva es lo unico que cuenta: un comentario o una cadena que nombre `package:x/` no. La primera version usaba un regex sobre el texto y un comentario alcanzaba para simular uso — reproducido. Lo que NO ve es una dependencia usada solo desde un archivo generado que no este en el arbol, ni una cuyo import el grafo no alcance: de eso responde `grafo-derivado`, que verifica el grafo contra el arbol."
       },
       "violacion_canonica": {
-        "_": "La flecha que se acaba de quitar: `cli` declarando `vcs`, que ninguna linea importa. Es PERMITIDA por `deps-hacia-core`, asi que ninguna otra regla la ve — es exactamente el hueco que esta regla cierra.",
+        "_": "`cli` declarando una flecha interna que ninguna linea importa. Es PERMITIDA por `deps-hacia-core`, asi que ninguna otra regla la ve — es exactamente el hueco que esta regla cierra. EL CANARIO ERA `vcs` Y DEJO DE SERVIR EN LA REBANADA DE `ship`: `ship/gitignore` importa `RepositorioGit` desde `cli/lib` para preguntarle a git si la ruta de una corrida esta ignorada, asi que la flecha se volvio legitima y el sabotaje dejo de sabotear. Y el rojo que produjo no decia eso: el pubspec del canario habia quedado ademas sin `forge` ni `path` y con `plugin_fake` en produccion, asi que el check fallaba por `plugin_fake` y no por la flecha sin uso — un sabotaje que se pone rojo por otra cosa no prueba nada. Es la SEGUNDA vez que este canario se vuelve legitimo —la primera fue `vcs` ganando un import de prueba, ver `violaciones_extra`— y la leccion se repite con un agregado: un canario que se vuelve legitimo es un sabotaje perdido, Y el pubspec del sabotaje tiene que seguir al real, o el rojo lo produce otra cosa. Ahora el canario es `agents`, que es un stub de dos lineas y no lo importa ningun archivo de `cli`, y el resto del pubspec copia al real.",
         "donde": "packages/cli/pubspec.yaml",
-        "contenido": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  plugin_fake:\n    path: ../plugin_fake\n  vcs:\n    path: ../vcs\n\ndev_dependencies:\n  test: ^1.25.0\n",
-        "debe_mencionar": "vcs",
+        "contenido": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  agents:\n    path: ../agents\n  core:\n    path: ../core\n  forge:\n    path: ../forge\n  orchestration:\n    path: ../orchestration\n  path: ^1.9.0\n  plugin_dart:\n    path: ../plugin_dart\n  vcs:\n    path: ../vcs\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
+        "debe_mencionar": "agents",
         "requiere_pub_get": true
       },
       "caso_ciego": {
