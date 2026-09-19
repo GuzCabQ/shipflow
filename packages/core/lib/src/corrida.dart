@@ -154,11 +154,20 @@ sealed class ShipOutcome {
   /// que hay un secreto:
   ///
   ///     errorInterno > secretDetected > verificationGate
-  ///                  > confirmationMissing > previewOnly
+  ///                  > previewOnly > confirmationMissing
   ///
   /// `errorInterno` está en esa lista como ESTADO y sale por
   /// [CausaDeNoIntento.verificationGate]; no es una causa. Con una causa propia,
   /// la combinación «gate con arnés roto» quedaría inalcanzable.
+  ///
+  /// **[soloPreview] va antes que la confirmación porque pedir una
+  /// previsualización no es no haber confirmado.** Significa que no se pidió
+  /// efecto ninguno, y no se puede faltar una autorización que nadie
+  /// necesitaba. Con el orden contrario, `previewOnly` solo era alcanzable si
+  /// el llamador declaraba una confirmación que nunca ocurrió —un hecho falso
+  /// viajando hacia la fábrica cuya razón de existir es derivar de los
+  /// hechos—, y quien pedía un ensayo se llevaba el consejo de volver a
+  /// correrlo con `--yes`.
   static ShipOutcome derivar({
     required EstadoDeCorrida verificacion,
     required bool huboSecreto,
@@ -182,11 +191,12 @@ sealed class ShipOutcome {
     if (verificacion != EstadoDeCorrida.verde && !autorizaIncompleto) {
       return sinIntentar(CausaDeNoIntento.verificationGate);
     }
-    // 4 · La confirmación, antes que la previsualización: quien no confirmó
-    //     pidió escribir y no llegó a autorizarlo; quien previsualiza no lo
-    //     pidió nunca.
-    if (!seConfirmo) return sinIntentar(CausaDeNoIntento.confirmationMissing);
+    // 4 · La previsualización, antes que la confirmación: quien previsualiza
+    //     no pidió efecto ninguno, así que no hay autorización que pueda
+    //     faltarle. Quien no confirmó sí pidió escribir y no llegó a
+    //     autorizarlo.
     if (soloPreview) return sinIntentar(CausaDeNoIntento.previewOnly);
+    if (!seConfirmo) return sinIntentar(CausaDeNoIntento.confirmationMissing);
 
     // A partir de acá la corrida sí intentó escribir.
     if (headQueRechazoElCas != null) {

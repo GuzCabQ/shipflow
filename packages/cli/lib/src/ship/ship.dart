@@ -261,15 +261,17 @@ Future<ShipOutcome> correrShip({
     // 7 · La previsualización, y la confirmación.
     //
     // **No se pregunta lo que ya no se va a hacer.** Con un secreto, con la
-    // compuerta cerrada o con `--dry-run`, la corrida ya tiene desenlace: una
-    // pregunta ahí pediría autorizar algo que no va a pasar. Lo que sí se
-    // reporta como confirmado es el hecho —`--yes` se pasó o no—, porque la
-    // precedencia de la fábrica es la que decide cuál de las causas gana.
+    // compuerta cerrada o con un ensayo, la corrida ya tiene desenlace: una
+    // pregunta ahí pediría autorizar algo que no va a pasar.
+    //
+    // **Y `seConfirmo` lleva el HECHO, sin adornos.** Un ensayo no confirmó
+    // nada; decir que sí para alcanzar `previewOnly` era mentirle a la fábrica
+    // cuya razón de existir es derivar la causa de los hechos. La precedencia
+    // —previsualización antes que confirmación— es la que decide cuál gana.
     final hayAlgoQueAutorizar =
         !huboSecreto && autorizado && !entrada.dryRun && !entrada.yes;
     final seConfirmo =
         entrada.yes ||
-        entrada.dryRun ||
         (hayAlgoQueAutorizar &&
             confirmar != null &&
             await confirmar(

@@ -386,6 +386,20 @@ void main() {
     expect(mundo.temporalesQueQuedaron, isEmpty);
   });
 
+  test('un ensayo SIN --yes es previewOnly, y no pide confirmar nada', () async {
+    // La precedencia de la fábrica, vista desde la orquestación. Antes se
+    // alcanzaba solo porque el llamador declaraba `seConfirmo` verdadero en un
+    // ensayo: un hecho falso viajando hacia la fábrica que existe para
+    // derivarlos. Ahora el hecho viaja sin adornos y la causa la decide el
+    // orden.
+    final mundo = MundoDePrueba();
+    final r = await mundo.correr(dryRun: true, yes: false);
+    expect((r as NoIntentado).causa, CausaDeNoIntento.previewOnly);
+    // Y el consejo: a un ensayo no se le dice que vuelva a correrlo con
+    // `--yes`, porque no pidió escribir nada.
+    expect(accionDe(r), isNull);
+  });
+
   test('sin --yes se comporta como una previsualización', () async {
     final mundo = MundoDePrueba();
     final r = await mundo.correr(yes: false);

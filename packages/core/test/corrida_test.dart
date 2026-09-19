@@ -395,9 +395,22 @@ void main() {
       expect(r, isA<NoIntentado>());
     });
 
-    test('la confirmación que falta le gana a la previsualización', () {
+    test('la previsualización le gana a la confirmación que falta', () {
+      // Esta prueba fijaba el orden contrario, y era la que medía el defecto:
+      // con `confirmationMissing` primero, `previewOnly` solo se alcanzaba si
+      // el llamador DECLARABA una confirmación que nadie dio. Pedir una
+      // previsualización no es no haber confirmado: no se pidió efecto
+      // ninguno, y no se puede faltar una autorización que nadie necesitaba.
       final r = derivar(seConfirmo: false, soloPreview: true);
-      expect((r as NoIntentado).causa, CausaDeNoIntento.confirmationMissing);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.previewOnly);
+    });
+
+    test('un ensayo sigue siendo un ensayo con la confirmación dada', () {
+      // El otro lado de la misma precedencia: con `seConfirmo` verdadero, la
+      // causa no cambia. Si cambiara, `soloPreview` estaría leyéndose como un
+      // matiz de la confirmación en vez de como el hecho que es.
+      final r = derivar(seConfirmo: true, soloPreview: true);
+      expect((r as NoIntentado).causa, CausaDeNoIntento.previewOnly);
     });
 
     test('el CAS rechazado da NoAplicado con el head que se vio', () {
