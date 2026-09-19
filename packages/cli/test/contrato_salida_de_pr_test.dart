@@ -44,6 +44,8 @@ import 'package:forge/forge.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
 
+import 'apoyo.dart';
+
 /// La revisión de esta suite. **Un OID completo de verdad —40 caracteres
 /// hexadecimales, el largo de SHA-1 medido con `git rev-parse`—**, igual que
 /// en `packages/forge/test/github_test.dart`: `PullRequestRequest` rechaza
@@ -91,35 +93,95 @@ void main() {
   // suite solo pudiera simular «nada pasó», nunca podría exigir que un
   // reintento después de una respuesta perdida encuentre el PR que sí se
   // creó, en vez de abrir uno nuevo.
+  // El repositorio, la rama y la base que `solicitud` va a usar. **Escritos
+  // una vez**: la partición del servidor y la siembra de las pruebas tienen
+  // que hablar de la misma consulta, y dos copias divergen.
+  const duenio = 'duenio';
+  const repositorio = 'repo';
+  const rama = 'rama-1';
+  const base = 'main';
+  final claveDeLaSolicitud = claveDeLaConsultaDePrs(
+    ruta: '/repos/$duenio/$repositorio/pulls',
+    head: '$duenio:$rama',
+    base: base,
+  );
+
   late HttpServer api;
-  late List<Map<String, Object?>> prsExistentes;
+
+  // Los pull requests que existen del otro lado, POR REPOSITORIO, RAMA Y
+  // BASE — ver `claveDeLaConsultaDePrs`, que argumenta las tres dimensiones y
+  // lo que costaba que faltaran. Este servidor guardaba una sola lista para
+  // todos y nunca miraba la ruta ni la consulta: con la búsqueda del adapter
+  // apuntada a otro repositorio, o a una rama que no existe, esta suite
+  // quedaba entera en verde.
+  late Map<String, List<Map<String, Object?>>> prsPorConsulta;
+
+  // Lo que el servidor VIO cuando le pidieron la búsqueda idempotente: la
+  // ruta y los dos filtros, crudos y sin pasar por la clave de partición. Un
+  // ancla escrita con esa clave pasa verde con la partición colapsada, porque
+  // las dos mitades de la comparación se colapsan juntas: medido.
+  late List<ConsultaVista> busquedasVistas;
+
+  // Los pull requests de la consulta que `solicitud` va a hacer. Es la
+  // partición por omisión: las pruebas que siembran un pull request ya
+  // existente hablan siempre del que existiría para ESTA rebanada.
+  List<Map<String, Object?>> prsExistentes() =>
+      prsPorConsulta.putIfAbsent(claveDeLaSolicitud, () => []);
+
   var creados = 0;
   var perderRespuestaDelPost = false;
 
   setUp(() async {
-    prsExistentes = [];
+    prsPorConsulta = {};
+    busquedasVistas = [];
     creados = 0;
     perderRespuestaDelPost = false;
     api = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     api.listen((p) async {
-      if (p.method == 'GET') {
+      final esBusqueda = p.method == 'GET';
+      final cuerpo = esBusqueda
+          ? null
+          : jsonDecode(await utf8.decoder.bind(p).join())
+                as Map<String, Object?>;
+      final clave = esBusqueda
+          ? claveDeLaConsultaDePrs(
+              ruta: p.uri.path,
+              head: p.uri.queryParameters['head'],
+              base: p.uri.queryParameters['base'],
+            )
+          : claveDeLaConsultaDePrs(
+              ruta: p.uri.path,
+              head: headDeLaCreacion(
+                ruta: p.uri.path,
+                ramaDelCuerpo: cuerpo!['head']! as String,
+              ),
+              base: cuerpo['base']! as String,
+            );
+      if (esBusqueda) {
+        busquedasVistas.add((
+          ruta: p.uri.path,
+          head: p.uri.queryParameters['head'],
+          base: p.uri.queryParameters['base'],
+        ));
+      }
+      final delOtroLado = prsPorConsulta.putIfAbsent(clave, () => []);
+      if (esBusqueda) {
         p.response
           ..statusCode = 200
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode(prsExistentes));
+          ..write(jsonEncode(delOtroLado));
         await p.response.close();
         return;
       }
-      final cuerpo = jsonDecode(await utf8.decoder.bind(p).join()) as Map;
       creados++;
       final nuevo = {
         'html_url': 'https://forja/pr/$creados',
         'state': 'open',
         'merged_at': null,
-        'body': cuerpo['body'],
+        'body': cuerpo!['body'],
         'head': {'sha': revisionDePrueba},
       };
-      prsExistentes.add(nuevo);
+      delOtroLado.add(nuevo);
       if (perderRespuestaDelPost) {
         final socket = await p.response.detachSocket(writeHeaders: false);
         await socket.close();
@@ -137,12 +199,17 @@ void main() {
 
   SalidaDePrDeGitHub sinkReal({
     Duration presupuestoDeRed = SalidaDePrDeGitHub.presupuestoDeRedPorDefecto,
+    // Para la prueba que le pide lo MISMO a dos repositorios distintos: por
+    // omisión es el de esta suite.
+    String duenioDelRemoto = duenio,
+    String repositorioDelRemoto = repositorio,
   }) => SalidaDePrDeGitHub(
     configuracion: ConfiguracionDeGitHub(
-      duenio: 'duenio',
-      repositorio: 'repo',
+      duenio: duenioDelRemoto,
+      repositorio: repositorioDelRemoto,
       baseDeLaApi: Uri.parse('http://127.0.0.1:${api.port}'),
-      urlDelRemoto: 'http://127.0.0.1:${api.port}/duenio/repo.git',
+      urlDelRemoto:
+          'http://127.0.0.1:${api.port}/$duenioDelRemoto/$repositorioDelRemoto.git',
     ),
     // `FuenteDeCredencialFalsa`, no un stub privado: es el mismo
     // `CredentialSource` falso que esta tarea le suma a `plugin_fake`, y
@@ -173,6 +240,36 @@ void main() {
     'falsa · SalidaDePrFalsa configurada en abierto': () =>
         SalidaDePrFalsa(respuesta: PullRequestOpen(url: 'https://falsa/pr/1')),
   };
+
+  test('real: la búsqueda idempotente pregunta por ESTE repositorio, ESTA '
+      'rama y ESTA base', () async {
+    // **Nada en el árbol cubría esta elección**, y es la misma prueba que
+    // ancla las otras dos suites: las tres tienen que medir lo mismo, o la que
+    // falte vuelve a ser el lugar por donde se cuela. Se mide sobre lo que el
+    // servidor VIO llegar, no sobre la clave con la que particiona.
+    await sinkReal().open(solicitud());
+    expect(busquedasVistas, hasLength(1));
+    expect(busquedasVistas.single.ruta, '/repos/$duenio/$repositorio/pulls');
+    expect(busquedasVistas.single.head, '$duenio:$rama');
+    expect(busquedasVistas.single.base, base);
+  });
+
+  test(
+    'real: un pull request de OTRO repositorio no contesta esta búsqueda',
+    () async {
+      // El ancla de la partición del servidor de esta suite, medida por el
+      // efecto: dos pedidos idénticos a dos repositorios dejan DOS pull
+      // requests. Con una sola lista para todos —como guardaba— el segundo
+      // encontraba el del primero y no creaba ninguno, y esta suite quedaba
+      // entera en verde con la búsqueda apuntada al repositorio equivocado.
+      await sinkReal().open(solicitud());
+      await sinkReal(
+        duenioDelRemoto: 'otro',
+        repositorioDelRemoto: 'repositorio',
+      ).open(solicitud());
+      expect(creados, 2);
+    },
+  );
 
   test('la suite corre contra DOS implementaciones, no una', () {
     expect(implementaciones, hasLength(2));
@@ -242,7 +339,7 @@ void main() {
       expect(segundo, isA<PullRequestOpen>());
       expect(
         (segundo as PullRequestOpen).url,
-        prsExistentes.single['html_url'],
+        prsExistentes().single['html_url'],
       );
       expect(
         creados,

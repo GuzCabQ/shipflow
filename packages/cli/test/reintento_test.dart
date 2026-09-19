@@ -71,31 +71,24 @@ class ForjaDeLaPrueba {
   /// compara contra la que trae la solicitud.
   final String revision;
 
-  /// Los pull requests que existen del otro lado, **por repositorio**.
-  ///
-  /// **La clave es la ruta del pedido, que lleva el dueño y el repositorio
-  /// adentro — y esa partición es el arreglo de un falso verde.** Antes esta
-  /// forja guardaba una sola lista para todos: contestaba con los mismos pull
-  /// requests sin importar a qué repositorio se los pidieran. Con eso, la
-  /// prueba que mide que un reintento NO abre un segundo pull request pasaba
-  /// igual con el remoto cambiado —la búsqueda encontraba el pull request de
-  /// OTRO repositorio— y el agujero que la revisión humana encontró vivía
-  /// justo debajo de la prueba que decía cubrirlo. Una forja de verdad
-  /// particiona por repositorio; ésta también.
-  final Map<String, List<Map<String, Object?>>> _abiertosPorRepo = {};
+  /// Los pull requests que existen del otro lado, **por repositorio, rama y
+  /// base** — ver [claveDeLaConsultaDePrs], que argumenta las tres
+  /// dimensiones y lo que costaba cada una que faltara.
+  final Map<String, List<Map<String, Object?>>> _abiertosPorConsulta = {};
 
   /// Cada solicitud que le llegó al puerto, en orden.
   final List<PullRequestRequest> recibidas = [];
 
-  /// Cuántos pull requests existen del otro lado, **sumando todos los
-  /// repositorios**: un segundo pull request abierto en otro repositorio es
-  /// exactamente el fallo que hay que poder contar.
+  /// Cuántos pull requests existen del otro lado, **sumando todas las
+  /// consultas**: un segundo pull request abierto en otro repositorio —o para
+  /// otra rama— es exactamente el fallo que hay que poder contar.
   int get pullRequestsAbiertos =>
-      _abiertosPorRepo.values.fold(0, (n, l) => n + l.length);
+      _abiertosPorConsulta.values.fold(0, (n, l) => n + l.length);
 
-  /// En cuántos repositorios distintos quedó algún pull request.
-  int get repositoriosConPullRequest => _abiertosPorRepo.keys
-      .where((k) => _abiertosPorRepo[k]!.isNotEmpty)
+  /// Para cuántas consultas distintas —repositorio, rama y base— quedó algún
+  /// pull request.
+  int get consultasConPullRequest => _abiertosPorConsulta.keys
+      .where((k) => _abiertosPorConsulta[k]!.isNotEmpty)
       .length;
 
   /// Si el otro lado RECHAZA la creación. Con esto puesto, la búsqueda sigue
@@ -106,10 +99,30 @@ class ForjaDeLaPrueba {
 
   ForjaDeLaPrueba._(this._api, this.revision, this.rechazaLaCreacion) {
     _api.listen((pedido) async {
-      // La ruta lleva el dueño y el repositorio: es la que separa un
-      // repositorio de otro, igual que del otro lado de verdad.
-      final abiertos = _abiertosPorRepo.putIfAbsent(pedido.uri.path, () => []);
-      if (pedido.method == 'GET') {
+      // **La consulta ENTERA es la clave**: el repositorio por la ruta, y la
+      // rama y la base por los parámetros que la búsqueda idempotente manda.
+      // Ver [claveDeLaConsultaDePrs].
+      final esBusqueda = pedido.method == 'GET';
+      final cuerpoDelPost = esBusqueda
+          ? null
+          : jsonDecode(await utf8.decoder.bind(pedido).join())
+                as Map<String, Object?>;
+      final clave = esBusqueda
+          ? claveDeLaConsultaDePrs(
+              ruta: pedido.uri.path,
+              head: pedido.uri.queryParameters['head'],
+              base: pedido.uri.queryParameters['base'],
+            )
+          : claveDeLaConsultaDePrs(
+              ruta: pedido.uri.path,
+              head: headDeLaCreacion(
+                ruta: pedido.uri.path,
+                ramaDelCuerpo: cuerpoDelPost!['head']! as String,
+              ),
+              base: cuerpoDelPost['base']! as String,
+            );
+      final abiertos = _abiertosPorConsulta.putIfAbsent(clave, () => []);
+      if (esBusqueda) {
         pedido.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
@@ -117,9 +130,7 @@ class ForjaDeLaPrueba {
         await pedido.response.close();
         return;
       }
-      final cuerpo =
-          jsonDecode(await utf8.decoder.bind(pedido).join())
-              as Map<String, Object?>;
+      final cuerpo = cuerpoDelPost!;
       if (rechazaLaCreacion) {
         pedido.response
           ..statusCode = HttpStatus.unprocessableEntity
@@ -1341,7 +1352,7 @@ void main() {
             'de otro: si contestara, la prueba de la mudanza del remoto '
             'mediría el doble y no el arreglo',
       );
-      expect(m.forja.repositoriosConPullRequest, 2);
+      expect(m.forja.consultasConPullRequest, 2);
     });
 
     test(
@@ -1373,7 +1384,7 @@ void main() {
               'el segundo pull request es exactamente lo que no puede pasar',
         );
         expect(
-          m.forja.repositoriosConPullRequest,
+          m.forja.consultasConPullRequest,
           1,
           reason: 'y menos todavía en un repositorio que nadie eligió',
         );

@@ -24,9 +24,78 @@ const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
 /// prueba que lo usa, y el de su gemela en la suite del empuje.
 const nombreDelInstrumento = 'ayuda_fin_del_proceso';
 
+/// La clave con la que una forja de verdad separa un pull request de otro, y
+/// con la que **todo servidor de prueba de este árbol tiene que separarlos**.
+///
+/// **Tres dimensiones, no una, y ninguna es decorativa.** El repositorio viaja
+/// en la ruta del pedido; la rama de origen y la base viajan en la consulta de
+/// la búsqueda idempotente —`head` y `base`— y en el cuerpo de la creación. Un
+/// servidor que guarde una sola lista, o que particione solo por repositorio,
+/// devuelve pull requests que la forja de verdad no habría devuelto — y
+/// entonces la búsqueda idempotente encuentra lo que no existe.
+///
+/// **Lo que eso costaba, medido.** Con los tres servidores de este árbol
+/// ciegos a estos parámetros: apuntando la búsqueda del adapter a OTRO
+/// repositorio, esta suite quedaba entera en verde —29 de 29—; apuntando su
+/// filtro de rama a una que no existe, quedaban en verde las tres suites y la
+/// suite completa del repositorio. O sea que nada cubría la elección de rama y
+/// base de esa búsqueda, mientras tres suites afirmaban que un reintento no
+/// abre un segundo pull request. Si esa elección estuviera mal, la búsqueda no
+/// encontraría nada y se abriría un segundo pull request para la misma rama y
+/// en el mismo repositorio, sin remoto mudado ni nada raro.
+///
+/// **Hay una copia de esta función bajo `packages/cli/test`**, que es la que
+/// usan las dos suites de ese paquete. Son dos copias y no una porque este
+/// paquete no puede importar ese archivo: las flechas apuntan al revés. Si una
+/// cambia, la otra tiene que cambiar con ella.
+String _claveDeLaConsultaDePrs({
+  required String ruta,
+  required String? head,
+  required String? base,
+}) => '$ruta|head=${head ?? ""}|base=${base ?? ""}';
+
+/// El `head` con el que la forja indexa un pull request **recién creado**.
+///
+/// La creación manda la rama pelada en el cuerpo; la búsqueda pregunta por
+/// `duenio:rama`. Son la misma clave dicha de dos formas, y quien las tiene
+/// que unificar es quien guarda —igual que del otro lado—: sin esto, un pull
+/// request creado no lo encontraría nunca la búsqueda que lo busca.
+String _headDeLaCreacion({
+  required String ruta,
+  required String ramaDelCuerpo,
+}) {
+  // `/repos/<duenio>/<repositorio>/pulls`
+  final segmentos = ruta.split('/').where((s) => s.isNotEmpty).toList();
+  final duenio = segmentos.length > 1 ? segmentos[1] : '';
+  return '$duenio:$ramaDelCuerpo';
+}
+
 void main() {
+  // El repositorio, la rama y la base que `solicitud` va a usar. Escritos una
+  // vez: la partición del servidor y la siembra de las pruebas tienen que
+  // hablar de la misma consulta, y dos copias divergen.
+  const duenio = 'duenio';
+  const repositorio = 'repo';
+  const rama = 'rama-1';
+  const base = 'main';
+  final claveDeLaSolicitud = _claveDeLaConsultaDePrs(
+    ruta: '/repos/$duenio/$repositorio/pulls',
+    head: '$duenio:$rama',
+    base: base,
+  );
+
   late HttpServer api;
-  late List<Map<String, Object?>> prsExistentes;
+
+  // Los pull requests que existen del otro lado, POR REPOSITORIO, RAMA Y
+  // BASE — ver `_claveDeLaConsultaDePrs`.
+  late Map<String, List<Map<String, Object?>>> prsPorConsulta;
+
+  // Los de la consulta que `solicitud` va a hacer. Es la partición por
+  // omisión: las pruebas que siembran un pull request ya existente hablan
+  // siempre del que existiría para ESTA rebanada.
+  List<Map<String, Object?>> prsExistentes() =>
+      prsPorConsulta.putIfAbsent(claveDeLaSolicitud, () => []);
+
   int creados = 0;
   bool cortarLaRespuestaDelPost = false;
 
@@ -40,11 +109,21 @@ void main() {
   /// como un problema de su token).
   final pedidosVistos = <({String metodo, String? autorizacion})>[];
 
+  /// Lo que el servidor VIO cuando le pidieron la búsqueda idempotente: la
+  /// ruta y los dos filtros, crudos y sin pasar por la clave de partición.
+  ///
+  /// **Sin esto, la elección de la búsqueda solo se puede anclar con la misma
+  /// función que la partición usa** — y un ancla así pasa verde con la
+  /// partición colapsada, porque las dos mitades de la comparación se
+  /// colapsan juntas. Medido.
+  final busquedasVistas = <({String ruta, String? head, String? base})>[];
+
   setUp(() async {
-    prsExistentes = [];
+    prsPorConsulta = {};
     creados = 0;
     cortarLaRespuestaDelPost = false;
     pedidosVistos.clear();
+    busquedasVistas.clear();
     api = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     api.listen((p) async {
       pedidosVistos.add((
@@ -52,10 +131,23 @@ void main() {
         autorizacion: p.headers.value(HttpHeaders.authorizationHeader),
       ));
       if (p.method == 'GET') {
+        busquedasVistas.add((
+          ruta: p.uri.path,
+          head: p.uri.queryParameters['head'],
+          base: p.uri.queryParameters['base'],
+        ));
+        final delOtroLado = prsPorConsulta.putIfAbsent(
+          _claveDeLaConsultaDePrs(
+            ruta: p.uri.path,
+            head: p.uri.queryParameters['head'],
+            base: p.uri.queryParameters['base'],
+          ),
+          () => [],
+        );
         p.response
           ..statusCode = 200
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode(prsExistentes));
+          ..write(jsonEncode(delOtroLado));
         await p.response.close();
         return;
       }
@@ -65,8 +157,20 @@ void main() {
         return;
       }
       creados++;
-      final cuerpo = jsonDecode(await utf8.decoder.bind(p).join()) as Map;
-      prsExistentes.add({
+      final cuerpo =
+          jsonDecode(await utf8.decoder.bind(p).join()) as Map<String, Object?>;
+      final delOtroLado = prsPorConsulta.putIfAbsent(
+        _claveDeLaConsultaDePrs(
+          ruta: p.uri.path,
+          head: _headDeLaCreacion(
+            ruta: p.uri.path,
+            ramaDelCuerpo: cuerpo['head']! as String,
+          ),
+          base: cuerpo['base']! as String,
+        ),
+        () => [],
+      );
+      delOtroLado.add({
         'html_url': 'https://forja/pr/$creados',
         'state': 'open',
         'merged_at': null,
@@ -76,7 +180,7 @@ void main() {
       p.response
         ..statusCode = 201
         ..headers.contentType = ContentType.json
-        ..write(jsonEncode(prsExistentes.last));
+        ..write(jsonEncode(delOtroLado.last));
       await p.response.close();
     });
   });
@@ -136,10 +240,14 @@ void main() {
     Uri? baseDeLaApi,
     CredentialSource? credenciales,
     HttpClient Function()? clienteHttp,
+    // Para la prueba que le pide lo MISMO a dos repositorios distintos: por
+    // omisión es el de esta suite.
+    String duenioDelRemoto = duenio,
+    String repositorioDelRemoto = repositorio,
   }) => SalidaDePrDeGitHub(
     configuracion: ConfiguracionDeGitHub(
-      duenio: 'duenio',
-      repositorio: 'repo',
+      duenio: duenioDelRemoto,
+      repositorio: repositorioDelRemoto,
       baseDeLaApi: baseDeLaApi ?? Uri.parse('http://127.0.0.1:$puerto'),
       urlDelRemoto: 'http://127.0.0.1:$puerto/duenio/repo.git',
     ),
@@ -163,6 +271,58 @@ void main() {
     clienteHttp: clienteHttp,
   );
 
+  test('la búsqueda idempotente pregunta por ESTE repositorio, ESTA rama y '
+      'ESTA base', () async {
+    // **Nada en el árbol cubría esta elección.** Medido, con los tres
+    // servidores ciegos a los filtros: apuntando el filtro de rama —o el de
+    // base— a uno que no existe, las tres suites y la suite completa quedaban
+    // en verde. Si esa elección estuviera mal, la búsqueda no encontraría nada
+    // y se abriría un SEGUNDO pull request para la misma rama y en el mismo
+    // repositorio, sin remoto mudado ni nada raro.
+    //
+    // **Se mide sobre lo que el servidor VIO llegar**, no sobre la clave con
+    // la que particiona: un ancla escrita con esa clave pasa verde con la
+    // partición colapsada, porque las dos mitades se colapsan juntas.
+    final salida = construirSalida(api.port);
+    await salida.open(solicitud());
+    expect(busquedasVistas, hasLength(1));
+    expect(busquedasVistas.single.ruta, '/repos/$duenio/$repositorio/pulls');
+    expect(
+      busquedasVistas.single.head,
+      '$duenio:$rama',
+      reason: 'la rama de la rebanada, calificada con el dueño del remoto',
+    );
+    expect(busquedasVistas.single.base, base);
+  });
+
+  test(
+    'un pull request de OTRO repositorio no contesta esta búsqueda',
+    () async {
+      // **El ancla de la partición del servidor de esta suite.** Guardaba una
+      // sola lista para todos y nunca miraba la ruta: con la búsqueda del
+      // adapter apuntada a otro repositorio, esta suite quedaba entera en verde.
+      // Se mide por el efecto —dos pedidos idénticos a dos repositorios dejan
+      // DOS pull requests— y no por la clave, por lo mismo que la prueba de
+      // arriba.
+      final aca = construirSalida(api.port);
+      final alla = construirSalida(
+        api.port,
+        duenioDelRemoto: 'otro',
+        repositorioDelRemoto: 'repositorio',
+      );
+      await aca.open(solicitud());
+      await alla.open(solicitud());
+      expect(
+        creados,
+        2,
+        reason:
+            'el pull request de un repositorio no puede contestar la búsqueda '
+            'de otro: si contestara, la idempotencia de esta suite pasaría '
+            'aunque la búsqueda preguntara por el repositorio equivocado',
+      );
+    },
+  );
+
   test('open repetido no crea un segundo PR', () async {
     final salida = construirSalida(api.port);
     final primero = await salida.open(solicitud());
@@ -174,7 +334,7 @@ void main() {
   });
 
   test('un PR con la misma rama pero otra revisión NO se reutiliza', () async {
-    prsExistentes.add({
+    prsExistentes().add({
       'html_url': 'https://forja/pr/ajeno',
       'state': 'open',
       'merged_at': null,
@@ -193,7 +353,7 @@ void main() {
     // filtro del marcador se rompiera y el de `sha` quedara intacto, esta
     // es la única prueba que lo notaría: la anterior descarta su PR
     // ajeno por `sha`, así que nunca llega a evaluar el marcador.
-    prsExistentes.add({
+    prsExistentes().add({
       'html_url': 'https://forja/pr/ajeno-por-marcador',
       'state': 'open',
       'merged_at': null,
@@ -1195,7 +1355,7 @@ void main() {
 
     test('el OID de la solicitud en mayúsculas encuentra el PR que lo tiene '
         'en minúsculas', () async {
-      prsExistentes.add({
+      prsExistentes().add({
         'html_url': 'https://forja/pr/el-que-ya-existe',
         'state': 'open',
         'merged_at': null,
@@ -1227,7 +1387,7 @@ void main() {
       // de hoy lo manda en minúsculas, pero eso es su costumbre y no un
       // contrato que este cliente pueda exigir; si mandara mayúsculas, la
       // comparación literal volvería a crear un segundo pull request.
-      prsExistentes.add({
+      prsExistentes().add({
         'html_url': 'https://forja/pr/el-que-ya-existe',
         'state': 'open',
         'merged_at': null,
@@ -1245,7 +1405,7 @@ void main() {
 
   test('un PR fusionado devuelve URL; uno cerrado da incompleto no '
       'reintentable', () async {
-    prsExistentes.add({
+    prsExistentes().add({
       'html_url': 'https://forja/pr/7',
       'state': 'closed',
       'merged_at': '2026-09-14T00:00:00Z',
@@ -1257,8 +1417,8 @@ void main() {
       isA<PullRequestMerged>(),
     );
 
-    prsExistentes.clear();
-    prsExistentes.add({
+    prsExistentes().clear();
+    prsExistentes().add({
       'html_url': 'https://forja/pr/8',
       'state': 'closed',
       'merged_at': null,
