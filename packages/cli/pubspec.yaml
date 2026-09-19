@@ -24,6 +24,14 @@ dependencies:
     path: ../core
   orchestration:
     path: ../orchestration
+  # **De producción desde esta rebanada.** La ronda anterior la dejó de
+  # desarrollo con una justificación que decía que la composición real no
+  # arma ninguna forja «porque no hay superficie para decir de qué remoto se
+  # trata». Ya la hay: el remoto lo lee `vcs` y quién lo atiende lo decide la
+  # fábrica neutra de este paquete, a la que llama la raíz de composición de
+  # `ship`.
+  forge:
+    path: ../forge
   # El temporal se arma al lado del destino con el mismo nombre de archivo
   # más un sufijo, y esa unión de rutas se le pide a la biblioteca oficial,
   # no a mano — la misma razón que ya la trae `plugin_dart`.
@@ -45,12 +53,3 @@ dev_dependencies:
   # cosa; `plugin_dart` ya usaba el patrón correcto.
   plugin_fake:
     path: ../plugin_fake
-  # La suite de contrato de `PullRequestSink` corre la implementación real
-  # —`SalidaDePrDeGitHub`— contra un servidor local, igual que la prueba de
-  # `forge` en la que se apoya. Nadie en `lib/` ni en `bin/` la importa: `ship`
-  # ya existe, pero su composición real no arma ninguna forja —no hay
-  # superficie para decir de qué remoto se trata—, así que sigue siendo de
-  # desarrollo por lo mismo que `plugin_fake`. La tarea que compone la forja
-  # de verdad es la que mueve esta flecha a `dependencies`.
-  forge:
-    path: ../forge

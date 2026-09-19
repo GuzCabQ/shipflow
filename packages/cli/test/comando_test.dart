@@ -18,6 +18,7 @@ import 'dart:io';
 
 import 'package:cli/cli.dart';
 import 'package:core/core.dart';
+import 'package:forge/forge.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 import 'package:test/test.dart';
@@ -35,6 +36,14 @@ const _ajeno = 'ajeno.txt';
 
 /// Una línea que el detector reconoce por el NOMBRE al que se asigna.
 const _lineaConSecreto = 'password = "no-deberia-estar-acá-nunca"';
+
+/// Un remoto que la fábrica del paquete de la forja SÍ atiende. Se escribe en
+/// el repositorio de verdad y nadie sale a la red por él: lo único que se hace
+/// con esta URL es leerla y decidir.
+const remotoAtendible = 'https://github.com/duenio/repo.git';
+
+/// Un remoto bien formado que **ninguna forja conocida atiende**.
+const remotoAjeno = 'https://una.forja.desconocida/duenio/repo.git';
 
 /// El desenlace que el payload tiene que saber describir. Es el del diseño:
 /// entrega incompleta, reintentable, sobre una verificación verde.
@@ -79,9 +88,11 @@ class Mundo {
   final bool sinCredencial;
   final bool conCambioAjeno;
 
-  /// No hay forja compuesta. Es el estado real de este repositorio: no existe
-  /// todavía ninguna superficie para declarar de qué remoto se trata.
-  final bool sinForja;
+  /// El remoto que este repositorio tiene configurado, o **nulo si no tiene
+  /// ninguno**. Se escribe en el repositorio de verdad, y de ahí lo lee la
+  /// composición: sin eso, «hay remoto» sería un hecho que la prueba le
+  /// declara al código en vez de uno que el código mide.
+  final String? remoto;
 
   /// Cómo contesta quien corre, o nulo si no hay con quién hablar.
   final Future<bool> Function(String pregunta)? responder;
@@ -105,7 +116,7 @@ class Mundo {
     this.conSecreto = false,
     this.sinCredencial = false,
     this.conCambioAjeno = false,
-    this.sinForja = false,
+    this.remoto = remotoAtendible,
     this.responder,
   }) {
     raiz = Directory.systemTemp.createTempSync('ship_comando_');
@@ -117,6 +128,8 @@ class Mundo {
     _git(['add', '-A']);
     _git(['commit', '-m', 'base']);
     _git(['switch', '-c', 'trabajo']);
+    final url = remoto;
+    if (url != null) _git(['remote', 'add', 'origin', url]);
     repo = RepositorioGit(
       directorio: raiz.path,
       politica: PoliticaDeArtefactosFalsa(),
@@ -173,7 +186,8 @@ class Mundo {
               ),
             },
           ),
-    forja: sinForja ? null : forja,
+    urlDelRemoto: repo.urlDelRemoto,
+    forjaDelRemoto: _forjaDelRemoto,
     registro: registro,
     cambiosAjenos: (List<String> archivos) =>
         cambiosAjenosDelArbol(directorio: raiz.path, deLaRebanada: archivos),
@@ -182,6 +196,26 @@ class Mundo {
     nuevoRunId: () => runId,
     baseConfigurada: 'main',
   );
+
+  /// Quién atiende el remoto: **la decisión la toma la fábrica de verdad, y
+  /// lo que se reemplaza es solo el efecto remoto**.
+  ///
+  /// Con un predicado inventado acá, esta suite mediría su propio predicado:
+  /// pasaría igual con la fábrica desconectada de la composición. Llamándola
+  /// de verdad, lo que se fija es que una URL atendible produce una salida y
+  /// una ajena produce nulo — y el doble entra recién después, para que la
+  /// publicación no salga a la red.
+  PullRequestSink? _forjaDelRemoto(String url) =>
+      salidaDePrDelRemoto(
+            urlDelRemoto: url,
+            credenciales: const FuenteDeCredencialFalsa(),
+            claveDeCredencial: claveDeCredencialDeLaForja,
+            directorio: raiz.path,
+            entornoDelPadre: EntornoDelProceso(const {}),
+          ) ==
+          null
+      ? null
+      : forja;
 
   /// Corre `shipflow ship` ENTERO, por la frontera.
   Future<(int, String, String)> correr(List<String> args) async {
@@ -571,23 +605,56 @@ void main() {
     });
   });
 
-  group('la forja que no está compuesta', () {
+  group('la forja sale del remoto del repositorio', () {
     test(
-      'una corrida que PODRÍA publicar se detiene en 4, sin escribir',
+      'sin remoto, una corrida que PODRÍA publicar se detiene en 4',
       () async {
-        final mundo = Mundo(sinForja: true);
+        final mundo = Mundo(remoto: null);
         final (codigo, salida, _) = await mundo.correr([
           ..._invocacion,
           '--yes',
         ]);
         expect(codigo, Codigo.errorDeConfiguracion);
-        expect(salida, contains('forja'));
+        expect(
+          salida,
+          contains('no tiene remoto configurado'),
+          reason: 'el mensaje dice POR QUÉ no se puede publicar',
+        );
         expect(mundo.commits, isEmpty);
       },
     );
 
+    test(
+      'con un remoto que nadie atiende, también 4 y con OTRO motivo',
+      () async {
+        // El mismo código por una causa distinta. Un mensaje único dejaría a
+        // quien corre averiguando cuál de los dos le pasó: agregar un remoto no
+        // es lo mismo que apuntarlo a otro lado.
+        final mundo = Mundo(remoto: remotoAjeno);
+        final (codigo, salida, _) = await mundo.correr([
+          ..._invocacion,
+          '--yes',
+        ]);
+        expect(codigo, Codigo.errorDeConfiguracion);
+        expect(salida, contains('ninguna forja conocida sepa atender'));
+        expect(salida, isNot(contains('no tiene remoto configurado')));
+        expect(mundo.commits, isEmpty);
+      },
+    );
+
+    test('la URL del remoto NO se imprime', () async {
+      // Un remoto puede llevar la credencial embebida en su autoridad, y este
+      // mensaje sale por la salida estándar y por el payload de máquina.
+      final mundo = Mundo(
+        remoto: 'https://usuario:un-secreto@una.forja.desconocida/d/r.git',
+      );
+      final (_, salida, _) = await mundo.correr([..._invocacion, '--yes']);
+      expect(salida, isNot(contains('un-secreto')));
+      expect(salida, isNot(contains('una.forja.desconocida')));
+    });
+
     test('un ensayo corre igual: por construcción no publica', () async {
-      final mundo = Mundo(sinForja: true);
+      final mundo = Mundo(remoto: null);
       final (codigo, salida, _) = await mundo.correr([
         ..._invocacion,
         '--dry-run',
@@ -595,6 +662,26 @@ void main() {
       expect(codigo, Codigo.exito);
       expect(salida, contains('rama: trabajo → main'));
     });
+  });
+
+  test('fuera de un repositorio se sale 4, no 70', () async {
+    // **Sin ningún doble**: esta invocación entra por la composición real.
+    // Antes salía por la red de último recurso —«se rompió el arnés,
+    // reportalo con la traza»— porque la rama se leía adentro del bloque que
+    // solo atrapa las cuatro excepciones declaradas. No estar parado en un
+    // repositorio no es un fallo del arnés.
+    final afuera = Directory.systemTemp.createTempSync('ship_sin_repo_');
+    addTearDown(() => afuera.deleteSync(recursive: true));
+    final salida = StringBuffer();
+    final codigo = await ejecutar(
+      ['ship', ..._invocacion, '--yes'],
+      directorio: afuera.path,
+      salida: salida,
+      error: StringBuffer(),
+    );
+    expect(codigo, Codigo.errorDeConfiguracion);
+    expect(salida.toString(), contains('no se pudo leer el repositorio'));
+    expect(salida.toString(), contains('repositorio de trabajo'));
   });
 
   test('el resultado de ship es uno solo y lleva su runId', () async {

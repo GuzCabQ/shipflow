@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
+import 'package:forge/forge.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:path/path.dart' as rutas;
 import 'package:plugin_dart/plugin_dart.dart';
@@ -102,17 +103,35 @@ class ColaboradoresDeShip {
   final CredentialSource credenciales;
   final String claveDeCredencial;
 
-  /// Por dónde sale el pull request, o **nulo cuando no hay forja compuesta**.
+  /// A qué remoto apunta este repositorio, o **nulo cuando no apunta a
+  /// ninguno**.
   ///
-  /// Nulo es un hecho del entorno, no un descuido: hoy este repositorio no
-  /// tiene ninguna superficie —ni archivo de configuración, ni bandera, ni
-  /// clave de entorno declarada— por donde decir de qué remoto se trata, así
-  /// que la raíz de composición no puede armar el adapter sin inventarle un
-  /// destino. Un doble que devolviera un desenlace remoto fabricado sería el
-  /// falso verde exacto; por eso se declara la ausencia y el comando la
-  /// convierte en `4` — falta configuración, cero escrituras — en cuanto la
-  /// corrida PODRÍA publicar.
-  final PullRequestSink? forja;
+  /// **Llega leída de afuera, y esa es la diferencia con la versión
+  /// anterior.** Antes la forja era un valor ya elegido y no había de dónde
+  /// sacarla; ahora el hecho —qué remoto hay— lo lee quien compone de verdad,
+  /// contra el repositorio. Que sea una función y no un campo es lo que deja
+  /// que una prueba monte un repositorio con el remoto que quiera en vez de
+  /// que la composición se lo pregunte a sí misma: una función que se lee a
+  /// sí misma un hecho del entorno no se puede contradecir desde una prueba.
+  ///
+  /// No tener remoto es un hecho, no un fallo. No poder preguntarlo —porque
+  /// no hay repositorio— es otra cosa y sale por excepción; ver
+  /// [correrShipDelComando].
+  final Future<String?> Function() urlDelRemoto;
+
+  /// Por dónde sale el pull request de ese remoto, o **nulo cuando ninguna
+  /// forja conocida lo atiende**.
+  ///
+  /// **Recibe la URL y no la busca**, por lo mismo que [urlDelRemoto] existe:
+  /// quien decide qué remoto hay es el paso anterior, y quien decide quién lo
+  /// atiende es el paquete de la forja. Esta composición no nombra a ninguna
+  /// de las dos cosas — de eso se trata `forja-en-su-adapter`.
+  ///
+  /// Nulo sigue siendo un hecho del entorno y el comando lo convierte en `4`
+  /// —falta configuración, cero escrituras— en cuanto la corrida PODRÍA
+  /// publicar. Lo que cambió es que ahora hay dos maneras de llegar a ese
+  /// nulo, y el mensaje las distingue.
+  final PullRequestSink? Function(String urlDelRemoto) forjaDelRemoto;
 
   final RegistroDeCorridas registro;
 
@@ -152,9 +171,10 @@ class ColaboradoresDeShip {
     required this.registro,
     required this.cambiosAjenos,
     required this.leerArchivo,
+    required this.urlDelRemoto,
+    required this.forjaDelRemoto,
     this.claveDeCredencial = claveDeCredencialDeLaForja,
     this.nuevoRunId = generarRunId,
-    this.forja,
     this.responder,
     this.baseConfigurada,
     this.baseDeLaForja,
@@ -165,24 +185,26 @@ class ColaboradoresDeShip {
 ///
 /// **`baseConfigurada` y `baseDeLaForja` van nulas, y eso no es un olvido.** Las
 /// tres fuentes de la base son explícita, configuración y rama por defecto de
-/// la forja; hoy no hay ni una superficie de configuración ni una forja a la
-/// que preguntarle, así que la única fuente viva es `--base`. Rellenarlas con
-/// un valor cómodo —`main`— sería adivinar la base, que es justo lo que la
-/// causa `baseIndeterminada` del preflight existe para nombrar.
+/// la forja; no hay superficie de configuración, y la rama por defecto de la
+/// forja pide un pedido más a su API que hoy nadie hace —tener compuesta la
+/// salida de pull requests no es tenerla preguntada—, así que la única fuente
+/// viva es `--base`. Rellenarlas con un valor cómodo —`main`— sería adivinar
+/// la base, que es justo lo que la causa `baseIndeterminada` del preflight
+/// existe para nombrar.
 ///
-/// **Residuo declarado: ninguna prueba mide que ESTA función arme los
-/// adapters de verdad.** Bajo la suite, la única invocación que llega hasta
-/// acá es la del comando sin argumentos, y esa sale por error de uso —dentro
-/// de `resolverRebanada`— antes de que ninguno de los cinco colaboradores que
-/// se arman acá se llegue a usar. La prueba del «comando hueco», en la suite
-/// del comando, mide algo real pero distinto: que
-/// `correrShipDelComando` no ignora los colaboradores que recibe. No mide que
-/// esta función, la que los construye, los construya contra el mundo real —
-/// reemplazar cualquiera de los cinco por un doble no pone roja ninguna
-/// prueba hoy. Cerrarlo pediría un proceso de verdad corriendo contra un
+/// **Residuo declarado, ahora más chico: de los colaboradores que se arman acá,
+/// uno solo lo mide una prueba.** La corrida fuera de un repositorio entra por
+/// esta función —sin doble ninguno— y se cae leyendo la rama con el
+/// `RepositorioGit` que se arma acá, así que ese sí está medido. Los demás no:
+/// la única otra invocación que llega hasta acá es la del comando sin
+/// argumentos, y sale por error de uso —dentro de `resolverRebanada`— antes de
+/// que ninguno se use. La prueba del «comando hueco», en la suite del comando,
+/// mide algo real pero distinto: que `correrShipDelComando` no ignora los
+/// colaboradores que recibe. Reemplazar el ambiente, la cascada, el registro o
+/// la lectura de cambios ajenos por un doble no pone roja ninguna prueba hoy.
+/// Cerrarlo del todo pediría un proceso de verdad corriendo contra un
 /// repositorio real sin que el binario de prueba lo intercepte, que ninguna
-/// otra parte de esta suite hace; queda como residuo, con la misma
-/// honestidad que los cuatro de más arriba.
+/// otra parte de esta suite hace.
 ColaboradoresDeShip colaboradoresDelSistema(String directorio, Globales g) {
   final entorno = EntornoDelProceso(Platform.environment);
   // Los controles salen de una cascada armada sobre el directorio del usuario y
@@ -190,16 +212,35 @@ ColaboradoresDeShip colaboradoresDelSistema(String directorio, Globales g) {
   // instancia y no hace falta que lo sean**: de acá solo se leen el id y la
   // afirmación de cada control, que no dependen de sobre qué se lo corra.
   final registrados = cascadaPorDefecto(directorio: directorio).pasos;
+  final repo = RepositorioGit(
+    directorio: directorio,
+    politica: const PoliticaDeArtefactosDart(),
+    entornoDelPadre: entorno,
+  );
+  final credenciales = FuenteDeEntorno(entorno);
+  // **Una sola vez, y usada en los dos lugares.** El preflight aprueba
+  // leyendo esta clave y la publicación lee con la que se le arme a la
+  // salida: si fueran dos literales, el día que uno cambie el preflight
+  // aprueba por una y la publicación falla por otra, sin que nada lo explique.
+  const clave = claveDeCredencialDeLaForja;
   return ColaboradoresDeShip(
-    repo: RepositorioGit(
+    repo: repo,
+    ambiente: const EntornoDart(),
+    urlDelRemoto: repo.urlDelRemoto,
+    // **Acá no se nombra a ninguna forja**, y eso es el ruling de esta
+    // rebanada: quién atiende qué remoto lo decide el paquete de la forja,
+    // que es el único que puede saberlo. Lo que vuelve es un puerto.
+    forjaDelRemoto: (url) => salidaDePrDelRemoto(
+      urlDelRemoto: url,
+      credenciales: credenciales,
+      claveDeCredencial: clave,
       directorio: directorio,
-      politica: const PoliticaDeArtefactosDart(),
       entornoDelPadre: entorno,
     ),
-    ambiente: const EntornoDart(),
+    claveDeCredencial: clave,
     construirCascada: (raiz) => cascadaPorDefecto(directorio: raiz),
     controles: {for (final paso in registrados) paso.id: paso},
-    credenciales: FuenteDeEntorno(entorno),
+    credenciales: credenciales,
     registro: RegistroDeCorridas(raiz: rutas.join(directorio, '.shipflow')),
     cambiosAjenos: (deLaRebanada) => cambiosAjenosDelArbol(
       directorio: directorio,
@@ -404,21 +445,72 @@ Future<int> correrShipDelComando(
     );
   }
 
-  final hayQuienConfirme = colaboradores.responder != null;
-  final forja = colaboradores.forja;
-  if (forja == null &&
-      _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
+  // **Los dos hechos del repositorio, leídos ANTES de cualquier escritura y
+  // FUERA del `try` de más abajo.** Los dos pueden fallar por la misma causa
+  // —no estar parado en un repositorio— y esa no es ninguna de las cuatro
+  // excepciones que el doc de `correrShip` declara: es una precondición del
+  // entorno, que es lo que el `4` nombra. Antes la rama se leía adentro de la
+  // llamada compuesta, así que un `GitFallo` subía a la frontera y salía `70`
+  // —«se rompió el arnés, reportalo con la traza»— por correr el comando en
+  // un directorio cualquiera.
+  final String ramaActual;
+  final String? urlDelRemoto;
+  try {
+    ramaActual = await colaboradores.repo.ramaActual;
+    urlDelRemoto = await colaboradores.urlDelRemoto();
+  } on GitFallo catch (e) {
     return _detener(
       impresora,
       codigo: Codigo.errorDeConfiguracion,
       humano:
-          'shipflow ship: no hay ninguna forja compuesta, así que esta '
-          'corrida no podría abrir el pull request que promete.',
+          'shipflow ship: no se pudo leer el repositorio en «$directorio» '
+          '(${e.invocacion} → ${e.codigo}): ${e.salida}',
       queHacer:
-          'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
-          'commit. Corré `shipflow ship --dry-run` para ver la '
-          'previsualización, que no necesita forja.',
-      datos: {'error': 'forja no compuesta'},
+          'Corré `ship` parado adentro de un repositorio de trabajo. No se '
+          'escribió nada: la lectura pasa antes de preparar el candidato.',
+      datos: {'error': 'no se pudo leer el repositorio'},
+      runId: null,
+    );
+  }
+
+  final hayQuienConfirme = colaboradores.responder != null;
+  // **La decisión de quién atiende este remoto NO se toma acá.** Esta
+  // composición pasa la URL y recibe un puerto o un nulo; el nombre de la
+  // forja, su host y su API viven en el paquete que los conoce.
+  final forja = urlDelRemoto == null
+      ? null
+      : colaboradores.forjaDelRemoto(urlDelRemoto);
+  if (forja == null &&
+      _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
+    // **Los dos nulos se dicen distinto, porque lo que hay que hacer es
+    // distinto**: agregar un remoto no es lo mismo que apuntarlo a otro lado.
+    // Un mensaje único obligaría a quien corre a averiguar cuál de los dos le
+    // pasó.
+    //
+    // **Y la URL no se imprime.** Un remoto puede llevar la credencial
+    // embebida en su parte de autoridad, y este mensaje sale por la salida
+    // estándar y por el payload de máquina: nombrarla la publicaría. Lo que
+    // se dice es el hecho, no el valor.
+    final sinRemoto = urlDelRemoto == null;
+    return _detener(
+      impresora,
+      codigo: Codigo.errorDeConfiguracion,
+      humano: sinRemoto
+          ? 'shipflow ship: este repositorio no tiene remoto configurado, así '
+                'que esta corrida no podría abrir el pull request que promete.'
+          : 'shipflow ship: el remoto de este repositorio no es uno que '
+                'ninguna forja conocida sepa atender, así que esta corrida no '
+                'podría abrir el pull request que promete.',
+      queHacer: sinRemoto
+          ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
+                'commit. Agregale el remoto al que querés publicar, o corré '
+                '`shipflow ship --dry-run`, que no necesita forja.'
+          : 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
+                'commit. Apuntá el remoto a una forja soportada, o corré '
+                '`shipflow ship --dry-run`, que no necesita forja.',
+      datos: {
+        'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
+      },
     );
   }
 
@@ -465,7 +557,7 @@ Future<int> correrShipDelComando(
       claveDeCredencial: colaboradores.claveDeCredencial,
       forja: forja ?? const _ForjaAusente(),
       registro: colaboradores.registro,
-      ramaActual: await colaboradores.repo.ramaActual,
+      ramaActual: ramaActual,
       cambiosAjenos: () => colaboradores.cambiosAjenos(entrada.archivos),
       confirmar: responder == null ? null : confirmar,
       mostrar: mostrar,
