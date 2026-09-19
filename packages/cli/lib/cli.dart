@@ -20,6 +20,7 @@ export 'src/ship/entrada.dart';
 export 'src/ship/gitignore.dart';
 export 'src/ship/preflight.dart';
 export 'src/ship/preview.dart';
+export 'src/ship/reintento.dart';
 export 'src/ship/ship.dart';
 export 'src/uso.dart';
 export 'src/verify.dart';

@@ -36,19 +36,18 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y cuando se implementaron ninguno de los dos tenía productor.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación—. **La 4b ya corre**, y con ella `ShipOutcome.derivar` ganó su productor. **4c le agregó una segunda fábrica**, `ShipOutcome.derivarReintento`, para la corrida que ya commiteó y cuyas compuertas ya son historia.
 
-**El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
+**El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y ya corre—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
-**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; desde `prepared`, `reconciliar` ya decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. La raíz de composición todavía la rechaza a propósito, porque falta el otro camino —el índice desde el estado inconsistente— y el cableado que lea el repositorio de verdad y ejecute las dos reconciliaciones de punta a punta. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
+**`--retry-publication` se está implementando en esta rama.** Es la tercera de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la segunda es el comando `ship` de punta a punta, y ya corre—. Hoy la bandera se interpreta, con las exclusiones que declaran que todo lo que un reintento necesita ya está en el documento de la corrida que se quiere terminar, y `puertaDelReintento` ya filtra por rama y por estado antes de dejar reconciliar o publicar nada; desde `prepared`, `reconciliar` ya decide los cinco pasos que reconstruyen la confianza en el candidato, pura sobre hechos que otro ya leyó. Desde `localInconsistent`, `comprobarIndice` decide si la inconsistencia que dejó la corrida original ya no existe, también pura. Y la raíz de composición **ya la cablea**: la guardia temporal que la rechazaba se retiró, y el camino lee el repositorio de verdad —el padre, el árbol, el mensaje y el `HEAD` de la revisión, más la comparación del índice acotada a las rutas que la rebanada declaró—, corre la reconciliación que corresponda, reconstruye la solicitud del pull request desde el documento, publica sin volver a correr la cascada y sella el documento con el desenlace que salga. El plan, tarea por tarea, está en [PLAN-retry-publication.md](PLAN-retry-publication.md).
 
 **El candidato ya existe**: `ChangeSink` sabe fijar qué bytes se verifican y
 commitear exactamente esos, con un compare-and-swap que falla cerrado. Y
 **`ship` ya lo consume**: la raíz de composición de `ship`
 (`packages/cli/lib/src/ship/composicion.dart`) arma el `RepositorioGit` real y
-la corrida lo usa. Lo que sigue sin existir es el agente, los tickets, los
-ganchos y la publicación real de `--retry-publication`: la bandera se
-interpreta y ya tiene su filtro por rama y por estado, pero la raíz de
-composición la rechaza a propósito hasta que la orquestación que reconcilia y
-publica exista de verdad.
+la corrida lo usa. Lo que sigue sin existir es el agente, los tickets y los
+ganchos. La publicación de `--retry-publication` **sí existe**: la bandera se
+interpreta, tiene su filtro por rama y por estado, y la raíz de composición la
+cablea a la orquestación que reconcilia y publica.
 Y a la cascada le falta lo que la vuelve una cascada: el corte temprano y el
 presupuesto. Todo eso es deliberado y está declarado más abajo, control por
 control.
@@ -3495,11 +3494,11 @@ cerró cada cosa:
   15, con la salida que arma `salidaDePrDelRemoto`
   (`packages/forge/lib/src/composicion.dart`).
 - **`--retry-publication` no existía.** El desenlace ya sabía decir
-  `retryable`; nadie lo consumía. **Hoy la bandera se interpreta y ya tiene
-  su filtro por rama y por estado** —`puertaDelReintento`
-  (`packages/cli/lib/src/corrida.dart`), de 4c—, y la raíz de composición la
-  rechaza a propósito hasta que exista la orquestación que de verdad
-  reconcilia y publica.
+  `retryable`; nadie lo consumía. **Hoy la bandera corre de punta a punta**:
+  se interpreta, `puertaDelReintento` (`packages/cli/lib/src/corrida.dart`,
+  de 4c) filtra por rama y por estado, y la raíz de composición la cablea a
+  `correrReintento` (`packages/cli/lib/src/ship/reintento.dart`), que
+  reconcilia, publica desde el documento y sella.
 - **`ShipOutcome`, `EstadoPublicable` y `CausaDeNoIntento` no se construyen
   acá.** Son §12 y §13 de la propuesta; los construyó la rebanada del
   desenlace, y la de `ship` es la primera que los produce de verdad.
@@ -3888,8 +3887,7 @@ tenía**: la entrada, el preflight, el remapeo de rutas, la previsualización, l
 compuerta por estado y la raíz de composición que arma los adapters de verdad.
 
 Es **la segunda de tres**. La primera fue el desenlace y su documento; la
-tercera es `--retry-publication` con la reconciliación, y **no está
-construida**.
+tercera es `--retry-publication` con la reconciliación, y **ya corre**.
 
 Los dieciséis pasos, en el orden en que `correrShip`
 (`packages/cli/lib/src/ship/ship.dart`) los llama:
@@ -4220,9 +4218,10 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
   reconciliación de una publicación a medias. Lo que esta rebanada dejó para
   que fuera posible es el documento persistido: la revisión se anota
   **antes** de mover la referencia, así que un proceso que muera en el medio
-  no deja una revisión que nadie anotó. **Hoy la bandera existe y ya tiene su
-  filtro por rama y por estado** —`puertaDelReintento`, de 4c—; la
-  reconciliación y `decidirRecuperacion` siguen sin productor de producción.
+  no deja una revisión que nadie anotó. **Hoy la bandera corre** —4c la
+  construyó entera—, y con ella `puertaDelReintento`, `reconciliar`,
+  `comprobarIndice` y `decidirRecuperacion` ganaron su productor de
+  producción: `correrReintento`.
 - **No hay superficie de configuración.** La cadena de la base tiene cuatro
   fuentes: explícita, la del archivo de rebanada, configuración y rama por
   defecto de la forja —la explícita y la de la rebanada se fusionan, con la
@@ -4259,7 +4258,7 @@ superficie incompleta que se muestra vacía se lee como *"no había nada"*.
 | **18 de los 28 puertos siguen sin implementación.** Está declarado puerto por puerto en `arquitectura.json`, y verificado en los dos sentidos: uno nuevo sin declarar falla, y una declaración que quedó vieja también | **fase 2**, rebanadas siguientes |
 | **Coherencia del registro de reglas en tiempo de ejecución.** El constructor de `Rule` rechaza lo que no se puede instalar, pero **nada obliga a que una regla del proyecto llegue a ser una `Rule`**: una que viva solo en prosa esquiva el tipo entero | El registro y su proyección: **fase 3** |
 | **El check de proyección de la capa C.** Hoy `AGENTS.md` y `CLAUDE.md` están **excluidos** de la regla de cadenas —nombrar `claude` o `flutter` es su contenido, por diseño— y nada verifica que lo proyectado sea coherente | **Fase 3** |
-| **`ship`.** El comando existe y corre de punta a punta —preflight, candidato, cascada sobre ese candidato, superficie, artefacto, previsualización, compuerta, commit, documento y publicación—; falta `--retry-publication` con la reconciliación, el agente, los tickets y los ganchos | `--retry-publication`: **4c**. El resto: **fase 2**, rebanadas siguientes |
+| **`ship`.** El comando existe y corre de punta a punta —preflight, candidato, cascada sobre ese candidato, superficie, artefacto, previsualización, compuerta, commit, documento y publicación—, y `--retry-publication` con la reconciliación también; faltan el agente, los tickets y los ganchos | **fase 2**, rebanadas siguientes |
 | **`ProjectTopology` en `vcs`.** Declarada y no hecha: su única función descrita es «cortar commits por unidad coherente», que no está definida en el corpus, y la descomposición está asignada a `orchestration` y congelada por el plan | Cuando el corpus defina «unidad coherente» |
 | **La omisión del detector de secretos, por corrida.** Hoy es un límite declarado del método —lo binario no se revisa— y no una omisión reportada en cada ejecución, que es lo que pide el corolario 5 de ADR-011. **El artefacto de revisión ya existe y `ship` ya lo compone**, así que lo que falta no es el lugar donde reportarla sino que el detector la produzca | Rebanadas siguientes |
 | **El corte temprano y el presupuesto de la cascada.** Hoy corren todos los pasos. El corte necesita que el reporte de registrados contra ejecutados exista primero, que es lo que instaló esta rebanada | **Fase 2**, rebanadas siguientes |

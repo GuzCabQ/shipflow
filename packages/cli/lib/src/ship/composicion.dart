@@ -31,6 +31,7 @@ import '../uso.dart';
 import '../verify.dart';
 import 'entrada.dart';
 import 'gitignore.dart';
+import 'reintento.dart';
 import 'ship.dart';
 
 const nombreDeShip = 'ship';
@@ -381,50 +382,20 @@ class _ForjaAusente implements PullRequestSink {
 /// propiedades de la composición —no del recorrido—, así que se pueden decidir
 /// antes de la primera escritura, que es lo que permite que la falta de forja
 /// salga como `4` con cero efectos en vez de después del commit.
+///
+/// **Un reintento publica sin que nadie confirme nada, y por eso entra acá.**
+/// La confirmación y la compuerta ya corrieron en la corrida original —el
+/// documento que el reintento va a leer es la prueba de que pasaron—, así que
+/// para este modo la única condición que queda es no ser un ensayo. Sin esta
+/// rama, un reintento sin terminal y sin `--yes` —que es la forma normal de
+/// invocarlo, porque el intérprete RECHAZA `--yes` junto con la bandera—
+/// contestaba que no podía publicar, se saltaba la detención por falta de
+/// forja y terminaba pidiéndole un pull request a la forja que no está
+/// compuesta: un `70` por no tener remoto configurado, en vez del `4` que
+/// nombra la precondición que falta.
 bool _puedePublicar(EntradaDeShip entrada, {required bool hayQuienConfirme}) =>
-    !entrada.dryRun && (entrada.yes || hayQuienConfirme);
-
-/// Guardia **TEMPORAL**: rechaza `--retry-publication` porque, hoy, ningún
-/// camino real la atiende todavía.
-///
-/// **Por qué hace falta, y no alcanza con que la interpretación la acepte.**
-/// La rebanada que agrega `EntradaDeShip.reintentarPublicacion` la interpreta,
-/// pero no le arma ninguna orquestación: sin esta guardia, una invocación con
-/// esta bandera pasaría de largo y caería en la comprobación de
-/// `correrShip` que exige una intención no nula, saliendo con «la entrada no
-/// declara ninguna intención» — un mensaje que le echa la culpa a la bandera
-/// que faltaba (`--intent`) en vez de a la que sobra (`--retry-publication`,
-/// que es justamente la que reemplaza a `--intent` en este modo). Esa forma de
-/// mensaje que culpa al argumento equivocado ya se encontró y se cerró una vez
-/// en esta misma función; dejarla reaparecer por esta puerta sería reabrir el
-/// mismo defecto.
-///
-/// **Es temporal, y ya está decidido quién la retira: la tarea que cablea
-/// `--retry-publication` a la orquestación real.** Esa tarea saca esta
-/// guardia y comprueba que, al sacarla, se pone roja una prueba de esta
-/// suite — si ninguna muere, esta guardia no estaba midiendo nada y hay que
-/// revisar por qué. No se borra por decisión de quien lea este comentario más
-/// adelante: se borra cuando el camino que reemplaza exista de verdad.
-///
-/// **Qué hacer mientras tanto la propia excepción lo dice**, porque
-/// [_detener] no instala una regla sin su alternativa: no hay forma de
-/// terminar la publicación con esta bandera todavía, así que el mensaje
-/// apunta a revisar a mano el documento de la corrida que se quiso reintentar.
-void _exigirCaminoDelReintentoCableado(
-  EntradaDeShip entrada, {
-  required RegistroDeCorridas registro,
-}) {
-  final runId = entrada.reintentarPublicacion;
-  if (runId == null) return;
-  throw UsoInvalido(
-    '--retry-publication todavía no tiene camino real: esta rama la '
-        'interpreta, pero ninguna orquestación la usa todavía',
-    'Por ahora no hay forma de terminar la corrida «$runId» con esta '
-        'bandera. Revisá a mano en qué quedó su documento, en '
-        '«${registro.documentoDe(runId)}», o esperá a que shipflow termine '
-        'de cablear el reintento antes de usarla.',
-  );
-}
+    !entrada.dryRun &&
+    (entrada.reintentarPublicacion != null || entrada.yes || hayQuienConfirme);
 
 /// Corre `ship` y devuelve el código de proceso.
 ///
@@ -480,15 +451,6 @@ Future<int> correrShipDelComando(
     entrada = await resolverRebanada(
       interpretarShip(globales.restantes),
       leer: colaboradores.leerArchivo,
-    );
-    // **Guardia temporal — ver su propio doc comment, en
-    // `_exigirCaminoDelReintentoCableado`, para el porqué completo y quién la
-    // retira.** Va dentro de este mismo `try` a propósito: reusa el `catch`
-    // de abajo en vez de abrir una segunda forma de detenerse con el mismo
-    // código.
-    _exigirCaminoDelReintentoCableado(
-      entrada,
-      registro: colaboradores.registro,
     );
   } on UsoInvalido catch (e) {
     // **Sin `runId`.** No se llegó a componer ninguna corrida, así que no hay
@@ -629,6 +591,23 @@ Future<int> correrShipDelComando(
         // vocabulario depende de por dónde se detuvo la corrida.
         if (causa != null) 'causaDeLaAusenciaDeForja': causa.name,
       },
+    );
+  }
+
+  // **La rama del reintento, y acá termina el camino.** Todo lo que sigue
+  // —la identidad nueva, la previsualización, la pregunta de confirmación y
+  // la orquestación de los dieciséis pasos— es de una corrida que empieza de
+  // cero; un reintento no empieza nada: termina una que ya existe, y su
+  // identidad es la que pidió quien corre, no una emitida acá.
+  final runIdDelReintento = entrada.reintentarPublicacion;
+  if (runIdDelReintento != null) {
+    return await _correrElReintento(
+      impresora,
+      runId: runIdDelReintento,
+      colaboradores: colaboradores,
+      forja: forja ?? const _ForjaAusente(),
+      ramaActual: ramaActual,
+      dryRun: entrada.dryRun,
     );
   }
 
@@ -802,21 +781,222 @@ Future<int> correrShipDelComando(
   // hubo un lanzamiento, así que hubo un archivo que el registro no pudo
   // convertir en documento. `payloadDeShip` es quien decide qué hacer con esa
   // distinción; acá solo se mide y se pasa.
-  DocumentoDeCorrida? documento;
-  var documentoIlegible = false;
-  try {
-    documento = await colaboradores.registro.leer(runId);
-  } catch (_) {
-    documentoIlegible = true;
-  }
+  final releido = await _releer(colaboradores.registro, runId);
   return _emitirDesenlace(
     impresora,
     runId,
     resultado.desenlace,
-    documento,
-    documentoIlegible: documentoIlegible,
+    releido.documento,
+    documentoIlegible: releido.ilegible,
     documentoNoEscrito: resultado.documentoNoEscrito,
   );
+}
+
+/// El documento de [runId] para enriquecer el payload, **y si la relectura
+/// falló**.
+///
+/// Es el bloque que estaba escrito al final de [correrShipDelComando] y que
+/// ahora usan los dos caminos que emiten un desenlace —la corrida nueva y el
+/// reintento—: escribirlo dos veces es cómo los dos empiezan a tolerar cosas
+/// distintas ante el mismo fallo. Su argumento completo vive en el doc de
+/// [payloadDeShip] y se resume así: un documento ilegible DESPUÉS de una
+/// publicación exitosa no puede llevarse el hecho de que hay un pull request
+/// abierto, que es el único que volver a correr no reconstruye.
+///
+/// **Se atrapa todo y no una lista de tipos**, que es la excepción a la regla
+/// del proyecto y por eso se argumenta: el fallo tiene tres familias —no se
+/// pudo leer el archivo, no es JSON, no tiene la forma esperada— y la tercera
+/// llega como error y no como excepción. Una lista de tipos dejaría afuera
+/// justamente el caso que motiva esto. El precio de atrapar de más está
+/// acotado a una lectura que no decide nada: solo enriquece.
+Future<({DocumentoDeCorrida? documento, bool ilegible})> _releer(
+  RegistroDeCorridas registro,
+  String runId,
+) async {
+  try {
+    return (documento: await registro.leer(runId), ilegible: false);
+  } catch (_) {
+    // `ilegible` guarda POR QUÉ el documento quedó nulo cuando ese nulo no
+    // vino de `leer` —que también devuelve nulo, sin lanzar, cuando la
+    // corrida nunca escribió nada—: acá SÍ hubo un lanzamiento, así que hubo
+    // un archivo que el registro no pudo convertir en documento.
+    return (documento: null, ilegible: true);
+  }
+}
+
+/// Termina una corrida ya empezada y emite lo que salga.
+///
+/// **Acá y solo acá se traduce a código de proceso cada respuesta del
+/// reintento**, por lo mismo que las cuatro excepciones de una corrida nueva
+/// se traducen en este archivo y en ningún otro: decidir el código dos veces
+/// es cómo dos sitios terminan contestando distinto sobre la misma corrida.
+/// El `switch` es exhaustivo y sin comodín — una respuesta nueva del reintento
+/// no compila hasta que alguien decida su código.
+Future<int> _correrElReintento(
+  Impresora impresora, {
+  required String runId,
+  required ColaboradoresDeShip colaboradores,
+  required PullRequestSink forja,
+  required String ramaActual,
+  required bool dryRun,
+}) async {
+  final ResultadoDelReintento resultado;
+  try {
+    resultado = await correrReintento(
+      runId: runId,
+      registro: colaboradores.registro,
+      repo: colaboradores.repo,
+      forja: forja,
+      ramaActual: ramaActual,
+      dryRun: dryRun,
+    );
+  } on GitFallo catch (e) {
+    // **La revisión que el documento nombra puede no estar en el
+    // repositorio.** El doc de `RegistroDeCorridas.leer` ya declara el caso:
+    // una corrida que murió deja un objeto commit inalcanzable que el
+    // recolector junta. Leerlo falla, y eso no es el arnés roto: es una
+    // precondición del entorno que ya no vale, con cero escrituras detrás.
+    return _detener(
+      impresora,
+      codigo: Codigo.errorDeConfiguracion,
+      humano:
+          'shipflow ship: no se pudo leer del repositorio lo que el documento '
+          'de «$runId» afirma (${e.invocacion} → ${e.codigo}): ${e.salida}',
+      queHacer:
+          'Comprobá que estás parado en el repositorio de esa corrida y que '
+          'su revisión sigue existiendo —una revisión que ninguna rama '
+          'alcanza la recoge el recolector de git—. No se escribió nada: la '
+          'lectura pasa antes de publicar. Si la revisión ya no está, volvé a '
+          'correr `ship` desde el principio.',
+      datos: {'error': 'no se pudo leer la revisión de la corrida'},
+      runId: runId,
+    );
+  }
+
+  switch (resultado) {
+    case ReintentoConDesenlace(:final desenlace, :final documentoNoEscrito):
+      final releido = await _releer(colaboradores.registro, runId);
+      return _emitirDesenlace(
+        impresora,
+        runId,
+        desenlace,
+        releido.documento,
+        documentoIlegible: releido.ilegible,
+        documentoNoEscrito: documentoNoEscrito,
+      );
+
+    case CorridaDesconocida(:final dondeSeBusco):
+      return _detener(
+        impresora,
+        codigo: Codigo.errorDeConfiguracion,
+        humano: 'shipflow ship: no hay ninguna corrida «$runId» que terminar.',
+        queHacer:
+            'Su documento se buscó en «$dondeSeBusco» y no está. Si el '
+            'identificador es el que te dio la corrida que quedó a medias, '
+            'entonces murió antes de anotar nada y no hay nada que recuperar: '
+            'volvé a correr `ship` desde el principio.',
+        datos: {'error': 'no hay documento para esa corrida'},
+        runId: runId,
+      );
+
+    case CorridaIlegible(:final dondeSeBusco, :final porQue):
+      return _detener(
+        impresora,
+        codigo: Codigo.errorDeConfiguracion,
+        humano:
+            'shipflow ship: el documento de la corrida «$runId» está y no se '
+            'puede leer: $porQue',
+        queHacer:
+            'Miralo en «$dondeSeBusco». Si lo escribió una versión más vieja '
+            'de shipflow, esa corrida no se puede terminar con esta: volvé a '
+            'correr `ship` desde el principio. No se escribió nada.',
+        datos: {'error': 'el documento de esa corrida no se puede leer'},
+        runId: runId,
+      );
+
+    case ReintentoRechazado(:final porQue):
+      return _detener(
+        impresora,
+        // **El código sale de la causa, con un `switch` exhaustivo.** «Ya
+        // está publicado» es un éxito —lo que se pidió ya es cierto, y salir
+        // distinto de cero mandaría a arreglar algo que no está roto—; las
+        // otras dos son precondiciones del entorno que no valen, con cero
+        // escrituras detrás, que es lo que el `4` nombra.
+        codigo: switch (porQue.causa) {
+          CausaDeNoReintento.yaPublicado => Codigo.exito,
+          CausaDeNoReintento.ramaDistinta => Codigo.errorDeConfiguracion,
+          CausaDeNoReintento.nadaQueEntregar => Codigo.errorDeConfiguracion,
+        },
+        humano:
+            'shipflow ship: el reintento de «$runId» no actúa '
+            '(${porQue.causa.name}).',
+        // **El detalle entero va como acción siguiente, y no partido en dos.**
+        // Cada uno de los tres se escribió con su alternativa adentro —es la
+        // regla de este proyecto: ninguna prohibición se instala sin decir qué
+        // hacer en cambio—, así que cortarlo para repartirlo entre las dos
+        // líneas de la salida dejaría a una de las dos mintiendo por omisión.
+        queHacer: porQue.detalle,
+        datos: {
+          'error': 'el reintento no actúa',
+          // **Clave propia, y no `causa`.** Bajo esa clave ya viajan los dos
+          // enums del desenlace, y el preflight y la ausencia de forja ya
+          // eligieron la suya por el mismo motivo: acá no hay ningún `kind`
+          // que separe una detención de otra, así que un consumidor
+          // automático no podría ramificar sobre una clave cuyo vocabulario
+          // depende de por dónde se detuvo la corrida.
+          'causaDeNoReintento': porQue.causa.name,
+        },
+        runId: runId,
+      );
+
+    case ReintentoAmbiguo(:final causa, :final detalle):
+      return _detener(
+        impresora,
+        codigo: Codigo.errorDeConfiguracion,
+        humano:
+            'shipflow ship: no se puede confirmar que la revisión de la rama '
+            'sea la de la corrida «$runId» (${causa.name}).',
+        queHacer: detalle,
+        datos: {
+          'error': 'la reconciliación no cerró',
+          'causaDeAmbiguedad': causa.name,
+        },
+        runId: runId,
+      );
+
+    case SinRevisionEnLaRama(:final queHacer, :final detalle):
+      return _detener(
+        impresora,
+        codigo: Codigo.errorDeConfiguracion,
+        humano:
+            'shipflow ship: la corrida «$runId» no dejó ninguna revisión en '
+            'la rama (${queHacer.name}).',
+        queHacer: detalle,
+        datos: {
+          'error': 'no hay revisión de esa corrida en la rama',
+          'queHacerAlRecuperar': queHacer.name,
+        },
+        runId: runId,
+      );
+
+    case ReintentoEnsayado(:final revision):
+      return _detener(
+        impresora,
+        codigo: Codigo.exito,
+        humano:
+            'shipflow ship: --dry-run — el reintento de «$runId» publicaría '
+            'la revisión $revision y no se hizo nada.',
+        queHacer:
+            'Sacá --dry-run para terminarla de verdad. No se abrió ningún '
+            'pull request y el documento quedó exactamente como estaba.',
+        // **Sin clave `error`**, a diferencia de las otras cinco: acá no hubo
+        // ninguno. Mandarla en nulo obligaría a un consumidor a distinguir
+        // «la clave está y vale nulo» de «no está», que son la misma cosa
+        // dicha de dos formas.
+        datos: {'dryRun': true, 'revision': revision},
+        runId: runId,
+      );
+  }
 }
 
 /// Emite el desenlace: **el código, el veredicto, la acción y el payload salen

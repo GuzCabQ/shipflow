@@ -797,29 +797,33 @@ void main() {
       expect(codigo, Codigo.errorDeUso);
     });
 
-    test('--retry-publication sale 5: el camino real todavía no está cableado '
-        '[TEMPORAL — ver _exigirCaminoDelReintentoCableado, en la composición '
-        'de `ship`]', () async {
-      // **Esta prueba tiene que ponerse ROJA el día que la guardia se saque
-      // —la tarea que cablea el reintento al camino real la retira—, y esa
-      // es la señal de que hay que reemplazarla por una que ejercite el
-      // camino de verdad.** Si sigue verde después de sacar la guardia, no
-      // estaba midiendo nada.
+    test('--retry-publication llega al camino real, y ya no sale 5', () async {
+      // **Sucesora de la prueba ancla de la guardia temporal**, que afirmaba
+      // el `5` de «esta bandera todavía no tiene camino». La guardia se
+      // retiró al cablear el reintento, y esta prueba mide desde la frontera
+      // lo único que aquélla no podía: que la bandera entra al camino de
+      // verdad. El `4` es de la corrida que no existe —ver la suite del
+      // reintento para los caminos de adentro—, y lo que importa acá es que
+      // NO es el `5` de una invocación que nadie atiende ni el `70` de una
+      // que revienta.
       final mundo = Mundo();
       final (codigo, salida, _) = await mundo.correr([
         '--retry-publication',
         'r-inexistente',
       ]);
-      expect(codigo, Codigo.errorDeUso);
+      expect(codigo, Codigo.errorDeConfiguracion);
       expect(
         salida,
         contains('r-inexistente'),
-        reason:
-            'sin la guardia, el único camino que hoy sigue —«la entrada no '
-            'declara ninguna intención», del defecto que esta rebanada '
-            'cierra— no nombra el identificador que pidió quien corre',
+        reason: 'el mensaje nombra el identificador que pidió quien corre',
       );
-      expect(salida, contains('--retry-publication'));
+      expect(
+        salida,
+        isNot(contains('no declara ninguna intención')),
+        reason:
+            'ese era el mensaje que culpaba a la bandera que faltaba en vez '
+            'de a la que sobraba, y es el defecto que esta rebanada cierra',
+      );
     });
   });
 
