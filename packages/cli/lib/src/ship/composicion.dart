@@ -336,6 +336,20 @@ Future<bool> Function(String pregunta)? responderDeLaTerminal({
 /// rebanada.
 const _delimitadorNulo = '\u0000';
 
+/// Las rutas que la consulta de atributos echó de vuelta.
+///
+/// Su salida delimitada por el carácter nulo viene en ternas —ruta, atributo
+/// preguntado, valor—, así que las rutas son uno de cada tres campos. El
+/// atributo y su valor no se miran: lo único que se le pide a esa consulta es
+/// que diga cada ruta como ella la escribe.
+Set<String> _rutasDeLaConsultaDeAtributos(String salida) {
+  final campos = salida.split(_delimitadorNulo);
+  return {
+    for (var i = 0; i + 2 < campos.length; i += 3)
+      if (campos[i].isNotEmpty) campos[i],
+  };
+}
+
 /// Las rutas sucias del árbol de trabajo que **no** son de la rebanada.
 ///
 /// **Se miden, no se asumen.** La previsualización las imprime con su cuenta, y
@@ -367,6 +381,60 @@ const _delimitadorNulo = '\u0000';
 /// `origen -> destino`, que es el texto que una persona necesita para
 /// reconocerlo. Nada de esto entra en el artefacto ni en el pull request: es
 /// el canal local y solo eso.
+///
+/// **Y las rutas declaradas se comparan como las dice la HERRAMIENTA, no como
+/// las escribió quien declaró la rebanada.** Es el mismo defecto que el
+/// citado, un nivel más abajo y por otra causa: en un sistema de archivos que
+/// guarda los nombres descompuestos, la herramienta los PRECOMPONE al
+/// imprimirlos —y también al recibirlos como argumento—, así que una ruta
+/// declarada tal como el disco la guarda no coincide, carácter por carácter,
+/// con la misma ruta tal como la herramienta la imprime. **Medido:** un
+/// archivo declarado con un acento descompuesto vuelve compuesto del estado,
+/// la igualdad de cadenas falla, y ese archivo —que SÍ es de la rebanada—
+/// terminaba otra vez bajo «no se publica y no está en el artefacto». La
+/// misma afirmación falsa, en el mismo texto, con el que una persona
+/// confirma.
+///
+/// Por eso lo declarado no se compara contra lo que llegó por parámetro sino
+/// contra **lo que la herramienta echa de vuelta cuando se le pasan esas
+/// mismas rutas**: se le consulta un atributo cualquiera sobre ellas —el valor
+/// no se mira— y se guarda la ruta que ella imprime. Las dos
+/// mitades de la comparación pasan entonces por la misma normalización, que es
+/// la suya, y ninguna de las dos la hace este archivo — implementar acá una
+/// normalización unicode sería escribir una segunda autoridad sobre cuándo dos
+/// rutas son la misma, y equivocarse en ella tiene exactamente el precio que
+/// este párrafo acaba de contar.
+/// Corre [argumentos] y devuelve su salida, o **lanza**: nadie acá se degrada
+/// a una lista vacía.
+///
+/// Una lista vacía significa «miré y no había nada»; si la lectura falló,
+/// nadie miró, y decir que no hay nada ajeno sería la afirmación que estas
+/// funciones existen para no hacer.
+Future<String> _salidaDeGit({
+  required String programa,
+  required List<String> argumentos,
+  required String directorio,
+  required EntornoDelProceso padre,
+  required String queSeIntentaba,
+}) async {
+  final r = await Process.run(
+    programa,
+    argumentos,
+    workingDirectory: directorio,
+    environment: entornoSaneado(padre.paraHijos),
+    includeParentEnvironment: false,
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
+  if (r.exitCode != 0) {
+    throw StateError(
+      '$queSeIntentaba '
+      '($programa ${argumentos.join(" ")} → ${r.exitCode}): ${r.stderr}',
+    );
+  }
+  return r.stdout as String;
+}
+
 Future<List<String>> cambiosAjenosDelArbol({
   required String directorio,
   required List<String> deLaRebanada,
@@ -374,6 +442,42 @@ Future<List<String>> cambiosAjenosDelArbol({
   String programa = 'git',
 }) async {
   final padre = entornoDelPadre ?? EntornoDelProceso(Platform.environment);
+
+  // **Las rutas declaradas, dichas por la herramienta y no por nosotros.**
+  // Ver el doc de esta función: la autoridad sobre cuándo dos rutas son la
+  // misma es quien escribe la otra mitad de la comparación.
+  //
+  // **Sin rutas declaradas no se pregunta**, y no es una optimización: sin
+  // pathspecs este comando lista el árbol ENTERO, así que el conjunto de lo
+  // declarado saldría siendo todo y no quedaría nada ajeno que mostrar.
+  final declarados = deLaRebanada.isEmpty
+      ? const <String>{}
+      : _rutasDeLaConsultaDeAtributos(
+          await _salidaDeGit(
+            programa: programa,
+            directorio: directorio,
+            padre: padre,
+            queSeIntentaba:
+                'No se pudieron nombrar las rutas declaradas de la rebanada',
+            argumentos: [
+              '--literal-pathspecs',
+              // **Se consulta un atributo cuyo valor no se mira.** Lo único
+              // que se usa de esta respuesta es la ruta que la herramienta
+              // ECHA de vuelta, normalizada como ella la escribe. Se eligió
+              // esta consulta y no un listado del árbol porque es TOTAL:
+              // contesta por cualquier cadena de ruta, exista o no en el
+              // índice y en el disco. Un listado deja afuera justamente el
+              // origen de un renombrado ya preparado —que no está en ningún
+              // lado y sigue siendo una ruta declarada de la rebanada—.
+              'check-attr',
+              '-z',
+              'text',
+              '--',
+              ...deLaRebanada,
+            ],
+          ),
+        );
+
   final argumentos = const [
     // Mismo motivo que en el adapter del repositorio: sin esto cada ruta que
     // vuelve se leería como un patrón.
@@ -385,26 +489,14 @@ Future<List<String>> cambiosAjenosDelArbol({
     '-z',
     '--untracked-files=all',
   ];
-  final r = await Process.run(
-    programa,
-    argumentos,
-    workingDirectory: directorio,
-    environment: entornoSaneado(padre.paraHijos),
-    includeParentEnvironment: false,
-    stdoutEncoding: utf8,
-    stderrEncoding: utf8,
+  final salida = await _salidaDeGit(
+    programa: programa,
+    argumentos: argumentos,
+    directorio: directorio,
+    padre: padre,
+    queSeIntentaba: 'No se pudieron leer los cambios del árbol de trabajo',
   );
-  if (r.exitCode != 0) {
-    // **No se degrada a una lista vacía.** Una lista vacía significa «miré y no
-    // había nada»; si la lectura falló, nadie miró, y decir que no hay nada
-    // ajeno sería la afirmación que esta función existe para no hacer.
-    throw StateError(
-      'No se pudieron leer los cambios del árbol de trabajo '
-      '($programa ${argumentos.join(" ")} → ${r.exitCode}): ${r.stderr}',
-    );
-  }
-  final declarados = deLaRebanada.toSet();
-  final registros = (r.stdout as String).split(_delimitadorNulo);
+  final registros = salida.split(_delimitadorNulo);
   final ajenos = <String>[];
   for (var i = 0; i < registros.length; i++) {
     final registro = registros[i];

@@ -152,6 +152,64 @@ void main() {
     },
   );
 
+  test('un archivo declarado con un salto de línea NO es ajeno', () async {
+    // **El ancla de la cuarta forma que la revisión nombró.** Un salto de
+    // línea adentro de un nombre de archivo es la que parte en dos un
+    // registro leído por líneas: sin el delimitador nulo, esa ruta llega
+    // partida y ninguna de las dos mitades coincide con lo declarado.
+    final raiz = _repo();
+    const conSalto = 'con\nsalto.txt';
+    _escribir(raiz, conSalto, 'de la rebanada\n');
+    final ajenos = await cambiosAjenosDelArbol(
+      directorio: raiz.path,
+      deLaRebanada: const [conSalto],
+    );
+    expect(ajenos, isEmpty);
+  });
+
+  test('un archivo NO declarado con un salto de línea vuelve entero', () async {
+    final raiz = _repo();
+    _escribir(raiz, 'con\nsalto.txt', 'de otra persona\n');
+    final ajenos = await cambiosAjenosDelArbol(
+      directorio: raiz.path,
+      deLaRebanada: const ['lib/a.txt'],
+    );
+    expect(ajenos, [
+      'con\nsalto.txt',
+    ], reason: 'una sola entrada, con el salto adentro y no partida en dos');
+  });
+
+  test('un archivo declarado en otra forma unicode tampoco es ajeno', () async {
+    // **El residuo de la misma clase que quedaba abierto, cerrado.** En un
+    // sistema de archivos que guarda los nombres descompuestos, la
+    // herramienta los precompone al imprimirlos: la ruta declarada tal como
+    // el disco la guarda NO coincide, carácter por carácter, con la misma
+    // ruta tal como el estado la escribe, y el archivo terminaba bajo «no se
+    // publica y no está en el artefacto».
+    final raiz = _repo();
+    const descompuesto = 'a\u0301.txt';
+    const compuesto = '\u00e1.txt';
+    _escribir(raiz, descompuesto, 'de la rebanada\n');
+
+    // La premisa de la prueba, medida y no supuesta: si en este sistema las
+    // dos formas coincidieran, lo de abajo pasaría por el motivo
+    // equivocado. Se declara lo que el disco guarda; el estado puede
+    // imprimir eso mismo o la otra forma, y las dos son correctas.
+    expect(descompuesto, isNot(compuesto));
+
+    final ajenos = await cambiosAjenosDelArbol(
+      directorio: raiz.path,
+      deLaRebanada: const [descompuesto],
+    );
+    expect(
+      ajenos,
+      isEmpty,
+      reason:
+          'está declarado: quien compara tiene que ser la herramienta, que '
+          'es la que decide cuándo dos rutas son la misma',
+    );
+  });
+
   test('una ruta con comillas y espacios vuelve sin citar', () async {
     final raiz = _repo();
     _escribir(raiz, 'con "comillas" y espacio.txt', 'ajeno\n');
