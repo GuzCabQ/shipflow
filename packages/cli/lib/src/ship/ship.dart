@@ -14,13 +14,15 @@
 /// temporal — lo que estas pruebas fijan es que el commit NO ocurre en ciertos
 /// caminos, y eso contra un doble no prueba nada.
 ///
-/// **Qué NO cabe en [ShipOutcome], y por eso sale por excepción.** El
-/// desenlace de una corrida describe lo que pasó con el trabajo local y con el
-/// efecto remoto; el preflight rechazado y el directorio de corridas
-/// desprotegido son detenciones ANTES de que haya corrida que describir —cero
-/// escrituras, código `4`— y no tienen variante en la fábrica. Construir una a
-/// mano sería exactamente lo que los constructores privados de [ShipOutcome]
-/// impiden, así que salen tipadas, como ya sale [GitignoreAjeno].
+/// **Qué NO cabe en [ShipOutcome], y por eso sale por excepción.** [ShipOutcome]
+/// cubre el desenlace de una corrida **que llegó a existir**: qué pasó con el
+/// trabajo local y con el efecto remoto. La invocación que no se pudo
+/// interpretar, el preflight rechazado, el directorio de corridas desprotegido
+/// y el `.gitignore` ajeno son detenciones ANTES de que haya corrida que
+/// describir, y no tienen variante en la fábrica. Construir una a mano sería
+/// exactamente lo que los constructores privados de [ShipOutcome] impiden, así
+/// que salen tipadas. Son cuatro y están todas en el doc de [correrShip], con
+/// su código.
 library;
 
 import 'dart:convert';
@@ -101,6 +103,24 @@ const _sinPlanPorque =
 /// imprime con su cuenta, y decir «cero» sin haber mirado es afirmar que no
 /// hay nada que quede afuera. Viaja por su propio parámetro —nunca dentro del
 /// artefacto— porque son el canal LOCAL: el revisor remoto no puede verlas.
+///
+/// **Las CUATRO salidas que no son desenlace, y salen por excepción.** Ninguna
+/// describe una corrida: describen por qué no llegó a haber una. Las cuatro
+/// las atrapa el comando —la tarea 10—, que es el único que traduce a código
+/// de proceso; acá no se atrapa ninguna, porque atraparla sería decidir el
+/// código dos veces.
+///
+/// | Excepción | Cuándo | Código |
+/// |---|---|---|
+/// | [UsoInvalido] | La entrada no declara intención | `5` |
+/// | [PreflightRechazado] | El preflight rechazó, con su fallo entero | `4` |
+/// | [CorridasNoIgnoradas] | El documento iba a quedar donde `git` no lo ignora | `4` |
+/// | [GitignoreAjeno] | Ya hay un `.gitignore` ajeno en el directorio de corridas | `4` |
+///
+/// Las tres últimas son **cero escrituras persistentes** y por eso comparten
+/// el `4`: nada está mal en el código, nada se corrompió, y lo que falta es
+/// una precondición del entorno. [UsoInvalido] es `5` porque lo que no se
+/// pudo interpretar es la invocación.
 Future<ShipOutcome> correrShip({
   required EntradaDeShip entrada,
   required String runId,

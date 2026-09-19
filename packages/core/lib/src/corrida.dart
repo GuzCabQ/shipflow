@@ -81,6 +81,15 @@ enum CausaDeNoIntento {
 
 /// El desenlace de una corrida de `ship`, como **un solo tipo cerrado**.
 ///
+/// **Cubre la corrida que LLEGÓ A EXISTIR, y solo esa.** Una que no llegó a
+/// arrancar —la invocación que no se pudo interpretar, el preflight que
+/// rechazó, el directorio de corridas desprotegido— no tiene desenlace que
+/// describir: no hay candidato, no hay superficie y no hay efecto. Esas
+/// detenciones salen tipadas por su cuenta, desde quien orquesta, y **no se
+/// les fabrica una quinta causa**: con ella, la fila «gate con `errorInterno`»
+/// de la tabla de códigos quedaría inalcanzable, que es una cobertura de un
+/// caso que no existe.
+///
 /// **Los constructores son privados y la única entrada real es
 /// [ShipOutcome.derivar]**, más abajo en este mismo archivo.
 /// Las entradas `…ParaLaPrueba` existen para que la suite pueda construir

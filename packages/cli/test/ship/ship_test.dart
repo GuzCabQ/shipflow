@@ -168,6 +168,19 @@ class MundoDePrueba {
   /// cascada.
   final bool candidatoAlterado;
 
+  /// No hay credencial para la forja. Es lo que el preflight rechaza, y el
+  /// rechazo sale por excepción: no hay corrida que describir.
+  final bool sinCredencial;
+
+  /// El documento de esta corrida ya está en el índice de `git`. Entonces
+  /// `check-ignore` lo declara NO ignorado —una ruta seguida no la ignora
+  /// ninguna regla— y terminaría commiteado dentro del pull request.
+  final bool documentoVersionado;
+
+  /// Ya hay un `.gitignore` en el directorio de corridas, con un contenido
+  /// que este mecanismo no escribiría. No se pisa: puede ser deliberado.
+  final bool gitignoreAjeno;
+
   late final Directory _raiz;
   late final RepoQueAnota repo;
   late final RegistroDeCorridas registro;
@@ -203,6 +216,9 @@ class MundoDePrueba {
     this.headSeMueveAntesDelCas = false,
     this.laCascadaExplota = false,
     this.candidatoAlterado = false,
+    this.sinCredencial = false,
+    this.documentoVersionado = false,
+    this.gitignoreAjeno = false,
   }) {
     _raiz = Directory.systemTemp.createTempSync('ship_orquestacion_');
     addTearDown(() => _raiz.deleteSync(recursive: true));
@@ -218,6 +234,20 @@ class MundoDePrueba {
       politica: PoliticaDeArtefactosFalsa(),
     );
     registro = RegistroDeCorridas(raiz: '${_raiz.path}/.shipflow');
+    if (documentoVersionado) {
+      // El índice es lo que cuenta: se agrega y se borra del árbol, así que
+      // la ruta queda SEGUIDA sin dejar en el disco un documento que no se
+      // puede leer. `check-ignore` no ignora una ruta seguida.
+      _escribir('.shipflow/runs/r-1.json', '{}\n');
+      _git(['add', '-f', '.shipflow/runs/r-1.json']);
+      File('${_raiz.path}/.shipflow/runs/r-1.json').deleteSync();
+    }
+    if (gitignoreAjeno) {
+      _escribir(
+        '.shipflow/.gitignore',
+        '# lo puso otra persona, a propósito\n',
+      );
+    }
   }
 
   String _git(List<String> args) {
@@ -303,6 +333,7 @@ class MundoDePrueba {
     bool allowIncomplete = false,
     String runId = 'r-1',
     Future<bool> Function(String previsualizacion)? confirmar,
+    bool sinIntencion = false,
   }) async {
     _escribir(_archivo, conSecreto ? '$_lineaConSecreto\n' : 'después\n');
     _objetosAntes = _objetos();
@@ -312,7 +343,7 @@ class MundoDePrueba {
     try {
       return await correrShip(
         entrada: EntradaDeShip(
-          intent: 'publicar el cambio',
+          intent: sinIntencion ? null : 'publicar el cambio',
           archivos: const [_archivo],
           rutaDeLaRebanada: null,
           branch: null,
@@ -326,9 +357,11 @@ class MundoDePrueba {
         ambiente: ambiente,
         construirCascada: _cascada,
         controles: {for (final p in _pasos) p.id: p},
-        credenciales: const FuenteDeCredencialFalsa(
-          credenciales: {_clave: Credential('un-secreto', label: _clave)},
-        ),
+        credenciales: sinCredencial
+            ? const FuenteDeCredencialFalsa(credenciales: {})
+            : const FuenteDeCredencialFalsa(
+                credenciales: {_clave: Credential('un-secreto', label: _clave)},
+              ),
         claveDeCredencial: _clave,
         forja: forja,
         registro: registro,
@@ -518,6 +551,89 @@ void main() {
         reason: '$ruta no está ignorada: terminaría commiteada en el PR',
       );
     }
+  });
+
+  group('las cuatro salidas por excepción, que NO son desenlace', () {
+    // Son el contrato que la tarea 10 tiene que consumir para traducirlas a
+    // un código de proceso. No hay `ShipOutcome` que las diga: una corrida que
+    // no llegó a existir no tiene desenlace, y fabricarle una quinta causa
+    // volvería inalcanzable la fila «gate con errorInterno».
+
+    test('sin intención se lanza UsoInvalido, y dice qué pasar', () async {
+      final mundo = MundoDePrueba();
+      await expectLater(
+        mundo.correr(yes: true, sinIntencion: true),
+        throwsA(
+          isA<UsoInvalido>().having(
+            (e) => e.queHacer,
+            'queHacer',
+            contains('--intent'),
+          ),
+        ),
+      );
+      // Y cero escrituras: ni siquiera se preparó un candidato.
+      expect(mundo.commits, isEmpty);
+      expect(mundo.objetosPersistentes, isEmpty);
+    });
+
+    test('el preflight rechazado lleva el fallo ENTERO', () async {
+      // No una copia del mensaje: la causa, el detalle y el qué hacer, para
+      // que quien lo atrape no tenga que volver a derivar nada.
+      final mundo = MundoDePrueba(sinCredencial: true);
+      await expectLater(
+        mundo.correr(yes: true),
+        throwsA(
+          isA<PreflightRechazado>().having(
+            (e) => e.fallo.causa,
+            'fallo.causa',
+            CausaDePreflight.credencialAusente,
+          ),
+        ),
+      );
+      expect(mundo.commits, isEmpty);
+      expect(mundo.objetosPersistentes, isEmpty);
+    });
+
+    test(
+      'un documento de corrida que git NO ignora detiene la corrida',
+      () async {
+        // Una ruta seguida no la ignora ninguna regla, así que el documento
+        // terminaría commiteado dentro del pull request: exactamente lo
+        // contrario de lo que el mecanismo promete.
+        final mundo = MundoDePrueba(documentoVersionado: true);
+        await expectLater(
+          mundo.correr(yes: true),
+          throwsA(
+            isA<CorridasNoIgnoradas>().having(
+              (e) => e.ruta,
+              'ruta',
+              endsWith('.shipflow/runs/r-1.json'),
+            ),
+          ),
+        );
+        expect(mundo.commits, isEmpty);
+        expect(mundo.pullRequests, isEmpty);
+      },
+    );
+
+    test(
+      'un .gitignore ajeno no se pisa: sube desde asegurarGitignore',
+      () async {
+        final mundo = MundoDePrueba(gitignoreAjeno: true);
+        await expectLater(
+          mundo.correr(yes: true),
+          throwsA(
+            isA<GitignoreAjeno>().having(
+              (e) => e.ruta,
+              'ruta',
+              endsWith('.shipflow/.gitignore'),
+            ),
+          ),
+        );
+        expect(mundo.commits, isEmpty);
+        expect(mundo.pullRequests, isEmpty);
+      },
+    );
   });
 
   test('la superficie recibe las alteraciones REALES del candidato', () async {
