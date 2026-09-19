@@ -857,7 +857,7 @@ void main() {
           '--yes',
         ]);
         expect(codigo, Codigo.errorDeConfiguracion);
-        expect(salida, contains('ninguna forja conocida sepa atender'));
+        expect(salida, contains('ninguna forja conocida sabe atender'));
         expect(salida, isNot(contains('no tiene remoto configurado')));
         expect(mundo.commits, isEmpty);
       },
@@ -914,7 +914,7 @@ void main() {
       // a sospechar de la forja cuando lo que falla es el protocolo.
       expect(
         salida,
-        isNot(contains('ninguna forja conocida sepa atender')),
+        isNot(contains('ninguna forja conocida sabe atender')),
         reason:
             'esta forja se conoce; lo que no se atiende es el protocolo del '
             'remoto, y decir lo mismo que para una desconocida es falso acá',
@@ -992,7 +992,7 @@ void main() {
       final mundo = Mundo(remoto: remotoConCredencial);
       final (codigo, salida, _) = await mundo.correr([..._invocacion, '--yes']);
       expect(codigo, Codigo.errorDeConfiguracion);
-      expect(salida, contains('ninguna forja conocida sepa atender'));
+      expect(salida, contains('ninguna forja conocida sabe atender'));
       expect(salida, isNot(contains(secretoDelRemoto)));
       expect(salida, isNot(contains(hostDelRemotoAjeno)));
     });

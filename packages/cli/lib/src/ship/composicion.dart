@@ -604,7 +604,12 @@ Future<int> correrShipDelComando(
     // el mensaje viejo hace salir a buscar un reemplazo que no hace falta.
     // [CausaDeAusenciaDeForja] —del paquete de la forja, para no comparar acá
     // el host que esta composición no tiene por qué conocer— es la que
-    // distingue una cosa de la otra.
+    // distingue una cosa de la otra. La rama de la forja desconocida volvió a
+    // esa frase por una razón distinta: la versión intermedia la escribía
+    // como «el remoto no es uno que NINGUNA forja conocida sepa atender»,
+    // que es una doble negación y comunica exactamente lo contrario de lo
+    // que pasa. Lo que cambió con esa distinción no fue esta rama: fue que
+    // la otra dejó de decir lo mismo.
     //
     // **El `queHacer` se queda con las dos salidas juntas, y no es una
     // inconsistencia dejarlo así mientras el humano SÍ elige.** Ya nombraba
@@ -656,9 +661,9 @@ Future<int> correrShipDelComando(
           'shipflow ship: este repositorio no tiene remoto configurado, así '
               'que esta corrida no podría abrir el pull request que promete.',
         CausaDeAusenciaDeForja.forjaDesconocida =>
-          'shipflow ship: el remoto de este repositorio no es uno que '
-              'ninguna forja conocida sepa atender, así que esta corrida no '
-              'podría abrir el pull request que promete.',
+          'shipflow ship: ninguna forja conocida sabe atender el remoto de '
+              'este repositorio, así que esta corrida no podría abrir el '
+              'pull request que promete.',
         CausaDeAusenciaDeForja.protocoloNoAtendible =>
           'shipflow ship: el remoto de este repositorio es de una forja '
               'conocida, pero llega por un protocolo que esta corrida no '
