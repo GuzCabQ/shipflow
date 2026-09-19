@@ -600,9 +600,9 @@ Future<int> correrShipDelComando(
   // esté acá sube a la frontera, que lo convierte en `70` con su resultado: un
   // `catch` ancho acá convertiría un fallo del arnés en una detención declarada,
   // que es la mentira más cara de esta tabla.
-  final ShipOutcome desenlace;
+  final ResultadoDeShip resultado;
   try {
-    desenlace = await correrShip(
+    resultado = await correrShip(
       entrada: entrada,
       runId: runId,
       repo: colaboradores.repo,
@@ -716,9 +716,10 @@ Future<int> correrShipDelComando(
   return _emitirDesenlace(
     impresora,
     runId,
-    desenlace,
+    resultado.desenlace,
     documento,
     documentoIlegible: documentoIlegible,
+    documentoNoEscrito: resultado.documentoNoEscrito,
   );
 }
 
@@ -731,10 +732,20 @@ int _emitirDesenlace(
   ShipOutcome desenlace,
   DocumentoDeCorrida? documento, {
   required bool documentoIlegible,
+  required bool documentoNoEscrito,
 }) {
   final codigo = Codigo.deShip(desenlace);
   final accion = accionDe(desenlace);
-  final humano = _enTexto(desenlace);
+  // **El código y la acción siguen saliendo del desenlace, y solo de él.** Que
+  // el registro no se haya podido escribir no cambia qué pasó con la corrida:
+  // convertir un pull request abierto en un `70` por un fallo de anotación es
+  // exactamente el defecto que se está cerrando. Lo que sí cambia es que el
+  // texto lo diga, porque quien lee la salida humana no ve el payload.
+  final humano = documentoNoEscrito
+      ? '${_enTexto(desenlace)}\n  El registro de esta corrida NO se pudo '
+            'escribir: el desenlace de arriba es real y el documento quedó '
+            'en su estado anterior.'
+      : _enTexto(desenlace);
   imp.resultado(
     ResultEnvelope(
       command: nombreDeShip,
@@ -746,6 +757,7 @@ int _emitirDesenlace(
         desenlace,
         documento: documento,
         documentoIlegible: documentoIlegible,
+        documentoNoEscrito: documentoNoEscrito,
       ),
     ),
     accion == null ? humano : '$humano\n  → $accion',

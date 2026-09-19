@@ -84,6 +84,28 @@ const _sinPlanPorque =
     'Esta corrida entra por el modo «solo PR»: la rebanada se declaró en la '
     'invocación y no hay ningún plan del que derivarla.';
 
+/// Lo que produce una corrida: **el desenlace, y si su registro quedó
+/// escrito**.
+///
+/// **Son dos hechos y no uno, y por eso no viven en el mismo campo.** El
+/// desenlace describe qué pasó con el trabajo local y con el efecto remoto;
+/// [documentoNoEscrito] describe qué pasó con la ANOTACIÓN de ese desenlace.
+/// Meterlo adentro de [ShipOutcome] sería hacerle decir a la corrida algo que
+/// no es de la corrida sino de su registro, y además obligaría a las cinco
+/// variantes a llevar un campo que solo le importa a quien persiste.
+///
+/// **Por qué existe.** El paso 15 abre el pull request y el paso 16 sella, y
+/// sellar escribe. Hasta esta ronda un fallo de esa escritura —disco lleno,
+/// permisos, el directorio de corridas que dejó de ser escribible— no era
+/// ninguna de las cuatro excepciones tipadas, subía a la frontera y salía por
+/// la red de último recurso: `70`, «se rompió el arnés», **con el pull
+/// request ya abierto** y sin ninguna clave que lo dijera. Ese hecho es el más
+/// caro de perder de toda la corrida, porque es el único que volver a correr
+/// no reconstruye. Un ruling anterior ya protegió la RELECTURA del documento
+/// por este mismo motivo; la escritura quedaba sin proteger, y es la que
+/// falla por causas de entorno reales.
+typedef ResultadoDeShip = ({ShipOutcome desenlace, bool documentoNoEscrito});
+
 /// Corre `ship` de punta a punta y devuelve **el desenlace**, no un código.
 ///
 /// El orden es el de §8 de la propuesta, y cada número del comentario es el
@@ -121,7 +143,7 @@ const _sinPlanPorque =
 /// el `4`: nada está mal en el código, nada se corrompió, y lo que falta es
 /// una precondición del entorno. [UsoInvalido] es `5` porque lo que no se
 /// pudo interpretar es la invocación.
-Future<ShipOutcome> correrShip({
+Future<ResultadoDeShip> correrShip({
   required EntradaDeShip entrada,
   required String runId,
   required RepositorioGit repo,
@@ -341,12 +363,19 @@ Future<ShipOutcome> correrShip({
     // paso 9: crear `.shipflow/` ya sería un efecto persistente, y este camino
     // promete que no queda ninguno.
     if (huboSecreto || !autorizado || !seConfirmo || entrada.dryRun) {
-      return ShipOutcome.derivar(
-        verificacion: superficie.estado,
-        huboSecreto: huboSecreto,
-        seConfirmo: seConfirmo,
-        soloPreview: entrada.dryRun,
-        autorizaIncompleto: entrada.allowIncomplete,
+      // **`documentoNoEscrito` en falso, y no es un valor de relleno**: este
+      // camino no llegó a escribir ningún documento, así que no hay ninguno
+      // que pudiera haber fallado. Decir que sí afirmaría un intento que no
+      // ocurrió.
+      return (
+        desenlace: ShipOutcome.derivar(
+          verificacion: superficie.estado,
+          huboSecreto: huboSecreto,
+          seConfirmo: seConfirmo,
+          soloPreview: entrada.dryRun,
+          autorizaIncompleto: entrada.allowIncomplete,
+        ),
+        documentoNoEscrito: false,
       );
     }
 
@@ -474,20 +503,45 @@ Future<ShipOutcome> correrShip({
 /// para [NoIntentado], y ninguno de los tres sitios que llaman acá puede
 /// producirlo — los cuatro motivos de no intentar se resuelven antes de que
 /// exista la revisión sin la cual este documento no se puede escribir.
-Future<ShipOutcome> _sellar(
+///
+/// **Y un fallo de la ESCRITURA no se lleva el desenlace.** Es la elección de
+/// esta ronda, y el argumento es el de la relectura: el desenlace ya está
+/// medido —con el paso 15 detrás, hay un pull request abierto del otro lado—
+/// y dejar que la anotación se lo lleve convierte el hecho más caro de toda
+/// la corrida en un `70` mudo. Lo que se pierde al tolerar es el registro, que
+/// es recuperable mirando la forja; lo que se perdía al no tolerar era el
+/// único aviso de que hay un pull request abierto. El fallo NO se traga: sale
+/// por [ResultadoDeShip.documentoNoEscrito] hasta el payload, que lo dice con
+/// su propia clave, igual que ya dice que el documento no se pudo releer.
+///
+/// **Lo que sí sube entero es el cálculo del estado**, y por eso
+/// [DocumentoDeCorrida.avanzarA] queda fuera del `try`: una transición
+/// inválida es un error de programación —el desenlace y el estado se
+/// contradicen—, no una condición del entorno, y taparlo dejaría escribible
+/// justo lo que ese tipo existe para impedir.
+///
+/// **Se atrapa todo y no una lista de tipos**, que es la excepción a la regla
+/// del proyecto y por eso se argumenta: lo que puede fallar acá es el disco
+/// —sin espacio, sin permisos, el directorio borrado entre dos pasos— y llega
+/// por familias que ni siquiera son todas excepciones. Una lista de tipos
+/// dejaría afuera justamente el caso que motiva esto. El precio de atrapar de
+/// más está acotado a una escritura que no decide nada: solo anota.
+Future<ResultadoDeShip> _sellar(
   RegistroDeCorridas registro,
   String runId,
   DocumentoDeCorrida documento,
   ShipOutcome desenlace,
 ) async {
-  await registro.escribir(
-    runId,
-    documento.avanzarA(
-      DocumentoDeCorrida.estadoQueAfirma(desenlace)!,
-      desenlace: desenlace,
-    ),
+  final sellado = documento.avanzarA(
+    DocumentoDeCorrida.estadoQueAfirma(desenlace)!,
+    desenlace: desenlace,
   );
-  return desenlace;
+  try {
+    await registro.escribir(runId, sellado);
+  } catch (_) {
+    return (desenlace: desenlace, documentoNoEscrito: true);
+  }
+  return (desenlace: desenlace, documentoNoEscrito: false);
 }
 
 /// La proyección local de la revisión: la evidencia citada, al lado del

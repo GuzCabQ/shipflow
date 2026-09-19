@@ -251,15 +251,28 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 /// escribe, así que un campo que los informara estaría inventando el dato en
 /// vez de reportarlo. Cerrarlo pide que el desenlace conserve los hechos que
 /// descartó, que es un cambio del tipo del dominio y no de esta función.
+///
+/// **Y hay una TERCERA cosa que le puede pasar al documento, además de no
+/// existir y de no dejarse leer: que no se haya podido escribir.**
+/// [documentoNoEscrito] es ese hecho, y sale por su propia clave
+/// —`documentUnwritten`— por la misma razón que `documentUnreadable`: el
+/// sellado del paso 16 ocurre DESPUÉS de abrir el pull request, y si esa
+/// escritura falla el desenlace sigue siendo verdadero mientras el registro
+/// queda en el estado anterior. Un consumidor que releyera el documento
+/// encontraría uno que no afirma el desenlace que este payload informa, y sin
+/// esta clave no tendría cómo saber cuál de los dos mirar. **Nunca sale en
+/// `false`**, por lo mismo que la otra: la ausencia ya dice que se escribió.
 Map<String, Object?> payloadDeShip(
   ShipOutcome desenlace, {
   DocumentoDeCorrida? documento,
   bool documentoIlegible = false,
+  bool documentoNoEscrito = false,
 }) => {
   'payloadVersion': payloadVersionDeShip,
   ...desenlace.toJson(),
   ...?_publicacionDe(desenlace),
   ...?_deLaCorrida(documento, ilegible: documentoIlegible),
+  if (documentoNoEscrito) 'documentUnwritten': true,
 };
 
 /// Lo que solo el documento de la corrida sabe, o **nulo cuando no hay nada

@@ -137,6 +137,31 @@ class CandidatoQueAnota implements PreparedCandidate {
   }
 }
 
+/// El registro REAL, con una sola escritura rota: la del sellado.
+///
+/// **Extiende en vez de doblar, y falla por el ESTADO que se le pide
+/// escribir**, no por una cuenta de invocaciones: el sellado es la escritura
+/// que ocurre después de abrir el pull request, y es la única que esta prueba
+/// tiene que romper. Las anteriores —`prepared` y `committed`— siguen
+/// pasando de verdad, porque el hecho que se mide es qué queda cuando el
+/// desenlace ya es cierto.
+///
+/// El fallo es de los que pasan de verdad: el directorio de corridas que dejó
+/// de ser escribible entre un paso y el siguiente.
+class RegistroQueFallaAlSellar extends RegistroDeCorridas {
+  const RegistroQueFallaAlSellar({required super.raiz});
+
+  @override
+  Future<void> escribir(String runId, DocumentoDeCorrida documento) async {
+    if (documento.desenlace != null) {
+      throw const FileSystemException(
+        'el directorio de corridas dejo de ser escribible',
+      );
+    }
+    return super.escribir(runId, documento);
+  }
+}
+
 /// El mundo de una corrida: un repositorio de verdad y los dobles de todos los
 /// colaboradores que `correrShip` recibe.
 ///
@@ -200,6 +225,10 @@ class MundoDePrueba {
   /// una limpieza que además decide qué excepción ve quien corrió `ship`.
   final bool alLiberarFalla;
 
+  /// La escritura del SELLADO falla, y solo ella. Es el paso 16, justo
+  /// después de que el paso 15 abrió el pull request.
+  final bool alSellarFalla;
+
   late final Directory _raiz;
   late final RepoQueAnota repo;
   late final RegistroDeCorridas registro;
@@ -242,6 +271,7 @@ class MundoDePrueba {
     this.conCambioAjeno = false,
     this.alteracionSoloAntesDeLaCascada = false,
     this.alLiberarFalla = false,
+    this.alSellarFalla = false,
   }) {
     ambiente = EntornoFalso(
       alDerivar: alteracionSoloAntesDeLaCascada
@@ -264,7 +294,9 @@ class MundoDePrueba {
       politica: PoliticaDeArtefactosFalsa(),
       lanzaAlLiberar: alLiberarFalla,
     );
-    registro = RegistroDeCorridas(raiz: '${_raiz.path}/.shipflow');
+    registro = alSellarFalla
+        ? RegistroQueFallaAlSellar(raiz: '${_raiz.path}/.shipflow')
+        : RegistroDeCorridas(raiz: '${_raiz.path}/.shipflow');
     if (documentoVersionado) {
       // El índice es lo que cuenta: se agrega y se borra del árbol, así que
       // la ruta queda SEGUIDA sin dejar en el disco un documento que no se
@@ -384,6 +416,11 @@ class MundoDePrueba {
       if (l.length > 3 && l.substring(3) != _archivo) l.substring(3),
   ];
 
+  /// Si el sellado del desenlace no se pudo escribir. **Se anota, no se
+  /// deduce**: es el segundo hecho que `correrShip` produce, y sin guardarlo
+  /// acá el desenlace se devuelve igual y nadie puede medir la diferencia.
+  bool documentoNoEscrito = false;
+
   Future<ShipOutcome> correr({
     bool dryRun = false,
     bool yes = false,
@@ -398,7 +435,7 @@ class MundoDePrueba {
     _cabezaEsperada = cabezaAlEmpezar;
 
     try {
-      return await correrShip(
+      final r = await correrShip(
         entrada: EntradaDeShip(
           intent: sinIntencion ? null : 'publicar el cambio',
           archivos: const [_archivo],
@@ -427,6 +464,8 @@ class MundoDePrueba {
         confirmar: confirmar,
         mostrar: mostrado.add,
       );
+      documentoNoEscrito = r.documentoNoEscrito;
+      return r.desenlace;
     } finally {
       await _anotarLoQueQuedo(cabezaAlEmpezar, runId);
     }
@@ -615,6 +654,73 @@ void main() {
       expect(mundo.documento!.estado, EstadoDelDocumento.publicationComplete);
     },
   );
+
+  group('el sellado que no se pudo escribir', () {
+    test(
+      'el pull request abierto SOBREVIVE al fallo de la escritura',
+      () async {
+        // **El hecho más caro de perder de toda la corrida.** El paso 15 abre
+        // el pull request y el paso 16 sella, y sellar escribe. Hasta esta
+        // ronda un fallo de esa escritura no era ninguna de las cuatro
+        // excepciones tipadas: subía a la frontera y salía por la red de
+        // último recurso —`70`, «se rompió el arnés»— con el pull request ya
+        // abierto del otro lado y sin ninguna clave que lo dijera. Volver a
+        // correr no lo reconstruye: la publicación ya ocurrió.
+        final mundo = MundoDePrueba(alSellarFalla: true);
+        final r = await mundo.correr(yes: true);
+        expect(r, isA<Publicado>());
+        expect(mundo.pullRequests, hasLength(1));
+        expect(mundo.commits, isNotEmpty);
+        // Y el fallo no se traga: viaja como el segundo hecho de la corrida.
+        expect(mundo.documentoNoEscrito, isTrue);
+        // El documento quedó donde estaba, que es justo por qué hay que
+        // decirlo: releerlo devuelve un estado que no afirma este desenlace.
+        expect(mundo.documento!.estado, EstadoDelDocumento.committed);
+      },
+    );
+
+    test('el payload lo dice con su propia clave, y solo cuando pasó', () {
+      final publicado = ShipOutcome.publicadoParaLaPrueba(
+        pr: PullRequestOpen(url: 'https://forja.invalida/pr/1'),
+        verificacion: EstadoPublicable.verde,
+      );
+      expect(
+        payloadDeShip(publicado, documentoNoEscrito: true)['documentUnwritten'],
+        isTrue,
+      );
+      // **Nunca en `false`.** Una ausencia sin la clave ya dice que se
+      // escribió, y agregarla en falso repetiría el mismo hecho por dos
+      // caminos que pueden divergir — el mismo trato que `documentUnreadable`.
+      expect(payloadDeShip(publicado), isNot(contains('documentUnwritten')));
+    });
+
+    test(
+      'una transición inválida es un error, no una condición del entorno',
+      () async {
+        // **Por qué el cálculo del estado queda FUERA del `try`.** Lo que el
+        // sellado tolera es el disco; una transición que el documento no admite
+        // es un error de programación —el desenlace y el estado se
+        // contradicen— y taparlo dejaría pasar justo lo que ese tipo existe
+        // para impedir.
+        //
+        // **Lo que esta prueba mide, y lo que NO.** Mide que la transición
+        // rompa, que es la premisa. NO mide de qué lado del `try` está
+        // escrita: para eso haría falta un desenlace que se contradiga con su
+        // documento, y ningún camino de `correrShip` lo produce —el estado no
+        // se elige a mano, lo determina el desenlace—. Queda declarado en vez
+        // de disimulado con una aserción que pasaría igual con el cálculo
+        // adentro del `try`.
+        final mundo = MundoDePrueba();
+        await mundo.correr(yes: true, runId: 'r-t');
+        final documento = mundo.documento!;
+        expect(
+          () => documento.avanzarA(EstadoDelDocumento.prepared),
+          throwsA(isA<Object>()),
+          reason: 'un documento sellado no vuelve a prepared',
+        );
+      },
+    );
+  });
 
   test('la limpieza corre AUNQUE el camino termine en excepción', () async {
     // **Apretado al tipo.** `anything` acepta cualquier excepción, incluida
