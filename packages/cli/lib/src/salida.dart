@@ -42,6 +42,23 @@ String generarRunId() {
   return '${DateTime.now().toUtc().microsecondsSinceEpoch}-$_corridas';
 }
 
+/// La gramática EXACTA de un identificador de corrida: los microsegundos de
+/// un instante, un guion, y el número de corrida dentro del proceso.
+///
+/// **Se deriva de [generarRunId] y no se inventa.** Es la única cosa de este
+/// árbol que emite identificadores de corrida, así que cualquier gramática
+/// más ancha que la suya aceptaría valores que ninguna corrida pudo producir
+/// — y eso ya costó: el identificador nombra una ruta en el disco, y una
+/// cadena cualquiera la saca del directorio de corridas.
+///
+/// **Anclada en las dos puntas.** Sin el ancla final, `1-1/../../fuera`
+/// coincidiría con el prefijo y pasaría.
+final _formaDeRunId = RegExp(r'^[0-9]+-[0-9]+$');
+
+/// Si [candidato] tiene la forma de un identificador que este árbol pudo
+/// haber emitido. Ver [_formaDeRunId].
+bool esRunIdDeCorrida(String candidato) => _formaDeRunId.hasMatch(candidato);
+
 /// Los códigos de proceso. **La precedencia no es una tabla: se deriva.**
 ///
 /// Estaba escrita en prosa y una tabla en un texto no impide que alguien

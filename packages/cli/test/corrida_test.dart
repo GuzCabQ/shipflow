@@ -625,6 +625,85 @@ void main() {
     },
   );
 
+  group('el identificador de una corrida no sale de su directorio', () {
+    // **La reproducción del P1-2 de la revisión humana.** Con el
+    // identificador concatenado tal cual, «../../fuera» producía
+    // `.shipflow/runs/../../fuera.json`: el reintento LEÍA esa ruta y, si
+    // encontraba un documento válido, terminaba ESCRIBIÉNDOLA.
+    const salidas = {
+      'subir dos niveles': '../../fuera',
+      'subir uno': '../vecino',
+      'un subdirectorio, que tampoco es hijo directo': 'adentro/otro',
+      'una ruta absoluta, que se come el directorio entero': '/tmp/ajeno',
+    };
+    salidas.forEach((queHace, runId) {
+      test('«$runId» ($queHace) se rechaza al derivar la ruta', () {
+        final registro = RegistroDeCorridas(raiz: temporal.path);
+        expect(
+          () => registro.documentoDe(runId),
+          throwsArgumentError,
+          reason: 'la ruta del documento caería fuera del directorio',
+        );
+        expect(
+          () => registro.proyeccionDe(runId),
+          throwsArgumentError,
+          reason: 'la de la proyección, también',
+        );
+      });
+
+      test('«$runId» no se puede leer ni escribir', () async {
+        final registro = RegistroDeCorridas(raiz: temporal.path);
+        await expectLater(registro.leer(runId), throwsArgumentError);
+        await expectLater(
+          registro.escribir(runId, documentoDePrueba()),
+          throwsArgumentError,
+        );
+      });
+    });
+
+    test('un identificador normal sigue derivando su ruta de siempre', () {
+      // El control negativo: sin esto, un rechazo que abarcara de más
+      // pasaría inadvertido.
+      final registro = RegistroDeCorridas(raiz: temporal.path);
+      expect(
+        registro.documentoDe('1758240000000000-1'),
+        rutas.join(temporal.path, 'runs', '1758240000000000-1.json'),
+      );
+    });
+  });
+
+  group('la gramática de un identificador de corrida', () {
+    test('lo que emite `generarRunId` la cumple', () {
+      // **Derivada de quien los emite, no inventada.** Si esa función
+      // cambiara de forma, esta prueba es la que lo dice.
+      for (var i = 0; i < 3; i++) {
+        final emitido = generarRunId();
+        expect(
+          esRunIdDeCorrida(emitido),
+          isTrue,
+          reason: 'el propio árbol emitió «$emitido» y la gramática lo niega',
+        );
+      }
+    });
+
+    const rechazados = [
+      '../../fuera',
+      '/tmp/ajeno',
+      'adentro/otro',
+      'r-1',
+      '1-1/../../fuera',
+      '',
+      '1758240000000000',
+      '-1',
+      '1758240000000000-1\n',
+    ];
+    for (final candidato in rechazados) {
+      test('«$candidato» no es un identificador de corrida', () {
+        expect(esRunIdDeCorrida(candidato), isFalse);
+      });
+    }
+  });
+
   _pruebasDelCitado();
 }
 

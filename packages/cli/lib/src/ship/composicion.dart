@@ -1003,6 +1003,30 @@ Future<int> _correrElReintento(
         runId: runId,
       );
 
+    case CorridaConOtroIdentificador(
+      :final elDelDocumento,
+      :final dondeSeBusco,
+    ):
+      return _detener(
+        impresora,
+        codigo: Codigo.errorDeConfiguracion,
+        humano:
+            'shipflow ship: el documento que hay para «$runId» dice ser de la '
+            'corrida «$elDelDocumento».',
+        queHacer:
+            'Está en «$dondeSeBusco». Terminar esa corrida creyendo que se '
+            'termina ésta publicaría un commit que no es el que pediste: si '
+            'el documento se movió o se copió a mano, devolvelo a su lugar; '
+            'si lo que querías era terminar «$elDelDocumento», pedila por su '
+            'propio identificador. No se leyó nada del repositorio ni se '
+            'escribió nada.',
+        datos: {
+          'error': 'el documento es de otra corrida',
+          'runIdDelDocumento': elDelDocumento,
+        },
+        runId: runId,
+      );
+
     case ReintentoRechazado(:final porQue):
       // **El código sale de la causa, con un `switch` exhaustivo.** «Ya está
       // publicado» es un éxito —lo que se pidió ya es cierto, y salir

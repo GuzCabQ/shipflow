@@ -50,10 +50,11 @@ import '../corrida.dart';
 /// **No salen por excepción**, a diferencia de las cuatro detenciones de una
 /// corrida nueva. Aquéllas describen por qué no llegó a haber corrida; éstas
 /// contestan un pedido de terminar una, y **lo que contestan no es siempre
-/// sobre una corrida que exista**: dos de las seis variantes sin desenlace de
-/// abajo —contadas sobre esta misma jerarquía sellada— informan justamente lo
-/// contrario, que no hay ningún documento con ese identificador o que hay uno
-/// que ninguna lectura pudo interpretar. Que viajen como valor es lo que deja que la
+/// sobre una corrida que exista**: tres de las siete variantes sin desenlace
+/// de abajo —contadas sobre esta misma jerarquía sellada, una por una—
+/// informan justamente lo contrario, que no hay ningún documento con ese
+/// identificador, que hay uno que ninguna lectura pudo interpretar, o que el
+/// que hay dice ser de otra corrida. Que viajen como valor es lo que deja que la
 /// raíz de composición las despache con un `switch` exhaustivo: una variante
 /// nueva no compila hasta que alguien decida su código.
 sealed class ResultadoDelReintento {
@@ -116,6 +117,37 @@ final class CorridaIlegible extends ResultadoDelReintento {
     required this.runId,
     required this.dondeSeBusco,
     required this.porQue,
+  });
+}
+
+/// El documento que hay en esa ruta dice ser de OTRA corrida.
+///
+/// **Es un hecho distinto de [CorridaIlegible], y por eso no comparte
+/// variante con ella.** Ese documento se lee perfectamente: lo que no cierra
+/// es que el identificador que lleva adentro no sea el que se pidió. Decirle
+/// a quien corre que su documento está corrupto lo mandaría a mirar el
+/// archivo buscando un daño que no existe.
+///
+/// **Y es la tercera comprobación del identificador, después de la gramática
+/// y de la ruta.** Las dos primeras miran la CADENA y la RUTA; ésta mira el
+/// CONTENIDO, que es lo único que puede desmentir que el archivo que se abrió
+/// sea el de la corrida que se nombró — un archivo movido, renombrado o
+/// copiado a mano pasa las dos anteriores y sigue siendo de otra corrida. Sin
+/// ella, el reintento publica el commit de una corrida creyendo que termina
+/// otra, y sella el documento con un desenlace que no es suyo.
+final class CorridaConOtroIdentificador extends ResultadoDelReintento {
+  /// El que pidió quien corre.
+  final String runId;
+
+  /// El que el documento lleva adentro.
+  final String elDelDocumento;
+
+  final String dondeSeBusco;
+
+  const CorridaConOtroIdentificador({
+    required this.runId,
+    required this.elDelDocumento,
+    required this.dondeSeBusco,
   });
 }
 
@@ -266,6 +298,21 @@ Future<ResultadoDelReintento> correrReintento({
     );
   }
   final documento = leido;
+
+  // **El documento tiene que decir que es de la corrida que se pidió.** La
+  // ruta se deriva del identificador, pero el contenido no: un archivo
+  // copiado, renombrado o movido a mano cae en la ruta correcta con el
+  // borrador de otra corrida adentro, y desde acá para abajo todo —la rama,
+  // el estado, la revisión, las rutas de la rebanada— se lee de ese borrador
+  // ajeno. Se comprueba antes de la puerta porque la puerta ya decide sobre
+  // esos datos.
+  if (documento.draft.runId != runId) {
+    return CorridaConOtroIdentificador(
+      runId: runId,
+      elDelDocumento: documento.draft.runId,
+      dondeSeBusco: registro.documentoDe(runId),
+    );
+  }
 
   final puerta = puertaDelReintento(
     documento: documento,

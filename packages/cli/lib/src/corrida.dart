@@ -32,13 +32,51 @@ class RegistroDeCorridas {
 
   Directory get _directorio => Directory(rutas.join(raiz, 'runs'));
 
+  /// La ruta de un archivo de [runId] con [sufijo], **comprobando que caiga
+  /// adentro del directorio de corridas**.
+  ///
+  /// **Se comprueba sobre la ruta NORMALIZADA y no sobre el identificador.**
+  /// Mirar el identificador sería decidir sobre una representación más pobre
+  /// que el criterio: lo que importa no es qué letras tiene, sino dónde
+  /// termina el archivo. Con «../../fuera» concatenado tal cual, la ruta era
+  /// `.shipflow/runs/../../fuera.json` — que el sistema de archivos resuelve
+  /// a un archivo de otro lado, del que el reintento LEÍA y, si encontraba un
+  /// documento válido, al que terminaba ESCRIBIENDO.
+  ///
+  /// **Hija DIRECTA, no descendiente.** Un identificador con una barra
+  /// adentro no sale del directorio y, sin embargo, escribe en un
+  /// subdirectorio que nadie declaró: el control que comprueba que los
+  /// archivos de una corrida estén ignorados mira las rutas que esta clase
+  /// nombra, y nada garantiza que una regla de exclusión escrita para el
+  /// directorio cubra un nivel más abajo.
+  ///
+  /// **Lanza [ArgumentError] y no devuelve nulo** porque no es un hecho del
+  /// dominio sobre el que quien llama tenga que poder ramificar: la frontera
+  /// que interpreta la bandera ya rechaza todo lo que no tiene la forma de un
+  /// identificador de corrida —ver `esRunIdDeCorrida`—, así que llegar acá
+  /// con uno que se sale del directorio es un defecto de quien compone.
+  String _archivoDe(String runId, String sufijo) {
+    final directorio = rutas.normalize(_directorio.path);
+    final propuesta = rutas.normalize(rutas.join(directorio, '$runId$sufijo'));
+    if (rutas.dirname(propuesta) != directorio) {
+      throw ArgumentError.value(
+        runId,
+        'runId',
+        'El identificador de una corrida nombra un archivo HIJO DIRECTO del '
+            'directorio de corridas. Con éste la ruta queda en «$propuesta», '
+            'que está fuera de «$directorio»: leer ahí sería leer un archivo '
+            'que ninguna corrida escribió, y sellar la corrida terminaría '
+            'escribiéndolo.',
+      );
+    }
+    return propuesta;
+  }
+
   /// Dónde va el documento autoritativo de [runId].
-  String documentoDe(String runId) =>
-      rutas.join(_directorio.path, '$runId.json');
+  String documentoDe(String runId) => _archivoDe(runId, '.json');
 
   /// Dónde va la proyección local de la revisión de [runId].
-  String proyeccionDe(String runId) =>
-      rutas.join(_directorio.path, '$runId.revision.json');
+  String proyeccionDe(String runId) => _archivoDe(runId, '.revision.json');
 
   /// **Cada archivo que una corrida deja en el disco.** Es lo que mira el
   /// control del paso 9, y por eso la lista vive acá y no en quien lo corre.

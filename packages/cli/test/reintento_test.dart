@@ -186,7 +186,13 @@ class _PuertoQueRegistra implements PullRequestSink {
 class MundoDeReintento {
   /// La identidad de la corrida que quedó a medias. Fijada porque la ruta de
   /// su documento tiene que ser conocida antes de escribirlo.
-  static const idDeLaCorrida = 'r-1';
+  ///
+  /// **Con la forma EXACTA que emite `generarRunId`** —los microsegundos de
+  /// un instante, un guion y el número de corrida—, y no un nombre corto
+  /// inventado: la bandera comprueba esa gramática, así que un mundo montado
+  /// sobre un identificador que ninguna corrida puede producir mediría un
+  /// camino que no existe.
+  static const idDeLaCorrida = '1758240000000000-1';
 
   /// La corrida que este mundo dejó a medias. **Getter de instancia sobre la
   /// constante**, para que una prueba pida el identificador AL MUNDO que lo
@@ -615,11 +621,47 @@ class MundoDeReintento {
 }
 
 void main() {
+  test('un documento con OTRO identificador adentro no se termina', () async {
+    // **La tercera comprobación del P1-2 de la revisión humana**: nadie
+    // comprobaba que el identificador que el documento lleva adentro fuera
+    // el que se pidió. Un documento copiado o movido a la ruta de otra
+    // corrida se leía entero y el reintento publicaba SU commit creyendo
+    // que terminaba la corrida nombrada.
+    final m = await MundoDeReintento.conDocumentoEn(
+      EstadoDelDocumento.committed,
+    );
+    const otro = '1758240000000000-2';
+    File(m.registro.documentoDe(otro)).writeAsStringSync(
+      File(m.registro.documentoDe(m.runId)).readAsStringSync(),
+    );
+
+    final d = await m.correr(otro);
+    expect(d, isNull, reason: 'no se selló nada bajo ese identificador');
+    expect(m.codigo(d), Codigo.errorDeConfiguracion);
+    expect(
+      m.forja.recibidas,
+      isEmpty,
+      reason:
+          'publicar acá abriría el pull request de una corrida creyendo '
+          'que se termina otra',
+    );
+    expect(m.mensaje, contains(m.runId));
+    expect(
+      (await m.documento()).estado,
+      EstadoDelDocumento.committed,
+      reason: 'el documento de la corrida de verdad quedó donde estaba',
+    );
+  });
+
   test(
     'un identificador que no existe sale con configuración y dice dónde buscó',
     () async {
       final m = await MundoDeReintento.nuevo();
-      final r = await m.correr('r-inexistente');
+      // Bien formado y sin documento: es el caso que esta prueba mide. Un
+      // identificador MAL formado ya no llega hasta acá —lo rechaza la
+      // interpretación de la bandera, ver la prueba del recorrido de rutas—,
+      // así que usarlo mediría esa otra cosa.
+      final r = await m.correr('1758240000000000-9');
       expect(m.codigo(r), Codigo.errorDeConfiguracion);
       expect(m.mensaje, contains('runs'));
     },

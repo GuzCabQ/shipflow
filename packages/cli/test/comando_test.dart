@@ -804,12 +804,12 @@ void main() {
       final mundo = Mundo();
       final (codigo, salida, _) = await mundo.correr([
         '--retry-publication',
-        'r-inexistente',
+        '1758240000000000-7',
       ]);
       expect(codigo, Codigo.errorDeConfiguracion);
       expect(
         salida,
-        contains('r-inexistente'),
+        contains('1758240000000000-7'),
         reason: 'el mensaje nombra el identificador que pidió quien corre',
       );
       expect(

@@ -4,6 +4,14 @@ import 'dart:io' show FileSystemException;
 import 'package:cli/cli.dart';
 import 'package:test/test.dart';
 
+/// Un identificador con la forma EXACTA que emite este árbol: los
+/// microsegundos de un instante, un guion y el número de corrida. Las pruebas
+/// del reintento lo usan en vez de un nombre inventado porque la bandera
+/// ahora comprueba esa gramática — y una prueba que pasara con un
+/// identificador que ninguna corrida puede producir estaría midiendo otra
+/// cosa.
+const _unRunId = '1758240000000000-1';
+
 void main() {
   test('sin archivos no se infiere nada: falla', () {
     // El default que barre el árbol es el falso verde en la ENTRADA.
@@ -117,9 +125,41 @@ void main() {
   });
 
   group('--retry-publication', () {
+    // **La reproducción del P1-2 de la revisión humana.** La bandera aceptaba
+    // CUALQUIER cadena y el registro la concatenaba directo como ruta:
+    // `.shipflow/runs/../../fuera.json`. El reintento leía esa ruta y, si
+    // encontraba un documento válido, terminaba escribiéndola.
+    const noSonIdentificadores = {
+      'sube dos niveles': '../../fuera',
+      'sube uno': '../vecino',
+      'es absoluta': '/tmp/ajeno',
+      'nombra un subdirectorio': 'adentro/otro',
+      'no tiene la forma que emite este árbol': 'r-1',
+      'coincide con el prefijo y sigue de largo': '1-1/../../fuera',
+      'está vacío': '',
+    };
+    noSonIdentificadores.forEach((porQue, valor) {
+      test('«$valor» ($porQue) se rechaza como uso inválido', () {
+        expect(
+          () => interpretarShip(['--retry-publication', valor]),
+          throwsA(
+            isA<UsoInvalido>()
+                .having(
+                  (e) => e.reason,
+                  'reason',
+                  contains('no es un identificador de corrida'),
+                )
+                // Ninguna prohibición sin su alternativa: el mensaje tiene
+                // que decir dónde encontrar el identificador de verdad.
+                .having((e) => e.queHacer, 'queHacer', contains('runs')),
+          ),
+        );
+      });
+    });
+
     test('la bandera lleva el identificador de la corrida', () {
-      final e = interpretarShip(['--retry-publication', 'r-1']);
-      expect(e.reintentarPublicacion, 'r-1');
+      final e = interpretarShip(['--retry-publication', _unRunId]);
+      expect(e.reintentarPublicacion, _unRunId);
     });
 
     test('sin valor, falla nombrando la bandera', () {
@@ -153,7 +193,8 @@ void main() {
         '$ajena con el reintento es una CONTRADICCIÓN, no una preferencia',
         () {
           expect(
-            () => interpretarShip(['--retry-publication', 'r-1', ajena, 'x']),
+            () =>
+                interpretarShip(['--retry-publication', _unRunId, ajena, 'x']),
             throwsA(
               isA<UsoInvalido>()
                   .having(
@@ -177,7 +218,7 @@ void main() {
         // `--retry-publication` vino antes o después de la bandera con la
         // que contradice, y el mensaje sigue nombrando a las dos.
         expect(
-          () => interpretarShip([ajena, 'x', '--retry-publication', 'r-1']),
+          () => interpretarShip([ajena, 'x', '--retry-publication', _unRunId]),
           throwsA(
             isA<UsoInvalido>()
                 .having(
@@ -194,15 +235,15 @@ void main() {
     for (final ajena in ['--yes', '--allow-incomplete']) {
       test('$ajena con el reintento se rechaza: la compuerta ya pasó', () {
         expect(
-          () => interpretarShip(['--retry-publication', 'r-1', ajena]),
+          () => interpretarShip(['--retry-publication', _unRunId, ajena]),
           throwsA(isA<UsoInvalido>()),
         );
       });
     }
 
     test('--dry-run SÍ convive: un ensayo del reintento no escribe nada', () {
-      final e = interpretarShip(['--retry-publication', 'r-1', '--dry-run']);
-      expect(e.reintentarPublicacion, 'r-1');
+      final e = interpretarShip(['--retry-publication', _unRunId, '--dry-run']);
+      expect(e.reintentarPublicacion, _unRunId);
       expect(e.dryRun, isTrue);
     });
 

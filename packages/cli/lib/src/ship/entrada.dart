@@ -16,6 +16,7 @@ library;
 import 'dart:convert';
 import 'dart:io' show FileSystemException;
 
+import '../salida.dart';
 import '../uso.dart';
 
 /// Lo que la invocación de `ship` dijo, ya interpretado.
@@ -191,6 +192,29 @@ EntradaDeShip interpretarShip(List<String> args) {
   // peor que ninguna: quien la pasa cree estar comprando una comprobación
   // extra que no existe.
   if (reintentarPublicacion != null) {
+    // **La forma del identificador se comprueba ACÁ, antes que cualquier
+    // exclusión.** El valor de esta bandera nombra una ruta en el disco —el
+    // documento de la corrida y su proyección—, y aceptarlo tal cual dejaba
+    // salir del directorio de corridas: con «../../fuera», la ruta del
+    // documento quedaba fuera de `.shipflow/runs`, el reintento LEÍA ahí y,
+    // si encontraba un documento válido, terminaba ESCRIBIENDO ahí. Lo que se
+    // acepta es solo lo que este árbol sabe emitir —ver `esRunIdDeCorrida`—,
+    // y no una cadena cualquiera.
+    //
+    // **No es la única comprobación, y esa redundancia es deliberada.** El
+    // registro comprueba además que la ruta normalizada sea hija DIRECTA del
+    // directorio de corridas: una gramática se puede aflojar después —para
+    // admitir un identificador nuevo, digamos— sin que quien la afloje se dé
+    // cuenta de que estaba sosteniendo, sola, un invariante de rutas.
+    if (!esRunIdDeCorrida(reintentarPublicacion)) {
+      throw UsoInvalido(
+        '«$reintentarPublicacion» no es un identificador de corrida',
+        'Un identificador de corrida es el que te dio la corrida que quedó a '
+            'medias: dígitos, un guion y dígitos. Buscalo en la salida de esa '
+            'corrida, o en los nombres de archivo de `.shipflow/runs`. No se '
+            'leyó ni se escribió nada.',
+      );
+    }
     if (archivos.isNotEmpty) {
       throw const UsoInvalido(
         '--retry-publication y --file se contradicen',
