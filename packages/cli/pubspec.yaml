@@ -28,8 +28,8 @@ dependencies:
   # desarrollo con una justificación que decía que la composición real no
   # arma ninguna forja «porque no hay superficie para decir de qué remoto se
   # trata». Ya la hay: el remoto lo lee `vcs` y quién lo atiende lo decide la
-  # fábrica neutra de este paquete, a la que llama la raíz de composición de
-  # `ship`.
+  # fábrica de nombre neutro que vive adentro de `forge` —el paquete que se
+  # declara acá, no este—, a la que llama la raíz de composición de `ship`.
   forge:
     path: ../forge
   # El temporal se arma al lado del destino con el mismo nombre de archivo
