@@ -47,8 +47,10 @@ dev_dependencies:
     path: ../plugin_fake
   # La suite de contrato de `PullRequestSink` corre la implementación real
   # —`SalidaDePrDeGitHub`— contra un servidor local, igual que la prueba de
-  # `forge` en la que se apoya. Nadie en `lib/` ni en `bin/` la importa: no hay
-  # `ship` todavía que la haga productiva, así que es de desarrollo por lo
-  # mismo que `plugin_fake`.
+  # `forge` en la que se apoya. Nadie en `lib/` ni en `bin/` la importa: `ship`
+  # ya existe, pero su composición real no arma ninguna forja —no hay
+  # superficie para decir de qué remoto se trata—, así que sigue siendo de
+  # desarrollo por lo mismo que `plugin_fake`. La tarea que compone la forja
+  # de verdad es la que mueve esta flecha a `dependencies`.
   forge:
     path: ../forge
