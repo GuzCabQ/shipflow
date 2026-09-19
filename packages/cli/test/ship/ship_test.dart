@@ -184,6 +184,11 @@ class MundoDePrueba {
   Set<String> _objetosAntes = const {};
   String _cabezaEsperada = '';
 
+  /// Cada texto que la corrida mandó al canal de salida. **Es el producto de
+  /// un ensayo**: sin canal propio, `--dry-run` no imprimía nada y nadie
+  /// aguas arriba podía taparlo, porque lo único que recibe es el desenlace.
+  final List<String> mostrado = [];
+
   /// Lo que quedó, una vez que la corrida terminó —o explotó—.
   Set<String> objetosPersistentes = const {};
   List<String> commits = const [];
@@ -297,6 +302,7 @@ class MundoDePrueba {
     bool yes = false,
     bool allowIncomplete = false,
     String runId = 'r-1',
+    Future<bool> Function(String previsualizacion)? confirmar,
   }) async {
     _escribir(_archivo, conSecreto ? '$_lineaConSecreto\n' : 'después\n');
     _objetosAntes = _objetos();
@@ -328,7 +334,8 @@ class MundoDePrueba {
         registro: registro,
         ramaActual: 'trabajo',
         cambiosAjenos: _cambiosAjenos,
-        confirmar: null,
+        confirmar: confirmar,
+        mostrar: mostrado.add,
       );
     } finally {
       await _anotarLoQueQuedo(cabezaAlEmpezar, runId);
@@ -398,6 +405,29 @@ void main() {
     // Y el consejo: a un ensayo no se le dice que vuelva a correrlo con
     // `--yes`, porque no pidió escribir nada.
     expect(accionDe(r), isNull);
+  });
+
+  test('--dry-run IMPRIME la previsualización: es su único producto', () async {
+    // El modo cuyo único producto es el preview no imprimía nada, y nadie
+    // aguas arriba podía taparlo: la tarea 10 solo recibe el `ShipOutcome`,
+    // que no lleva ni artefacto ni superficie.
+    final mundo = MundoDePrueba();
+    await mundo.correr(dryRun: true);
+    expect(mundo.mostrado, hasLength(1));
+    expect(mundo.mostrado.single, contains('trabajo → main'));
+  });
+
+  test('sin nada que autorizar no se construye ni se muestra nada', () async {
+    // El ahorro que el código ya tenía y que separar las tres cosas no puede
+    // regalar: con un secreto o con la compuerta cerrada el desenlace ya está
+    // decidido, así que armar el texto sería trabajo para tirar.
+    final conSecreto = MundoDePrueba(conSecreto: true);
+    await conSecreto.correr(dryRun: true);
+    expect(conSecreto.mostrado, isEmpty);
+
+    final compuertaCerrada = MundoDePrueba(estado: EstadoDeCorrida.rojo);
+    await compuertaCerrada.correr(dryRun: true);
+    expect(compuertaCerrada.mostrado, isEmpty);
   });
 
   test('sin --yes se comporta como una previsualización', () async {

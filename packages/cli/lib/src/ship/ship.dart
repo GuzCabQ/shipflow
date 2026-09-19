@@ -93,7 +93,8 @@ const _sinPlanPorque =
 /// puro sobre hechos ya leídos, y esa pureza es lo que hace baratas sus siete
 /// pruebas. [confirmar] es nulo cuando no hay terminal con quien hablar, y
 /// entonces la corrida se comporta como una previsualización — que es lo que
-/// el contrato del CLI ya dice.
+/// el contrato del CLI ya dice. [mostrar] es por dónde sale ese texto, y es
+/// un canal aparte justamente porque mostrar y preguntar no son lo mismo.
 ///
 /// [cambiosAjenos] son las rutas sucias del árbol de trabajo que no son de la
 /// rebanada. **Es un colaborador y no un `const []`**: la previsualización las
@@ -118,6 +119,15 @@ Future<ShipOutcome> correrShip({
   /// caminos** sin una terminal: sin terminal no se pregunta y se sale como
   /// una previsualización.
   required Future<bool> Function(String previsualizacion)? confirmar,
+
+  /// Por dónde sale la previsualización. **Nulo es no mostrarla**, y por eso
+  /// se exige: quien compone tiene que decidirlo, igual que [confirmar].
+  ///
+  /// Sin este canal, `--dry-run` no producía nada —y es el modo cuyo único
+  /// producto es este texto—, porque mostrar iba pegado a preguntar y un
+  /// ensayo no pregunta. Aguas arriba tampoco se podía tapar: lo único que
+  /// sale de acá es el desenlace, que no lleva ni artefacto ni superficie.
+  required void Function(String previsualizacion)? mostrar,
   String? baseConfigurada,
   String? baseDeLaForja,
   Duration presupuesto = const Duration(minutes: 5),
@@ -260,29 +270,37 @@ Future<ShipOutcome> correrShip({
 
     // 7 · La previsualización, y la confirmación.
     //
-    // **No se pregunta lo que ya no se va a hacer.** Con un secreto, con la
-    // compuerta cerrada o con un ensayo, la corrida ya tiene desenlace: una
-    // pregunta ahí pediría autorizar algo que no va a pasar.
+    // **Construir, mostrar y preguntar son tres cosas y eran una sola
+    // condición.** Pegadas, un ensayo —que no pregunta— tampoco construía, y
+    // entonces el modo cuyo único producto es el preview no producía nada.
     //
-    // **Y `seConfirmo` lleva el HECHO, sin adornos.** Un ensayo no confirmó
+    // Se CONSTRUYE cuando hay algo que mostrar: no hubo secreto y la compuerta
+    // autorizó. Con cualquiera de los dos en contra el desenlace ya está
+    // decidido y el texto sería trabajo para tirar — ese ahorro es del código
+    // anterior y se conserva. Se MUESTRA cada vez que se construye. Y se
+    // PREGUNTA solo cuando además falta autorización.
+    //
+    // **`seConfirmo` lleva el HECHO, sin adornos.** Un ensayo no confirmó
     // nada; decir que sí para alcanzar `previewOnly` era mentirle a la fábrica
     // cuya razón de existir es derivar la causa de los hechos. La precedencia
     // —previsualización antes que confirmación— es la que decide cuál gana.
-    final hayAlgoQueAutorizar =
-        !huboSecreto && autorizado && !entrada.dryRun && !entrada.yes;
-    final seConfirmo =
-        entrada.yes ||
-        (hayAlgoQueAutorizar &&
-            confirmar != null &&
-            await confirmar(
-              previsualizacion(
-                entrada: entrada,
-                rama: aprobado.rama,
-                base: aprobado.base,
-                artefacto: artefacto,
-                cambiosAjenos: await cambiosAjenos(),
-              ),
-            ));
+    var seConfirmo = entrada.yes;
+    if (!huboSecreto && autorizado) {
+      final texto = previsualizacion(
+        entrada: entrada,
+        rama: aprobado.rama,
+        base: aprobado.base,
+        artefacto: artefacto,
+        cambiosAjenos: await cambiosAjenos(),
+      );
+      mostrar?.call(texto);
+      // **No se pregunta lo que ya no se va a hacer.** Un ensayo no pidió
+      // efecto ninguno y `--yes` ya autorizó: en los dos casos la pregunta
+      // pediría autorizar algo que no está pendiente.
+      if (!entrada.dryRun && !entrada.yes && confirmar != null) {
+        seConfirmo = await confirmar(texto);
+      }
+    }
 
     // **Una sola salida para todo lo que no llegó a intentar**, y la causa la
     // deriva la fábrica de los hechos. Con `--dry-run` se sale ACÁ, antes del
