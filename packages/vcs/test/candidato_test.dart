@@ -106,15 +106,20 @@ void main() {
   /// Corrompe, por fuera del candidato, el objeto que el árbol fijado usa
   /// para [archivo] — sin pasar por ninguna costura del candidato.
   ///
-  /// **Es la única manera de que la prueba observe la ventana que
-  /// `createRevision` tiene que cerrar por su cuenta.** El par
-  /// `baseRevision`/`contentRevision` que diffea `exigirSinSecretos` es fijo
-  /// desde que `prepareCandidate` devuelve: pedirle el escaneo dos veces al
-  /// mismo candidato, sin más, da siempre el mismo resultado. Para que la
-  /// segunda lectura vea algo que la primera no vio hace falta que algo
-  /// escriba sobre el almacén temporal por fuera del candidato — y eso es
-  /// exactamente lo que este ayudante simula, reescribiendo a mano el objeto
-  /// suelto que `git` ya escribió ahí.
+  /// **Es un evento que ningún camino del comando puede producir, y por eso
+  /// esto NO mide ninguna ventana.** El par `baseRevision`/`contentRevision`
+  /// que diffea `exigirSinSecretos` es fijo desde que `prepareCandidate`
+  /// devuelve, y lo que `createRevision` commitea es ese mismo árbol: pedirle
+  /// el escaneo dos veces al mismo candidato da siempre el mismo resultado, y
+  /// entre las dos llamadas no hay ninguna ventana que cerrar. Para que la
+  /// segunda lectura vea algo que la primera no vio hace falta reescribir a
+  /// mano los bytes del objeto suelto del almacén temporal, que es lo que
+  /// este ayudante hace.
+  ///
+  /// Lo que habilita, entonces, es medir que `createRevision` **escanea por
+  /// su cuenta** en vez de confiar en que alguien haya pedido el escaneo
+  /// antes: hace falta un dato que diverja entre las dos lecturas, y
+  /// fabricarlo desde afuera es la única forma.
   ///
   /// **Un objeto suelto no lleva ninguna verificación de que su contenido
   /// coincida con su nombre.** `git` la aplica en `fsck`, no al leer con
@@ -1260,8 +1265,56 @@ void main() {
       });
     });
 
-    test('createRevision SIGUE escaneando: la ventana no la cubre el paso '
-        '5', () async {
+    test(
+      'la ventana REAL no la ve ningún escaneo, y la cubre otra cosa',
+      () async {
+        // **Lo que sí puede pasar entre el paso 4 y el 11**: un verificador
+        // escribe un secreto en la raíz del candidato. No lo ve ninguno de los
+        // dos escaneos —los dos diffean la revisión fijada, no el árbol de
+        // trabajo—, y esta prueba lo fija en vez de dejarlo implícito en la
+        // frase de que «el segundo cierra una ventana», que era falsa.
+        //
+        // Lo que la cubre son dos cosas: `alteraciones` la informa —y una
+        // alteración vuelve la corrida no concluyente, aguas arriba— y lo que
+        // se commitea es el árbol FIJADO, así que el secreto no entra al commit
+        // ni aunque alguien autorice publicar una corrida incompleta.
+        escribir('a.txt', 'limpio\n');
+        await conCandidato(rebanada(['a.txt']), (c) async {
+          File('${c.root}/a.txt').writeAsStringSync(clave);
+
+          // Ninguno de los dos escaneos lo ve: los dos miran lo fijado.
+          await c.exigirSinSecretos();
+          final revision = await c.createRevision();
+
+          // Lo informa la comprobación de integridad, que es la que sí mira el
+          // árbol del candidato.
+          expect(
+            {for (final a in await c.alteraciones()) a.ruta},
+            contains('a.txt'),
+            reason: 'sin esto, la escritura en la raíz no la ve NADIE',
+          );
+
+          // Y el commit se lleva el árbol fijado, no el workspace.
+          expect(
+            git(['cat-file', 'blob', '$revision:a.txt']),
+            'limpio',
+            reason: 'lo que se commitea es la revisión fijada',
+          );
+          return null;
+        });
+      },
+    );
+
+    test('createRevision escanea POR SU CUENTA: la garantía del commit no '
+        'depende de que se haya pedido el paso 5', () async {
+      // **Lo que se mide es la independencia del llamador, no una ventana.**
+      // Los dos escaneos miran el mismo par de revisiones inmutables, así que
+      // el segundo no puede encontrar nada que el primero no haya encontrado;
+      // lo que sostiene la repetición es que la promesa «una rebanada con
+      // secretos no se commitea» valga sin condiciones, y no solo si quien
+      // llama se acordó de pedir la otra operación antes. La divergencia que
+      // hace falta para observarlo la fabrica un ayudante desde afuera — ver
+      // su doc: ningún camino del comando la produce.
       escribir('a.txt', 'limpio\n');
       await conCandidato(rebanada(['a.txt']), (c) async {
         await c.exigirSinSecretos(); // pasa: todavía no hay secreto

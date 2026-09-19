@@ -440,12 +440,30 @@ abstract interface class PreparedCandidate {
   /// implementación de este puerto hereda esa misma zona ciega, o tiene que
   /// decir explícitamente que la cierra distinto.
   ///
-  /// **[createRevision] vuelve a escanear, y eso no es la misma garantía
-  /// repetida.** Esta operación cierra la ventana entre preparar el
-  /// candidato y mostrarlo; la de [createRevision] cierra la que queda entre
-  /// mostrarlo y commitear, y esa ventana no la cubre haber preguntado antes:
-  /// depender de eso convertiría la garantía del commit en una que solo vale
-  /// si el llamador se acordó de pedir esta operación primero.
+  /// **[createRevision] vuelve a escanear, y NO es una segunda ventana.** Lo
+  /// que este escaneo diffea son `identity.baseRevision` e
+  /// `identity.contentRevision`, y las dos son inmutables desde que el
+  /// candidato se prepara; [createRevision] llama al mismo escaneo y después
+  /// commitea ese mismo árbol fijado. O sea que la segunda llamada computa lo
+  /// mismo que la primera sobre los mismos objetos: **no puede encontrar nada
+  /// que la primera no haya encontrado.**
+  ///
+  /// **Lo que sí justifica la segunda llamada es la independencia del
+  /// llamador.** Depender de la primera convertiría la garantía del commit en
+  /// una que solo vale si quien llama se acordó de pedir esta operación
+  /// antes; y entonces la promesa «una rebanada con secretos no se commitea»
+  /// pasaría a tener dos valores distintos según por dónde se entre. Es la
+  /// misma promesa, cumplida sin condiciones, no una cobertura extra.
+  ///
+  /// **La ventana que sí existe no la cierra ninguno de los dos escaneos, y
+  /// está cubierta por otra cosa.** Un verificador que escriba un secreto en
+  /// la raíz del candidato entre la materialización y el commit no lo ve ni
+  /// esta operación ni [createRevision], porque las dos miran la revisión
+  /// fijada y no el árbol de trabajo. Lo que la cubre son [alteraciones] —una
+  /// escritura en esa raíz aparece ahí, y una alteración vuelve la corrida no
+  /// concluyente— más el hecho de que lo que se commitea es el árbol fijado:
+  /// el secreto escrito en el workspace no entra al commit ni siquiera si
+  /// alguien autoriza publicar una corrida incompleta.
   Future<void> exigirSinSecretos();
 
   /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**

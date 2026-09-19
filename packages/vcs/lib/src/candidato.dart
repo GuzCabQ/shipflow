@@ -489,9 +489,17 @@ class _CandidatoGit implements PreparedCandidate {
     // garantías distintas según por dónde se entre.
     //
     // **Se escanea de nuevo aunque el llamador ya haya pedido
-    // [exigirSinSecretos] antes de esto.** Esta es la comprobación que cierra
-    // la ventana entre lo que se mostró y lo que se commitea; confiar en la
-    // anterior sería confiar en que nadie se salteó un paso.
+    // `exigirSinSecretos` antes de esto, y NO es una segunda ventana.** El par
+    // de revisiones que se diffea es inmutable desde que el candidato se
+    // prepara, y lo que se commitea abajo es ese mismo árbol fijado: esta
+    // llamada computa lo mismo que la anterior sobre los mismos objetos y no
+    // puede encontrar nada que aquélla no haya encontrado.
+    //
+    // Lo que sostiene la repetición es la INDEPENDENCIA DEL LLAMADOR:
+    // apoyarse en la llamada anterior dejaría la promesa de arriba valiendo
+    // solo si quien entra por acá se acordó de pedir la otra operación
+    // primero, y entonces serían dos promesas distintas según por dónde se
+    // entre.
     await exigirSinSecretos();
 
     await _promover();

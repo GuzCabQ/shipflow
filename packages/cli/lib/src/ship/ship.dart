@@ -288,8 +288,9 @@ Future<ResultadoDeShip> correrShip({
     // acá.** Un secreto es un desenlace de la corrida —`secretDetected`—, no
     // una excepción: la fábrica lo pone por encima de la confirmación, así que
     // se ve aunque nadie haya pasado `--yes`. `createRevision` vuelve a
-    // escanear por su cuenta, y eso no es la misma garantía repetida: cierra
-    // la ventana entre mostrar y commitear, que ninguna llamada anterior tapa.
+    // escanear por su cuenta, y eso NO es una segunda ventana —el par de
+    // revisiones es el mismo y es inmutable—: es que la garantía del commit no
+    // dependa de que este paso se haya pedido antes.
     var huboSecreto = false;
     try {
       await candidato.exigirSinSecretos();

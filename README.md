@@ -4017,13 +4017,39 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
 
 ### Residuos declarados
 
-- **La detección de secretos corre dos veces, y es deliberado.** El paso 5
-  escanea para que la previsualización vea el hallazgo —un secreto es un
-  desenlace de la corrida, `secretDetected`, no una excepción, y la fábrica lo
-  pone por encima de la confirmación, así que se ve aunque nadie haya pasado
-  `--yes`—. Y `createRevision` vuelve a escanear por su cuenta, que **no es la
-  misma garantía repetida**: cierra la ventana entre lo que se inspecciona y lo
-  que se commitea, que ninguna llamada anterior tapa.
+- **La detección de secretos corre dos veces, y es deliberado — pero no por
+  el motivo que acá estuvo escrito.** El paso 5 escanea para que la
+  previsualización vea el hallazgo —un secreto es un desenlace de la corrida,
+  `secretDetected`, no una excepción, y la fábrica lo pone por encima de la
+  confirmación, así que se ve aunque nadie haya pasado `--yes`—. Y
+  `createRevision` vuelve a escanear por su cuenta.
+
+  **La segunda llamada NO cierra ninguna ventana**, y decir que sí era el
+  séptimo falso verde de esta rebanada: el escaneo diffea `baseRevision`
+  contra `contentRevision`, las dos inmutables desde que se prepara el
+  candidato, y `createRevision` commitea ese mismo árbol fijado. La segunda
+  llamada computa lo mismo que la primera sobre los mismos objetos, así que no
+  puede encontrar nada que la primera no haya encontrado. Lo que sostiene la
+  repetición es la **independencia del llamador**: apoyarse en la primera
+  dejaría la garantía del commit valiendo solo si quien entra se acordó de
+  pedir la otra operación antes, y entonces `ChangeSink` tendría dos promesas
+  distintas según por dónde se entre.
+
+  **Y la ventana real no la ve ninguno de los dos.** Un verificador que
+  escriba un secreto en la raíz del candidato entre la materialización y el
+  commit no aparece en ningún escaneo, porque los dos miran la revisión
+  fijada y no el árbol de trabajo. Lo que la cubre es la comprobación de
+  alteraciones —una escritura ahí la informa, y una alteración vuelve la
+  corrida no concluyente— más el hecho de que lo que se commitea es el árbol
+  fijado: ese secreto no entra al commit ni aunque alguien autorice publicar
+  una corrida incompleta con `--allow-incomplete`.
+
+  **La prueba que sostenía la versión vieja pasaba por otro motivo, y su
+  nombre lo dice ahora.** Para que la segunda lectura vea algo que la primera
+  no vio hace falta que alguien reescriba a mano los bytes del objeto suelto
+  del almacén temporal, que es lo que hace su ayudante y lo que ningún camino
+  del comando puede producir. Lo que esa prueba mide de verdad es que
+  `createRevision` escanea por su cuenta, sin depender de la llamada previa.
 - **El remapeo toca `Diagnostic.file` y no el mensaje.** `Diagnostic.message`
   es texto citado de la herramienta, sin reescribir (INV-6): si esa cita
   menciona la ruta temporal del candidato, **la mención se queda**. Una ruta
