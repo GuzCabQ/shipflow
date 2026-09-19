@@ -116,6 +116,79 @@ void main() {
     expect(porFile.archivos, ['a.txt']);
   });
 
+  group('--retry-publication', () {
+    test('la bandera lleva el identificador de la corrida', () {
+      final e = interpretarShip(['--retry-publication', 'r-1']);
+      expect(e.reintentarPublicacion, 'r-1');
+    });
+
+    test('sin valor, falla nombrando la bandera', () {
+      expect(
+        () => interpretarShip(['--retry-publication']),
+        throwsA(
+          isA<UsoInvalido>().having(
+            (e) => e.reason,
+            'reason',
+            contains('--retry-publication'),
+          ),
+        ),
+      );
+    });
+
+    test('un valor que es otra bandera no es un identificador', () {
+      expect(
+        () => interpretarShip(['--retry-publication', '--yes']),
+        throwsA(isA<UsoInvalido>()),
+      );
+    });
+
+    for (final ajena in ['--file', '--slice', '--intent']) {
+      test(
+        '$ajena con el reintento es una CONTRADICCIÓN, no una preferencia',
+        () {
+          expect(
+            () => interpretarShip(['--retry-publication', 'r-1', ajena, 'x']),
+            throwsA(
+              isA<UsoInvalido>()
+                  .having(
+                    (e) => e.reason,
+                    'reason',
+                    contains('--retry-publication'),
+                  )
+                  .having((e) => e.reason, 'reason', contains(ajena)),
+            ),
+            reason:
+                'la rebanada está en el documento; declararla otra vez afirma '
+                'dos cosas sobre el mismo hecho',
+          );
+        },
+      );
+    }
+
+    for (final ajena in ['--yes', '--allow-incomplete']) {
+      test('$ajena con el reintento se rechaza: la compuerta ya pasó', () {
+        expect(
+          () => interpretarShip(['--retry-publication', 'r-1', ajena]),
+          throwsA(isA<UsoInvalido>()),
+        );
+      });
+    }
+
+    test('--dry-run SÍ convive: un ensayo del reintento no escribe nada', () {
+      final e = interpretarShip(['--retry-publication', 'r-1', '--dry-run']);
+      expect(e.reintentarPublicacion, 'r-1');
+      expect(e.dryRun, isTrue);
+    });
+
+    test(
+      'sin la bandera, el campo es nulo y ship se interpreta como siempre',
+      () {
+        final e = interpretarShip(['--intent', 'x', '--file', 'a.txt']);
+        expect(e.reintentarPublicacion, isNull);
+      },
+    );
+  });
+
   group('ArchivoDeRebanada.desdeJson', () {
     test('el archivo de rebanada NO lleva identificador', () {
       // Si lo llevara, habría dos fuentes de la identidad: la del archivo y la

@@ -38,6 +38,18 @@ class EntradaDeShip {
   final bool yes;
   final bool allowIncomplete;
 
+  /// El identificador de la corrida que `--retry-publication` pide terminar,
+  /// o **nulo cuando no se pidió ningún reintento**.
+  ///
+  /// **No declara una rebanada: la rebanada ya está en el documento de esa
+  /// corrida.** Por eso es excluyente con `--file`, `--slice` e `--intent` —
+  /// declararlos junto con esto afirmaría dos veces, y distinto, de dónde
+  /// sale la intención que se publica—, y por eso viaja como un campo más de
+  /// esta misma clase en vez de un tipo aparte: el resto de la interpretación
+  /// —`--branch`, `--base`, `--dry-run`— no cambia de forma según cuál de las
+  /// dos formas de invocar se haya usado.
+  final String? reintentarPublicacion;
+
   EntradaDeShip({
     required this.intent,
     required List<String> archivos,
@@ -47,6 +59,7 @@ class EntradaDeShip {
     required this.dryRun,
     required this.yes,
     required this.allowIncomplete,
+    required this.reintentarPublicacion,
   }) : archivos = List.unmodifiable(archivos);
 }
 
@@ -81,6 +94,7 @@ EntradaDeShip interpretarShip(List<String> args) {
   String? slice;
   String? branch;
   String? base;
+  String? reintentarPublicacion;
   var dryRun = false, yes = false, allowIncomplete = false;
   final archivos = <String>[];
   final desconocidas = <String>[];
@@ -122,6 +136,9 @@ EntradaDeShip interpretarShip(List<String> args) {
       case '--base':
         base = valorDe(i, a);
         i++;
+      case '--retry-publication':
+        reintentarPublicacion = valorDe(i, a);
+        i++;
       case '--dry-run':
         dryRun = true;
       case '--yes':
@@ -130,6 +147,64 @@ EntradaDeShip interpretarShip(List<String> args) {
         allowIncomplete = true;
       default:
         desconocidas.add(a);
+    }
+  }
+
+  // **La exclusión con el reintento se comprueba antes que ninguna otra
+  // cosa**, igual que `--file` y `--slice` entre sí: un reintento no declara
+  // una rebanada —la rebanada ya está en el documento de la corrida que se
+  // quiere terminar— así que pasar `--file`, `--slice` o `--intent` junto con
+  // `--retry-publication` no es una preferencia entre dos formas válidas, es
+  // una contradicción sobre el mismo hecho —de dónde sale lo que se publica—,
+  // y este proyecto ya decidió que esas no se resuelven eligiendo una en
+  // silencio. El mensaje nombra las DOS banderas en conflicto, para que quien
+  // lo lee no tenga que adivinar cuál de las dos sobra.
+  if (reintentarPublicacion != null) {
+    if (archivos.isNotEmpty) {
+      throw const UsoInvalido(
+        '--retry-publication y --file se contradicen',
+        'La rebanada de un reintento ya está en el documento de la corrida '
+            'que se quiere terminar, no en la línea de comandos: sacá --file, '
+            'o sacá --retry-publication si lo que querés es una corrida '
+            'nueva.',
+      );
+    }
+    if (slice != null) {
+      throw const UsoInvalido(
+        '--retry-publication y --slice se contradicen',
+        'La rebanada de un reintento ya está en el documento de la corrida '
+            'que se quiere terminar, no en un archivo aparte: sacá --slice, '
+            'o sacá --retry-publication si lo que querés es una corrida '
+            'nueva.',
+      );
+    }
+    if (intent != null) {
+      throw const UsoInvalido(
+        '--retry-publication y --intent se contradicen',
+        'La intención de un reintento ya está en el documento de la corrida '
+            'que se quiere terminar: sacá --intent, o sacá '
+            '--retry-publication si lo que querés es una corrida nueva.',
+      );
+    }
+    // **`--yes` y `--allow-incomplete` no se aceptan, y no es la misma regla
+    // de arriba.** No hay dos afirmaciones contradictorias sobre un mismo
+    // hecho: la compuerta que las dos autorizan ya pasó en la corrida
+    // original, y volver a ofrecerlas acá sugeriría que se puede volver a
+    // decidir algo que ya se decidió una vez.
+    if (yes) {
+      throw const UsoInvalido(
+        '--retry-publication y --yes no conviven',
+        'La compuerta que --yes autoriza ya pasó en la corrida original: no '
+            'hay nada que volver a autorizar. Sacá --yes.',
+      );
+    }
+    if (allowIncomplete) {
+      throw const UsoInvalido(
+        '--retry-publication y --allow-incomplete no conviven',
+        'La compuerta que --allow-incomplete autoriza ya pasó en la corrida '
+            'original: no hay nada que volver a autorizar. Sacá '
+            '--allow-incomplete.',
+      );
     }
   }
 
@@ -145,7 +220,8 @@ EntradaDeShip interpretarShip(List<String> args) {
     throw UsoInvalido(
       'bandera desconocida: «${desconocidas.first}»',
       'Las banderas de `ship` son --intent, --file, --slice, --branch, '
-          '--base, --dry-run, --yes y --allow-incomplete.',
+          '--base, --retry-publication, --dry-run, --yes y '
+          '--allow-incomplete.',
     );
   }
 
@@ -163,7 +239,12 @@ EntradaDeShip interpretarShip(List<String> args) {
     );
   }
 
-  if (archivos.isEmpty && slice == null) {
+  // **Exceptuado cuando hay un reintento.** Un reintento no selecciona
+  // archivos —los toma del documento de la corrida original—, así que no
+  // declarar ninguno acá no es el default que barre el árbol de trabajo que
+  // el resto de este archivo rechaza: es la forma correcta de esta otra
+  // invocación.
+  if (archivos.isEmpty && slice == null && reintentarPublicacion == null) {
     throw const UsoInvalido(
       'no se declaró ningún archivo',
       'Pasá --file (uno o más, junto con --intent) o --slice con la '
@@ -182,6 +263,7 @@ EntradaDeShip interpretarShip(List<String> args) {
     dryRun: dryRun,
     yes: yes,
     allowIncomplete: allowIncomplete,
+    reintentarPublicacion: reintentarPublicacion,
   );
 }
 
@@ -364,6 +446,12 @@ Future<EntradaDeShip> resolverRebanada(
     dryRun: entrada.dryRun,
     yes: entrada.yes,
     allowIncomplete: entrada.allowIncomplete,
+    // **Siempre nula acá, y no porque se la vuelva a decidir.** Un reintento
+    // no trae `rutaDeLaRebanada`, así que esta función ya retornó más arriba
+    // —`if (ruta == null) return entrada;`— antes de construir este segundo
+    // valor: llegar hasta acá es la prueba de que `entrada.
+    // reintentarPublicacion` es nula, la misma que exige `interpretarShip`.
+    reintentarPublicacion: entrada.reintentarPublicacion,
   );
 }
 

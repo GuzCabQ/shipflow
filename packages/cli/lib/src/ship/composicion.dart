@@ -60,6 +60,11 @@ el pull request. Cada camino termina en un desenlace declarado.
                       --file, y trae su propia intención.
   --branch <rama>     Aserción, no cambio: tiene que coincidir con la actual.
   --base <rama>       Contra qué rama se abre el pull request.
+  --retry-publication <runId>
+                      Termina una corrida que ya commiteó. Excluyente con
+                      --intent, --file y --slice: la rebanada de esa corrida
+                      ya está en su documento. --yes y --allow-incomplete no
+                      se aceptan: esa compuerta ya pasó.
   --dry-run           Solo la previsualización. Cero efectos persistentes.
   --yes               Autoriza a ESCRIBIR. No autoriza a publicar algo que no
                       concluyó: eso es --allow-incomplete.
@@ -379,6 +384,48 @@ class _ForjaAusente implements PullRequestSink {
 bool _puedePublicar(EntradaDeShip entrada, {required bool hayQuienConfirme}) =>
     !entrada.dryRun && (entrada.yes || hayQuienConfirme);
 
+/// Guardia **TEMPORAL**: rechaza `--retry-publication` porque, hoy, ningún
+/// camino real la atiende todavía.
+///
+/// **Por qué hace falta, y no alcanza con que la interpretación la acepte.**
+/// La rebanada que agrega `EntradaDeShip.reintentarPublicacion` la interpreta,
+/// pero no le arma ninguna orquestación: sin esta guardia, una invocación con
+/// esta bandera pasaría de largo y caería en la comprobación de
+/// `correrShip` que exige una intención no nula, saliendo con «la entrada no
+/// declara ninguna intención» — un mensaje que le echa la culpa a la bandera
+/// que faltaba (`--intent`) en vez de a la que sobra (`--retry-publication`,
+/// que es justamente la que reemplaza a `--intent` en este modo). Esa forma de
+/// mensaje que culpa al argumento equivocado ya se encontró y se cerró una vez
+/// en esta misma función; dejarla reaparecer por esta puerta sería reabrir el
+/// mismo defecto.
+///
+/// **Es temporal, y ya está decidido quién la retira: la tarea que cablea
+/// `--retry-publication` a la orquestación real.** Esa tarea saca esta
+/// guardia y comprueba que, al sacarla, se pone roja una prueba de esta
+/// suite — si ninguna muere, esta guardia no estaba midiendo nada y hay que
+/// revisar por qué. No se borra por decisión de quien lea este comentario más
+/// adelante: se borra cuando el camino que reemplaza exista de verdad.
+///
+/// **Qué hacer mientras tanto la propia excepción lo dice**, porque
+/// [_detener] no instala una regla sin su alternativa: no hay forma de
+/// terminar la publicación con esta bandera todavía, así que el mensaje
+/// apunta a revisar a mano el documento de la corrida que se quiso reintentar.
+void _exigirCaminoDelReintentoCableado(
+  EntradaDeShip entrada, {
+  required RegistroDeCorridas registro,
+}) {
+  final runId = entrada.reintentarPublicacion;
+  if (runId == null) return;
+  throw UsoInvalido(
+    '--retry-publication todavía no tiene camino real: esta rama la '
+        'interpreta, pero ninguna orquestación la usa todavía',
+    'Por ahora no hay forma de terminar la corrida «$runId» con esta '
+        'bandera. Revisá a mano en qué quedó su documento, en '
+        '«${registro.documentoDe(runId)}», o esperá a que shipflow termine '
+        'de cablear el reintento antes de usarla.',
+  );
+}
+
 /// Corre `ship` y devuelve el código de proceso.
 ///
 /// **Recibe la impresora**, no la construye: la frontera es una sola. Y **emite
@@ -433,6 +480,15 @@ Future<int> correrShipDelComando(
     entrada = await resolverRebanada(
       interpretarShip(globales.restantes),
       leer: colaboradores.leerArchivo,
+    );
+    // **Guardia temporal — ver su propio doc comment, en
+    // `_exigirCaminoDelReintentoCableado`, para el porqué completo y quién la
+    // retira.** Va dentro de este mismo `try` a propósito: reusa el `catch`
+    // de abajo en vez de abrir una segunda forma de detenerse con el mismo
+    // código.
+    _exigirCaminoDelReintentoCableado(
+      entrada,
+      registro: colaboradores.registro,
     );
   } on UsoInvalido catch (e) {
     // **Sin `runId`.** No se llegó a componer ninguna corrida, así que no hay

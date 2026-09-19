@@ -465,6 +465,7 @@ class MundoDePrueba {
           dryRun: dryRun,
           yes: yes,
           allowIncomplete: allowIncomplete,
+          reintentarPublicacion: null,
         ),
         runId: runId,
         repo: repo,

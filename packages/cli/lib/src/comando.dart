@@ -43,8 +43,9 @@ shipflow — arnés de desarrollo asistido por agentes
   verify [rutas...]   Corre la cascada de verificación y reporta con testigo.
   ship [opciones]     Prepara un candidato, lo verifica sobre él, lo commitea
                       y abre el pull request. Sus banderas son --intent,
-                      --file, --slice, --branch, --base, --dry-run, --yes y
-                      --allow-incomplete; `shipflow ship --help` las explica.
+                      --file, --slice, --branch, --base, --retry-publication,
+                      --dry-run, --yes y --allow-incomplete; `shipflow ship
+                      --help` las explica.
 
 Banderas globales (valen antes o después del comando):
   --json              Protocolo de salida: eventos y resultado en JSON Lines

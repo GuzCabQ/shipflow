@@ -517,11 +517,25 @@ void main() {
         '--slice',
         '--branch',
         '--base',
+        '--retry-publication',
         '--dry-run',
         '--yes',
         '--allow-incomplete',
       ]) {
         expect(entrada, contains(b), reason: b);
+      }
+    });
+
+    test('las dos ayudas nombran el reintento', () async {
+      // Las dos, porque las dos se leen en momentos distintos: la de la
+      // frontera antes de saber que `ship` existe siquiera, y la de `ship`
+      // ya sabiendo que existe pero no todavía cuáles son sus banderas.
+      for (final texto in [await ayudaDePrueba(), ayudaDeShip]) {
+        expect(
+          texto,
+          contains('--retry-publication'),
+          reason: texto.split('\n').first,
+        );
       }
     });
 
@@ -781,6 +795,31 @@ void main() {
         '${mundo.raiz.path}/no-existe.json',
       ]);
       expect(codigo, Codigo.errorDeUso);
+    });
+
+    test('--retry-publication sale 5: el camino real todavía no está cableado '
+        '[TEMPORAL — ver _exigirCaminoDelReintentoCableado, en la composición '
+        'de `ship`]', () async {
+      // **Esta prueba tiene que ponerse ROJA el día que la guardia se saque
+      // —la tarea que cablea el reintento al camino real la retira—, y esa
+      // es la señal de que hay que reemplazarla por una que ejercite el
+      // camino de verdad.** Si sigue verde después de sacar la guardia, no
+      // estaba midiendo nada.
+      final mundo = Mundo();
+      final (codigo, salida, _) = await mundo.correr([
+        '--retry-publication',
+        'r-inexistente',
+      ]);
+      expect(codigo, Codigo.errorDeUso);
+      expect(
+        salida,
+        contains('r-inexistente'),
+        reason:
+            'sin la guardia, el único camino que hoy sigue —«la entrada no '
+            'declara ninguna intención», del defecto que esta rebanada '
+            'cierra— no nombra el identificador que pidió quien corre',
+      );
+      expect(salida, contains('--retry-publication'));
     });
   });
 

@@ -16,6 +16,7 @@ EntradaDeShip entradaDePrueba() => EntradaDeShip(
   dryRun: false,
   yes: false,
   allowIncomplete: false,
+  reintentarPublicacion: null,
 );
 
 /// Un [ArtefactoDeRevision] mínimo pero válido: una afirmación cubierta sobre
