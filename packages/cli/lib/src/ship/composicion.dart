@@ -183,14 +183,16 @@ class ColaboradoresDeShip {
 
 /// La composición real: los adapters que existen de verdad, sobre [directorio].
 ///
-/// **`baseConfigurada` y `baseDeLaForja` van nulas, y eso no es un olvido.** Las
-/// tres fuentes de la base son explícita, configuración y rama por defecto de
-/// la forja; no hay superficie de configuración, y la rama por defecto de la
+/// **`baseConfigurada` y `baseDeLaForja` van nulas, y eso no es un olvido.**
+/// La cadena tiene cuatro fuentes: explícita, la de la rebanada, configuración
+/// y rama por defecto de la forja —la explícita y la de la rebanada se
+/// fusionan antes de llegar hasta acá, con su propio residuo declarado sobre
+/// el orden—; no hay superficie de configuración, y la rama por defecto de la
 /// forja pide un pedido más a su API que hoy nadie hace —tener compuesta la
-/// salida de pull requests no es tenerla preguntada—, así que la única fuente
-/// viva es `--base`. Rellenarlas con un valor cómodo —`main`— sería adivinar
-/// la base, que es justo lo que la causa `baseIndeterminada` del preflight
-/// existe para nombrar.
+/// salida de pull requests no es tenerla preguntada—, así que de las cuatro la
+/// única viva es `--base`. Rellenarlas con un valor cómodo —`main`— sería
+/// adivinar la base, que es justo lo que la causa `baseIndeterminada` del
+/// preflight existe para nombrar.
 ///
 /// **Residuo declarado, ahora más chico: de los colaboradores que se arman acá,
 /// uno solo lo mide una prueba.** La corrida fuera de un repositorio entra por

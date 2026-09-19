@@ -4185,11 +4185,14 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
   posible es el documento persistido: la revisión se anota **antes** de mover
   la referencia, así que un proceso que muera en el medio no deja una revisión
   que nadie anotó. `decidirRecuperacion` sigue sin productor.
-- **No hay superficie de configuración.** Las tres fuentes de la base son
-  explícita, configuración y rama por defecto de la forja; **la única viva es
-  `--base`**. No se rellena con `main`: adivinar la base es justo lo que la
-  causa `baseIndeterminada` del preflight existe para nombrar. Y la rama por
-  defecto de la forja pediría un pedido más a su API que hoy nadie hace —tener
+- **No hay superficie de configuración.** La cadena de la base tiene cuatro
+  fuentes: explícita, la del archivo de rebanada, configuración y rama por
+  defecto de la forja —la explícita y la de la rebanada se fusionan, con la
+  explícita ganando (`packages/cli/lib/src/ship/entrada.dart:347-361` declara
+  el residuo sobre ese orden)—; **de las cuatro, la única viva es `--base`**.
+  No se rellena con `main`: adivinar la base es justo lo que la causa
+  `baseIndeterminada` del preflight existe para nombrar. Y la rama por defecto
+  de la forja pediría un pedido más a su API que hoy nadie hace —tener
   compuesta la salida de pull requests no es tenerla preguntada.
 - **No hay agente, ni tickets, ni ganchos.** `ship` recibe la rebanada ya
   declarada —por archivo o por la invocación—; nadie la deriva de un elemento
