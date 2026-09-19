@@ -12,9 +12,14 @@ library;
 import 'desenlace.dart';
 import 'publicacion.dart';
 
-/// La versión del formato del payload de `ship`: el documento que persiste
-/// [ShipOutcome] y el cuerpo del pull request que lo resume para quien
+/// La versión del formato del payload de `ship`: el payload de máquina que
+/// imprime el CLI y el cuerpo del pull request que lo resume para quien
 /// revisa.
+///
+/// **El documento que persiste [ShipOutcome] no la lleva, y no es la misma
+/// relación.** Ese documento se versiona con su propio campo —ajeno a este
+/// número, y con su propio ciclo de vida—, así que buscar acá un acoplamiento
+/// con lo persistido sería buscar una relación que no existe.
 ///
 /// **Vive acá y no en `cli` ni en `forge`, porque los dos la necesitan y
 /// ninguno de los dos es dueño del otro.** El payload del CLI la imprime como
