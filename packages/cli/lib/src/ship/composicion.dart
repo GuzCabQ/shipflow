@@ -564,7 +564,12 @@ Future<int> correrShipDelComando(
         // ya estable que expone el paquete de la forja, y no una frase
         // nueva inventada acá. No sale cuando no hay remoto: ese caso no
         // tiene causa que distinguir, solo la ausencia.
-        if (causa != null) 'causa': causa.name,
+        //
+        // **Y con su propia clave, no `causa`.** Bajo esa clave viajaban tres
+        // enums distintos —el del desenlace, el del preflight y este—, y un
+        // consumidor automático no puede ramificar sobre una clave cuyo
+        // vocabulario depende de por dónde se detuvo la corrida.
+        if (causa != null) 'causaDeLaAusenciaDeForja': causa.name,
       },
     );
   }
@@ -649,7 +654,21 @@ Future<int> correrShipDelComando(
       codigo: Codigo.errorDeConfiguracion,
       humano: 'shipflow ship: ${e.fallo.detalle}',
       queHacer: e.fallo.queHacer,
-      datos: {'error': e.fallo.detalle, 'causa': e.fallo.causa.name},
+      // **`causaDelPreflight` y no `causa`.** La clave `causa` ya la usa el
+      // desenlace para `CausaDeNoIntento`, y la detención por ausencia de
+      // forja usaba una tercera: tres enums distintos bajo la misma clave
+      // dejan a un consumidor automático sin poder ramificar sobre ella. Son
+      // hechos distintos de detenciones distintas, así que llevan claves
+      // distintas.
+      //
+      // **Residuo declarado: los tres vocabularios siguen en idiomas
+      // distintos** —el del desenlace en inglés, estos dos en castellano—.
+      // Unificarlos es renombrar identificadores en tres paquetes, y cuesta
+      // más de lo que resuelve: quien lee la clave ya sabe qué enum viene.
+      datos: {
+        'error': e.fallo.detalle,
+        'causaDelPreflight': e.fallo.causa.name,
+      },
       runId: runId,
     );
   } on CorridasNoIgnoradas catch (e) {

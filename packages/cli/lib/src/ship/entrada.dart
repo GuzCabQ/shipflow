@@ -341,10 +341,25 @@ Future<EntradaDeShip> resolverRebanada(
       deLaRebanada: archivo.branch,
     ),
     // **`--base` sí se fusiona: la explícita gana y la rebanada rellena.**
-    // Es la misma cadena de precedencia de tres fuentes que ya tiene `base`
-    // en el diseño —explícito → configuración → rama por defecto—; extender
-    // la rebanada como una fuente más de esa cadena es seguirla, no
-    // inventar una regla nueva.
+    // Es el ruling de la tarea 2, y lo decidió con este argumento: la cadena
+    // del diseño da tres fuentes a `base` —explícito → configuración → rama
+    // por defecto de la forja— y la rebanada entra como una más.
+    //
+    // **Residuo declarado: entra ocupando la ranura de la explícita, o sea
+    // POR ENCIMA de la configurada.** La cadena pasó a tener cuatro fuentes y
+    // la nueva quedó metida en la primera, que es una decisión que aquel
+    // ruling no argumentó — la tomó el mecanismo, este `??`. Se declara en
+    // vez de moverse porque quien la tomó fue esa tarea y cambiarla ahora
+    // sería revisar su ruling desde una ronda de arreglos.
+    //
+    // **Qué la volvería observable:** que `baseConfigurada` deje de ser
+    // siempre nula. Hoy la raíz de composición la pasa nula y lo declara —no
+    // hay superficie de configuración—, así que una rebanada que declara
+    // `base` y una configuración que declara otra no pueden coexistir. El día
+    // que exista esa superficie, una rebanada con `base` va a ganarle a la
+    // configuración del repositorio sin que nadie lo haya decidido, y ahí hay
+    // que elegir: o la rebanada baja un escalón, o la cadena declara cuatro
+    // fuentes con la rebanada primera y se dice por qué.
     base: entrada.base ?? archivo.base,
     dryRun: entrada.dryRun,
     yes: entrada.yes,

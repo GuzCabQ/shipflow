@@ -901,8 +901,21 @@ void main() {
         ]);
         expect(codigo, Codigo.errorDeConfiguracion);
         final datos = lineas(salida).last['data']! as Map;
-        return datos['causa'];
+        return datos['causaDeLaAusenciaDeForja'];
       }
+
+      // **Y no bajo `causa`.** Esa clave ya la usa el desenlace para un enum
+      // distinto, y el preflight usaba una tercera: tres vocabularios bajo
+      // una sola clave dejan a un consumidor sin poder ramificar sobre ella.
+      expect(
+        (lineas(
+              (await Mundo(
+                remoto: remotoAjeno,
+              ).correr([..._invocacion, '--yes', '--json'])).$2,
+            ).last['data']!
+            as Map),
+        isNot(contains('causa')),
+      );
 
       final causaForjaDesconocida = await causaDe(remotoAjeno);
       final causaProtocolo = await causaDe(remotoAtendidoSinCanalSeguro);

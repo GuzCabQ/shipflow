@@ -1,4 +1,12 @@
-/// El protocolo de salida: el documento, los eventos y el código de proceso.
+/// El protocolo de salida: el envelope de resultado, los eventos y el código
+/// de proceso.
+///
+/// **«Documento» en este archivo nombra SIEMPRE el documento de la corrida**
+/// —el registro que se persiste en `.shipflow/runs`, del que hablan
+/// [payloadDeShip] y sus tres ausencias—, nunca lo que sale por la salida
+/// estándar: eso son [EventEnvelope] y [ResultEnvelope], y se dicen así. Los
+/// dos se versionan, con números distintos y ciclos de vida distintos, y
+/// llamarlos igual volvía ambiguo cada párrafo que menciona a uno de ellos.
 library;
 
 import 'dart:convert';
@@ -6,7 +14,12 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 
-/// Versión del esquema de salida. **Va en cada documento y en cada evento.**
+/// Versión del esquema de salida. **Va en cada envelope de resultado y en
+/// cada evento.**
+///
+/// **Versiona el envelope y NADA MÁS.** El documento de la corrida —la otra
+/// cosa que este archivo llama «documento», ver arriba— lleva su propio
+/// número, ajeno a este y con su propio ciclo de vida.
 ///
 /// Un consumidor automático necesita saber contra qué está parseando. Es la
 /// misma razón por la que el plugin exige la versión del esquema del
@@ -31,7 +44,7 @@ String generarRunId() {
 
 /// Los códigos de proceso. **La precedencia no es una tabla: se deriva.**
 ///
-/// Estaba escrita en prosa y una tabla en un documento no impide que alguien
+/// Estaba escrita en prosa y una tabla en un texto no impide que alguien
 /// devuelva `1` desde un `catch`. Acá el código sale de [deCorrida] y de
 /// ningún otro lado.
 abstract final class Codigo {
@@ -71,6 +84,19 @@ abstract final class Codigo {
   static const entregaIncompleta = 6;
 
   /// El arnés se rompió. **Nunca es un resultado del pipeline.**
+  ///
+  /// **Residuo declarado: [LocalInconsistente] sale por acá y sí es un
+  /// resultado del pipeline.** El commit existe, el documento se persiste y
+  /// la acción siguiente es concreta —reparar el índice y reintentar la
+  /// publicación—, así que la frase de arriba no lo describe. La rebanada
+  /// anterior lo decidió con su propio argumento, que queda en pie: un commit
+  /// que existe con el índice sin sincronizar es el arnés roto, no un
+  /// resultado del pipeline, porque `git status` va a mentir hasta que
+  /// alguien lo repare y ninguna corrida siguiente puede confiar en lo que
+  /// lee. Se declara en vez de moverse: cambiarle el código ahora rompería la
+  /// tabla que esa rebanada fijó y que su suite mide fila por fila, y la
+  /// discusión —si «arnés roto» debería partirse en dos— excede una ronda de
+  /// arreglos de este comando.
   static const errorInterno = 70;
 
   /// El código que le corresponde a un estado de corrida. Es una función
@@ -216,7 +242,7 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 /// lleva porque son getters, no campos.
 ///
 /// **No lleva `runId`.** Lo lleva [ResultEnvelope.runId], en el mismo
-/// documento: repetirlo acá es el mismo hecho escrito dos veces, y dos
+/// envelope: repetirlo acá es el mismo hecho escrito dos veces, y dos
 /// escrituras del mismo hecho divergen.
 ///
 /// **Los cuatro campos del documento SE RELEEN, no se agregan al desenlace.**
@@ -413,7 +439,7 @@ class ResultEnvelope {
   /// `1`, `2` y `70`— pero no el `5`: un error de uso no alcanzó el dominio,
   /// así que no tiene veredicto que dar. Inventarle uno sería afirmar algo
   /// sobre un cambio que nadie miró. El código de salida lleva ese dato, y va
-  /// en el mismo documento.
+  /// en el mismo envelope.
   ///
   /// **Para un [ShipOutcome] lo arma [veredictoDeShip], y no cubre las cinco
   /// variantes.** La frase anterior decía que nadie armaba todavía ninguno;
