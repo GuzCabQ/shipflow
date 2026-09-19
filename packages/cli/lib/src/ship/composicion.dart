@@ -423,10 +423,10 @@ Future<int> correrShipDelComando(
         command: nombreDeShip,
         exitCode: Codigo.exito,
         // **'ok', y no es que la ayuda haya mirado algo.** Contrastalo con el
-        // veredicto nulo de `_detener`, más abajo en este archivo: los dos
-        // caminos no miraron ningún cambio y la ayuda mira todavía menos —ni
-        // siquiera llega a interpretar la invocación—, y sin embargo acá se
-        // afirma 'ok'. No es una inconsistencia que esta ronda introduzca: la
+        // veredicto nulo de `_detener`, más abajo en este archivo: ninguno de
+        // los dos caminos volvió a mirar un cambio —y la ayuda mira todavía
+        // menos, ni siquiera llega a interpretar la invocación—, y sin
+        // embargo acá se afirma 'ok'. No es una inconsistencia que esta ronda introduzca: la
         // ayuda de la frontera (en el despachador) y la de `verify` ya usaban
         // 'ok' antes de que `ship` existiera. Queda sin unificar a propósito:
         // hacerlo tocaría esos dos archivos además de este, y es un cambio de
@@ -1042,9 +1042,21 @@ int _emitirDesenlace(
   return codigo;
 }
 
-/// Una detención que **no es desenlace**: no hubo corrida que describir, así
-/// que no hay `ShipOutcome` del que derivar nada y el código lo decide quien
-/// atrapó la excepción.
+/// Una salida que **no lleva desenlace**: no hay ningún `ShipOutcome` del que
+/// derivar el código, así que lo decide quien llama.
+///
+/// **No es «no hubo corrida que describir», y decirlo así dejó de ser cierto.**
+/// Ese era el motivo cuando por acá salían solo las cuatro excepciones de una
+/// corrida NUEVA —la invocación que no se pudo interpretar, el preflight, el
+/// directorio de corridas desprotegido, el `.gitignore` ajeno—, que describen
+/// por qué no llegó a haber una. Desde que el reintento está cableado, por acá
+/// salen también sus seis respuestas sin desenlace, y **las seis son sobre una
+/// corrida que SÍ existió**: llevan su identificador, y el documento que las
+/// produjo la describe entera. Lo que no hay en ninguno de los dos casos es un
+/// desenlace —el de la corrida vieja no es de ESTA invocación, y una corrida
+/// que no se reintenta no produce ninguno nuevo—, y eso es lo que este camino
+/// tiene en común: la ausencia del valor del que se derivaría el código, no la
+/// ausencia de la corrida.
 int _detener(
   Impresora imp, {
   required int codigo,
@@ -1057,14 +1069,25 @@ int _detener(
     ResultEnvelope(
       command: nombreDeShip,
       exitCode: codigo,
-      // **Sin veredicto, y es el mismo hueco declarado del error de uso:** una
-      // detención antes de que hubiera corrida no miró ningún cambio, así que
-      // no tiene nada que afirmar sobre él. **La ayuda, más arriba en este
-      // archivo, mira todavía menos y sale con 'ok'.** No es una regresión —
-      // sigue al `--help` que ya existía en la frontera y en `verify`— pero
-      // las dos reglas conviven sin que nada más las distinga; se documentan
-      // cruzadas en vez de unificarse porque unificarlas es una decisión de
-      // convención que excede esta ronda de un solo comando.
+      // **Sin veredicto, y el argumento ya no es «antes de que hubiera
+      // corrida».** Era ése mientras por acá salían solo las cuatro
+      // excepciones de una corrida nueva; con el reintento cableado salen
+      // también sus seis respuestas, y ésas sí son sobre una corrida que
+      // existió. El argumento que vale para las diez es más angosto y más
+      // exacto: ESTA invocación no volvió a mirar ningún cambio. Ni las
+      // cuatro —que se detienen antes de preparar nada— ni las seis del
+      // reintento —que por diseño no vuelven a verificar nada, y la que
+      // publica no pasa por acá— miraron un solo archivo, así que ninguna
+      // tiene con qué afirmar un estado de verificación. Lo que el documento
+      // de la corrida vieja afirme es SUYO y ya salió con ella; repetirlo acá
+      // sería que esta invocación afirme una verificación que no hizo.
+      //
+      // **La ayuda, más arriba en este archivo, mira todavía menos y sale con
+      // 'ok'.** No es una regresión —sigue al `--help` que ya existía en la
+      // frontera y en `verify`— pero las dos reglas conviven sin que nada más
+      // las distinga; se documentan cruzadas en vez de unificarse porque
+      // unificarlas es una decisión de convención que excede una ronda de
+      // arreglos de un solo comando.
       verdict: null,
       nextAction: queHacer,
       runId: runId,

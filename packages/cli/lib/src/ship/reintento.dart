@@ -370,6 +370,20 @@ Future<ResultadoDelReintento> _publicar({
   // con el del candidato no es una suposición: es el paso 2 de la
   // reconciliación, y por el camino directo es esta guarda la única que
   // queda.
+  //
+  // **Residuo declarado: si esa guarda rechaza, el rechazo sale como error
+  // interno del arnés.** El constructor lanza `ArgumentError` —una solicitud
+  // mal compuesta es un defecto de quien compone, y así lo declara— y eso
+  // sube hasta la red de último recurso. Solo es alcanzable editando el
+  // documento a mano: el árbol de un objeto commit no cambia nunca, así que
+  // sobre cualquier documento que haya escrito una corrida real el valor
+  // medido y el declarado son el mismo. Las dos salidas posibles cuestan más
+  // de lo que compran: atrapar ese `ArgumentError` usaría como señal de
+  // control de flujo esperado una excepción documentada como «algo que este
+  // control no previó», y comparar los dos valores acá antes de construir
+  // sería una TERCERA copia de la misma regla —ya está en el paso 2 de la
+  // reconciliación y en el constructor— que además dejaría sin quien la mate
+  // a la única prueba que distingue medir de copiar.
   final solicitud = PullRequestRequest(
     draft: documento.draft,
     revision: documento.revision,

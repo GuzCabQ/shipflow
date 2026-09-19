@@ -8,6 +8,15 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 
+/// Un remoto que la fábrica del paquete de la forja SÍ atiende.
+///
+/// **Vive acá y no en cada suite** porque lo usan dos —la del comando y la del
+/// reintento— y es el mismo hecho: qué forma de remoto hace que
+/// `salidaDePrDelRemoto` devuelva una salida en vez de nulo. Escrito dos veces,
+/// el día que esa fábrica cambie de criterio una de las dos suites lo descubre
+/// y la otra sigue montando un mundo que ya no representa nada.
+const remotoAtendible = 'https://github.com/duenio/repo.git';
+
 /// Un testigo, con lo mínimo para que el invariante no lo rechace: si no
 /// cubre ningún sujeto, tiene que traer al menos una omisión.
 Witness testigo({

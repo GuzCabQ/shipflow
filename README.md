@@ -3772,11 +3772,12 @@ a `committed`», que es una arista que el grafo del documento no tiene.
 **Asegurar la precondición es del llamador**, y ese llamador ya existe: es
 `puertaDelReintento` (`packages/cli/lib/src/corrida.dart`, de 4c). Filtra por
 rama y por estado antes de invocar a `decidirRecuperacion`, así que quien
-llega hasta acá ya la tiene asegurada. **Sigue sin productor de producción,
-igual que `decidirRecuperacion`**: nada en el camino real de `ship` llama
-todavía a ninguno de los dos —eso es del cableado que falta, más adelante en
-4c—, pero la ausencia que esta sección declaraba ya no es la del filtro: es
-la de quien lo invoque de verdad.
+llega hasta acá ya la tiene asegurada. **Y los dos tienen productor de
+producción desde la tarea que cableó el reintento**: `correrReintento`
+(`packages/cli/lib/src/ship/reintento.dart`) llama a `puertaDelReintento` y,
+cuando ésta manda a reconciliar desde `prepared`, a `reconciliar`, que empieza
+delegando en `decidirRecuperacion`. La ausencia que esta sección declaraba
+está cerrada.
 
 Antes de que el documento llevara la revisión, esto tenía que salir a
 **buscar** qué commit podía ser el candidato; con los tres datos ya sobre la
@@ -3862,19 +3863,21 @@ medias sin detalle no dice qué hay que reparar.
   solo corrían desde sus propias suites. Hoy `correrShip` escribe el documento
   en sus pasos 12, 14 y 16, y la raíz de composición arma el
   `RegistroDeCorridas` sobre `.shipflow/` del repositorio de quien corre.
-  **`decidirRecuperacion` sigue sin productor**: es de 4c.
+  **`decidirRecuperacion` ya tiene productor**: lo alcanza `correrReintento`
+  (`packages/cli/lib/src/ship/reintento.dart`, de 4c) a través de
+  `reconciliar`.
 - **`--retry-publication` no existía cuando esta rebanada cerró.**
   `decidirRecuperacion` y la transición `publicationIncomplete →
   publicationComplete` se escribieron para ese comando, que es 4c. **Hoy la
   bandera existe, parseada y con su filtro por rama y por estado ya
-  puesto** —`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`)—, y
-  desde `prepared` los cinco pasos que reconstruyen la confianza en el
-  candidato ya se deciden —`reconciliar`, pura sobre hechos ya leídos—; lo
-  que 4b agregó fue el documento persistido del que 4c lee, y lo que 4c
-  todavía no tiene es el camino de reconciliación por el índice y el
-  cableado que publique de verdad.
-- **La reconciliación de una publicación a medias no existe.** Es el otro
-  contenido de 4c.
+  puesto** —`puertaDelReintento` (`packages/cli/lib/src/corrida.dart`)—, los
+  dos caminos de reconciliación se deciden —`reconciliar` desde `prepared` y
+  `comprobarIndice` desde `localInconsistent`, las dos puras sobre hechos ya
+  leídos— y `correrReintento` los cablea y publica. Lo que 4b agregó fue el
+  documento persistido del que 4c lee.
+- **La reconciliación de una publicación a medias no existía acá.** Es el otro
+  contenido de 4c, y ya está: el reintento publica desde
+  `publicationIncomplete` sin abrir un segundo pull request.
 
 ## El comando `ship`, de punta a punta
 

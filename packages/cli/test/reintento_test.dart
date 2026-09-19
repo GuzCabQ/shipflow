@@ -48,10 +48,6 @@ const _archivo = 'lib/a.txt';
 /// esos dos.
 const _intencion = 'publicar el cambio';
 
-/// Un remoto que la fábrica del paquete de la forja SÍ atiende. Nadie sale a
-/// la red por él: la base de la API se reemplaza por el servidor local.
-const _remoto = 'https://github.com/duenio/repo.git';
-
 /// La URL del pull request que una corrida ya publicada dejó anotado. **No es
 /// la que produce el servidor local**, a propósito: si fueran la misma, una
 /// prueba que afirma que el reintento NO publicó de nuevo pasaría igual
@@ -82,7 +78,13 @@ class ForjaDeLaPrueba {
   /// Cuántos pull requests existen del otro lado.
   int get pullRequestsAbiertos => _abiertos.length;
 
-  ForjaDeLaPrueba._(this._api, this.revision) {
+  /// Si el otro lado RECHAZA la creación. Con esto puesto, la búsqueda sigue
+  /// contestando y el `POST` vuelve con un rechazo de la forja: el adapter lo
+  /// clasifica como una publicación NO utilizable, que es el único hecho
+  /// remoto que deja al reintento en el mismo estado del que salió.
+  final bool rechazaLaCreacion;
+
+  ForjaDeLaPrueba._(this._api, this.revision, this.rechazaLaCreacion) {
     _api.listen((pedido) async {
       if (pedido.method == 'GET') {
         pedido.response
@@ -95,6 +97,14 @@ class ForjaDeLaPrueba {
       final cuerpo =
           jsonDecode(await utf8.decoder.bind(pedido).join())
               as Map<String, Object?>;
+      if (rechazaLaCreacion) {
+        pedido.response
+          ..statusCode = HttpStatus.unprocessableEntity
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(const {'message': 'no'}));
+        await pedido.response.close();
+        return;
+      }
       _abiertos.add({
         'html_url': 'https://forja.invalida/pr/${_abiertos.length + 1}',
         'state': 'open',
@@ -114,11 +124,14 @@ class ForjaDeLaPrueba {
     });
   }
 
-  static Future<ForjaDeLaPrueba> nueva(String revision) async =>
-      ForjaDeLaPrueba._(
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0),
-        revision,
-      );
+  static Future<ForjaDeLaPrueba> nueva(
+    String revision, {
+    bool rechazaLaCreacion = false,
+  }) async => ForjaDeLaPrueba._(
+    await HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+    revision,
+    rechazaLaCreacion,
+  );
 
   Future<void> cerrar() => _api.close(force: true);
 
@@ -213,7 +226,11 @@ class MundoDeReintento {
     EstadoDeCorrida verificacion = EstadoDeCorrida.verde,
     String? mensajeDelCommit,
     String? arbolDeclarado,
+    String? revisionDeclarada,
     String? rutaExtra,
+    bool sinRemoto = false,
+    bool laForjaRechaza = false,
+    bool ramaAvanzada = false,
   }) async {
     final raiz = Directory.systemTemp.createTempSync('ship_reintento_');
     addTearDown(() => raiz.deleteSync(recursive: true));
@@ -242,11 +259,18 @@ class MundoDeReintento {
     escribir(_archivo, 'después\n');
     git(['add', '-A']);
     git(['commit', '-m', mensajeDelCommit ?? _intencion]);
-    git(['remote', 'add', 'origin', _remoto]);
+    if (!sinRemoto) git(['remote', 'add', 'origin', remotoAtendible]);
 
     final revision = git(['rev-parse', 'HEAD']);
     final arbol = git(['rev-parse', 'HEAD^{tree}']);
     final base = git(['rev-parse', 'HEAD^']);
+    if (ramaAvanzada) {
+      // Otra cosa avanzó la rama DESPUÉS de que la corrida anotara su
+      // revisión: el `HEAD` ya no es ni la base ni la revisión candidata.
+      escribir('otro.txt', 'de otra persona\n');
+      git(['add', '-A']);
+      git(['commit', '-m', 'trabajo de al lado']);
+    }
 
     final mundo = MundoDeReintento._(
       raiz: raiz,
@@ -255,7 +279,10 @@ class MundoDeReintento {
         politica: PoliticaDeArtefactosFalsa(),
       ),
       registro: RegistroDeCorridas(raiz: '${raiz.path}/.shipflow'),
-      forja: await ForjaDeLaPrueba.nueva(revision),
+      forja: await ForjaDeLaPrueba.nueva(
+        revision,
+        rechazaLaCreacion: laForjaRechaza,
+      ),
       arbolLeidoDelRepo: arbol,
     );
     addTearDown(mundo.forja.cerrar);
@@ -265,7 +292,7 @@ class MundoDeReintento {
         idDeLaCorrida,
         _documentoEn(
           estado,
-          revision: revision,
+          revision: revisionDeclarada ?? revision,
           arbol: arbolDeclarado ?? arbol,
           base: base,
           verificacion: verificacion,
@@ -282,13 +309,21 @@ class MundoDeReintento {
     EstadoDeCorrida verificacion = EstadoDeCorrida.verde,
     String? mensajeDelCommit,
     String? arbolDeclarado,
+    String? revisionDeclarada,
     String? rutaExtra,
+    bool sinRemoto = false,
+    bool laForjaRechaza = false,
+    bool ramaAvanzada = false,
   }) => nuevo(
     estado: estado,
     verificacion: verificacion,
     mensajeDelCommit: mensajeDelCommit,
     arbolDeclarado: arbolDeclarado,
+    revisionDeclarada: revisionDeclarada,
     rutaExtra: rutaExtra,
+    sinRemoto: sinRemoto,
+    laForjaRechaza: laForjaRechaza,
+    ramaAvanzada: ramaAvanzada,
   );
 
   /// El documento tal como lo habría dejado la corrida original.
@@ -469,6 +504,16 @@ class MundoDeReintento {
     return d;
   }
 
+  /// El documento de esta corrida ENTERO, serializado.
+  ///
+  /// **Comparar la instantánea y no solo el estado** es lo que convierte «no
+  /// se tocó» en una afirmación sobre el documento y no sobre uno de sus
+  /// campos: un camino que no publica tampoco puede cambiarle el desenlace, la
+  /// revisión ni el borrador, y un control que mirara solo `estado` decidiría
+  /// sobre una representación más pobre que su criterio.
+  Future<String> instantanea() async =>
+      jsonEncode((await documento()).toJson());
+
   /// Todo lo que la última corrida le escribió a quien la corrió.
   String get mensaje => _salida;
 
@@ -581,6 +626,7 @@ void main() {
       EstadoDelDocumento.committed,
       arbolDeclarado: '0000000000000000000000000000000000000000',
     );
+    final antes = await m.instantanea();
     await m.correr(m.runId);
     expect(
       m.forja.recibidas,
@@ -590,6 +636,7 @@ void main() {
           'comparando el valor contra sí mismo y vacía su guarda',
     );
     expect(m.forja.pullRequestsAbiertos, 0);
+    expect(await m.instantanea(), antes);
   });
 
   test('una corrida ROJA autorizada en su momento se publica igual', () async {
@@ -636,10 +683,12 @@ void main() {
       final m = await MundoDeReintento.conDocumentoEn(
         EstadoDelDocumento.publicationComplete,
       );
+      final antes = await m.instantanea();
       final r = await m.correr(m.runId);
       expect(m.codigo(r), Codigo.exito);
       expect(m.mensaje, contains('http'));
       expect(m.forja.recibidas, isEmpty);
+      expect(await m.instantanea(), antes);
     },
   );
 
@@ -649,9 +698,11 @@ void main() {
       final m = await MundoDeReintento.conDocumentoEn(
         EstadoDelDocumento.notApplied,
       );
+      final antes = await m.instantanea();
       await m.correr(m.runId);
       expect(m.accion, contains('ship'));
       expect(m.forja.recibidas, isEmpty);
+      expect(await m.instantanea(), antes);
     },
   );
 
@@ -661,10 +712,10 @@ void main() {
       final m = await MundoDeReintento.conDocumentoEn(
         EstadoDelDocumento.committed,
       );
-      final antes = await m.documento();
+      final antes = await m.instantanea();
       await m.correr(m.runId, dryRun: true);
       expect(m.forja.recibidas, isEmpty);
-      expect((await m.documento()).estado, antes.estado);
+      expect(await m.instantanea(), antes);
     },
   );
 
@@ -673,9 +724,18 @@ void main() {
       EstadoDelDocumento.prepared,
       mensajeDelCommit: 'otra cosa',
     );
+    final antes = await m.instantanea();
     await m.correr(m.runId);
     expect(m.forja.recibidas, isEmpty);
-    expect(m.accion, isNotEmpty);
+    // **La aserción heredada del brief era `isNotEmpty`, y la aceptaba
+    // cualquier texto**; su hermana del índice sí exige el comando y la ruta.
+    // Acá se exige lo mismo —qué hacer, concreto— y además CUÁL de los cuatro
+    // chequeos falló: es lo que el orden argumentado de la reconciliación
+    // decide, y hasta acá ninguna prueba lo miraba de punta a punta.
+    expect(m.mensaje, contains(CausaDeAmbiguedad.mensajeDistinto.name));
+    expect(m.accion, contains('volver a correr'));
+    expect(m.accion, contains('ship'));
+    expect(await m.instantanea(), antes);
   });
 
   group('lo que el brief no cubría', () {
@@ -729,14 +789,12 @@ void main() {
         'add',
         'lib/b.txt',
       ], workingDirectory: m.raiz.path);
+      final antes = await m.instantanea();
       await m.correr(m.runId);
       expect(m.forja.recibidas, isEmpty);
       expect(m.accion, contains('git reset'));
       expect(m.accion, contains('lib/b.txt'));
-      expect(
-        (await m.documento()).estado,
-        EstadoDelDocumento.localInconsistent,
-      );
+      expect(await m.instantanea(), antes);
     });
 
     test(
@@ -750,9 +808,125 @@ void main() {
           '-c',
           'otra',
         ], workingDirectory: m.raiz.path);
+        final antes = await m.instantanea();
         final r = await m.correr(m.runId);
         expect(m.codigo(r), Codigo.errorDeConfiguracion);
         expect(m.accion, contains('trabajo'));
+        expect(m.forja.recibidas, isEmpty);
+        expect(await m.instantanea(), antes);
+      },
+    );
+
+    test(
+      'sin revisión en la rama, el reintento manda a correr ship de nuevo',
+      () async {
+        // La cuarta respuesta de la reconciliación, y la única que no tenía
+        // prueba: los cinco pasos cierran sin ambigüedad y lo que contestan NO
+        // es promover, porque otra cosa avanzó la rama después de que esta
+        // corrida anotara su revisión. Su detalle son seis líneas que hasta acá
+        // no ejercitaba nadie.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.prepared,
+          ramaAvanzada: true,
+        );
+        final antes = await m.instantanea();
+        final r = await m.correr(m.runId);
+        expect(m.codigo(r), Codigo.errorDeConfiguracion);
+        expect(m.mensaje, contains(QueHacerAlRecuperar.alguienMasAvanzo.name));
+        expect(m.accion, contains('volver a correr'));
+        expect(
+          m.accion,
+          contains('almacén de objetos'),
+          reason:
+              'la alternativa dice POR QUÉ no se puede reintentar el '
+              'compare-and-swap desde acá, no solo que no se puede',
+        );
+        expect(m.forja.recibidas, isEmpty);
+        expect(await m.instantanea(), antes);
+      },
+    );
+
+    test(
+      'sin remoto, el reintento sale por configuración y NO por el arnés',
+      () async {
+        // **Ancla de la cláusula que deja publicar cuando hay reintento**, en
+        // la raíz de composición. El intérprete RECHAZA `--yes` junto con la
+        // bandera y acá no hay terminal, así que sin esa cláusula la
+        // composición contesta que esta corrida no podría publicar, se saltea
+        // la detención por falta de forja, y termina pidiéndole un pull request
+        // a la forja que no está compuesta: un error interno del arnés por no
+        // tener remoto configurado.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.committed,
+          sinRemoto: true,
+        );
+        final antes = await m.instantanea();
+        final r = await m.correr(m.runId);
+        expect(m.codigo(r), Codigo.errorDeConfiguracion);
+        expect(m.mensaje, contains('no tiene remoto configurado'));
+        expect(
+          m.mensaje,
+          isNot(contains('error interno del arnés')),
+          reason: 'es una precondición del entorno, no el arnés roto',
+        );
+        expect(await m.instantanea(), antes);
+      },
+    );
+
+    test('un reintento que vuelve a fallar NO revienta el documento', () async {
+      // **Ancla de la guarda que evita pedir una transición hacia el mismo
+      // estado.** Desde `publicationIncomplete`, un remoto que vuelve a
+      // rechazar produce otra publicación incompleta: el destino que ese
+      // desenlace afirma es el estado en el que el documento YA está, y el
+      // grafo de §9 no tiene esa arista. Sin la guarda, pedirla lanza y sale
+      // «se rompió el arnés» sobre una corrida donde lo único que pasó es que
+      // el remoto volvió a fallar.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.publicationIncomplete,
+        laForjaRechaza: true,
+      );
+      final antes = await m.instantanea();
+      final r = await m.correr(m.runId);
+      expect(r, isA<PublicacionIncompleta>());
+      expect(m.codigo(r), Codigo.entregaIncompleta);
+      expect(
+        m.mensaje,
+        isNot(contains('error interno del arnés')),
+        reason: 'el remoto falló; el arnés no',
+      );
+      expect(m.forja.pullRequestsAbiertos, 0);
+      expect(
+        await m.instantanea(),
+        antes,
+        reason:
+            'el documento ya afirma ese estado: no hay nada que avanzar, y '
+            'la causa nueva del fallo remoto viaja entera en el desenlace',
+      );
+    });
+
+    test(
+      'una revisión que ya no está en el repositorio sale por configuración',
+      () async {
+        // **Ancla de la traducción del fallo de la herramienta a código de
+        // configuración**, en la composición del reintento. Una corrida que
+        // murió deja un objeto commit que ninguna rama alcanza y que el
+        // recolector junta; leerlo falla, y sin esa traducción el fallo sube
+        // hasta la red de último recurso y sale «reportalo con la traza» sobre
+        // una corrida donde el arnés no se rompió.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.committed,
+          revisionDeclarada: 'ffffffffffffffffffffffffffffffffffffffff',
+        );
+        final r = await m.correr(m.runId);
+        expect(m.codigo(r), Codigo.errorDeConfiguracion);
+        expect(
+          m.mensaje,
+          isNot(contains('error interno del arnés')),
+          reason:
+              'que la revisión ya no esté es una precondición del entorno que '
+              'dejó de valer, no el arnés roto',
+        );
+        expect(m.accion, contains('recolector'));
         expect(m.forja.recibidas, isEmpty);
       },
     );

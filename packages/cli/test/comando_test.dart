@@ -38,11 +38,6 @@ const _ajeno = 'ajeno.txt';
 /// Una línea que el detector reconoce por el NOMBRE al que se asigna.
 const _lineaConSecreto = 'password = "no-deberia-estar-acá-nunca"';
 
-/// Un remoto que la fábrica del paquete de la forja SÍ atiende. Se escribe en
-/// el repositorio de verdad y nadie sale a la red por él: lo único que se hace
-/// con esta URL es leerla y decidir.
-const remotoAtendible = 'https://github.com/duenio/repo.git';
-
 /// La MISMA forja del remoto atendible, alcanzada por un canal que no puede
 /// llevar la credencial. Se lee perfectamente —salen el dueño y el
 /// repositorio— y aun así no se atiende: la publicación la rechazaría, y
