@@ -47,11 +47,24 @@ Map<String, String> entornoSaneado(
   });
 }
 
+/// La clave del entorno bajo la que viaja el token de la forja.
+///
+/// **Existe para que la clave se escriba UNA vez.** El adapter de la forja la
+/// lee para autenticar y quien compone la corrida se la pasa al preflight para
+/// comprobar que está: con un literal de cada lado, divergir es cuestión de
+/// una letra, y el fallo que sale de ahí no se explica solo —el preflight
+/// aprueba, porque la clave que él mira sí está, y después `open` devuelve
+/// `PushFailed(autenticacion)` por la otra, que nadie declaró—.
+///
+/// Vive en `core` porque los dos la necesitan y ninguno es dueño del otro,
+/// igual que la versión del payload de `ship`.
+const claveDeCredencialDeLaForja = 'SHIPFLOW_GITHUB_TOKEN';
+
 /// Las variables que llevan un secreto. **Declaradas, no adivinadas**: la
 /// lista blanca de [entornoSaneado] ya protege a todo lanzador saneado, así
 /// que esta enumeración solo gobierna el único sitio que NO sanea —la
 /// excepción declarada de `vcs`— y la fuente que las lee.
-const clavesDeCredencial = {'SHIPFLOW_GITHUB_TOKEN'};
+const clavesDeCredencial = {claveDeCredencialDeLaForja};
 
 /// El entorno del proceso, capturado una vez en la raíz de composición.
 ///

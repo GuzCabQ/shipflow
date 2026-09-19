@@ -14,13 +14,6 @@ import 'package:core/core.dart';
 import 'cuerpo.dart';
 import 'empuje.dart';
 
-/// La clave del entorno bajo la que viaja el token de GitHub. Es la misma que
-/// declara `clavesDeCredencial` en `core`; se repite acá como literal, y no
-/// se importa esa constante, porque esta clase necesita UNA clave concreta de
-/// GitHub y `clavesDeCredencial` es la lista de todas las que existen en el
-/// repositorio, presente o futura.
-const _claveDeCredencial = 'SHIPFLOW_GITHUB_TOKEN';
-
 /// Dónde vive el repositorio y cómo se habla con su API. **Quién es la
 /// forja no lo sabe `core`**: vive acá, en su propio adapter.
 class ConfiguracionDeGitHub {
@@ -108,7 +101,7 @@ class SalidaDePrDeGitHub implements PullRequestSink {
 
   @override
   Future<PublicationOutcome> open(PullRequestRequest request) async {
-    final credencial = await credenciales.read(_claveDeCredencial);
+    final credencial = await credenciales.read(claveDeCredencialDeLaForja);
     if (credencial == null) {
       // Sin credencial no se toca la red: no hay con qué autenticar ni la
       // búsqueda ni el push. Es `PushFailed` y no `PullRequestFailed` porque

@@ -93,7 +93,14 @@ class EntornoFalso implements VerificationEnvironment {
 /// `git`: acá no hay ninguna respuesta programada, solo un registro de lo que
 /// pasó por el medio.
 class RepoQueAnota extends RepositorioGit {
-  RepoQueAnota({required super.directorio, required super.politica});
+  RepoQueAnota({
+    required super.directorio,
+    required super.politica,
+    this.lanzaAlLiberar = false,
+  });
+
+  /// Se le traslada al candidato que se prepare: liberar va a fallar.
+  final bool lanzaAlLiberar;
 
   PullRequestSlice? rebanadaQueSePidio;
   CandidatoQueAnota? candidato;
@@ -101,7 +108,8 @@ class RepoQueAnota extends RepositorioGit {
   @override
   Future<PreparedCandidate> prepareCandidate(PullRequestSlice slice) async {
     rebanadaQueSePidio = slice;
-    return candidato = CandidatoQueAnota(await super.prepareCandidate(slice));
+    return candidato = CandidatoQueAnota(await super.prepareCandidate(slice))
+      ..lanzaAlLiberar = lanzaAlLiberar;
   }
 }
 
@@ -117,6 +125,10 @@ class CandidatoQueAnota implements PreparedCandidate {
   final Map<String, AlteracionDelCandidato> alteracionesInformadas = {};
 
   bool liberado = false;
+
+  /// Liberar falla. Pasa de verdad: borrar un directorio puede fallar por
+  /// permisos o porque otro proceso lo tiene tomado.
+  bool lanzaAlLiberar = false;
 
   CandidatoQueAnota(this._real);
 
@@ -154,6 +166,9 @@ class CandidatoQueAnota implements PreparedCandidate {
   Future<void> dispose() async {
     liberado = true;
     await _real.dispose();
+    if (lanzaAlLiberar) {
+      throw const FileSystemException('no se pudo borrar el temporal');
+    }
   }
 }
 
@@ -209,6 +224,10 @@ class MundoDePrueba {
   /// integridad lo ve**: para la segunda, el árbol volvió a coincidir.
   final bool alteracionSoloAntesDeLaCascada;
 
+  /// Liberar el candidato falla. Es lo que distingue una limpieza que corre de
+  /// una limpieza que además decide qué excepción ve quien corrió `ship`.
+  final bool alLiberarFalla;
+
   late final Directory _raiz;
   late final RepoQueAnota repo;
   late final RegistroDeCorridas registro;
@@ -249,6 +268,7 @@ class MundoDePrueba {
     this.gitignoreAjeno = false,
     this.conCambioAjeno = false,
     this.alteracionSoloAntesDeLaCascada = false,
+    this.alLiberarFalla = false,
   }) {
     ambiente = EntornoFalso(
       alDerivar: alteracionSoloAntesDeLaCascada
@@ -269,6 +289,7 @@ class MundoDePrueba {
     repo = RepoQueAnota(
       directorio: _raiz.path,
       politica: PoliticaDeArtefactosFalsa(),
+      lanzaAlLiberar: alLiberarFalla,
     );
     registro = RegistroDeCorridas(raiz: '${_raiz.path}/.shipflow');
     if (documentoVersionado) {
@@ -576,6 +597,11 @@ void main() {
     final r = await mundo.correr(yes: true);
     expect(r, isA<NoAplicado>());
     expect(mundo.ramaSeMovio, isFalse);
+    // **Y el documento quedó sellado.** Sin esta aserción, devolver el
+    // desenlace sin persistirlo pasaba: el documento se quedaría en
+    // `prepared`, afirmando una corrida en curso que ya terminó.
+    expect(mundo.documento!.estado, EstadoDelDocumento.notApplied);
+    expect(mundo.documento!.desenlace, isA<NoAplicado>());
   });
 
   test(
@@ -589,9 +615,32 @@ void main() {
   );
 
   test('la limpieza corre AUNQUE el camino termine en excepción', () async {
+    // **Apretado al tipo.** `anything` acepta cualquier excepción, incluida
+    // una de `asegurarGitignore`, que no es el camino que esta prueba dice
+    // cubrir: el observador de alcance se niega a clasificar un sujeto que no
+    // le declararon y eso sube por la cascada.
     final mundo = MundoDePrueba(laCascadaExplota: true);
-    await expectLater(mundo.correr(yes: true), throwsA(anything));
+    await expectLater(mundo.correr(yes: true), throwsArgumentError);
     expect(mundo.temporalesQueQuedaron, isEmpty);
+  });
+
+  test('un fallo al liberar NO tapa el fallo que ya venía subiendo', () async {
+    // Una excepción lanzada desde un `finally` reemplaza a la que estaba en
+    // vuelo: sin la guarda, quien rompió la cascada veía el fallo del borrado
+    // de un temporal y no el suyo.
+    final mundo = MundoDePrueba(laCascadaExplota: true, alLiberarFalla: true);
+    await expectLater(mundo.correr(yes: true), throwsArgumentError);
+    expect(mundo.repo.candidato!.liberado, isTrue);
+  });
+
+  test('sin nada en vuelo, el fallo al liberar SÍ sube', () async {
+    // El otro lado: si la guarda se tragara siempre el fallo de la limpieza,
+    // un temporal que no se puede borrar desaparecería en silencio.
+    final mundo = MundoDePrueba(alLiberarFalla: true);
+    await expectLater(
+      mundo.correr(yes: true),
+      throwsA(isA<FileSystemException>()),
+    );
   });
 
   test(
@@ -611,8 +660,15 @@ void main() {
     // Si alguna vez tuviera que estar remoto, se publica por un mecanismo
     // explícito, nunca por una ruta local.
     final mundo = MundoDePrueba();
-    await mundo.correr(yes: true);
-    expect(mundo.proyeccionesEscritas, isNotEmpty);
+    await mundo.correr(yes: true, runId: 'r-14');
+    // **Por su nombre, y no solo por el barrido.** El barrido pasa por el
+    // documento que `RegistroDeCorridas.escribir` ya dejó: si se borra la
+    // llamada que proyecta la revisión, sigue devolviendo algo. Lo que el
+    // barrido sí fija es el `.gitignore`, más abajo.
+    expect(
+      mundo.proyeccionesEscritas,
+      contains(endsWith('r-14.revision.json')),
+    );
     for (final ruta in mundo.proyeccionesEscritas) {
       expect(
         await corridasIgnoradas(mundo.repo, ruta),

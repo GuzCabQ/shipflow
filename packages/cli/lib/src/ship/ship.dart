@@ -129,6 +129,12 @@ Future<ShipOutcome> correrShip({
   required Cascada Function(String raiz) construirCascada,
   required Map<String, Verifier> controles,
   required CredentialSource credenciales,
+
+  /// Bajo qué clave del entorno viaja la credencial de la forja. **La elige
+  /// quien compone**, porque `ship` no sabe quién es la forja; con la de
+  /// GitHub, la que hay que pasar es `claveDeCredencialDeLaForja` —la misma que lee su
+  /// adapter—. Pasar otra deja al preflight aprobando por una clave y a la
+  /// publicación fallando por otra, sin que nada lo explique.
   required String claveDeCredencial,
   required PullRequestSink forja,
   required RegistroDeCorridas registro,
@@ -194,6 +200,9 @@ Future<ShipOutcome> correrShip({
   );
 
   PreparedCandidate? candidato;
+  // Si el cuerpo ya falló, la limpieza no puede ser la que se cuente. Ver el
+  // `finally`.
+  var elCuerpoFallo = false;
   try {
     // 2 y 3 · El candidato, en almacén de objetos aislado, y materializado.
     candidato = await repo.prepareCandidate(rebanada);
@@ -420,12 +429,28 @@ Future<ShipOutcome> correrShip({
       documento,
       desenlaceDeLoEscrito(remoto: remoto),
     );
+  } catch (_) {
+    elCuerpoFallo = true;
+    rethrow;
   } finally {
     // **En *todo* camino** —éxito, fallo, rechazo del usuario, excepción—. Hasta
     // acá hay un workspace, un índice y un almacén de objetos temporales en
     // disco, y un camino que salga sin liberarlos deja objetos y directorios
     // que nadie va a recoger. Es idempotente: liberar dos veces no falla.
-    await candidato?.dispose();
+    //
+    // **Y si liberar falla, no tapa al que ya venía subiendo.** Una excepción
+    // lanzada desde un `finally` reemplaza a la que estaba en vuelo, así que
+    // sin esta guarda quien rompió la cascada veía un fallo del borrado de un
+    // directorio temporal. El fallo de la limpieza se pierde SOLO en ese caso,
+    // y es el intercambio correcto: lo que explica la corrida es el primero,
+    // el borrado es idempotente y lo que queda sin recoger es un temporal del
+    // sistema. Sin nada en vuelo, en cambio, el fallo de la limpieza es el
+    // único hecho que hay y sube entero.
+    try {
+      await candidato?.dispose();
+    } catch (_) {
+      if (!elCuerpoFallo) rethrow;
+    }
   }
 }
 
@@ -480,8 +505,16 @@ Future<void> _proyectarLaRevision(
   );
   await destino.parent.create(recursive: true);
   final temporal = File('${destino.path}.tmp');
+  // El mapa, con nombre y en una línea por clave: interpolado entero adentro
+  // del texto, esto era una sola línea de doscientos caracteres donde no se
+  // veía cuáles son los tres campos ni de dónde sale cada uno.
+  final proyeccion = <String, Object?>{
+    'formatVersion': DocumentoDeCorrida.versionActual,
+    'revision': documento.revision,
+    'artefacto': documento.draft.artefacto.toJson(),
+  };
   await temporal.writeAsString(
-    '${const JsonEncoder.withIndent('  ').convert({'formatVersion': DocumentoDeCorrida.versionActual, 'revision': documento.revision, 'artefacto': documento.draft.artefacto.toJson()})}\n',
+    '${const JsonEncoder.withIndent('  ').convert(proyeccion)}\n',
     flush: true,
   );
   await temporal.rename(destino.path);
