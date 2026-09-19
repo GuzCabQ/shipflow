@@ -1007,17 +1007,48 @@ Future<int> _correrElReintento(
         runId: runId,
       );
 
-    case SinRevisionEnLaRama(:final queHacer, :final detalle):
+    case SinRevisionEnLaRama(:final queHacer, :final detalle, :final enLaRama):
+      // **El encabezado y la clave de máquina se DERIVAN del origen, y no
+      // son uno solo para los dos.** Esta respuesta tenía un llamador y ganó
+      // el segundo: su texto —«no dejó ninguna revisión en la rama»— se
+      // escribió para aquél, donde el compare-and-swap pudo no haber corrido
+      // nunca, y por el nuevo es falso. Ahí el estado del índice
+      // desincronizado no existe sin que ese compare-and-swap haya corrido,
+      // así que la revisión SÍ está en la rama —de antepasado del `HEAD`— y
+      // lo que dejó de valer es que esté puesta. Con un solo encabezado,
+      // quien corre leía una primera línea que su propia acción siguiente
+      // desmentía.
+      //
+      // El valor de [queHacer] no era el problema —«la rama avanzó a otra
+      // cosa» es literalmente cierto por los dos caminos—, así que lo que se
+      // agregó es el hecho que a esta composición le faltaba, no un valor
+      // más en un dominio cerrado que no podría producirlo. Ver
+      // [LaRevisionEnLaRama].
+      final (humano, error) = switch (enLaRama) {
+        LaRevisionEnLaRama.puedeNoEstar => (
+          'shipflow ship: la corrida «$runId» no dejó ninguna revisión en '
+              'la rama (${queHacer.name}).',
+          'no hay revisión de esa corrida en la rama',
+        ),
+        LaRevisionEnLaRama.estaPeroNoPuesta => (
+          'shipflow ship: la rama ya no está en la revisión de la corrida '
+              '«$runId» (${queHacer.name}).',
+          'la rama ya no está en la revisión de esa corrida',
+        ),
+      };
       return _detener(
         impresora,
         codigo: Codigo.errorDeConfiguracion,
-        humano:
-            'shipflow ship: la corrida «$runId» no dejó ninguna revisión en '
-            'la rama (${queHacer.name}).',
+        humano: humano,
         queHacer: detalle,
         datos: {
-          'error': 'no hay revisión de esa corrida en la rama',
+          'error': error,
           'queHacerAlRecuperar': queHacer.name,
+          // **Su propio discriminador, porque el de arriba no distingue.**
+          // `alguienMasAvanzo` sale por los dos orígenes, así que un
+          // consumidor automático que quisiera separarlos tendría que volver
+          // a parsear un texto pensado para persona.
+          'laRevisionEnLaRama': enLaRama.name,
         },
         runId: runId,
       );

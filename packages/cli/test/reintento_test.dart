@@ -919,6 +919,33 @@ void main() {
       expect(m.mensaje, contains(QueHacerAlRecuperar.alguienMasAvanzo.name));
       expect(m.accion, contains('volver a correr'));
       expect(await m.instantanea(), antes);
+
+      // **El encabezado no puede contradecir a su propia línea siguiente.**
+      // Esta respuesta se reusó de un origen donde «no dejó ninguna revisión
+      // en la rama» es defendible —desde `prepared` el compare-and-swap pudo
+      // no haber corrido nunca—. Acá es falso: el estado del índice
+      // desincronizado solo existe DESPUÉS de que ese compare-and-swap
+      // corrió, así que la revisión SÍ está en la rama, de antepasado del
+      // `HEAD`. Lo que dejó de valer es que esté PUESTA, y eso es lo que la
+      // acción siguiente ya decía mientras el encabezado decía lo contrario.
+      expect(
+        m.mensaje,
+        isNot(contains('no dejó ninguna revisión en la rama')),
+        reason:
+            'la revisión está en la rama: este estado no existe sin que el '
+            'compare-and-swap haya corrido',
+      );
+      expect(m.mensaje, contains('ya no está en la revisión'));
+
+      // Y el payload dice lo mismo que el texto, con su propio
+      // discriminador: sin él, un consumidor automático no puede separar los
+      // dos orígenes —`queHacerAlRecuperar` vale lo mismo en los dos—.
+      await m.correr(m.runId, json: true);
+      expect(
+        m.payload['laRevisionEnLaRama'],
+        LaRevisionEnLaRama.estaPeroNoPuesta.name,
+      );
+      expect(m.payload['error'], isNot(contains('no hay revisión')));
     });
 
     test('un conflicto SIN RESOLVER sale como índice distinto, no como el '
@@ -1006,6 +1033,11 @@ void main() {
         final r = await m.correr(m.runId);
         expect(m.codigo(r), Codigo.errorDeConfiguracion);
         expect(m.mensaje, contains(QueHacerAlRecuperar.alguienMasAvanzo.name));
+        // **La otra mitad de la regla.** Por ESTE origen la frase sí es
+        // defendible —desde `prepared` nadie sabe si el compare-and-swap
+        // llegó a correr—, así que se fija acá. Sin las dos mitades, darles
+        // el mismo encabezado a los dos orígenes vuelve a pasar la suite.
+        expect(m.mensaje, contains('no dejó ninguna revisión en la rama'));
         expect(m.accion, contains('volver a correr'));
         expect(
           m.accion,

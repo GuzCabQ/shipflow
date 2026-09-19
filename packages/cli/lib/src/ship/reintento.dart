@@ -155,11 +155,58 @@ final class ReintentoAmbiguo extends ResultadoDelReintento {
 /// almacén de objetos del candidato que haría falta para reintentar el
 /// compare-and-swap se liberó cuando aquella corrida terminó—, así que la
 /// alternativa es la misma para todos y [detalle] la nombra.
+///
+/// **Y por eso lleva [enLaRama], que es la lección de haberla reusado.**
+/// Reusar un desenlace **arrastra su prosa**, y esa prosa se escribió para el
+/// origen que ya tenía: el encabezado que esta variante producía decía «no
+/// dejó ninguna revisión en la rama», defendible desde `prepared` —ahí nadie
+/// sabe si el compare-and-swap llegó a correr— y **falso** desde
+/// `localInconsistent`, un estado que no existe sin que ese compare-and-swap
+/// haya corrido. Quedaba un encabezado contradiciendo a su propia línea
+/// siguiente, que es la forma más cara de mentirle a quien corre.
+///
+/// Es una forma de falso motivo que esta rebanada no había nombrado: no uno
+/// que envejeció, sino uno que **era cierto y dejó de serlo al ganar un
+/// segundo llamador**. El día que aparezca un tercero, lo que hay que mirar
+/// no es si el valor de [queHacer] le sirve —le servía, y era correcto— sino
+/// si el texto que se deriva de acá sigue siendo cierto para él.
 final class SinRevisionEnLaRama extends ResultadoDelReintento {
   final QueHacerAlRecuperar queHacer;
   final String detalle;
 
-  const SinRevisionEnLaRama({required this.queHacer, required this.detalle});
+  /// Qué se puede afirmar de la revisión de esta corrida, para que quien
+  /// escribe el texto y el payload no tenga que adivinarlo.
+  final LaRevisionEnLaRama enLaRama;
+
+  const SinRevisionEnLaRama({
+    required this.queHacer,
+    required this.detalle,
+    required this.enLaRama,
+  });
+}
+
+/// Qué se sabe de la revisión de la corrida cuando el `HEAD` **no** es ella.
+///
+/// **No es un valor más de [QueHacerAlRecuperar], y esa fue la decisión.** Ese
+/// enum es el dominio cerrado de la comparación de tres casos, y lo que
+/// contesta acá —«la rama avanzó a otra cosa»— es **correcto** por los dos
+/// orígenes: literalmente avanzó. Agregarle un cuarto valor metería en ese
+/// dominio uno que la comparación de tres casos no puede producir nunca —una
+/// fila inalcanzable, que es exactamente lo que este proyecto ya rechazó al
+/// dejar [CausaDeNoIntento] en cuatro y no en cinco—. La falsedad no estaba en
+/// la causa: estaba en la PROSA, y la prosa la elige quien compone. Así que lo
+/// que viaja es el hecho que le falta a quien compone, y nada más.
+enum LaRevisionEnLaRama {
+  /// **Puede no estar.** Desde `prepared`, el compare-and-swap pudo no haber
+  /// corrido nunca, así que puede no haber ninguna revisión de esta corrida
+  /// en la rama.
+  puedeNoEstar,
+
+  /// **Está, y lo que dejó de valer es que esté PUESTA.** Desde
+  /// `localInconsistent` el compare-and-swap ya corrió —ese estado no existe
+  /// de otra forma— y la rama siguió andando por encima: la revisión sigue
+  /// ahí, de antepasado del `HEAD`.
+  estaPeroNoPuesta,
 }
 
 /// Un ensayo: se miró todo y **no se escribió ni se publicó nada**.
@@ -312,6 +359,10 @@ Future<ResultadoDelReintento> _reconciliarYPublicar({
     if (headActual != documento.revision) {
       return SinRevisionEnLaRama(
         queHacer: QueHacerAlRecuperar.alguienMasAvanzo,
+        // **Acá SÍ se sabe que el compare-and-swap corrió**, porque este
+        // estado no existe de otra forma: la revisión está en la rama, de
+        // antepasado del `HEAD`, y lo que dejó de valer es que esté puesta.
+        enLaRama: LaRevisionEnLaRama.estaPeroNoPuesta,
         detalle:
             'La rama «${documento.draft.branch}» está en «$headActual», y '
             'esta corrida commiteó «${documento.revision}»: ya no es la '
@@ -376,6 +427,10 @@ Future<ResultadoDelReintento> _reconciliarYPublicar({
     case Inequivoca(:final queHacer):
       return SinRevisionEnLaRama(
         queHacer: queHacer,
+        // **Desde `prepared` no se sabe si el compare-and-swap corrió**, y
+        // por eso este origen sí puede decir que puede no haber ninguna
+        // revisión de esta corrida en la rama.
+        enLaRama: LaRevisionEnLaRama.puedeNoEstar,
         detalle:
             'No hay ninguna revisión de esta corrida en la rama: el '
             'compare-and-swap no llegó a moverla, o la rama avanzó a otra '

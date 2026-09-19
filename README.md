@@ -4202,6 +4202,43 @@ una lista de tipos dejaría afuera justo el caso que motiva todo esto.
 un documento inexistente, el payload lo dice con `documentUnreadable`. Las dos
 ausencias no pueden coincidir, así que no hace falta un tercer caso.
 
+### Reusar un desenlace arrastra su prosa
+
+**Es una forma del falso motivo que esta rebanada no había nombrado**: no uno
+que envejeció, sino uno que **era cierto y dejó de serlo al ganar un segundo
+llamador**.
+
+Cuando se cerró la asimetría entre las dos reconciliaciones —desde el estado
+del índice desincronizado nadie comprobaba que el `HEAD` siguiera siendo la
+revisión de la corrida—, la respuesta nueva reusó `SinRevisionEnLaRama`. El
+**valor** del enum era el correcto: la rama avanzó a otra cosa, literalmente.
+Lo que vino con el reuso fue el **texto**, escrito para el único origen que esa
+respuesta tenía hasta entonces:
+
+```
+shipflow ship: la corrida «r-1» no dejó ninguna revisión en la rama (alguienMasAvanzo).
+  → La rama «trabajo» está en «eff71d9…», y esta corrida commiteó «3ecd982…»: …
+```
+
+**La segunda línea refuta a la primera.** El estado del índice desincronizado
+solo existe **después** de que el compare-and-swap corrió, y el commit ajeno va
+encima: la revisión de la corrida **sí** está en la rama, de antepasado del
+`HEAD`. Lo que dejó de valer es que esté **puesta**. Desde `prepared` la frase
+vieja sigue siendo defendible —ahí nadie sabe si ese compare-and-swap llegó a
+correr—, así que la falsedad era nueva y propia del reuso.
+
+El encabezado y la clave de máquina se **derivan del origen**, con un hecho
+que viaja en la respuesta (`LaRevisionEnLaRama`). No se le agregó un cuarto
+valor a `QueHacerAlRecuperar`: ése es el dominio cerrado de la comparación de
+tres casos, y un valor que esa comparación no puede producir es una fila
+inalcanzable — lo mismo que este proyecto ya rechazó al dejar
+`CausaDeNoIntento` en cuatro. La falsedad no estaba en la causa: estaba en la
+prosa, y la prosa la elige quien compone.
+
+Las dos mitades están fijadas por pruebas: el encabezado nuevo por su origen y
+el viejo por el suyo. Sin las dos, darles el mismo texto a los dos orígenes
+vuelve a pasar la suite.
+
 ### La idempotencia entre procesos, medida
 
 **Es lo más importante que esta rebanada estableció, y hasta acá no estaba
