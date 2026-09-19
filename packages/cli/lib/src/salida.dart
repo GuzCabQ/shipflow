@@ -155,6 +155,108 @@ String? accionDe(ShipOutcome desenlace) => switch (desenlace) {
         'un segundo pull request.',
 };
 
+/// El veredicto de un desenlace de `ship`, o **nulo donde no hay estado que
+/// informar**.
+///
+/// Se deriva, como el código y como la acción. Los tres desenlaces que llevan
+/// el estado de la verificación lo dicen; los otros dos —el compare-and-swap
+/// rechazado y el índice sin sincronizar— **no lo llevan**, y ahí el nulo es
+/// el dato: la corrida se detuvo por lo que pasó con el repositorio local, no
+/// por lo que la verificación vio. Inventarles un veredicto sería afirmar algo
+/// sobre un cambio que, en esos dos caminos, este desenlace no mira.
+String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
+  NoIntentado(:final verificacion) => veredictoDe(verificacion),
+  Publicado(:final verificacion) => veredictoDe(verificacion.comoCorrida),
+  PublicacionIncompleta(:final verificacion) => veredictoDe(
+    verificacion.comoCorrida,
+  ),
+  NoAplicado() || LocalInconsistente() => null,
+};
+
+/// El payload de máquina de `ship`: lo que un consumidor automático lee para
+/// decidir qué hacer sin volver a correr nada.
+///
+/// **Versiona su propio formato y NO toca el del envelope.** ADR-019 fija
+/// [esquemaDeSalida] en `2`; subirlo por un campo que solo `ship` produce haría
+/// que `verify` emitiera `3` contra un ADR aceptado, y obligaría a todos sus
+/// consumidores a releer un formato que para ellos no cambió. Por eso la
+/// versión que viaja acá es [payloadVersionDeShip] —en `core`, para que este
+/// payload y el cuerpo del pull request no lleven cada uno su copia del
+/// número— y la clave `schema` no está: es del envelope y de nadie más.
+///
+/// **El cuerpo es el `toJson` del desenlace, y eso no es pereza.** Ese mismo
+/// mapa es el que persiste el documento de la corrida. Dos serializaciones del
+/// mismo hecho divergen, y la que alguien relee después de una interrupción
+/// tendría que coincidir con la que se imprimió. Lo que se agrega son los
+/// derivados del desenlace remoto —qué tan entregada quedó, si se reintenta, y
+/// en qué fase quedó cada mitad— que un consumidor necesita y que `toJson` no
+/// lleva porque son getters, no campos.
+///
+/// **No lleva `runId`.** Lo lleva [ResultEnvelope.runId], en el mismo
+/// documento: repetirlo acá es el mismo hecho escrito dos veces, y dos
+/// escrituras del mismo hecho divergen.
+///
+/// **QUÉ CAUSA SECUNDARIA VIAJA, Y CUÁL NO.** La precedencia de
+/// [ShipOutcome.derivar] devuelve UNA causa, y la del estado de verificación
+/// sobrevive igual: [NoIntentado] lleva su `verificacion` entera, así que una
+/// corrida detenida por un secreto que ADEMÁS tenía la cascada en rojo informa
+/// las dos cosas. Los otros hechos que la fábrica recibió —hubo secreto, se
+/// confirmó, era una previsualización— **no son campos de ningún desenlace**:
+/// entran a `derivar` y no salen. Nadie los tiene cuando este payload se
+/// escribe, así que un campo que los informara estaría inventando el dato en
+/// vez de reportarlo. Cerrarlo pide que el desenlace conserve los hechos que
+/// descartó, que es un cambio del tipo del dominio y no de esta función.
+Map<String, Object?> payloadDeShip(ShipOutcome desenlace) => {
+  'payloadVersion': payloadVersionDeShip,
+  ...desenlace.toJson(),
+  ...?_publicacionDe(desenlace),
+};
+
+/// Los derivados del desenlace remoto, o nulo cuando no hubo ninguno.
+///
+/// Nulo y no un mapa con ceros: una corrida que no intentó publicar no tiene
+/// estado de entrega que informar, y un `retryable: false` ahí se leería como
+/// «se intentó y no se puede reintentar».
+Map<String, Object?>? _publicacionDe(ShipOutcome desenlace) {
+  final PublicationOutcome? remoto = switch (desenlace) {
+    Publicado(:final pr) => pr,
+    PublicacionIncompleta(:final remoto) => remoto,
+    NoIntentado() || NoAplicado() || LocalInconsistente() => null,
+  };
+  if (remoto == null) return null;
+  final fases = _fasesDe(remoto);
+  return {
+    'deliveryStatus': remoto.deliveryStatus.name,
+    'retryable': remoto.retryable,
+    'remoteNextAction': remoto.nextAction.name,
+    'push': fases.push,
+    'pullRequest': fases.pullRequest,
+  };
+}
+
+/// En qué quedó cada mitad de la publicación. **Se DERIVA de la variante**, y
+/// esa es toda la diferencia con los dos enums independientes que el tipo
+/// sellado vino a reemplazar: aquéllos admitían el producto cartesiano —«el
+/// empuje falló y el pull request salió bien»— porque cada uno se asignaba por
+/// su cuenta. Acá no hay nada que asignar: un `switch` exhaustivo sobre las
+/// siete variantes, y una octava no compila hasta que alguien diga en qué fase
+/// deja a cada mitad.
+///
+/// **`notAttempted` no es un eufemismo de «falló».** Si el empuje falló o no se
+/// supo, el pull request no se llegó a pedir: decir `failed` ahí afirmaría un
+/// intento remoto que no ocurrió, y es justo la distinción que hace que un
+/// reintento no abra un segundo pull request.
+({String push, String pullRequest}) _fasesDe(PublicationOutcome remoto) =>
+    switch (remoto) {
+      PullRequestOpen() => (push: 'succeeded', pullRequest: 'open'),
+      PullRequestMerged() => (push: 'succeeded', pullRequest: 'merged'),
+      PullRequestClosed() => (push: 'succeeded', pullRequest: 'closed'),
+      PushFailed() => (push: 'failed', pullRequest: 'notAttempted'),
+      PushUnknown() => (push: 'unknown', pullRequest: 'notAttempted'),
+      PullRequestFailed() => (push: 'succeeded', pullRequest: 'failed'),
+      PullRequestUnknown() => (push: 'succeeded', pullRequest: 'unknown'),
+    };
+
 /// El veredicto tal como lo lee un consumidor automático.
 ///
 /// `internalError` es un veredicto propio y no una ausencia: la superficie lo
@@ -210,16 +312,22 @@ class ResultEnvelope {
   /// sobre un cambio que nadie miró. El código de salida lleva ese dato, y va
   /// en el mismo documento.
   ///
-  /// **[Codigo.deShip] produce seis códigos —`0`, `1`, `2`, `3`, `6` y `70`—
-  /// y dos de ellos, el `3` y el `6`, no están en esa lista de veredictos.**
-  /// El `3` sale de [NoAplicado] y el `6` de [PublicacionIncompleta]: los dos
-  /// tienen productor y ninguno tiene veredicto, porque nadie arma todavía un
-  /// `String` de veredicto para un [ShipOutcome]. Un consumidor que reciba
-  /// cualquiera de los dos lo sabe por el código de salida y por `data`, no
-  /// por `verdict`. Enumerar los códigos acá **vence con cada variante nueva**
-  /// —esta lista ya nació incompleta una vez, con el `6` recién estrenado— así
-  /// que quien agregue una fila a [Codigo.deShip] agrega su código a esta
-  /// oración o la reescribe.
+  /// **Para un [ShipOutcome] lo arma [veredictoDeShip], y no cubre las cinco
+  /// variantes.** La frase anterior decía que nadie armaba todavía ninguno;
+  /// desde que el comando existe, sí. Lo que cambió es dónde queda el hueco:
+  /// ya no es «el `3` y el `6` no tienen veredicto» —el `6` sale de
+  /// [PublicacionIncompleta], que lleva su estado de verificación y por lo
+  /// tanto SÍ lo tiene—, sino que son [NoAplicado] y [LocalInconsistente] los
+  /// que salen sin veredicto, porque ninguno de los dos lleva estado de
+  /// verificación que informar: se detuvieron por lo que pasó con el
+  /// repositorio local. Un consumidor que reciba cualquiera de los dos lo sabe
+  /// por el código de salida y por `data`, no por `verdict`.
+  ///
+  /// Enumerar variantes acá **vence con cada una nueva** —esta oración ya
+  /// nació incompleta una vez, con el `6` recién estrenado—, así que quien
+  /// agregue una fila a [Codigo.deShip] la agrega también a [veredictoDeShip],
+  /// que es un `switch` exhaustivo y no compila hasta que lo haga, y después
+  /// reescribe este párrafo.
   final String? verdict;
 
   /// Qué hacer a continuación. Toda salida que no sea verde tiene que poder
