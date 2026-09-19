@@ -655,15 +655,26 @@ Future<int> correrShipDelComando(
       humano: 'shipflow ship: ${e.fallo.detalle}',
       queHacer: e.fallo.queHacer,
       // **`causaDelPreflight` y no `causa`.** La clave `causa` ya la usa el
-      // desenlace para `CausaDeNoIntento`, y la detención por ausencia de
-      // forja usaba una tercera: tres enums distintos bajo la misma clave
-      // dejan a un consumidor automático sin poder ramificar sobre ella. Son
-      // hechos distintos de detenciones distintas, así que llevan claves
-      // distintas.
+      // desenlace —hoy para DOS enums, no uno: `CausaDeNoIntento` cuando su
+      // `kind` es `noIntentado`, y `CausaDeNoAplicacion` (castellano,
+      // `baseMovida`/`ramaCambiada`) cuando es `noAplicado`—, y la detención
+      // por ausencia de forja usaba otra: sumarle esta le agregaría una
+      // tercera bajo la misma clave. Enums distintos bajo una sola clave
+      // dejan a un consumidor automático sin poder ramificar sobre ella con
+      // un único vocabulario. Son hechos distintos de detenciones distintas,
+      // así que llevan claves distintas.
       //
-      // **Residuo declarado: los tres vocabularios siguen en idiomas
-      // distintos** —el del desenlace en inglés, estos dos en castellano—.
-      // Unificarlos es renombrar identificadores en tres paquetes, y cuesta
+      // **Por qué el desenlace sí puede compartir clave, y este trío no.**
+      // Adentro del desenlace, `kind` separa `noIntentado` de `noAplicado`
+      // ANTES de que nadie lea `causa`: un consumidor mira el discriminador y
+      // ya sabe cuál de los dos enums esperar. Acá no hay ningún `kind` que
+      // separe una detención de preflight de una por ausencia de forja —son
+      // dos condiciones de esta misma función, no dos variantes de un tipo
+      // sellado—, así que cada una necesita su propia clave.
+      //
+      // **Residuo declarado: los vocabularios siguen sin unificarse** —el del
+      // desenlace mezcla inglés y castellano, y estos dos son castellano—.
+      // Unificarlos es renombrar identificadores en varios paquetes, y cuesta
       // más de lo que resuelve: quien lee la clave ya sabe qué enum viene.
       datos: {
         'error': e.fallo.detalle,
