@@ -50,7 +50,7 @@ import '../corrida.dart';
 /// **No salen por excepción**, a diferencia de las cuatro detenciones de una
 /// corrida nueva. Aquéllas describen por qué no llegó a haber corrida; éstas
 /// contestan un pedido de terminar una, y **lo que contestan no es siempre
-/// sobre una corrida que exista**: tres de las siete variantes sin desenlace
+/// sobre una corrida que exista**: tres de las ocho variantes sin desenlace
 /// de abajo —contadas sobre esta misma jerarquía sellada, una por una—
 /// informan justamente lo contrario, que no hay ningún documento con ese
 /// identificador, que hay uno que ninguna lectura pudo interpretar, o que el
@@ -241,6 +241,34 @@ enum LaRevisionEnLaRama {
   estaPeroNoPuesta,
 }
 
+/// La puerta dijo que se publica y **no hay forja con la que hacerlo**.
+///
+/// **Es la variante que hace estructural una precedencia que antes era
+/// posicional.** La disponibilidad de una forja se exigía en la raíz de
+/// composición, ANTES de leer el documento, para cualquier reintento que no
+/// fuera un ensayo. Así, una corrida ya publicada sin remoto salía con error
+/// de configuración sin llegar nunca a la puerta —que tiene escrito que esa
+/// corrida sale con éxito, con su URL y con el aviso del destino— y un
+/// compare-and-swap rechazado sin remoto decía «falta el remoto» en vez de «no
+/// hay nada que entregar». El README documentaba el contrato que la raíz
+/// contradecía.
+///
+/// Es el mismo criterio que ya rige la comparación del destino: **solo los
+/// caminos que efectivamente publicarían se bloquean por lo que le falte a la
+/// publicación**. Acá eso deja de depender del orden de dos comprobaciones y
+/// pasa a depender de una sola pregunta —si este camino llega a pedirle un
+/// pull request a la forja— hecha en el único lugar donde se la puede
+/// contestar sin adivinar: el sitio que iba a pedírselo.
+///
+/// **Por qué no lleva el motivo de la ausencia.** Quién atiende cada remoto lo
+/// sabe el paquete de la forja, y este archivo no lo importa ni tiene por qué:
+/// lo que viaja es el hecho —no hubo con qué publicar— y quien compone, que sí
+/// puede preguntarlo, arma el mensaje con la misma función que usa para una
+/// corrida nueva.
+final class SinForjaParaPublicar extends ResultadoDelReintento {
+  const SinForjaParaPublicar();
+}
+
 /// Un ensayo: se miró todo y **no se escribió ni se publicó nada**.
 ///
 /// El corte vive lo más tarde posible —después de la puerta y después de la
@@ -271,7 +299,15 @@ Future<ResultadoDelReintento> correrReintento({
   required String runId,
   required RegistroDeCorridas registro,
   required RepositorioGit repo,
-  required PullRequestSink forja,
+
+  /// Por dónde sale el pull request, o **nulo cuando ninguna forja conocida
+  /// atiende el remoto de este repositorio**.
+  ///
+  /// **Nulable, y no exigida por quien compone.** Que haga falta una forja
+  /// depende de si este camino publica, y eso lo decide el estado del
+  /// documento —que se lee acá adentro—, no la bandera con la que se invocó.
+  /// Ver [SinForjaParaPublicar].
+  required PullRequestSink? forja,
   required String ramaActual,
 
   /// **A dónde publicaría este repositorio HOY**, o nulo si su remoto no
@@ -377,7 +413,7 @@ Future<ResultadoDelReintento> correrReintento({
 Future<ResultadoDelReintento> _reconciliarYPublicar({
   required DocumentoDeCorrida documento,
   required RepositorioGit repo,
-  required PullRequestSink forja,
+  required PullRequestSink? forja,
   required RegistroDeCorridas registro,
   required String runId,
   required bool dryRun,
@@ -512,7 +548,7 @@ Future<ResultadoDelReintento> _reconciliarYPublicar({
 Future<ResultadoDelReintento> _publicar({
   required DocumentoDeCorrida documento,
   required String arbolDeLaRevision,
-  required PullRequestSink forja,
+  required PullRequestSink? forja,
   required RegistroDeCorridas registro,
   required String runId,
   required bool dryRun,
@@ -551,6 +587,13 @@ Future<ResultadoDelReintento> _publicar({
   if (dryRun) {
     return ReintentoEnsayado(runId: runId, revision: documento.revision);
   }
+
+  // **Acá, y no antes: es el único punto del que no se vuelve sin pedirle un
+  // pull request a la forja.** El ensayo ya salió arriba —un ensayo no
+  // publica, así que no necesita forja— y todo lo que no llegó hasta esta
+  // línea tampoco iba a publicar. Exigirla más arriba era exigir una
+  // precondición para algo que podía no pasar.
+  if (forja == null) return const SinForjaParaPublicar();
 
   final remoto = await forja.open(solicitud);
 

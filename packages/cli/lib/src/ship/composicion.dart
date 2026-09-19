@@ -557,19 +557,155 @@ class _ForjaAusente implements PullRequestSink {
 /// antes de la primera escritura, que es lo que permite que la falta de forja
 /// salga como `4` con cero efectos en vez de después del commit.
 ///
-/// **Un reintento publica sin que nadie confirme nada, y por eso entra acá.**
-/// La confirmación y la compuerta ya corrieron en la corrida original —el
-/// documento que el reintento va a leer es la prueba de que pasaron—, así que
-/// para este modo la única condición que queda es no ser un ensayo. Sin esta
-/// rama, un reintento sin terminal y sin `--yes` —que es la forma normal de
-/// invocarlo, porque el intérprete RECHAZA `--yes` junto con la bandera—
-/// contestaba que no podía publicar, se saltaba la detención por falta de
-/// forja y terminaba pidiéndole un pull request a la forja que no está
-/// compuesta: un `70` por no tener remoto configurado, en vez del `4` que
-/// nombra la precondición que falta.
+/// **Es de una corrida NUEVA, y no contesta por un reintento.** Tuvo una rama
+/// para el reintento —«no es un ensayo, entonces publica»— y esa rama
+/// contestaba por la bandera una pregunta que solo el documento puede
+/// contestar: un reintento sobre una corrida ya publicada, o sobre un
+/// compare-and-swap rechazado, no publica nada. Con esa rama puesta, la
+/// detención por falta de forja se adelantaba a la puerta y le ganaba, así que
+/// una corrida ya publicada sin remoto salía con `4` en vez del `0` con su URL
+/// que la puerta tiene escrito. Lo que reemplazó a esa rama no es otra
+/// condición acá: es que el reintento exige la forja donde de verdad la
+/// necesita —ver [SinForjaParaPublicar]—.
 bool _puedePublicar(EntradaDeShip entrada, {required bool hayQuienConfirme}) =>
-    !entrada.dryRun &&
-    (entrada.reintentarPublicacion != null || entrada.yes || hayQuienConfirme);
+    !entrada.dryRun && (entrada.yes || hayQuienConfirme);
+
+/// La detención por no tener con qué publicar: `4`, con el motivo y la
+/// alternativa.
+///
+/// **Una sola vez para los dos modos**, y es lo que permite que el reintento la
+/// exija donde corresponde —cuando la puerta ya dijo que se publica— sin
+/// reescribir el mensaje allá. Los dos textos que dependen del modo salen de
+/// [reintento]: qué NO se escribió, y cuál es el ensayo que sí corre.
+int _detenerPorFaltaDeForja(
+  Impresora impresora, {
+  required String? urlDelRemoto,
+  required String? reintento,
+}) {
+  // **Los dos nulos de arriba —sin remoto, remoto sin forja— se dicen
+  // distinto, porque lo que hay que hacer es distinto**: agregar un remoto
+  // no es lo mismo que apuntarlo a otro lado. Un mensaje único obligaría a
+  // quien corre a averiguar cuál de los dos le pasó.
+  //
+  // **Y dentro del segundo, el texto humano TAMBIÉN distingue QUIÉN de POR
+  // DÓNDE.** Antes decía «ninguna forja conocida sabe atender esto» para
+  // los dos casos por igual, y bajo la definición de «atender» que exige el
+  // camino ENTERO —no solo el parseo— eso es cierto en los dos... pero
+  // manda a sospechar de la forja incluso cuando la forja SÍ se soporta y
+  // lo único que no se atiende es el canal por el que llegó el remoto: ahí
+  // el mensaje viejo hace salir a buscar un reemplazo que no hace falta.
+  // [CausaDeAusenciaDeForja] —del paquete de la forja, para no comparar acá
+  // el host que esta composición no tiene por qué conocer— es la que
+  // distingue una cosa de la otra. La rama de la forja desconocida volvió a
+  // esa frase por una razón distinta: la versión intermedia la escribía
+  // como «el remoto no es uno que NINGUNA forja conocida sepa atender»,
+  // que es una doble negación y comunica exactamente lo contrario de lo
+  // que pasa. Lo que cambió con esa distinción no fue esta rama: fue que
+  // la otra dejó de decir lo mismo.
+  //
+  // **El `queHacer` se queda con las dos salidas juntas, y no es una
+  // inconsistencia dejarlo así mientras el humano SÍ elige.** Ya nombraba
+  // las dos alternativas —apuntar a otra forja, o reescribir el remoto
+  // propio en su forma segura— y las dos siguen siendo ciertas cada una en
+  // su rama: que el texto humano ahora diga cuál de las dos aplica no
+  // vuelve falsa a ninguna, así que partirlo repetiría en dos lugares una
+  // distinción que ya vive en uno.
+  //
+  // **Y la URL no se imprime.** Un remoto puede llevar la credencial
+  // embebida en su parte de autoridad, y este mensaje sale por la salida
+  // estándar y por el payload de máquina: nombrarla la publicaría. Lo que
+  // se dice es el hecho, no el valor.
+  final sinRemoto = urlDelRemoto == null;
+  final causa = urlDelRemoto == null
+      ? null
+      : causaDeAusenciaDeForja(urlDelRemoto);
+
+  // **Qué quedó escrito, y qué ensayo alternativo corre de verdad, dependen
+  // de cuál de los dos modos entró acá.** Este control es anterior a la
+  // bifurcación, así que lo atraviesan los dos, y lo que valía para una
+  // corrida nueva era falso para el otro:
+  //
+  // - «No quedó ni un objeto ni un commit» es la premisa AL REVÉS de un
+  //   reintento: un reintento existe justamente porque SÍ hay un commit. Lo
+  //   que se puede afirmar para los dos es más angosto —esta invocación no
+  //   escribió nada— y eso es lo que se dice.
+  // - `--dry-run` a secas no es un ensayo de esta invocación: por el camino
+  //   del reintento sale con error de uso, porque sin la bandera del
+  //   reintento la invocación no declara ningún archivo y este comando no
+  //   infiere el árbol de trabajo. Una prohibición se instala con su
+  //   alternativa, y una alternativa que no corre no es una.
+  final loQueNoSeEscribio = reintento == null
+      ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
+            'commit.'
+      : 'Se detuvo antes de pedirle nada a la forja: esta invocación no '
+            'escribió nada, y el commit que dejó la corrida «$reintento» '
+            'quedó donde estaba.';
+  final ensayo = reintento == null
+      ? '`shipflow ship --dry-run`'
+      : '`shipflow ship --retry-publication $reintento --dry-run`';
+
+  return _detener(
+    impresora,
+    codigo: Codigo.errorDeConfiguracion,
+    humano: switch (causa) {
+      null =>
+        'shipflow ship: este repositorio no tiene remoto configurado, así '
+            'que esta corrida no podría abrir el pull request que promete.',
+      CausaDeAusenciaDeForja.forjaDesconocida =>
+        'shipflow ship: ninguna forja conocida sabe atender el remoto de '
+            'este repositorio, así que esta corrida no podría abrir el '
+            'pull request que promete.',
+      CausaDeAusenciaDeForja.protocoloNoAtendible =>
+        'shipflow ship: el remoto de este repositorio es de una forja '
+            'conocida, pero llega por un protocolo que esta corrida no '
+            'puede usar para publicar sin exponer la credencial, así que '
+            'no podría abrir el pull request que promete.',
+    },
+    queHacer: sinRemoto
+        ? '$loQueNoSeEscribio Agregale el remoto al que querés publicar, o '
+              'corré $ensayo, que no necesita forja.'
+        // **Nombra las dos alternativas aunque el humano de arriba ya
+        // haya elegido cuál aplica**, y no al revés: partir este texto en
+        // dos repetiría en un segundo lugar la misma distinción que ya
+        // vive en `causaDeAusenciaDeForja`, sin volver falsa a ninguna de
+        // las dos ramas.
+        //
+        // Y se dice cómo reescribir EL SUYO, no a dónde apuntarlo: la
+        // forma segura de ese mismo destino la sabe quien configuró el
+        // remoto, y proponerle una armada acá sería inventarle un destino
+        // que no eligió.
+        : '$loQueNoSeEscribio Si el remoto apunta a una forja que este '
+              'comando no conoce, apuntalo a una soportada. Si apunta a una '
+              'que sí se conoce pero por un canal que no puede llevar la '
+              'credencial —`ssh://`, la forma corta '
+              '`usuario@host:duenio/repo`, o sin cifrar—, reescribí ese '
+              'mismo remoto en su forma `https` con `git remote set-url`. O '
+              'corré $ensayo, que no necesita forja.',
+    datos: {
+      'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
+      // **El discriminador que el texto humano de arriba ya tenía y el
+      // payload todavía no.** Sin esto, `error` queda con el mismo texto
+      // para las dos causas del segundo caso, y quien lee el payload en
+      // vez de la salida humana no puede distinguir una de otra —tendría
+      // que volver a parsear un mensaje pensado para persona—. Se manda
+      // `.name` de [CausaDeAusenciaDeForja], que es el mismo vocabulario
+      // ya estable que expone el paquete de la forja, y no una frase
+      // nueva inventada acá. No sale cuando no hay remoto: ese caso no
+      // tiene causa que distinguir, solo la ausencia.
+      //
+      // **Y con su propia clave, no `causa`.** Bajo esa clave viajaban tres
+      // enums distintos —el del desenlace, el del preflight y este—, y un
+      // consumidor automático no puede ramificar sobre una clave cuyo
+      // vocabulario depende de por dónde se detuvo la corrida.
+      if (causa != null) 'causaDeLaAusenciaDeForja': causa.name,
+    },
+    // **Y la correlación, cuando la hay.** Una corrida nueva todavía no
+    // emitió identidad —inventarle una afirmaría una corrida que no
+    // ocurrió—; un reintento sí la trae, es la de la corrida que se quería
+    // terminar, y las demás detenciones de ese camino ya la mandan.
+    runId: reintento,
+  );
+}
 
 /// Corre `ship` y devuelve el código de proceso.
 ///
@@ -680,149 +816,42 @@ Future<int> correrShipDelComando(
   final destinoDelRemoto = urlDelRemoto == null
       ? null
       : colaboradores.identidadDelDestinoDelRemoto(urlDelRemoto);
-  if (forja == null &&
-      _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
-    // **Los dos nulos de arriba —sin remoto, remoto sin forja— se dicen
-    // distinto, porque lo que hay que hacer es distinto**: agregar un remoto
-    // no es lo mismo que apuntarlo a otro lado. Un mensaje único obligaría a
-    // quien corre a averiguar cuál de los dos le pasó.
-    //
-    // **Y dentro del segundo, el texto humano TAMBIÉN distingue QUIÉN de POR
-    // DÓNDE.** Antes decía «ninguna forja conocida sabe atender esto» para
-    // los dos casos por igual, y bajo la definición de «atender» que exige el
-    // camino ENTERO —no solo el parseo— eso es cierto en los dos... pero
-    // manda a sospechar de la forja incluso cuando la forja SÍ se soporta y
-    // lo único que no se atiende es el canal por el que llegó el remoto: ahí
-    // el mensaje viejo hace salir a buscar un reemplazo que no hace falta.
-    // [CausaDeAusenciaDeForja] —del paquete de la forja, para no comparar acá
-    // el host que esta composición no tiene por qué conocer— es la que
-    // distingue una cosa de la otra. La rama de la forja desconocida volvió a
-    // esa frase por una razón distinta: la versión intermedia la escribía
-    // como «el remoto no es uno que NINGUNA forja conocida sepa atender»,
-    // que es una doble negación y comunica exactamente lo contrario de lo
-    // que pasa. Lo que cambió con esa distinción no fue esta rama: fue que
-    // la otra dejó de decir lo mismo.
-    //
-    // **El `queHacer` se queda con las dos salidas juntas, y no es una
-    // inconsistencia dejarlo así mientras el humano SÍ elige.** Ya nombraba
-    // las dos alternativas —apuntar a otra forja, o reescribir el remoto
-    // propio en su forma segura— y las dos siguen siendo ciertas cada una en
-    // su rama: que el texto humano ahora diga cuál de las dos aplica no
-    // vuelve falsa a ninguna, así que partirlo repetiría en dos lugares una
-    // distinción que ya vive en uno.
-    //
-    // **Y la URL no se imprime.** Un remoto puede llevar la credencial
-    // embebida en su parte de autoridad, y este mensaje sale por la salida
-    // estándar y por el payload de máquina: nombrarla la publicaría. Lo que
-    // se dice es el hecho, no el valor.
-    final sinRemoto = urlDelRemoto == null;
-    final causa = urlDelRemoto == null
-        ? null
-        : causaDeAusenciaDeForja(urlDelRemoto);
-
-    // **Qué quedó escrito, y qué ensayo alternativo corre de verdad, dependen
-    // de cuál de los dos modos entró acá.** Este control es anterior a la
-    // bifurcación, así que lo atraviesan los dos, y lo que valía para una
-    // corrida nueva era falso para el otro:
-    //
-    // - «No quedó ni un objeto ni un commit» es la premisa AL REVÉS de un
-    //   reintento: un reintento existe justamente porque SÍ hay un commit. Lo
-    //   que se puede afirmar para los dos es más angosto —esta invocación no
-    //   escribió nada— y eso es lo que se dice.
-    // - `--dry-run` a secas no es un ensayo de esta invocación: por el camino
-    //   del reintento sale con error de uso, porque sin la bandera del
-    //   reintento la invocación no declara ningún archivo y este comando no
-    //   infiere el árbol de trabajo. Una prohibición se instala con su
-    //   alternativa, y una alternativa que no corre no es una.
-    final reintento = entrada.reintentarPublicacion;
-    final loQueNoSeEscribio = reintento == null
-        ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
-              'commit.'
-        : 'Se detuvo antes de pedirle nada a la forja: esta invocación no '
-              'escribió nada, y el commit que dejó la corrida «$reintento» '
-              'quedó donde estaba.';
-    final ensayo = reintento == null
-        ? '`shipflow ship --dry-run`'
-        : '`shipflow ship --retry-publication $reintento --dry-run`';
-
-    return _detener(
-      impresora,
-      codigo: Codigo.errorDeConfiguracion,
-      humano: switch (causa) {
-        null =>
-          'shipflow ship: este repositorio no tiene remoto configurado, así '
-              'que esta corrida no podría abrir el pull request que promete.',
-        CausaDeAusenciaDeForja.forjaDesconocida =>
-          'shipflow ship: ninguna forja conocida sabe atender el remoto de '
-              'este repositorio, así que esta corrida no podría abrir el '
-              'pull request que promete.',
-        CausaDeAusenciaDeForja.protocoloNoAtendible =>
-          'shipflow ship: el remoto de este repositorio es de una forja '
-              'conocida, pero llega por un protocolo que esta corrida no '
-              'puede usar para publicar sin exponer la credencial, así que '
-              'no podría abrir el pull request que promete.',
-      },
-      queHacer: sinRemoto
-          ? '$loQueNoSeEscribio Agregale el remoto al que querés publicar, o '
-                'corré $ensayo, que no necesita forja.'
-          // **Nombra las dos alternativas aunque el humano de arriba ya
-          // haya elegido cuál aplica**, y no al revés: partir este texto en
-          // dos repetiría en un segundo lugar la misma distinción que ya
-          // vive en `causaDeAusenciaDeForja`, sin volver falsa a ninguna de
-          // las dos ramas.
-          //
-          // Y se dice cómo reescribir EL SUYO, no a dónde apuntarlo: la
-          // forma segura de ese mismo destino la sabe quien configuró el
-          // remoto, y proponerle una armada acá sería inventarle un destino
-          // que no eligió.
-          : '$loQueNoSeEscribio Si el remoto apunta a una forja que este '
-                'comando no conoce, apuntalo a una soportada. Si apunta a una '
-                'que sí se conoce pero por un canal que no puede llevar la '
-                'credencial —`ssh://`, la forma corta '
-                '`usuario@host:duenio/repo`, o sin cifrar—, reescribí ese '
-                'mismo remoto en su forma `https` con `git remote set-url`. O '
-                'corré $ensayo, que no necesita forja.',
-      datos: {
-        'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
-        // **El discriminador que el texto humano de arriba ya tenía y el
-        // payload todavía no.** Sin esto, `error` queda con el mismo texto
-        // para las dos causas del segundo caso, y quien lee el payload en
-        // vez de la salida humana no puede distinguir una de otra —tendría
-        // que volver a parsear un mensaje pensado para persona—. Se manda
-        // `.name` de [CausaDeAusenciaDeForja], que es el mismo vocabulario
-        // ya estable que expone el paquete de la forja, y no una frase
-        // nueva inventada acá. No sale cuando no hay remoto: ese caso no
-        // tiene causa que distinguir, solo la ausencia.
-        //
-        // **Y con su propia clave, no `causa`.** Bajo esa clave viajaban tres
-        // enums distintos —el del desenlace, el del preflight y este—, y un
-        // consumidor automático no puede ramificar sobre una clave cuyo
-        // vocabulario depende de por dónde se detuvo la corrida.
-        if (causa != null) 'causaDeLaAusenciaDeForja': causa.name,
-      },
-      // **Y la correlación, cuando la hay.** Una corrida nueva todavía no
-      // emitió identidad —inventarle una afirmaría una corrida que no
-      // ocurrió—; un reintento sí la trae, es la de la corrida que se quería
-      // terminar, y las demás detenciones de ese camino ya la mandan.
-      runId: reintento,
-    );
-  }
 
   // **La rama del reintento, y acá termina el camino.** Todo lo que sigue
   // —la identidad nueva, la previsualización, la pregunta de confirmación y
   // la orquestación de los dieciséis pasos— es de una corrida que empieza de
   // cero; un reintento no empieza nada: termina una que ya existe, y su
   // identidad es la que pidió quien corre, no una emitida acá.
+  //
+  // **Va ANTES de exigir forja, y ese orden es el arreglo.** Para un
+  // reintento, si se va a publicar o no lo decide el ESTADO del documento, no
+  // la bandera con la que se invocó — y el estado se lee ahí adentro. Exigir
+  // la forja acá arriba contestaba por la bandera: una corrida ya publicada
+  // sin remoto salía con error de configuración sin llegar nunca a la puerta,
+  // que tiene escrito que sale con éxito, con su URL y con el aviso del
+  // destino. La forja se exige ahora en el único punto del que no se vuelve
+  // sin pedirle un pull request — ver [SinForjaParaPublicar]— y este archivo
+  // arma el mismo mensaje cuando eso pasa.
   final runIdDelReintento = entrada.reintentarPublicacion;
   if (runIdDelReintento != null) {
     return await _correrElReintento(
       impresora,
       runId: runIdDelReintento,
       colaboradores: colaboradores,
-      forja: forja ?? const _ForjaAusente(),
+      forja: forja,
+      urlDelRemoto: urlDelRemoto,
       ramaActual: ramaActual,
       destinoActual: destinoDelRemoto,
       dryRun: entrada.dryRun,
+    );
+  }
+
+  if (forja == null &&
+      _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
+    return _detenerPorFaltaDeForja(
+      impresora,
+      urlDelRemoto: urlDelRemoto,
+      reintento: null,
     );
   }
 
@@ -1052,7 +1081,12 @@ Future<int> _correrElReintento(
   Impresora impresora, {
   required String runId,
   required ColaboradoresDeShip colaboradores,
-  required PullRequestSink forja,
+  required PullRequestSink? forja,
+
+  /// El remoto configurado, **solo para poder explicar por qué no hay forja**
+  /// si el camino llega a necesitarla. No se usa para decidir nada: quién
+  /// atiende ese remoto ya lo contestó quien armó [forja].
+  required String? urlDelRemoto,
   required String ramaActual,
   required String? destinoActual,
   required bool dryRun,
@@ -1154,6 +1188,17 @@ Future<int> _correrElReintento(
           'runIdDelDocumento': elDelDocumento,
         },
         runId: runId,
+      );
+
+    case SinForjaParaPublicar():
+      // **El mismo mensaje que una corrida nueva, por la misma función.** Lo
+      // que cambia entre los dos modos —qué no se escribió, y cuál es el
+      // ensayo que sí corre— ya lo distingue esa función a partir del
+      // identificador del reintento.
+      return _detenerPorFaltaDeForja(
+        impresora,
+        urlDelRemoto: urlDelRemoto,
+        reintento: runId,
       );
 
     case ReintentoRechazado(:final porQue):

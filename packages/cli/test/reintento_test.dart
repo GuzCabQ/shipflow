@@ -172,8 +172,18 @@ class ForjaDeLaPrueba {
 
   Future<void> cerrar() => _api.close(force: true);
 
-  /// El puerto de publicación de UNA corrida: el adapter real, envuelto.
-  PullRequestSink puerto({required String directorio, required String url}) {
+  /// El puerto de publicación de UNA corrida: el adapter real, envuelto, o
+  /// **nulo cuando la fábrica del paquete de la forja no atiende [url]**.
+  ///
+  /// **Nulo y no una excepción, y esto fue un hallazgo.** Antes lanzaba,
+  /// declarando que un nulo acá era un defecto del montaje. Pero el
+  /// colaborador que esta clase alimenta tiene el contrato de la composición
+  /// real —«nulo cuando ninguna forja conocida lo atiende»—, así que ese
+  /// lanzamiento dejaba a este mundo **sin poder representar un caso que la
+  /// producción sí tiene**: el remoto que nombra el mismo destino por un canal
+  /// que no puede llevar la credencial. La prueba que lo necesitaba salía
+  /// `70` —«se rompió el arnés»— en vez de medir nada.
+  PullRequestSink? puerto({required String directorio, required String url}) {
     final real = salidaDePrDelRemoto(
       urlDelRemoto: url,
       credenciales: const FuenteDeCredencialFalsa(
@@ -193,13 +203,7 @@ class ForjaDeLaPrueba {
       // por `PATH` porque su ruta difiere entre sistemas.
       programaDeGit: 'true',
     );
-    if (real == null) {
-      throw StateError(
-        'La fábrica del paquete de la forja no atiende «$url». Este mundo lo '
-        'compone con un remoto que sí atiende, así que un nulo acá es un '
-        'defecto del montaje, no un hecho de la corrida.',
-      );
-    }
+    if (real == null) return null;
     return _PuertoQueRegistra(this, real);
   }
 }
@@ -1158,43 +1162,38 @@ void main() {
     test(
       'sin remoto, el reintento sale por configuración y NO por el arnés',
       () async {
-        // **Ancla de la cláusula que deja publicar cuando hay reintento**, en
-        // la raíz de composición. El intérprete RECHAZA `--yes` junto con la
-        // bandera y acá no hay terminal, así que sin esa cláusula la
-        // composición contesta que esta corrida no podría publicar, se saltea
-        // la detención por falta de forja, y termina pidiéndole un pull request
-        // a la forja que no está compuesta: un error interno del arnés por no
-        // tener remoto configurado.
+        // **Lo que esta prueba ancla cambió de motivo, y el viejo era una
+        // cláusula que ya no existe.** Anclaba la rama de `_puedePublicar` que
+        // contestaba «un reintento publica» por la BANDERA: sin ella, la
+        // composición decía que esta corrida no podía publicar, se salteaba la
+        // detención por falta de forja y terminaba pidiéndole un pull request
+        // a la forja que no está compuesta — un `70` por no tener remoto.
+        //
+        // Esa rama se retiró: para un reintento, si se publica o no lo decide
+        // el ESTADO, y la forja se exige donde de verdad hace falta. Lo que
+        // sigue siendo cierto —y es lo que esta prueba mide ahora— es la
+        // propiedad, no la cláusula: **un reintento sin remoto sale por una
+        // precondición del entorno y nunca como arnés roto**, sin escribir
+        // nada y sin tocar la forja. Quién lo detiene hoy es la comparación
+        // del destino, que llega primero: sin remoto no hay destino que
+        // nombrar.
         final m = await MundoDeReintento.conDocumentoEn(
           EstadoDelDocumento.committed,
           sinRemoto: true,
         );
         final antes = await m.instantanea();
-        final r = await m.correr(m.runId);
+        final r = await m.correr(m.runId, json: true);
         expect(m.codigo(r), Codigo.errorDeConfiguracion);
-        expect(m.mensaje, contains('no tiene remoto configurado'));
         expect(
-          m.mensaje,
-          isNot(contains('error interno del arnés')),
+          m.codigo(r),
+          isNot(Codigo.errorInterno),
           reason: 'es una precondición del entorno, no el arnés roto',
         );
-        // **Y la acción, no solo el texto humano.** Esta prueba afirmaba el
-        // hecho y nunca lo que hay que hacer con él, así que no delataba dos
-        // cosas falsas por este camino: que «no quedó ni un objeto ni un
-        // commit» —la premisa de un reintento es que SÍ hay commit— y una
-        // alternativa que no corre.
         expect(
-          m.accion,
-          isNot(contains('no quedó ni un objeto ni un commit')),
-          reason: 'por este camino el commit existe: es la premisa entera',
+          m.payload['causaDeNoReintento'],
+          CausaDeNoReintento.destinoDistinto.name,
         );
-        expect(
-          m.accion,
-          contains('--retry-publication ${m.runId} --dry-run'),
-          reason:
-              'el ensayo alternativo tiene que ser el de ESTA invocación: '
-              'sin la bandera del reintento sale por error de uso',
-        );
+        expect(m.forja.recibidas, isEmpty);
         expect(await m.instantanea(), antes);
       },
     );
@@ -1335,7 +1334,7 @@ void main() {
       final otro = m.forja.puerto(
         directorio: m.raiz.path,
         url: 'https://github.com/otro/repositorio.git',
-      );
+      )!;
       await otro.open(
         PullRequestRequest(
           draft: doc.draft,
@@ -1443,21 +1442,118 @@ void main() {
       },
     );
 
-    test('con el remoto BORRADO, el reintento tampoco publica', () async {
-      // Sin remoto no hay destino que nombrar, y nulo nunca es igual al
-      // destino de un documento: entra por la misma puerta.
-      final m = await MundoDeReintento.conDocumentoEn(
-        EstadoDelDocumento.committed,
-      );
+    /// Le saca el remoto al repositorio de [m], como quien lo borró entre la
+    /// corrida que quedó a medias y el reintento.
+    void borrarElRemoto(MundoDeReintento m) {
       Process.runSync('git', [
         'remote',
         'remove',
         'origin',
       ], workingDirectory: m.raiz.path);
+    }
 
-      final d = await m.correr(m.runId);
+    test('con el remoto BORRADO, el reintento tampoco publica', () async {
+      // Este estado SÍ publicaría, así que se detiene. **Y lo hace por el
+      // destino, no por la falta de forja**: sin remoto no hay destino que
+      // nombrar, y nulo nunca es igual al destino de un documento, así que la
+      // comparación del destino llega primero. Queda medido para que la
+      // precedencia entre las dos sea un hecho y no una casualidad.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      borrarElRemoto(m);
+
+      final d = await m.correr(m.runId, json: true);
       expect(m.forja.pullRequestsAbiertos, 0);
       expect(m.codigo(d), Codigo.errorDeConfiguracion);
+      expect(
+        m.payload['causaDeNoReintento'],
+        CausaDeNoReintento.destinoDistinto.name,
+      );
+    });
+
+    test('con el MISMO destino por un canal que no lleva la credencial, se '
+        'detiene por falta de forja', () async {
+      // **El único caso donde la falta de forja decide un reintento**, y por
+      // eso es el ancla de que exigirla más tarde no es no exigirla. El
+      // destino es el MISMO —la forma corta nombra el mismo repositorio—,
+      // así que la puerta dice que se publica; lo que no hay es un canal que
+      // pueda llevar la credencial, y eso lo contesta el paquete de la
+      // forja, no esta comparación.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      m.mudarElRemoto('git@github.com:duenio/repo.git');
+
+      final antes = await m.instantanea();
+      final d = await m.correr(m.runId);
+      expect(m.codigo(d), Codigo.errorDeConfiguracion);
+      expect(m.forja.recibidas, isEmpty);
+      expect(m.mensaje, contains('no puede usar para publicar'));
+      // **Y la acción, no solo el texto humano.** Es el mensaje de una corrida
+      // nueva reusado por el reintento, y reusar un desenlace arrastra su
+      // prosa: las dos cosas que serían falsas acá son que «no quedó ni un
+      // objeto ni un commit» —la premisa de un reintento es que SÍ hay
+      // commit— y un ensayo alternativo que no corre.
+      expect(
+        m.accion,
+        isNot(contains('no quedó ni un objeto ni un commit')),
+        reason: 'por este camino el commit existe: es la premisa entera',
+      );
+      expect(
+        m.accion,
+        contains('--retry-publication ${m.runId} --dry-run'),
+        reason:
+            'el ensayo alternativo tiene que ser el de ESTA invocación: sin '
+            'la bandera del reintento sale por error de uso',
+      );
+      expect(await m.instantanea(), antes);
+    });
+
+    test(
+      'una corrida YA PUBLICADA con el remoto BORRADO sale con ÉXITO y con su '
+      'URL',
+      () async {
+        // **El par simétrico que faltaba, y es el que hacía convivir dos
+        // decisiones incompatibles en verde.** Había prueba de corrida ya
+        // publicada con OTRO remoto —sale con éxito y su URL— y de corrida
+        // commiteada con el remoto BORRADO —se detiene—, y ninguna de las dos
+        // tocaba esta casilla: ya publicada Y sin remoto. Ahí la raíz de
+        // composición exigía forja antes de preguntarle a la puerta, así que
+        // contestaba lo contrario de lo que la puerta tiene escrito.
+        //
+        // Este camino no publica: no hay ninguna publicación que la falta de
+        // remoto pueda guardar, y quien borró el remoto sigue necesitando
+        // saber dónde quedó aquella.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.publicationComplete,
+        );
+        borrarElRemoto(m);
+
+        final d = await m.correr(m.runId);
+        expect(m.codigo(d), Codigo.exito);
+        expect(m.forja.recibidas, isEmpty);
+        expect(m.accion, contains(_urlYaAnotada));
+      },
+    );
+
+    test('un CAS rechazado con el remoto BORRADO dice que no hay nada que '
+        'entregar', () async {
+      // El otro estado que no publica, por el mismo motivo: su alternativa
+      // —volver a correr `ship`— es cierta con remoto y sin él, y culpar a
+      // la falta de remoto manda a configurar algo que no habría cambiado
+      // nada.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.notApplied,
+      );
+      borrarElRemoto(m);
+
+      final d = await m.correr(m.runId, json: true);
+      expect(m.codigo(d), Codigo.errorDeConfiguracion);
+      expect(
+        m.payload['causaDeNoReintento'],
+        CausaDeNoReintento.nadaQueEntregar.name,
+      );
     });
 
     test('el MISMO destino escrito distinto no detiene nada', () async {
