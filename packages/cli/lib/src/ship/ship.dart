@@ -131,10 +131,15 @@ Future<ShipOutcome> correrShip({
   required CredentialSource credenciales,
 
   /// Bajo qué clave del entorno viaja la credencial de la forja. **La elige
-  /// quien compone**, porque `ship` no sabe quién es la forja; con la de
-  /// GitHub, la que hay que pasar es `claveDeCredencialDeLaForja` —la misma que lee su
-  /// adapter—. Pasar otra deja al preflight aprobando por una clave y a la
-  /// publicación fallando por otra, sin que nada lo explique.
+  /// quien compone**, porque `ship` no sabe quién es la forja.
+  ///
+  /// El preflight aprueba leyendo ESTA clave y quien publica lee con la que le
+  /// hayan armado: si fueran dos elecciones, el preflight aprobaría por una y
+  /// la publicación fallaría por otra, sin que nada lo explique. **Ya no son
+  /// dos**: desde que la salida de pull requests se construye con una fábrica,
+  /// la clave viaja hasta adentro del adapter y la raíz de composición la
+  /// decide una sola vez. Antes el adapter la traía escrita adentro y esta
+  /// frase solo podía pedir que coincidieran.
   required String claveDeCredencial,
   required PullRequestSink forja,
   required RegistroDeCorridas registro,
