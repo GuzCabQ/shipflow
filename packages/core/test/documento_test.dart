@@ -147,10 +147,27 @@ void main() {
   });
 
   test('desde el estado inconsistente se puede promover a commiteado', () {
-    final d = documentoDePrueba(EstadoDelDocumento.localInconsistent);
+    // CON su desenlace puesto, no el documento sin desenlace de
+    // [documentoDePrueba]: ese solo prueba la forma del grafo, y esta arista
+    // tiene un defecto que un desenlace nulo no puede delatar —medido—.
+    // `avanzarA` arrastraba el desenlace anterior sin mirar el destino, así
+    // que promover a `committed` con `LocalInconsistente` todavía puesto
+    // construía un documento que afirmaba los dos estados a la vez, y el
+    // constructor lo rechazaba SIEMPRE: la arista estaba en el mapa y no se
+    // podía tomar sobre ningún documento real, el único que
+    // `--retry-publication` encuentra en el disco.
+    final d = preparado().avanzarA(
+      EstadoDelDocumento.localInconsistent,
+      desenlace: ShipOutcome.localInconsistenteParaLaPrueba(revision: 'a' * 40),
+    );
+    final promovido = d.avanzarA(EstadoDelDocumento.committed);
+    expect(promovido.estado, EstadoDelDocumento.committed);
     expect(
-      d.avanzarA(EstadoDelDocumento.committed).estado,
-      EstadoDelDocumento.committed,
+      promovido.desenlace,
+      isNull,
+      reason:
+          '`committed` no admite desenlace: el que traía se descarta, '
+          'no se arrastra',
     );
   });
 

@@ -242,6 +242,31 @@ final class Ambigua extends Reconciliacion {
   const Ambigua(this.causa, this.detalle);
 }
 
+/// La reparación concreta para un índice que no coincide con [revision] en
+/// [rutas], como una frase que se puede pegar entera adentro de un mensaje.
+///
+/// **Un solo lugar para las dos reconciliaciones de §9 que se topan con esto**
+/// —la de los cinco pasos, más abajo, y la de [comprobarIndice] desde
+/// `localInconsistent`—: las dos reparan exactamente lo mismo, con el mismo
+/// comando, y escribir el texto dos veces las deja libres para divergir la
+/// primera vez que alguien corrija una sin acordarse de la otra.
+///
+/// **Cada ruta va citada, y no es un detalle de estilo.** Medido: sin
+/// comillas, una ruta con un espacio se parte en dos argumentos apenas
+/// alguien pega el comando en una terminal —«ruta con espacio.txt» se
+/// convierte en tres pathspecs, dos de los cuales no existen—, `git` sale
+/// con código cero de todos modos, y el índice queda exactamente tan
+/// desincronizado como antes de correrlo: un consejo que no repara es peor
+/// que no darlo.
+String _reparacionDelIndice({
+  required String revision,
+  required List<String> rutas,
+}) {
+  final citadas = rutas.map((ruta) => "'$ruta'").join(' ');
+  return 'corré `git reset $revision -- $citadas`, que reescribe el índice '
+      'en esas rutas sin tocar el árbol de trabajo, y reintentá';
+}
+
 /// La reconciliación de los cinco pasos de §9, desde un documento en
 /// `prepared`.
 ///
@@ -384,8 +409,8 @@ Reconciliacion reconciliar({
       CausaDeAmbiguedad.indiceDistinto,
       'El índice de quien corre no coincide con esta revisión en: '
       '${hechos.rutasQueDifieren.join(", ")}. No se puede promover con el '
-      'índice desincronizado: la acción es reconciliar a mano esas rutas '
-      'contra «${documento.revision}» antes de reintentar.',
+      'índice desincronizado: '
+      '${_reparacionDelIndice(revision: documento.revision, rutas: hechos.rutasQueDifieren)}.',
     );
   }
 
@@ -465,15 +490,13 @@ IndiceDelReintento comprobarIndice({
     );
   }
   if (rutasQueDifieren.isEmpty) return const IndiceCoincide();
-  final rutas = rutasQueDifieren.join(' ');
   return IndiceNoCoincide(
     rutas: rutasQueDifieren,
     detalle:
         'El índice de quien corre no coincide con la revisión '
         '«${documento.revision}» en: ${rutasQueDifieren.join(", ")}. No se '
-        'puede promover con el índice desincronizado: corré `git reset '
-        '${documento.revision} -- $rutas`, que reescribe el índice en esas '
-        'rutas sin tocar el árbol de trabajo, y reintentá.',
+        'puede promover con el índice desincronizado: '
+        '${_reparacionDelIndice(revision: documento.revision, rutas: rutasQueDifieren)}.',
   );
 }
 

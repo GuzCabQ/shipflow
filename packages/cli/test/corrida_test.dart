@@ -119,24 +119,6 @@ DocumentoDeCorrida documentoEn(EstadoDelDocumento estado) {
   };
 }
 
-/// Un documento en `localInconsistent`, **sin desenlace adjunto**.
-///
-/// Uno real que llega a este estado sí carga un desenlace —ver
-/// [documentoEn]—, pero acarrearlo acá impediría probar la promoción de §9:
-/// [DocumentoDeCorrida.avanzarA] arrastra el desenlace del documento anterior
-/// cuando no se le pasa uno nuevo, así que promover a `committed` con ese
-/// desenlace todavía puesto construiría un documento que afirma `committed` y
-/// el estado anterior a la vez, y el constructor lo rechaza. Un desenlace
-/// nulo nunca es incoherente con ningún estado, así que dejarlo afuera es lo
-/// que deja construible el camino que [comprobarIndice] necesita probar, sin
-/// que esta prueba tenga que inventarle a esa función una dependencia del
-/// desenlace que su firma no pide: solo lee el estado y la revisión del
-/// documento.
-DocumentoDeCorrida documentoInconsistente() => DocumentoDeCorrida.preparado(
-  revision: 'a' * 40,
-  draft: _draftDePrueba(branch: ramaDeLosDocumentosDePrueba),
-).avanzarA(EstadoDelDocumento.localInconsistent);
-
 void main() {
   late Directory temporal;
 
@@ -396,25 +378,36 @@ void main() {
     expect((r as Ambigua).causa, CausaDeAmbiguedad.mensajeDistinto);
   });
 
-  test('si el índice difiere EN LAS RUTAS, falla cerrado y las nombra', () {
-    final d = documentoPreparado();
-    final r = reconciliar(
-      documento: d,
-      headActual: d.revision,
-      hechos: HechosDeLaRevision(
-        padre: d.draft.artefacto.candidato.baseRevision,
-        arbol: d.draft.artefacto.candidato.contentRevision,
-        mensaje: d.draft.artefacto.intent,
-        rutasQueDifieren: const ['lib/a.dart'],
-      ),
-    );
-    expect((r as Ambigua).causa, CausaDeAmbiguedad.indiceDistinto);
-    expect(
-      r.detalle,
-      contains('lib/a.dart'),
-      reason: 'una acción que no nombra el archivo no dice qué hacer',
-    );
-  });
+  test(
+    'si el índice difiere EN LAS RUTAS, falla cerrado y NOMBRA el comando',
+    () {
+      final d = documentoPreparado();
+      final r = reconciliar(
+        documento: d,
+        headActual: d.revision,
+        hechos: HechosDeLaRevision(
+          padre: d.draft.artefacto.candidato.baseRevision,
+          arbol: d.draft.artefacto.candidato.contentRevision,
+          mensaje: d.draft.artefacto.intent,
+          rutasQueDifieren: const ['lib/a.dart'],
+        ),
+      );
+      expect((r as Ambigua).causa, CausaDeAmbiguedad.indiceDistinto);
+      expect(
+        r.detalle,
+        allOf(
+          contains('lib/a.dart'),
+          contains('git reset'),
+          contains(d.revision),
+        ),
+        reason:
+            '«reconciliar a mano» no dice qué correr: es la misma '
+            'prohibición sin alternativa que la regla dura del proyecto no '
+            'permite, y esta reconciliación repara el índice exactamente '
+            'igual que la del estado inconsistente',
+      );
+    },
+  );
 
   test(
     'con el HEAD en la base, los cinco pasos NO deciden: se reintenta el CAS',
@@ -543,7 +536,11 @@ void main() {
   });
 
   test('el índice que coincide deja promover', () {
-    final d = documentoInconsistente();
+    // Con SU desenlace puesto —el que [ShipOutcome.derivar] deja en
+    // cualquier documento real que llegue a este estado—, no la forma sin
+    // desenlace que un helper más viejo usaba para esquivar el problema de
+    // la arista de abajo.
+    final d = documentoEn(EstadoDelDocumento.localInconsistent);
     expect(
       comprobarIndice(documento: d, rutasQueDifieren: const []),
       isA<IndiceCoincide>(),
@@ -551,7 +548,7 @@ void main() {
   });
 
   test('el índice que no coincide falla cerrado y NOMBRA las rutas', () {
-    final d = documentoInconsistente();
+    final d = documentoEn(EstadoDelDocumento.localInconsistent);
     final r = comprobarIndice(
       documento: d,
       rutasQueDifieren: const ['lib/a.dart', 'lib/b.dart'],
@@ -560,14 +557,55 @@ void main() {
     expect((r as IndiceNoCoincide).rutas, ['lib/a.dart', 'lib/b.dart']);
   });
 
-  test('la promoción desde el estado inconsistente es legal', () {
-    final d = documentoInconsistente();
+  test('el comando de reparación cita cada ruta: un espacio no lo rompe', () {
+    // Medido en un repositorio temporal: sin comillas, `git reset` recibe
+    // la ruta partida en dos pathspecs, sale con código cero y el índice
+    // queda exactamente tan desincronizado como antes de correrlo.
+    final d = documentoEn(EstadoDelDocumento.localInconsistent);
+    final r =
+        comprobarIndice(
+              documento: d,
+              rutasQueDifieren: const ['ruta con espacio.txt', 'otra.txt'],
+            )
+            as IndiceNoCoincide;
     expect(
-      d.avanzarA(EstadoDelDocumento.committed).estado,
+      r.detalle,
+      allOf(
+        contains("'ruta con espacio.txt'"),
+        contains("'otra.txt'"),
+        contains('git reset'),
+      ),
+      reason:
+          'cada ruta va citada individualmente, no solo unida con espacios '
+          'en una sola cadena sin comillas',
+    );
+  });
+
+  test('la promoción desde el estado inconsistente es legal', () {
+    // Con SU desenlace puesto, y llamando a la función de esta tarea: es la
+    // corrección de una ronda de arreglos anterior, que medida encontró que
+    // la versión previa —un documento sin desenlace, sin pasar por
+    // comprobarIndice— pasaba igual con una arista que ningún documento
+    // real de producción podía tomar. `avanzarA` descarta el desenlace de
+    // `localInconsistent` porque `committed` no admite ninguno —ver
+    // `_admiteDesenlace` en el documento—; antes de esa corrección, el
+    // desenlace se arrastraba sin mirar el destino y esto lanzaba SIEMPRE.
+    final d = documentoEn(EstadoDelDocumento.localInconsistent);
+    final r = comprobarIndice(documento: d, rutasQueDifieren: const []);
+    expect(r, isA<IndiceCoincide>());
+    final promovido = d.avanzarA(EstadoDelDocumento.committed);
+    expect(
+      promovido.estado,
       EstadoDelDocumento.committed,
       reason:
-          'sin la arista de la tarea 4 esto lanza, y el camino de §9 no '
-          'sería construible',
+          'sin la arista de la tarea 4, o con el desenlace de este estado '
+          'todavía puesto, esto lanza, y el camino de §9 no sería '
+          'construible',
+    );
+    expect(
+      promovido.desenlace,
+      isNull,
+      reason: '`committed` no admite desenlace: el que traía se descarta',
     );
   });
 

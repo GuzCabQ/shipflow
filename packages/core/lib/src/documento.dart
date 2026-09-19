@@ -142,6 +142,42 @@ class DocumentoDeCorrida {
         PublicacionIncompleta() => EstadoDelDocumento.publicationIncomplete,
       };
 
+  /// Si un documento en [estado] puede llevar un desenlace, o si por ese
+  /// estado nunca pasa ninguno.
+  ///
+  /// **Es [estadoQueAfirma] mirado al revés** —cuáles son los estados que
+  /// aparecen en su imagen—, pero escrito como su propio `switch` exhaustivo
+  /// en vez de derivado en tiempo de ejecución: [ShipOutcome] es una clase
+  /// sellada y no expone la lista de sus variantes, así que no hay forma de
+  /// recorrer la imagen de [estadoQueAfirma] sin construir una instancia de
+  /// cada una solo para preguntarle. **Sin comodín**, por el mismo motivo que
+  /// ya vale para el `switch` de la puerta del reintento: un
+  /// [EstadoDelDocumento] nuevo no compila hasta que alguien decida acá si
+  /// afirma un desenlace o viaja siempre sin ninguno.
+  ///
+  /// **De acá sale el arreglo al defecto que [avanzarA] tenía.** Antes, el
+  /// desenlace que no se pasaba se arrastraba siempre, sin mirar el destino:
+  /// avanzar de un estado CON desenlace afirmado —`localInconsistent`— a uno
+  /// que nunca lleva ninguno —`committed`— arrastraba igual el desenlace
+  /// viejo, y el documento resultante afirmaba dos estados a la vez: el
+  /// nuevo por su campo `estado`, el viejo por el desenlace que seguía
+  /// adentro. La arista existía en el mapa de [_transiciones] y no se podía
+  /// tomar nunca, sobre un documento real —el único que un
+  /// `--retry-publication` de verdad encuentra en el disco—: **medido**, y es
+  /// el motivo de este método. Con [avanzarA] preguntando esto antes de
+  /// decidir qué desenlace lleva el documento nuevo, el destino es quien
+  /// decide si el desenlace anterior lo acompaña o se descarta —nunca quien
+  /// llama, que hoy no tiene con qué distinguir «no paso ninguno, arrastrá
+  /// el que había» de «no paso ninguno, quiero que no lleve ninguno»—.
+  static bool _admiteDesenlace(EstadoDelDocumento estado) => switch (estado) {
+    EstadoDelDocumento.prepared => false,
+    EstadoDelDocumento.committed => false,
+    EstadoDelDocumento.publicationComplete => true,
+    EstadoDelDocumento.publicationIncomplete => true,
+    EstadoDelDocumento.notApplied => true,
+    EstadoDelDocumento.localInconsistent => true,
+  };
+
   /// Por qué [estado] y [desenlace] no pueden ir juntos, o nulo si sí pueden.
   ///
   /// Un desenlace nulo nunca es incoherente: significa «todavía no hay
@@ -258,10 +294,29 @@ class DocumentoDeCorrida {
   /// mismo. Sin la segunda, `avanzarA(notApplied, desenlace: Publicado(…))`
   /// se construía, se persistía y se releía.
   ///
-  /// El desenlace que no se pasa **se arrastra**, y la comprobación es sobre
-  /// el arrastrado: avanzar de `publicationIncomplete` a
-  /// `publicationComplete` sin dar el desenlace nuevo deja adentro el que
-  /// dice «la publicación no se completó», y eso ya no pasa.
+  /// **El desenlace que decide [destino], no quien llama.** Cuando no se pasa
+  /// uno nuevo, el desenlace del documento resultante sale de
+  /// [_admiteDesenlace]: si [destino] afirma alguno, se arrastra el que ya
+  /// había —así avanzar de `publicationIncomplete` a `publicationComplete`
+  /// sin dar el desenlace nuevo sigue dejando adentro el que dice «la
+  /// publicación no se completó», y el chequeo del constructor lo rechaza—;
+  /// si [destino] nunca lleva ninguno, el que había se descarta, sin
+  /// excepción. **Esto no es una opción de diseño entre varias parejas: es lo
+  /// único que deja tomable la arista `localInconsistent → committed`** sobre
+  /// un documento real —el que [ShipOutcome.derivar] efectivamente
+  /// persiste—, que llega con [LocalInconsistente] adentro. Arrastrar ese
+  /// desenlace sin mirar [destino] —la versión anterior de este método— hacía
+  /// que esa arista, aunque estuviera en [_transiciones], no se pudiera tomar
+  /// nunca: el documento resultante afirmaba `committed` por su [estado] y
+  /// `localInconsistent` por el desenlace que seguía adentro, y el
+  /// constructor la rechazaba siempre. Quedaba en quien llama pasar un
+  /// desenlace nulo para limpiarlo, y eso tampoco alcanzaba: un parámetro
+  /// opcional en `null` no distingue «no paso ninguno, arrastrá el que
+  /// había» de «no paso ninguno, quiero que no lleve ninguno». El invariante
+  /// pasa a ser estructural —lo decide [destino], nunca un argumento que
+  /// nadie puede usar para pedir lo segundo— en vez de un deber de quien
+  /// llama, que es el mismo argumento con el que esta clase entera ya
+  /// justifica devolver un documento nuevo en vez de mutar.
   DocumentoDeCorrida avanzarA(
     EstadoDelDocumento destino, {
     ShipOutcome? desenlace,
@@ -277,7 +332,8 @@ class DocumentoDeCorrida {
       estado: destino,
       revision: revision,
       draft: draft,
-      desenlace: desenlace ?? this.desenlace,
+      desenlace:
+          desenlace ?? (_admiteDesenlace(destino) ? this.desenlace : null),
     );
   }
 
