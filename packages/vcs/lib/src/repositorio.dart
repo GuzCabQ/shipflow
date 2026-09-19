@@ -952,7 +952,7 @@ class RepositorioGit implements ChangeSink {
       arbol,
       '--',
       ...rutas,
-    ])).split(' ').where((s) => s.isNotEmpty).toSet();
+    ])).split('\u0000').where((s) => s.isNotEmpty).toSet();
 
     final diferentes = <String>{};
     if (enElArbol.isNotEmpty) {
@@ -979,7 +979,7 @@ class RepositorioGit implements ChangeSink {
         '--cached',
         '--',
         ...fueraDelArbol,
-      ])).split(' ').where((s) => s.isNotEmpty);
+      ])).split('\u0000').where((s) => s.isNotEmpty);
       diferentes.addAll(enElIndice);
     }
 
