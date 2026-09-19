@@ -276,7 +276,19 @@ void main() {
         'https://github.com/duenio/repo.git',
         baseDeLaApi: Uri.parse('http://127.0.0.1:${api.port}'),
       )!;
-      await salida.open(solicitud());
+      final r = await salida.open(solicitud());
+      // **El canal primero, y después lo que viajó por él.** `everyElement`
+      // sobre una lista vacía pasa: con la clave fija adentro del adapter la
+      // fuente no contesta, la publicación sale por fallo de autenticación
+      // sin tocar la red, y la aserción de abajo quedaría verde sin haber
+      // mirado ni una cabecera. Lo que la hace medir es exigir que hubiera
+      // pedidos — y que la publicación de verdad se abriera.
+      expect(r, isA<PullRequestOpen>());
+      expect(
+        autorizaciones,
+        isNotEmpty,
+        reason: 'hubo pedidos: hay dónde buscar el secreto',
+      );
       expect(
         autorizaciones,
         everyElement(contains(secretoDePrueba)),
