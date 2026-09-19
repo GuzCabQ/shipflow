@@ -843,6 +843,48 @@ void main() {
       );
     });
 
+    test('el payload de máquina distingue las dos causas, no solo el texto '
+        'humano', () async {
+      // **El hueco que esta prueba cierra.** El texto humano ya distingue
+      // forja desconocida de protocolo no atendible —las pruebas de
+      // arriba lo miden—, pero antes `data.error` decía lo mismo
+      // («remoto sin forja que lo atienda») para las dos causas. Un
+      // consumidor automático no puede leer un texto pensado para
+      // persona: necesita una clave que sea DISTINTA en cada rama.
+      Future<Object?> causaDe(String remoto) async {
+        final mundo = Mundo(remoto: remoto);
+        final (codigo, salida, _) = await mundo.correr([
+          ..._invocacion,
+          '--yes',
+          '--json',
+        ]);
+        expect(codigo, Codigo.errorDeConfiguracion);
+        final datos = lineas(salida).last['data']! as Map;
+        return datos['causa'];
+      }
+
+      final causaForjaDesconocida = await causaDe(remotoAjeno);
+      final causaProtocolo = await causaDe(remotoAtendidoSinCanalSeguro);
+
+      expect(
+        causaForjaDesconocida,
+        CausaDeAusenciaDeForja.forjaDesconocida.name,
+        reason:
+            'el discriminador usa el mismo vocabulario que ya expone '
+            'causaDeAusenciaDeForja, no una frase nueva',
+      );
+      expect(causaProtocolo, CausaDeAusenciaDeForja.protocoloNoAtendible.name);
+      // La afirmación que de verdad importa: si las dos ramas emitieran
+      // el mismo valor, la distinción no llegó al payload aunque las dos
+      // líneas de arriba pasaran cada una por separado con literales
+      // distintos escritos a mano.
+      expect(
+        causaForjaDesconocida,
+        isNot(causaProtocolo),
+        reason: 'dos causas distintas no pueden compartir discriminador',
+      );
+    });
+
     test('la URL del remoto NO se imprime por la salida estándar', () async {
       // **Primero el canal, después la ausencia.** Un remoto puede llevar la
       // credencial embebida en su autoridad, y esta detención es el único

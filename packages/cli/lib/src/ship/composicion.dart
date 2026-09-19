@@ -555,6 +555,16 @@ Future<int> correrShipDelComando(
                 'no necesita forja.',
       datos: {
         'error': sinRemoto ? 'sin remoto' : 'remoto sin forja que lo atienda',
+        // **El discriminador que el texto humano de arriba ya tenía y el
+        // payload todavía no.** Sin esto, `error` queda con el mismo texto
+        // para las dos causas del segundo caso, y quien lee el payload en
+        // vez de la salida humana no puede distinguir una de otra —tendría
+        // que volver a parsear un mensaje pensado para persona—. Se manda
+        // `.name` de [CausaDeAusenciaDeForja], que es el mismo vocabulario
+        // ya estable que expone el paquete de la forja, y no una frase
+        // nueva inventada acá. No sale cuando no hay remoto: ese caso no
+        // tiene causa que distinguir, solo la ausencia.
+        if (causa != null) 'causa': causa.name,
       },
     );
   }
