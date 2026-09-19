@@ -506,4 +506,36 @@ void main() {
       ..['formatVersion'] = 99;
     expect(() => DocumentoDeCorrida.fromJson(json), throwsFormatException);
   });
+
+  group('la revisión de un documento leído tiene que ser un OID completo', () {
+    // **La frontera donde un JSON se vuelve un documento de confianza es
+    // donde corresponde rechazar una forma imposible.** La revisión se
+    // interpola en el refspec del empuje, en el marcador estable, en las
+    // comparaciones con lo que devuelve la forja y en el comando de
+    // reparación que una persona va a pegar en su terminal: lo que la
+    // protege no puede ser cada uno de esos sitios por separado.
+    final imposibles = {
+      'no es hexadecimal': 'no-es-un-oid',
+      'está vacía': '',
+      'es una abreviatura': 'abc1234',
+      'trae un comando pegado detrás': "x'; touch /tmp/pwn; echo '",
+      'trae un salto de línea': 'a' * 40 + '\nmas',
+    };
+    imposibles.forEach((porQue, revision) {
+      test('«$revision» ($porQue) se rechaza al leer', () {
+        final json = Map<String, Object?>.from(preparado().toJson())
+          ..['revision'] = revision;
+        expect(() => DocumentoDeCorrida.fromJson(json), throwsFormatException);
+      });
+    });
+
+    test('un OID completo en mayúsculas SÍ se lee', () {
+      // El control negativo: `esOidCompleto` acepta mayúsculas a propósito
+      // —git resuelve el mismo objeto—, así que rechazarlas afirmaría que un
+      // OID válido no lo es.
+      final json = Map<String, Object?>.from(preparado().toJson())
+        ..['revision'] = 'A' * 40;
+      expect(DocumentoDeCorrida.fromJson(json).revision, 'A' * 40);
+    });
+  });
 }

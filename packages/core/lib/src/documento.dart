@@ -5,6 +5,7 @@
 library;
 
 import 'corrida.dart';
+import 'entidades.dart';
 import 'publicacion.dart';
 
 enum EstadoDelDocumento {
@@ -67,6 +68,14 @@ class DocumentoDeCorrida {
   ///   la corrida y el reintento hacía que la búsqueda idempotente ocurriera
   ///   en OTRO repositorio, donde no podía encontrar el pull request, y se
   ///   abría un segundo.
+  /// - 2026-09-19 — [revision] pasó a exigirse como OID completo AL LEER (4c,
+  ///   segunda revisión humana, P2). **No es un campo nuevo: es un
+  ///   estrechamiento de lo que se acepta**, y entra en esta lista por lo
+  ///   mismo que los otros tres —un documento que antes se leía ahora se
+  ///   rechaza, que es un cambio de forma tanto como agregar un campo—. Nada
+  ///   que haya escrito una corrida real cambia de comportamiento: la
+  ///   revisión sale de crear el objeto commit, así que siempre fue un OID
+  ///   completo.
   ///
   /// **Cuándo deja de serlo.** El día que llegue la pila entera —4a, 4b y
   /// 4c, integradas—, esa garantía desaparece: cualquier corrida de `ship`
@@ -496,9 +505,42 @@ class DocumentoDeCorrida {
         'reintento no puede comprobar que siga publicando ahí.',
       );
     }
+    // **La frontera donde un JSON se vuelve un documento de confianza es
+    // donde corresponde rechazar una forma imposible.** La revisión no es una
+    // cadena cualquiera: se interpola en el refspec del empuje
+    // —`<revisión>:refs/heads/<rama>`—, en el marcador estable que la
+    // búsqueda idempotente busca, en las comparaciones con lo que devuelve la
+    // forja, y en el comando de reparación que una persona va a pegar en su
+    // terminal. Comprobar solo que sea una cadena dejaba esa frontera
+    // incompleta: protegerla en cada uno de esos sitios por separado es
+    // cuatro copias de la misma regla, y la primera que se olvide no la
+    // delata nadie.
+    //
+    // **Acá y no en el constructor**, y la diferencia es de dónde viene el
+    // valor. Al constructor lo alimenta este mismo árbol, con lo que devuelve
+    // crear el objeto commit — siempre un OID completo, por construcción.
+    // `fromJson` es el ÚNICO lugar donde un valor de afuera se vuelve un
+    // documento, y por lo tanto el único donde hay algo que desconfiar.
+    //
+    // **Residuo declarado, y tiene su cobertura en otro lado:** un documento
+    // construido en memoria con una revisión imposible sigue siendo
+    // construible, y el comando de reparación lo trataría como texto. Por eso
+    // ese comando cita TODOS sus argumentos —también la revisión—, en vez de
+    // razonar sitio por sitio si hace falta.
+    final revision = json['revision']! as String;
+    if (!esOidCompleto(revision)) {
+      throw FormatException(
+        'El documento dice que su revisión es «$revision», que no es un '
+        'identificador de objeto completo. Un documento que una corrida real '
+        'escribió siempre lo lleva —sale de crear el objeto commit—, así que '
+        'esto no es una forma más vieja: es un documento alterado, y lo que '
+        'ese valor toca son el refspec del empuje, la clave de la búsqueda '
+        'idempotente y un comando que se le recomienda pegar a una persona.',
+      );
+    }
     return DocumentoDeCorrida._(
       estado: estado,
-      revision: json['revision']! as String,
+      revision: revision,
       draft: draft,
       destino: destino,
       desenlace: desenlace,

@@ -331,13 +331,25 @@ String citarParaShell(String argumento) =>
 /// el doc de esa función: envolver a mano rompe el comando ante una ruta que
 /// lleve un apóstrofo, que es un carácter perfectamente válido en un nombre
 /// de archivo.
+///
+/// **Se cita CADA argumento, incluida [revision], y eso es una regla y no una
+/// evaluación caso por caso.** Lo que impide que una revisión imposible
+/// llegue hasta acá es que se la rechaza al leer el documento —ver
+/// `DocumentoDeCorrida.fromJson`—, y ésa es la protección de verdad. Citarla
+/// igual es lo que hace TOTAL la regla de armar un comando recomendado:
+/// «éste no hace falta porque lo valida otro» es un acoplamiento que se rompe
+/// el día que el otro cambia, y acá el precio de romperse es un comando que
+/// una persona pega en su terminal porque se lo recomendamos nosotros. Cuesta
+/// una llamada y sobre un OID válido no cambia nada de lo que el comando
+/// hace.
 String _reparacionDelIndice({
   required String revision,
   required List<String> rutas,
 }) {
   final citadas = rutas.map(citarParaShell).join(' ');
-  return 'corré `git reset $revision -- $citadas`, que reescribe el índice '
-      'en esas rutas sin tocar el árbol de trabajo, y reintentá';
+  return 'corré `git reset ${citarParaShell(revision)} -- $citadas`, que '
+      'reescribe el índice en esas rutas sin tocar el árbol de trabajo, y '
+      'reintentá';
 }
 
 /// La reconciliación de los cinco pasos de §9, desde un documento en

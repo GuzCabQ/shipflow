@@ -957,6 +957,54 @@ void _pruebasDelCitado() {
       );
     });
 
+    test('la REVISIÓN también va citada, no solo las rutas', () async {
+      // **La frontera del comando tiene dos sitios de interpolación, y uno
+      // quedaba sin citar.** El arreglo de verdad es que la revisión no pueda
+      // ser otra cosa que un OID completo, y eso se rechaza al leer el
+      // documento. Esto es lo otro: que la regla de armar un comando
+      // recomendado sea TOTAL —todo argumento pasa por `citarParaShell`— y no
+      // caso por caso. «Éste no hace falta porque lo valida otro» es
+      // exactamente la clase de acoplamiento que se rompe el día que el otro
+      // cambia, y acá el precio de romperse es un comando que una persona
+      // pega en su terminal porque se lo recomendamos nosotros.
+      //
+      // El documento se construye en memoria: quien valida es la lectura de
+      // JSON, así que ésta es la puerta que esa validación NO cubre.
+      final hostil =
+          DocumentoDeCorrida.preparado(
+            revision:
+                "x'; touch /tmp/shipflow-inyectado-por-la-revision; echo '",
+            draft: _draftDePrueba(branch: ramaDeLosDocumentosDePrueba),
+            destino: destinoDeLosDocumentosDePrueba,
+          ).avanzarA(
+            EstadoDelDocumento.localInconsistent,
+            desenlace: ShipOutcome.localInconsistenteParaLaPrueba(
+              revision: 'a' * 40,
+            ),
+          );
+      final r = comprobarIndice(
+        documento: hostil,
+        rutasQueDifieren: const ['a.txt'],
+      );
+      final comando = comandoDe((r as IndiceNoCoincide).detalle);
+      final guion = 'set -- $comando\nfor a in "\$@"; do echo "[\$a]"; done';
+      final visto = await Process.run('/bin/sh', ['-c', guion]);
+      expect(visto.exitCode, 0);
+      final argumentos = (visto.stdout as String).trim().split('\n');
+      expect(
+        argumentos,
+        contains("[x'; touch /tmp/shipflow-inyectado-por-la-revision; echo ']"),
+        reason:
+            'la revisión tiene que llegar entera y como UN argumento: sin '
+            'citar, cierra la cita y el resto se ejecuta',
+      );
+      expect(
+        File('/tmp/shipflow-inyectado-por-la-revision').existsSync(),
+        isFalse,
+        reason: 'y nada de eso llegó a correr',
+      );
+    });
+
     test('la ruta llega a `git` como UN pathspec, y es la misma', () async {
       final r = comprobarIndice(
         documento: documentoEn(EstadoDelDocumento.localInconsistent),
