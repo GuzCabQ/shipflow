@@ -828,6 +828,74 @@ class RepositorioGit implements ChangeSink {
   /// error: quien la use tiene que poder distinguirlo.
   Future<String> get ramaActual => _exigir(['branch', '--show-current']);
 
+  /// El `HEAD` de la rama actual, resuelto a su OID.
+  ///
+  /// **Público desde esta rebanada, y no antes.** Tres lugares de este paquete
+  /// ya lo leían en privado; la comparación de tres casos de la recuperación
+  /// pide el `HEAD` como argumento —a propósito, para no leer el repositorio y
+  /// poder probar sus casos sin montar uno— y sin esta lectura su llamador no
+  /// tiene de dónde sacarlo.
+  Future<String> get head => _exigir(['rev-parse', 'HEAD']);
+
+  /// El padre de [revision], o nulo si no tiene ninguno.
+  ///
+  /// **Nulo es un HECHO y no un error**: la primera revisión de un repositorio
+  /// no tiene padre, y quien reconcilia tiene que poder distinguir «no tiene»
+  /// de «no se pudo leer».
+  ///
+  /// **Con DOS padres lanza, y eso es deliberado.** Devolver el primero haría
+  /// pasar el paso 1 de la reconciliación sobre un commit de fusión que no es
+  /// hijo de la base en el sentido que ese paso afirma. Ante una forma que la
+  /// pregunta no contempla, fallar cerrado.
+  Future<String?> padreDe(String revision) async {
+    final salida = await _exigir([
+      'rev-list',
+      '--parents',
+      '-n',
+      '1',
+      revision,
+    ]);
+    final campos = salida.split(' ').where((c) => c.isNotEmpty).toList();
+    if (campos.length == 1) return null;
+    if (campos.length > 2) {
+      throw GitFallo(
+        'rev-list --parents $revision',
+        0,
+        'La revisión tiene ${campos.length - 1} padres. «El» padre no existe, '
+            'y elegir uno afirmaría una ascendencia que nadie midió. Si esto es '
+            'una fusión, la corrida que la produjo no es una que ship pueda '
+            'reconciliar: volvé a correr ship desde cero.',
+      );
+    }
+    return campos[1];
+  }
+
+  /// El OID del árbol de [revision]. **No es el OID de la revisión.**
+  Future<String> arbolDe(String revision) =>
+      _exigir(['rev-parse', '$revision^{tree}']);
+
+  /// El mensaje entero de [revision], sin los saltos finales que `git`
+  /// agrega.
+  ///
+  /// **`%B` y no `%s`**: el paso 3 compara el mensaje esperado, y el asunto
+  /// solo sería una comparación más pobre que su criterio.
+  ///
+  /// **Son DOS saltos, no uno, y ninguno pertenece al mensaje.** `git commit`
+  /// normaliza lo que se guarda: cualquier cantidad de líneas en blanco al
+  /// final —o ninguna— queda en exactamente un `\n` final en el objeto
+  /// commit, medido acá mismo con `cat-file`. `git log --format=%B` agrega
+  /// **otro**, el suyo propio, para separar el registro del que viene
+  /// después. Cortar uno solo —lo que un review de esta misma tarea midió
+  /// que hacía la primera versión— deja pasar ese segundo salto y el mensaje
+  /// sale con una línea vacía que nadie escribió. Cortar los dos es seguro:
+  /// la normalización de `git` ya borró cualquier diferencia entre «el
+  /// usuario no puso salto final» y «el usuario puso varios», así que no hay
+  /// información legítima que perder.
+  Future<String> mensajeDe(String revision) async {
+    final salida = await _exigirCrudo(['log', '-1', '--format=%B', revision]);
+    return salida.replaceFirst(RegExp(r'\n+$'), '');
+  }
+
   /// El código con el que `git remote get-url` dice que **ese remoto no está
   /// configurado**.
   ///

@@ -108,6 +108,47 @@ void main() {
     String intent = 'porque sí',
   }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
 
+  /// Dos commits reales sobre `main`: [primero] es el `base` que arma
+  /// [setUp] y [segundo] uno nuevo encima, así que `HEAD` y el padre nunca
+  /// coinciden y las pruebas pueden distinguir uno del otro.
+  ({RepositorioGit repo, String primero, String segundo}) repoConDosCommits() {
+    final primero = correr('git', ['rev-parse', 'HEAD']);
+    escribir('a.txt', 'cambio\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'segundo commit']);
+    final segundo = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, primero: primero, segundo: segundo);
+  }
+
+  /// Un commit de fusión real, con DOS padres. **`--no-ff`, a propósito**:
+  /// sin eso `git` resolvería como *fast-forward* y no habría fusión que
+  /// crear, y la prueba que esto sostiene necesita un commit con más de un
+  /// padre para poder afirmar que pedir «el» padre falla.
+  ({RepositorioGit repo, String merge}) repoConMerge() {
+    git(['checkout', '-b', 'rama-de-fusion']);
+    escribir('c.txt', 'tres\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'commit en la rama']);
+    git(['checkout', 'main']);
+    escribir('d.txt', 'cuatro\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'commit en main']);
+    git(['merge', '--no-ff', '-m', 'merge de la rama', 'rama-de-fusion']);
+    final merge = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, merge: merge);
+  }
+
+  /// Un commit cuyo mensaje es exactamente [mensaje], **con cuerpo**. Sirve
+  /// para distinguir `%B` (el mensaje entero) de `%s` (solo el asunto): un
+  /// mensaje de una sola línea no alcanzaría para esa distinción.
+  ({RepositorioGit repo, String revision}) repoConMensaje(String mensaje) {
+    escribir('c.txt', 'contenido\n');
+    git(['add', '-A']);
+    git(['commit', '-m', mensaje]);
+    final revision = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, revision: revision);
+  }
+
   /// Lo que el `git` falso de [repositorioConIndiceQueFalla] escribe en
   /// `stderr` antes de fallar. **Con nombre propio para poder afirmar que
   /// llega hasta `detalle`** — sin esto, la salida (real o falsa) de `git`
@@ -1434,6 +1475,69 @@ exec git "$@"
       expect(visto, contains('PATH='));
       expect(visto, isNot(contains('ghp_no_debe_llegar')));
       expect(visto, isNot(contains('SHIPFLOW_GITHUB_TOKEN')));
+    });
+  });
+
+  group('leer un objeto commit', () {
+    test('el HEAD es el de la rama actual', () async {
+      final r = repoConDosCommits();
+      expect(await r.repo.head, r.segundo);
+    });
+
+    test('el padre de una revisión es su antecesor', () async {
+      final r = repoConDosCommits();
+      expect(await r.repo.padreDe(r.segundo), r.primero);
+    });
+
+    test(
+      'la PRIMERA revisión no tiene padre, y eso es un HECHO, no un error',
+      () async {
+        final r = repoConDosCommits();
+        expect(await r.repo.padreDe(r.primero), isNull);
+      },
+    );
+
+    test('un merge tiene DOS padres, y pedir «el» padre miente', () async {
+      final r = repoConMerge();
+      expect(
+        () => r.repo.padreDe(r.merge),
+        throwsA(isA<GitFallo>()),
+        reason:
+            'devolver el primero haría pasar el paso 1 de la '
+            'reconciliación sobre un commit que no es hijo de la base',
+      );
+    });
+
+    test(
+      'el árbol de una revisión es su OID de árbol, no el del commit',
+      () async {
+        final r = repoConDosCommits();
+        final arbol = await r.repo.arbolDe(r.segundo);
+        expect(arbol, isNot(r.segundo));
+        expect(arbol, matches(RegExp(r'^[0-9a-f]{40,64}$')));
+      },
+    );
+
+    test(
+      'el mensaje sale ENTERO y sin el salto final que git agrega',
+      () async {
+        // El espacio inicial no es decoración: es lo único que distingue
+        // `_exigirCrudo` de `_exigir` en esta prueba. `git` no lo toca —se
+        // midió con `cat-file`— así que si `mensajeDe` usara `_exigir`, el
+        // `.trim()` de ese lanzador se lo comería y esta prueba seguiría
+        // en verde por casualidad: el mismo defecto que el mensaje entero
+        // existe para cazar, colado en el instrumento que lo mide.
+        final r = repoConMensaje(' primera línea\n\ncuerpo del mensaje');
+        expect(
+          await r.repo.mensajeDe(r.revision),
+          ' primera línea\n\ncuerpo del mensaje',
+        );
+      },
+    );
+
+    test('una revisión que no existe falla, no devuelve vacío', () async {
+      final r = repoConDosCommits();
+      expect(() => r.repo.arbolDe('0' * 40), throwsA(isA<GitFallo>()));
     });
   });
 }
