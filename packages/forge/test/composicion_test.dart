@@ -400,6 +400,45 @@ void main() {
       expect(identidades.single, isNotNull);
     });
 
+    test('el puerto DISTINGUE: dos puertos son dos destinos', () {
+      // Sin el puerto adentro, dos instalaciones en el mismo host y distinto
+      // puerto daban la misma cadena y la compuerta no se detenía ante una
+      // mudanza real. Es justo el caso que esta función promete contestar
+      // aunque ninguna forja conocida atienda a ninguno de los dos.
+      expect(
+        identidadDelDestino('https://forja.interna:8443/duenio/repo.git'),
+        isNot(
+          identidadDelDestino('https://forja.interna:9443/duenio/repo.git'),
+        ),
+      );
+      expect(
+        identidadDelDestino('https://forja.interna:8443/duenio/repo.git'),
+        isNot(identidadDelDestino('https://forja.interna/duenio/repo.git')),
+      );
+    });
+
+    test('el puerto POR OMISIÓN del esquema no distingue', () {
+      // `https://host` y `https://host:443` son el mismo destino: escribirlo
+      // no es mudarse.
+      expect(
+        identidadDelDestino('https://github.com:443/duenio/repo.git'),
+        identidadDelDestino('https://github.com/duenio/repo.git'),
+      );
+    });
+
+    test('el dueño y el repositorio distinguen por caja, y falla CERRADO', () {
+      // **Decidido, no accidental.** Este paquete no puede saber si la forja
+      // pliega la caja en esa parte de la ruta. Plegarla acá haría que dos
+      // repositorios realmente distintos dieran la misma identidad —fallar
+      // ABIERTO en el fallo más caro del reintento—; dejarla como viene hace
+      // que dos escrituras del mismo destino detengan un reintento que podía
+      // seguir, con el mensaje que dice cómo devolver el remoto.
+      expect(
+        identidadDelDestino('https://github.com/Duenio/repo.git'),
+        isNot(identidadDelDestino('https://github.com/duenio/repo.git')),
+      );
+    });
+
     test('otro repositorio da OTRA identidad', () {
       expect(
         identidadDelDestino('https://github.com/duenio/repo.git'),

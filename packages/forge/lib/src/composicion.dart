@@ -149,9 +149,41 @@ PullRequestSink? salidaDePrDelRemoto({
 /// por `https` y por la forma corta de `ssh` produce la MISMA identidad,
 /// porque es el mismo destino: distinguirlos haría que cambiar el protocolo
 /// del remoto —sin cambiar a dónde apunta— pareciera un cambio de
-/// repositorio, y el reintento se detendría por algo que no pasó. El host se
-/// compara y se emite en minúsculas por lo mismo: en un nombre de dominio la
-/// caja no distingue destinos.
+/// repositorio, y el reintento se detendría por algo que no pasó.
+///
+/// **El PUERTO entra, y el host se baja a minúsculas; el dueño y el
+/// repositorio NO. Las tres son decisiones, no accidentes, y las tres se
+/// deciden por el mismo criterio: de qué lado conviene equivocarse.**
+///
+/// - **El puerto entra** porque dos remotos que solo difieren en él son
+///   destinos DISTINTOS, y dejarlo afuera hacía que la compuerta no se
+///   detuviera ante una mudanza real. Es el caso que esta función tiene que
+///   contestar aunque ninguna forja conocida atienda a ninguno de los dos —dos
+///   instalaciones propias en el mismo host y distinto puerto son lo más
+///   parecido a un caso normal que tiene ese escenario—. El puerto por
+///   omisión del esquema no se escribe: `https://host` y `https://host:443`
+///   son el mismo destino, y el analizador de URLs ya los unifica.
+/// - **El host se baja a minúsculas** porque un nombre de dominio no
+///   distingue caja por definición: dos escrituras del mismo host SON el
+///   mismo destino, y tratarlas como distintas detendría un reintento por
+///   algo que no pasó.
+/// - **El dueño y el repositorio se dejan como vienen**, y eso es lo que corta
+///   en la otra dirección. Este paquete no puede saber si la forja de turno
+///   pliega la caja en esa parte de la ruta; si la plegara acá y la forja no
+///   lo hiciera, dos repositorios REALMENTE distintos darían la misma
+///   identidad y la compuerta dejaría pasar la publicación en el equivocado
+///   — que es el fallo que esta función existe para impedir. Al revés, el
+///   costo es que dos escrituras del mismo destino detienen un reintento que
+///   podría haber seguido: **falla cerrado**, con un mensaje que nombra los
+///   dos y dice cómo devolver el remoto. Entre fallar abierto en el fallo más
+///   caro del reintento y fallar cerrado con la salida escrita al lado, se
+///   elige lo segundo.
+///
+/// **Residuo declarado, y sale de la misma decisión:** el analizador de URLs
+/// solo conoce el puerto por omisión de los esquemas que conoce, así que
+/// `ssh://host/x/y` y `ssh://host:22/x/y` dan identidades distintas aunque `22`
+/// sea el puerto de ese protocolo. Falla cerrado, por el mismo lado que la
+/// caja del dueño.
 ///
 /// **No exige que este paquete ATIENDA el destino**, y eso no es un descuido:
 /// lo que se compara con esta cadena es si el remoto de hoy es el de aquella
@@ -162,7 +194,9 @@ PullRequestSink? salidaDePrDelRemoto({
 String? identidadDelDestino(String urlDelRemoto) {
   final remoto = _RemotoLeido.de(urlDelRemoto);
   if (remoto == null) return null;
-  return '${remoto.host.toLowerCase()}/${remoto.duenio}/${remoto.repositorio}';
+  final puerto = remoto.puerto == null ? '' : ':${remoto.puerto}';
+  return '${remoto.host.toLowerCase()}$puerto'
+      '/${remoto.duenio}/${remoto.repositorio}';
 }
 
 /// Por qué [urlDelRemoto] no tiene una salida de pull requests, para quien ya
@@ -217,6 +251,16 @@ final _formaCorta = RegExp(r'^(?:([^@/]+)@)?([^@/:]+):([^/].*)$');
 /// host, de quién es el repositorio, y la misma URL sin la credencial.
 class _RemotoLeido {
   final String host;
+
+  /// El puerto que la URL escribe explícitamente, o nulo cuando no escribe
+  /// ninguno —o cuando el que escribe es el de omisión de su esquema, que el
+  /// analizador de URLs ya unifica con no escribir ninguno—.
+  ///
+  /// **La forma corta de `ssh` no lo tiene**, y no es una omisión: en
+  /// `usuario@host:duenio/repo` lo que sigue a los dos puntos es la ruta, no
+  /// un puerto. Esa forma no puede nombrar uno.
+  final int? puerto;
+
   final String duenio;
   final String repositorio;
 
@@ -227,6 +271,7 @@ class _RemotoLeido {
 
   const _RemotoLeido({
     required this.host,
+    required this.puerto,
     required this.duenio,
     required this.repositorio,
     required this.sinCredencial,
@@ -261,6 +306,7 @@ class _RemotoLeido {
           : '${usuario.split(':').first}@';
       return _RemotoLeido(
         host: host,
+        puerto: null,
         duenio: partes.duenio,
         repositorio: partes.repositorio,
         sinCredencial: '$sinContrasenia$host:${corta.group(3)}',
@@ -273,6 +319,7 @@ class _RemotoLeido {
     if (partes == null) return null;
     return _RemotoLeido(
       host: uri.host,
+      puerto: uri.hasPort ? uri.port : null,
       duenio: partes.duenio,
       repositorio: partes.repositorio,
       sinCredencial: uri.replace(userInfo: '').toString(),
