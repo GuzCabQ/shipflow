@@ -482,36 +482,64 @@ Future<int> correrShipDelComando(
       : colaboradores.forjaDelRemoto(urlDelRemoto);
   if (forja == null &&
       _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
-    // **Los dos nulos se dicen distinto, porque lo que hay que hacer es
-    // distinto**: agregar un remoto no es lo mismo que apuntarlo a otro lado.
-    // Un mensaje único obligaría a quien corre a averiguar cuál de los dos le
-    // pasó.
+    // **Los dos nulos de arriba —sin remoto, remoto sin forja— se dicen
+    // distinto, porque lo que hay que hacer es distinto**: agregar un remoto
+    // no es lo mismo que apuntarlo a otro lado. Un mensaje único obligaría a
+    // quien corre a averiguar cuál de los dos le pasó.
+    //
+    // **Y dentro del segundo, el texto humano TAMBIÉN distingue QUIÉN de POR
+    // DÓNDE.** Antes decía «ninguna forja conocida sabe atender esto» para
+    // los dos casos por igual, y bajo la definición de «atender» que exige el
+    // camino ENTERO —no solo el parseo— eso es cierto en los dos... pero
+    // manda a sospechar de la forja incluso cuando la forja SÍ se soporta y
+    // lo único que no se atiende es el canal por el que llegó el remoto: ahí
+    // el mensaje viejo hace salir a buscar un reemplazo que no hace falta.
+    // [CausaDeAusenciaDeForja] —del paquete de la forja, para no comparar acá
+    // el host que esta composición no tiene por qué conocer— es la que
+    // distingue una cosa de la otra.
+    //
+    // **El `queHacer` se queda con las dos salidas juntas, y no es una
+    // inconsistencia dejarlo así mientras el humano SÍ elige.** Ya nombraba
+    // las dos alternativas —apuntar a otra forja, o reescribir el remoto
+    // propio en su forma segura— y las dos siguen siendo ciertas cada una en
+    // su rama: que el texto humano ahora diga cuál de las dos aplica no
+    // vuelve falsa a ninguna, así que partirlo repetiría en dos lugares una
+    // distinción que ya vive en uno.
     //
     // **Y la URL no se imprime.** Un remoto puede llevar la credencial
     // embebida en su parte de autoridad, y este mensaje sale por la salida
     // estándar y por el payload de máquina: nombrarla la publicaría. Lo que
     // se dice es el hecho, no el valor.
     final sinRemoto = urlDelRemoto == null;
+    final causa = urlDelRemoto == null
+        ? null
+        : causaDeAusenciaDeForja(urlDelRemoto);
     return _detener(
       impresora,
       codigo: Codigo.errorDeConfiguracion,
-      humano: sinRemoto
-          ? 'shipflow ship: este repositorio no tiene remoto configurado, así '
-                'que esta corrida no podría abrir el pull request que promete.'
-          : 'shipflow ship: el remoto de este repositorio no es uno que '
-                'ninguna forja conocida sepa atender, así que esta corrida no '
-                'podría abrir el pull request que promete.',
+      humano: switch (causa) {
+        null =>
+          'shipflow ship: este repositorio no tiene remoto configurado, así '
+              'que esta corrida no podría abrir el pull request que promete.',
+        CausaDeAusenciaDeForja.forjaDesconocida =>
+          'shipflow ship: el remoto de este repositorio no es uno que '
+              'ninguna forja conocida sepa atender, así que esta corrida no '
+              'podría abrir el pull request que promete.',
+        CausaDeAusenciaDeForja.protocoloNoAtendible =>
+          'shipflow ship: el remoto de este repositorio es de una forja '
+              'conocida, pero llega por un protocolo que esta corrida no '
+              'puede usar para publicar sin exponer la credencial, así que '
+              'no podría abrir el pull request que promete.',
+      },
       queHacer: sinRemoto
           ? 'Se detuvo ANTES de preparar nada: no quedó ni un objeto ni un '
                 'commit. Agregale el remoto al que querés publicar, o corré '
                 '`shipflow ship --dry-run`, que no necesita forja.'
-          // **Dos salidas y no una**, porque hay dos causas y quien corre no
-          // puede distinguirlas desde afuera: puede ser QUIÉN está del otro
-          // lado —una forja que nadie sabe atender— o puede ser POR DÓNDE
-          // —una forja que sí se atiende, alcanzada por un canal que no
-          // protege la credencial—. Decir solo «apuntalo a una forja
-          // soportada» es falso en el segundo caso y deja a quien corre
-          // buscando un problema que no tiene.
+          // **Nombra las dos alternativas aunque el humano de arriba ya
+          // haya elegido cuál aplica**, y no al revés: partir este texto en
+          // dos repetiría en un segundo lugar la misma distinción que ya
+          // vive en `causaDeAusenciaDeForja`, sin volver falsa a ninguna de
+          // las dos ramas.
           //
           // Y se dice cómo reescribir EL SUYO, no a dónde apuntarlo: la
           // forma segura de ese mismo destino la sabe quien configuró el

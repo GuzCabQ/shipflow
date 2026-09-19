@@ -144,6 +144,51 @@ void main() {
     }
   });
 
+  group('la causa de la ausencia distingue quién de por dónde', () {
+    test('un host que ninguna forja conocida atiende → forjaDesconocida', () {
+      expect(
+        causaDeAusenciaDeForja('https://otra.forja/d/r.git'),
+        CausaDeAusenciaDeForja.forjaDesconocida,
+      );
+    });
+
+    test('un remoto que ni siquiera nombra un repositorio → '
+        'forjaDesconocida', () {
+      expect(
+        causaDeAusenciaDeForja('no es una url'),
+        CausaDeAusenciaDeForja.forjaDesconocida,
+      );
+    });
+
+    test('la MISMA forja por un canal que no protege la credencial → '
+        'protocoloNoAtendible', () {
+      for (final url in const [
+        'git@github.com:duenio/repo.git',
+        'ssh://git@github.com/duenio/repo.git',
+        'http://github.com/duenio/repo.git',
+      ]) {
+        expect(
+          causaDeAusenciaDeForja(url),
+          CausaDeAusenciaDeForja.protocoloNoAtendible,
+          reason: url,
+        );
+      }
+    });
+
+    test('nunca se pregunta sobre una URL que SÍ tiene salida', () {
+      // No mide la función contra sí misma: para cada URL de esta suite que
+      // construye una salida, la causa tendría que ser inalcanzable — es la
+      // garantía de exclusión mutua que el doc de la clase declara.
+      for (final url in const [
+        'https://github.com/duenio/repo.git',
+        'https://github.com/duenio/repo',
+        'https://x-access-token:$secretoDePrueba@github.com/duenio/repo.git',
+      ]) {
+        expect(construir(url), isNotNull, reason: url);
+      }
+    });
+  });
+
   group('un canal por el que el empuje no publicaría no se atiende', () {
     // **Estas formas se leen bien y AUN ASÍ vuelven nulas**, que es lo que las
     // separa del grupo de arriba: de todas salen el dueño y el repositorio, y

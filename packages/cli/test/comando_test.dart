@@ -788,6 +788,22 @@ void main() {
         reason: 'el mensaje dice cómo cambiar el remoto propio',
       );
       expect(salida, contains('https'));
+      // **El caso que antes NO se distinguía.** Esta forja SÍ se atiende —es
+      // la misma que `remotoAjeno` no nombra— así que el texto humano no
+      // puede decir lo mismo que dice para una forja desconocida: eso manda
+      // a sospechar de la forja cuando lo que falla es el protocolo.
+      expect(
+        salida,
+        isNot(contains('ninguna forja conocida sepa atender')),
+        reason:
+            'esta forja se conoce; lo que no se atiende es el protocolo del '
+            'remoto, y decir lo mismo que para una desconocida es falso acá',
+      );
+      expect(
+        salida,
+        contains('protocolo'),
+        reason: 'el texto humano nombra qué es lo que no se atiende',
+      );
     });
 
     test('la URL del remoto NO se imprime por la salida estándar', () async {

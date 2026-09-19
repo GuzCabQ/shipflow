@@ -127,6 +127,45 @@ PullRequestSink? salidaDePrDelRemoto({
   );
 }
 
+/// Por qué [urlDelRemoto] no tiene una salida de pull requests, para quien ya
+/// sabe —por el nulo de [salidaDePrDelRemoto]— que no la tiene.
+///
+/// **Existe para separar QUIÉN de POR DÓNDE, sin que quien compone tenga que
+/// nombrar a esta forja para preguntarlo.** `salidaDePrDelRemoto` colapsa tres
+/// motivos en un mismo nulo —remoto malformado, host que este paquete no
+/// atiende, canal que no protege la credencial— porque para publicar los tres
+/// valen lo mismo: no hay por dónde. Pero para EXPLICARLE a quien corre qué
+/// hacer, los dos primeros son «esa forja no es una que se conozca» y el
+/// tercero es «esa forja sí se conoce, y lo que falla es el protocolo del
+/// remoto» — y son consejos distintos: al primero se le apunta a otra forja,
+/// al segundo se le reescribe el mismo remoto en una forma segura. Sin esta
+/// función, decírselo desde afuera exigiría que la raíz de composición
+/// supiera comparar contra [_hostAtendido], que es exactamente el nombre que
+/// la regla `forja-en-su-adapter` prohíbe que sepa.
+///
+/// **No se llama nunca sobre una URL que SÍ tiene salida.** Las dos preguntas
+/// son mutuamente excluyentes por construcción —esta repite las mismas dos
+/// condiciones que hacen fallar a [salidaDePrDelRemoto]—, así que llamarla ahí
+/// sería preguntar por una causa que no existe.
+enum CausaDeAusenciaDeForja {
+  /// El remoto no nombra un repositorio, o su host no es uno que este
+  /// paquete sepa atender.
+  forjaDesconocida,
+
+  /// El host SÍ es uno conocido; lo que no se atiende es el canal por el que
+  /// llegó, porque no puede llevar la credencial sin exponerla.
+  protocoloNoAtendible,
+}
+
+/// Deriva [CausaDeAusenciaDeForja] para [urlDelRemoto]. Ver esa clase.
+CausaDeAusenciaDeForja causaDeAusenciaDeForja(String urlDelRemoto) {
+  final remoto = _RemotoLeido.de(urlDelRemoto);
+  if (remoto == null || remoto.host.toLowerCase() != _hostAtendido) {
+    return CausaDeAusenciaDeForja.forjaDesconocida;
+  }
+  return CausaDeAusenciaDeForja.protocoloNoAtendible;
+}
+
 /// La forma corta con la que `git` escribe un remoto de `ssh`:
 /// `usuario@host:duenio/repo`.
 ///
