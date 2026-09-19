@@ -267,6 +267,41 @@ final class Ambigua extends Reconciliacion {
 /// [decidirRecuperacion], sostenida acá con más motivo: son cinco pasos con
 /// más combinaciones que esos tres casos, así que probarlos sin montar un
 /// repositorio por cada uno vale más, no menos.
+///
+/// **El orden de los cuatro chequeos no es intercambiable, y acá está el
+/// motivo.** Cuando UN SOLO hecho falla, el orden no se nota: cualquiera de
+/// los cuatro que se evaluara primero iba a fallar cerrado igual. Pero
+/// cuando fallan DOS a la vez —un padre ajeno sobre un árbol que además es
+/// otro, digamos— el orden deja de ser cosmético: decide cuál
+/// [CausaDeAmbiguedad] se reporta, y la causa es lo que decide qué acción
+/// recibe quien corre. Reportar «el mensaje no coincide» cuando el árbol
+/// TAMBIÉN difiere manda a mirar el commit equivocado. El orden de abajo va
+/// de lo más estructural a lo más circunstancial:
+///
+/// 1. **El padre primero.** Habla del lugar del objeto en el grafo de
+///    commits, no de lo que contiene. Si la revisión no desciende de la
+///    base que este candidato declaró, ningún otro hecho —el contenido, el
+///    mensaje, el índice— puede rescatar esa conclusión: no es nuestra
+///    ascendencia, y ninguna coincidencia más abajo cambia eso.
+/// 2. **El árbol segundo.** Sigue siendo estructural —identidad de objeto,
+///    no ascendencia—, pero un padre correcto con un árbol distinto ya no
+///    es nuestro contenido, sin importar qué diga el mensaje: cualquier
+///    padre puede parir cualquier árbol.
+/// 3. **El mensaje tercero, y es el más débil de los tres hechos DE LA
+///    REVISIÓN.** Es el único que se puede reescribir —un nuevo commit con
+///    el mismo árbol y el mismo padre, pero otro texto— sin que ningún
+///    objeto de contenido cambie: que coincida no prueba nada que el árbol
+///    y el padre no prueben ya con más fuerza, y por eso solo importa
+///    cuando los dos anteriores ya cerraron.
+/// 4. **El índice último, y no porque sea el hecho más débil de los
+///    cuatro: porque es el único que no describe la revisión.** Los tres
+///    anteriores hablan del commit que ya quedó en la rama; este habla del
+///    estado LOCAL de quien corre el reintento, y puede fallar aunque el
+///    commit sea, byte a byte, el nuestro. Reportarlo antes que los tres
+///    estructurales confundiría «esto no es nuestro commit» —que exige
+///    reconstruir desde cero— con «esto sí es nuestro commit, pero tu
+///    copia de trabajo no coincide» —que exige sincronizar el índice—, y
+///    son remedios distintos para hechos de naturaleza distinta.
 Reconciliacion reconciliar({
   required DocumentoDeCorrida documento,
   required String headActual,
@@ -282,7 +317,9 @@ Reconciliacion reconciliar({
 
   final candidato = documento.draft.artefacto.candidato;
 
-  // Paso 1: el padre de la revisión candidata es la base.
+  // Paso 1: el padre de la revisión candidata es la base. Primero por ser
+  // el hecho más estructural — ver el orden argumentado en el doc de esta
+  // función.
   if (hechos.padre != candidato.baseRevision) {
     return Ambigua(
       CausaDeAmbiguedad.padreDistinto,
@@ -294,7 +331,9 @@ Reconciliacion reconciliar({
   }
 
   // Paso 2: el árbol de la revisión es EXACTAMENTE el del candidato —
-  // igualdad de identificador, nunca una comparación de diferencias.
+  // igualdad de identificador, nunca una comparación de diferencias. Segundo
+  // porque, con el padre ya asegurado, sigue siendo un hecho de identidad de
+  // objeto, no de descripción.
   if (hechos.arbol != candidato.contentRevision) {
     return Ambigua(
       CausaDeAmbiguedad.contenidoDistinto,
@@ -305,7 +344,9 @@ Reconciliacion reconciliar({
     );
   }
 
-  // Paso 3: el mensaje coincide con el esperado.
+  // Paso 3: el mensaje coincide con el esperado. Tercero: es el hecho más
+  // débil de los tres que hablan de la revisión, porque es el único que se
+  // reescribe sin tocar ningún objeto de contenido.
   final intentEsperado = documento.draft.artefacto.intent;
   if (hechos.mensaje != intentEsperado) {
     return const Ambigua(
@@ -316,7 +357,9 @@ Reconciliacion reconciliar({
     );
   }
 
-  // Paso 4: el índice coincide, solo en las rutas de la rebanada.
+  // Paso 4: el índice coincide, solo en las rutas de la rebanada. Último
+  // porque no es un hecho MÁS DÉBIL de la revisión: es el único que no habla
+  // de la revisión, sino del estado local de quien corre.
   if (hechos.rutasQueDifieren.isNotEmpty) {
     return Ambigua(
       CausaDeAmbiguedad.indiceDistinto,

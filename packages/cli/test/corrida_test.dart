@@ -445,4 +445,82 @@ void main() {
           'commit que nadie verificó que sea el nuestro',
     );
   });
+
+  // Las cuatro pruebas de arriba hacen fallar UN solo hecho por vez, y con
+  // un solo hecho fallando el orden entre los cuatro chequeos nunca se nota:
+  // cualquiera que se evaluara primero iba a fallar cerrado igual. Estas
+  // tres pruebas hacen fallar DOS hechos a la vez, en cada uno de los pares
+  // ADYACENTES del orden que el doc de `reconciliar` argumenta —de lo más
+  // estructural a lo más circunstancial—, y afirman CUÁL de las dos causas
+  // sale: la del hecho más estructural, no la del otro. Fijan el orden total
+  // porque fijar cada par adyacente fija la cadena entera.
+
+  test('con el PADRE y el ÁRBOL distintos a la vez, gana el padre: es más '
+      'estructural', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: 'otro' * 10,
+        arbol: '${d.draft.artefacto.candidato.contentRevision}-pero-otro',
+        mensaje: d.draft.artefacto.intent,
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect(
+      (r as Ambigua).causa,
+      CausaDeAmbiguedad.padreDistinto,
+      reason:
+          'si la ascendencia ya está mal, el contenido no puede rescatar '
+          'esa conclusión: reportar «contenido distinto» mandaría a mirar '
+          'un commit que ni siquiera desciende de nuestra base',
+    );
+  });
+
+  test('con el ÁRBOL y el MENSAJE distintos a la vez, gana el árbol: identidad '
+      'de objeto por sobre texto reescribible', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        arbol: '${d.draft.artefacto.candidato.contentRevision}-pero-otro',
+        mensaje: 'otra intención',
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect(
+      (r as Ambigua).causa,
+      CausaDeAmbiguedad.contenidoDistinto,
+      reason:
+          'un mensaje se reescribe sin tocar ningún objeto; el contenido '
+          'no. Reportar «mensaje distinto» sobre un árbol que además es '
+          'otro escondería el hecho que de verdad importa',
+    );
+  });
+
+  test('con el MENSAJE y el ÍNDICE distintos a la vez, gana el mensaje: habla '
+      'de la revisión, el índice habla de quien corre', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        arbol: d.draft.artefacto.candidato.contentRevision,
+        mensaje: 'otra intención',
+        rutasQueDifieren: const ['lib/a.dart'],
+      ),
+    );
+    expect(
+      (r as Ambigua).causa,
+      CausaDeAmbiguedad.mensajeDistinto,
+      reason:
+          'el índice sucio es un problema del entorno de quien corre, no '
+          'de la revisión; reportarlo primero mandaría a sincronizar el '
+          'índice sobre un commit que, además, no es el nuestro',
+    );
+  });
 }
