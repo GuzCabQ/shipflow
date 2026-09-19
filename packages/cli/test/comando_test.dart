@@ -319,6 +319,23 @@ void main() {
       expect(accionDe(d), contains('--retry-publication'));
     });
 
+    test('«documentUnreadable» solo aparece cuando la relectura falló', () {
+      expect(
+        payloadDeShip(desenlaceDePrueba()).containsKey('documentUnreadable'),
+        isFalse,
+        reason:
+            'sin documento y sin que nadie haya intentado releerlo, no hay '
+            'nada que señalar',
+      );
+      expect(
+        payloadDeShip(
+          desenlaceDePrueba(),
+          documentoIlegible: true,
+        )['documentUnreadable'],
+        isTrue,
+      );
+    });
+
     test('el estado de entrega y el reintento salen del desenlace remoto', () {
       final p = payloadDeShip(desenlaceDePrueba());
       expect(p['deliveryStatus'], EstadoDeEntrega.incompletaReintentable.name);
@@ -408,6 +425,12 @@ void main() {
             reason: 'la clave «$clave» no tiene que estar, ni siquiera en nulo',
           );
         }
+        // **La ausencia HONESTA: no hay clave que diga que no se pudo leer**,
+        // porque acá no hubo nada que leer. Confundirla con la de abajo —el
+        // documento que sí se escribió y no se dejó releer— es exactamente lo
+        // que un consumidor automático no puede permitirse: leería «no se
+        // escribió nada» donde en realidad pasó lo otro.
+        expect(datos.containsKey('documentUnreadable'), isFalse);
       },
     );
 
@@ -435,6 +458,20 @@ void main() {
         for (final clave in const ['branch', 'base', 'revision', 'candidate']) {
           expect(datos.containsKey(clave), isFalse);
         }
+        // **La otra ausencia, y esta SÍ tiene que decir por qué.** Sin esta
+        // clave, esta corrida y la de arriba —la que nunca escribió
+        // documento— se leen exactamente igual: las dos cuentan cuatro
+        // ausencias. Y son hechos distintos — acá SÍ hubo una corrida que
+        // escribió, y lo que falló fue releerla DESPUÉS de que el pull
+        // request ya se hubiera abierto.
+        expect(
+          datos['documentUnreadable'],
+          isTrue,
+          reason:
+              'la ausencia de los cuatro campos tiene dos causas distintas, y '
+              'un consumidor automático no puede adivinar cuál de las dos '
+              'pasó sin esta clave',
+        );
       },
     );
   });

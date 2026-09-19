@@ -689,13 +689,27 @@ Future<int> correrShipDelComando(
   // llega como error y no como excepción. Una lista de tipos dejaría afuera
   // justamente el caso que motiva esto. El precio de atrapar de más está
   // acotado a esta línea, que no decide nada: solo enriquece.
+  //
+  // **Y ya no se lo traga en silencio.** `documentoIlegible` guarda POR QUÉ
+  // `documento` quedó nulo cuando ese nulo no vino de `leer` —que también
+  // devuelve nulo, sin lanzar, cuando la corrida nunca escribió nada—: acá SÍ
+  // hubo un lanzamiento, así que hubo un archivo que el registro no pudo
+  // convertir en documento. `payloadDeShip` es quien decide qué hacer con esa
+  // distinción; acá solo se mide y se pasa.
   DocumentoDeCorrida? documento;
+  var documentoIlegible = false;
   try {
     documento = await colaboradores.registro.leer(runId);
   } catch (_) {
-    documento = null;
+    documentoIlegible = true;
   }
-  return _emitirDesenlace(impresora, runId, desenlace, documento);
+  return _emitirDesenlace(
+    impresora,
+    runId,
+    desenlace,
+    documento,
+    documentoIlegible: documentoIlegible,
+  );
 }
 
 /// Emite el desenlace: **el código, el veredicto, la acción y el payload salen
@@ -705,8 +719,9 @@ int _emitirDesenlace(
   Impresora imp,
   String runId,
   ShipOutcome desenlace,
-  DocumentoDeCorrida? documento,
-) {
+  DocumentoDeCorrida? documento, {
+  required bool documentoIlegible,
+}) {
   final codigo = Codigo.deShip(desenlace);
   final accion = accionDe(desenlace);
   final humano = _enTexto(desenlace);
@@ -717,7 +732,11 @@ int _emitirDesenlace(
       verdict: veredictoDeShip(desenlace),
       nextAction: accion,
       runId: runId,
-      data: payloadDeShip(desenlace, documento: documento),
+      data: payloadDeShip(
+        desenlace,
+        documento: documento,
+        documentoIlegible: documentoIlegible,
+      ),
     ),
     accion == null ? humano : '$humano\n  → $accion',
   );

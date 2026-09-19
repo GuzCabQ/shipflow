@@ -213,6 +213,20 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 /// detiene antes del candidato — ver `DocumentoDeCorrida.estadoQueAfirma`, que
 /// declara por qué [NoIntentado] no afirma ningún estado del documento.
 ///
+/// **Y esa ausencia honesta no es la ÚNICA que deja a los cuatro campos
+/// afuera — [documentoIlegible] existe para que no se confundan.** Un
+/// documento que SÍ se escribió y que la relectura no pudo abrir después de
+/// la publicación deja el mismo hueco que una corrida que nunca escribió nada, y
+/// las dos cuentas son hechos distintos: la primera es la que
+/// `DocumentoDeCorrida.estadoQueAfirma` ya declara, la segunda es que hubo
+/// una corrida —con [ShipOutcome] publicado, lo más caro de esta tabla— y su
+/// registro quedó ilegible. Un consumidor que lea la ausencia como la primera
+/// cuando pasó la segunda concluye que la corrida no escribió nada, que es
+/// falso justo después de que se abrió un pull request. `documentUnreadable`
+/// sale en `true` únicamente en ese segundo caso — nunca en `false`, porque
+/// una ausencia sin la clave YA dice «no hubo nada que releer», y agregarla en
+/// `false` ahí repetiría el mismo hecho por dos caminos que pueden divergir.
+///
 /// **QUÉ CAUSA SECUNDARIA VIAJA, Y CUÁL NO.** La precedencia de
 /// [ShipOutcome.derivar] devuelve UNA causa, y la del estado de verificación
 /// sobrevive igual: [NoIntentado] lleva su `verificacion` entera, así que una
@@ -226,28 +240,43 @@ String? veredictoDeShip(ShipOutcome desenlace) => switch (desenlace) {
 Map<String, Object?> payloadDeShip(
   ShipOutcome desenlace, {
   DocumentoDeCorrida? documento,
+  bool documentoIlegible = false,
 }) => {
   'payloadVersion': payloadVersionDeShip,
   ...desenlace.toJson(),
   ...?_publicacionDe(desenlace),
-  ...?_deLaCorrida(documento),
+  ...?_deLaCorrida(documento, ilegible: documentoIlegible),
 };
 
-/// Lo que solo el documento de la corrida sabe, o **nulo cuando no hay
-/// documento**.
+/// Lo que solo el documento de la corrida sabe, o **nulo cuando no hay nada
+/// que decir de él**.
 ///
 /// Va DESPUÉS del `toJson` del desenlace a propósito: [LocalInconsistente]
 /// escribe su propia `revision`, y las dos son el mismo commit —el documento
 /// lo persiste desde que existe el objeto—. Que la del documento gane deja una
 /// sola procedencia para esa clave en vez de dos que pueden divergir.
-Map<String, Object?>? _deLaCorrida(DocumentoDeCorrida? documento) {
-  if (documento == null) return null;
-  return {
-    'branch': documento.draft.branch,
-    'base': documento.draft.base,
-    'revision': documento.revision,
-    'candidate': documento.draft.artefacto.candidato.toJson(),
-  };
+///
+/// **[ilegible] es la otra ausencia, y la única que este mapa distingue de la
+/// honesta.** Con [documento] nulo y [ilegible] en falso no hay nada que
+/// agregar —es la corrida que nunca escribió, y ese nulo ya lo dice todo—;
+/// con [ilegible] en verdad hay algo que agregar aunque [documento] siga
+/// nulo: que hubo uno y no se dejó leer. Las dos ausencias no pueden
+/// coincidir a la vez —`documento` gana si está— así que no hace falta un
+/// tercer caso para «los dos a la vez».
+Map<String, Object?>? _deLaCorrida(
+  DocumentoDeCorrida? documento, {
+  required bool ilegible,
+}) {
+  if (documento != null) {
+    return {
+      'branch': documento.draft.branch,
+      'base': documento.draft.base,
+      'revision': documento.revision,
+      'candidate': documento.draft.artefacto.candidato.toJson(),
+    };
+  }
+  if (ilegible) return {'documentUnreadable': true};
+  return null;
 }
 
 /// Los derivados del desenlace remoto, o nulo cuando no hubo ninguno.
