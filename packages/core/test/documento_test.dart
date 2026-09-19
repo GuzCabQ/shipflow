@@ -23,6 +23,27 @@ PullRequestDraft draftDePrueba() => PullRequestDraft(
   rutas: const ['a.txt'],
 );
 
+/// Un documento que ya llegó a [estado], por el único camino que el grafo de
+/// §9 declara para llegar ahí. Sin desenlace: los estados no terminales lo
+/// llevan nulo sin problema —es «todavía no hay», nunca incoherencia— y para
+/// los que sí afirman uno hay otro grupo de pruebas, más abajo, dedicado
+/// exactamente a esa correspondencia.
+DocumentoDeCorrida documentoDePrueba(EstadoDelDocumento estado) {
+  final preparado = DocumentoDeCorrida.preparado(
+    revision: 'a' * 40,
+    draft: draftDePrueba(),
+  );
+  return switch (estado) {
+    EstadoDelDocumento.prepared => preparado,
+    EstadoDelDocumento.committed ||
+    EstadoDelDocumento.notApplied ||
+    EstadoDelDocumento.localInconsistent => preparado.avanzarA(estado),
+    EstadoDelDocumento.publicationComplete ||
+    EstadoDelDocumento.publicationIncomplete =>
+      preparado.avanzarA(EstadoDelDocumento.committed).avanzarA(estado),
+  };
+}
+
 void main() {
   DocumentoDeCorrida preparado() =>
       DocumentoDeCorrida.preparado(revision: 'a' * 40, draft: draftDePrueba());
@@ -89,20 +110,26 @@ void main() {
     );
   });
 
-  test('los TRES estados terminales lo son, y ninguno tiene salida', () {
-    // Esta prueba cubría solo `notApplied`. El mapa declara los tres con
-    // conjunto vacío, pero lo que demostraba que `publicationComplete` y
-    // `localInconsistent` fueran terminales era la lectura del mapa, no una
-    // aserción: cambiarle a `publicationComplete` el conjunto vacío por
-    // `{committed}` dejaba la suite entera en verde, y `publicationComplete`
-    // terminal es lo único que impide que `--retry-publication` vuelva a
-    // publicar una corrida ya publicada.
+  test('ya NO son tres los estados terminales sin salida: localInconsistent '
+      'dejó de serlo, porque el reintento lo promueve a committed', () {
+    // Esta prueba decía «los TRES terminales lo son» y cubría
+    // `localInconsistent` entre ellos. Quedó falsa cuando esta tarea abrió
+    // `localInconsistent → committed`: §9 exige que el reintento, al
+    // comprobar que el índice ya coincide con la revisión, promueva ese
+    // estado en vez de dejarlo varado. Corregirla en vez de borrarla es lo
+    // que deja registrado CUÁL estado cambió de categoría y POR QUÉ, para
+    // quien la lea después sin haber visto esta ronda.
+    //
+    // Sigue cubriendo solo `notApplied` con una aserción de verdad: el mapa
+    // declara los dos con conjunto vacío, pero lo que demuestra que
+    // `publicationComplete` también es terminal es esta prueba, no la
+    // lectura del mapa. Cambiarle a `publicationComplete` el conjunto vacío
+    // por `{committed}` dejaría la suite entera en verde si esta prueba no
+    // existiera, y `publicationComplete` terminal es lo único que impide
+    // que `--retry-publication` vuelva a publicar una corrida ya publicada.
     final terminales = <EstadoDelDocumento, DocumentoDeCorrida>{
       EstadoDelDocumento.notApplied: preparado().avanzarA(
         EstadoDelDocumento.notApplied,
-      ),
-      EstadoDelDocumento.localInconsistent: preparado().avanzarA(
-        EstadoDelDocumento.localInconsistent,
       ),
       EstadoDelDocumento.publicationComplete: preparado()
           .avanzarA(EstadoDelDocumento.committed)
@@ -117,6 +144,37 @@ void main() {
         );
       }
     }
+  });
+
+  test('desde el estado inconsistente se puede promover a commiteado', () {
+    final d = documentoDePrueba(EstadoDelDocumento.localInconsistent);
+    expect(
+      d.avanzarA(EstadoDelDocumento.committed).estado,
+      EstadoDelDocumento.committed,
+    );
+  });
+
+  test('y NADA MÁS: sigue sin ir a ningún otro lado', () {
+    final d = documentoDePrueba(EstadoDelDocumento.localInconsistent);
+    for (final destino in [
+      EstadoDelDocumento.prepared,
+      EstadoDelDocumento.notApplied,
+      EstadoDelDocumento.localInconsistent,
+      EstadoDelDocumento.publicationComplete,
+      EstadoDelDocumento.publicationIncomplete,
+    ]) {
+      expect(() => d.avanzarA(destino), throwsStateError, reason: destino.name);
+    }
+  });
+
+  test('los terminales ahora son DOS, y eso queda fijado', () {
+    final terminales = EstadoDelDocumento.values
+        .where((e) => DocumentoDeCorrida.destinosDe(e).isEmpty)
+        .toSet();
+    expect(terminales, {
+      EstadoDelDocumento.notApplied,
+      EstadoDelDocumento.publicationComplete,
+    });
   });
 
   group('el estado y el desenlace son el mismo hecho', () {

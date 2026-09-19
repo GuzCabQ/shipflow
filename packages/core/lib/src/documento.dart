@@ -199,6 +199,25 @@ class DocumentoDeCorrida {
   /// arista una publicación que quedó a medias no tendría adónde avanzar
   /// cuando el reintento sí completa. El diagrama está incompleto, no este
   /// mapa.
+  ///
+  /// **`localInconsistent → committed` también está, y es una arista
+  /// CONDICIONADA.** §9 exige que el reintento, cuando comprueba que el
+  /// índice ya coincide con la revisión, promueva este estado a `committed` y
+  /// publique: la inconsistencia que dejó la corrida original ya no existe.
+  /// Pero el mapa —a propósito— no puede exigir esa comprobación: es una
+  /// tabla de qué estado sigue a cuál, no un lugar donde correr un `git
+  /// status`. Dejar la entrada así, sin más, sería la misma degradación que
+  /// el doc de [avanzarA] ya evita al devolver un documento nuevo en vez de
+  /// mutar: una arista que cualquiera puede tomar sin comprobar nada convierte
+  /// el invariante «solo se promueve con el índice verificado» en una
+  /// costumbre de quien la llama. Por eso queda dicho acá, aunque el código
+  /// de esta clase no lo imponga:
+  /// - **Quién la toma:** únicamente el camino de `--retry-publication`
+  ///   (tarea 9 de esta pila), nunca una corrida de `ship` en curso.
+  /// - **Con qué comprobado:** solo después de reconstruir el índice y
+  ///   confirmar que coincide con [revision] byte a byte. Si no coincide,
+  ///   el reintento no toma esta arista: la inconsistencia sigue viva y el
+  ///   documento se queda en `localInconsistent`.
   static const _transiciones = <EstadoDelDocumento, Set<EstadoDelDocumento>>{
     EstadoDelDocumento.prepared: {
       EstadoDelDocumento.committed,
@@ -214,8 +233,21 @@ class DocumentoDeCorrida {
     },
     EstadoDelDocumento.publicationComplete: {},
     EstadoDelDocumento.notApplied: {},
-    EstadoDelDocumento.localInconsistent: {},
+    EstadoDelDocumento.localInconsistent: {EstadoDelDocumento.committed},
   };
+
+  /// Los destinos declarados desde [estado]. Vacío si [estado] es terminal.
+  ///
+  /// **Existe para que las pruebas deriven los terminales del mapa, en vez de
+  /// listarlos a mano.** Una lista escrita a mano —«los terminales son
+  /// notApplied, publicationComplete y localInconsistent»— envejece sin
+  /// avisar: el día que este mapa cambia, esa lista queda mintiendo hasta que
+  /// alguien la mira de nuevo. Fue exactamente lo que le pasó a la prueba que
+  /// afirmaba tres terminales cuando [EstadoDelDocumento.localInconsistent]
+  /// dejó de serlo: leer el mapa en vez de copiarlo es lo que hace que
+  /// corregir el mapa alcance para que la prueba siga diciendo la verdad.
+  static Set<EstadoDelDocumento> destinosDe(EstadoDelDocumento estado) =>
+      _transiciones[estado]!;
 
   /// Avanza, o lanza. **Devuelve un documento nuevo** en vez de mutar este:
   /// con un campo mutable, alguien escribe `committed` sin pasar por acá y la
