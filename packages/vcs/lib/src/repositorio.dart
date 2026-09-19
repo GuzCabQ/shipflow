@@ -23,11 +23,11 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
-import 'indice.dart';
 import 'secretos.dart';
 
 part 'candidato.dart';
 part 'alteraciones.dart';
+part 'indice.dart';
 
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///
@@ -898,7 +898,14 @@ class RepositorioGit implements ChangeSink {
   }
 
   /// Las rutas, de entre [rutas], donde el índice de quien corre NO coincide
-  /// con [arbol]. **Vacía significa que coincide.**
+  /// con [arbol], **ordenadas**. Vacía significa que coincide.
+  ///
+  /// **El orden se garantiza acá, sobre el resultado ya junto, y en ningún
+  /// otro lado.** Esta función junta dos fuentes —lo que `diff-index` marcó
+  /// sobre las rutas que el árbol tiene, y lo que `ls-files` marcó sobre las
+  /// que no— y solo después de juntarlas tiene sentido ordenar: ordenar cada
+  /// fuente por separado antes de unirlas sería trabajo que el propio orden
+  /// final vuelve a hacer, sin que ninguna prueba pudiera notar su ausencia.
   ///
   /// **Acotada a [rutas] a propósito, y no el índice entero.** Comparar el
   /// índice entero rechazaría cambios preparados ajenos que la operación de
@@ -923,21 +930,62 @@ class RepositorioGit implements ChangeSink {
   /// que ya salió del índice `update-index --refresh` no dice «nada que
   /// hacer»: dice `fatal: Unable to process path` y sale con `128`— sería
   /// código que una mutación no puede matar, y este archivo no lo escribe.
+  ///
+  /// **`diff-index` solo se le pide por las rutas que [arbol] YA TIENE.** Una
+  /// ruta ausente del árbol y presente en el índice real —el árbol candidato
+  /// la borró, y quien corre la volvió a preparar— es una diferencia
+  /// legítima, pero `git` la marca con la letra `A` (agregada), que
+  /// [rutasDeDiffRaw] no conoce: ver su doc para el porqué. En vez de
+  /// pedirle a ese parser que la entienda, esta ruta ni siquiera llega a
+  /// `diff-index`: se resuelve preguntándole a `ls-files` si el índice real
+  /// la tiene, y si la tiene, es una diferencia sin más trámite.
   Future<List<String>> rutasQueDifierenDelArbol({
     required String arbol,
     required List<String> rutas,
   }) async {
     if (rutas.isEmpty) return const [];
-    final crudo = await _exigirBytes([
-      'diff-index',
-      '--raw',
+
+    final enElArbol = (await _exigirCrudo([
+      'ls-tree',
       '-z',
-      '--cached',
+      '--name-only',
       arbol,
       '--',
       ...rutas,
-    ]);
-    return rutasDeDiffRaw(crudo);
+    ])).split(' ').where((s) => s.isNotEmpty).toSet();
+
+    final diferentes = <String>{};
+    if (enElArbol.isNotEmpty) {
+      final crudo = await _exigirBytes([
+        'diff-index',
+        '--raw',
+        '-z',
+        '--cached',
+        arbol,
+        '--',
+        ...enElArbol,
+      ]);
+      diferentes.addAll(rutasDeDiffRaw(crudo));
+    }
+
+    // **Lo que el árbol no tiene solo es una diferencia si el índice real SÍ
+    // lo tiene.** Si ninguno de los dos la conoce, no hay nada que opinar:
+    // es el mismo hecho que una ruta que nunca existió en ningún lado.
+    final fueraDelArbol = rutas.toSet().difference(enElArbol);
+    if (fueraDelArbol.isNotEmpty) {
+      final enElIndice = (await _exigirCrudo([
+        'ls-files',
+        '-z',
+        '--cached',
+        '--',
+        ...fueraDelArbol,
+      ])).split(' ').where((s) => s.isNotEmpty);
+      diferentes.addAll(enElIndice);
+    }
+
+    final resultado = diferentes.toList();
+    resultado.sort();
+    return resultado;
   }
 
   /// El código con el que `git remote get-url` dice que **ese remoto no está

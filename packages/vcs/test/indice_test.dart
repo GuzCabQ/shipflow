@@ -44,6 +44,7 @@ void main() {
     void Function(String ruta, String contenido) escribirYPreparar,
     void Function(String ruta) tocarSinCambiarContenido,
     void Function(String ruta) quitarDelIndice,
+    void Function(String ruta) borrarYCommitear,
   })
   repoConArchivos(Map<String, String> archivos) {
     final raiz = Directory.systemTemp.createTempSync('indice_');
@@ -86,11 +87,21 @@ void main() {
       git(['rm', '--quiet', '--cached', '--', ruta]);
     }
 
+    /// Borra [ruta] y la commitea: el árbol de la revisión resultante NO la
+    /// tiene. Sirve para armar el escenario donde una ruta declarada está en
+    /// el índice real de quien corre pero no en el árbol candidato —el que
+    /// una revisión de borrado deja atrás—.
+    void borrarYCommitear(String ruta) {
+      git(['rm', '--quiet', '--', ruta]);
+      git(['commit', '--quiet', '-m', 'borra $ruta']);
+    }
+
     return (
       repo: RepositorioGit(directorio: raiz.path, politica: politica),
       escribirYPreparar: escribirYPreparar,
       tocarSinCambiarContenido: tocarSinCambiarContenido,
       quitarDelIndice: quitarDelIndice,
+      borrarYCommitear: borrarYCommitear,
     );
   }
 
@@ -136,28 +147,31 @@ void main() {
       },
     );
 
-    test('un mtime tocado con el MISMO contenido no es una diferencia', () async {
-      // **La razón NO es un refresco previo: acá no hay ninguno.** El brief
-      // de esta tarea suponía que hacía falta `update-index --refresh` para
-      // que este caso diera vacío, copiando el razonamiento de
-      // `_CandidatoGit.alteraciones` —que compara el árbol de TRABAJO, donde
-      // el `mtime` sí decide—. Medido: con `--cached` la comparación es
-      // índice contra árbol, dos objetos que no requieren leer el disco, así
-      // que el `mtime` nunca entra en juego. Sacar un refresco que nunca se
-      // escribió no puede romper esta prueba; lo que la sostiene es que
-      // `git add` nunca se volvió a correr sobre `a.txt`, así que el índice
-      // sigue anotando el blob original.
-      final r = repoConArchivos({'a.txt': 'uno'});
-      final arbol = await r.repo.arbolDe(await r.repo.head);
-      r.tocarSinCambiarContenido('a.txt');
-      expect(
-        await r.repo.rutasQueDifierenDelArbol(arbol: arbol, rutas: ['a.txt']),
-        isEmpty,
-        reason:
-            'el índice sigue anotando el blob de "uno": --cached compara '
-            'objetos de git, no el mtime del árbol de trabajo',
-      );
-    });
+    test(
+      'un mtime tocado con el MISMO contenido no es una diferencia',
+      () async {
+        // **La razón NO es un refresco previo: acá no hay ninguno.** El brief
+        // de esta tarea suponía que hacía falta `update-index --refresh` para
+        // que este caso diera vacío, copiando el razonamiento de
+        // `_CandidatoGit.alteraciones` —que compara el árbol de TRABAJO, donde
+        // el `mtime` sí decide—. Medido: con `--cached` la comparación es
+        // índice contra árbol, dos objetos que no requieren leer el disco, así
+        // que el `mtime` nunca entra en juego. Sacar un refresco que nunca se
+        // escribió no puede romper esta prueba; lo que la sostiene es que
+        // `git add` nunca se volvió a correr sobre `a.txt`, así que el índice
+        // sigue anotando el blob original.
+        final r = repoConArchivos({'a.txt': 'uno'});
+        final arbol = await r.repo.arbolDe(await r.repo.head);
+        r.tocarSinCambiarContenido('a.txt');
+        expect(
+          await r.repo.rutasQueDifierenDelArbol(arbol: arbol, rutas: ['a.txt']),
+          isEmpty,
+          reason:
+              'el índice sigue anotando el blob de "uno": --cached compara '
+              'objetos de git, no el mtime del árbol de trabajo',
+        );
+      },
+    );
 
     test('una ruta borrada del índice también es una diferencia', () async {
       final r = repoConArchivos({'a.txt': 'uno', 'b.txt': 'dos'});
@@ -179,6 +193,75 @@ void main() {
         reason:
             'sin rutas no hay nada sobre lo que opinar; tratarlo como '
             '«todas» convertiría un alcance vacío en el más ancho posible',
+      );
+    });
+
+    test('una ruta que el ÍNDICE tiene y el árbol candidato NO es una '
+        'diferencia, no una excepción', () async {
+      // El árbol candidato es el de una revisión que BORRÓ `a.txt`: ahí no
+      // existe. Quien corre, después, la volvió a preparar en su índice
+      // real —el caso de un verificador o un usuario que la restituye—.
+      // Contra ese árbol, `diff-index --cached` reporta esto con la letra
+      // `A` (agregada), que `leerDiffRaw` no conoce: su contrato es el del
+      // índice AISLADO del candidato, leído del propio árbol que se le da,
+      // donde esa letra es inalcanzable por construcción. Acá, con el
+      // índice REAL y un árbol arbitrario, sí es alcanzable, y tratarla
+      // como una `PromesaIncumplida` —el contrato pensado para lo
+      // inalcanzable del candidato— confundiría una diferencia legítima
+      // con «se rompió el arnés».
+      final r = repoConArchivos({'a.txt': 'uno', 'b.txt': 'dos'});
+      r.borrarYCommitear('a.txt');
+      final arbolSinA = await r.repo.arbolDe(await r.repo.head);
+      r.escribirYPreparar('a.txt', 'vuelve');
+      expect(
+        await r.repo.rutasQueDifierenDelArbol(
+          arbol: arbolSinA,
+          rutas: ['a.txt', 'b.txt'],
+        ),
+        ['a.txt'],
+      );
+    });
+
+    test('con más de una ruta distinta, el resultado sale ORDENADO y no en el '
+        'orden en que se prepararon', () async {
+      // Las seis pruebas de arriba nunca devuelven más de una ruta, así
+      // que ninguna nota si el resultado se ordena o no. Acá se preparan
+      // dos, a propósito en el orden CONTRARIO al alfabético.
+      final r = repoConArchivos({'m.txt': 'uno', 'z.txt': 'dos'});
+      final arbol = await r.repo.arbolDe(await r.repo.head);
+      r.escribirYPreparar('z.txt', 'CAMBIADO');
+      r.escribirYPreparar('m.txt', 'CAMBIADO');
+      expect(
+        await r.repo.rutasQueDifierenDelArbol(
+          arbol: arbol,
+          rutas: ['z.txt', 'm.txt'],
+        ),
+        ['m.txt', 'z.txt'],
+      );
+    });
+
+    test('con rutas de las DOS fuentes —una fuera del árbol, otra dentro— el '
+        'resultado sale ORDENADO igual', () async {
+      // «a.txt» llega por la vía de `ls-files` —el árbol candidato la
+      // borró y el índice real la volvió a preparar—; «z.txt» llega por
+      // la vía de `diff-index` —el árbol la tiene, y el índice la
+      // modificó—. El código arma primero las de `diff-index` y recién
+      // DESPUÉS les suma las de `ls-files`; sin el ordenamiento final el
+      // resultado saldría en ese orden de inserción, `['z.txt', 'a.txt']`,
+      // y no en el alfabético. Ninguna de las pruebas de arriba mezcla las
+      // dos fuentes, así que ninguna nota si el orden final depende de
+      // CÓMO se llegó a cada ruta.
+      final r = repoConArchivos({'a.txt': 'uno', 'z.txt': 'dos'});
+      r.borrarYCommitear('a.txt');
+      final arbolSinA = await r.repo.arbolDe(await r.repo.head);
+      r.escribirYPreparar('a.txt', 'vuelve');
+      r.escribirYPreparar('z.txt', 'CAMBIADO');
+      expect(
+        await r.repo.rutasQueDifierenDelArbol(
+          arbol: arbolSinA,
+          rutas: ['z.txt', 'a.txt'],
+        ),
+        ['a.txt', 'z.txt'],
       );
     });
   });
