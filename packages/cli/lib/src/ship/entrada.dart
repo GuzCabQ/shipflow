@@ -41,13 +41,19 @@ class EntradaDeShip {
   /// El identificador de la corrida que `--retry-publication` pide terminar,
   /// o **nulo cuando no se pidió ningún reintento**.
   ///
-  /// **No declara una rebanada: la rebanada ya está en el documento de esa
-  /// corrida.** Por eso es excluyente con `--file`, `--slice` e `--intent` —
-  /// declararlos junto con esto afirmaría dos veces, y distinto, de dónde
-  /// sale la intención que se publica—, y por eso viaja como un campo más de
-  /// esta misma clase en vez de un tipo aparte: el resto de la interpretación
-  /// —`--branch`, `--base`, `--dry-run`— no cambia de forma según cuál de las
-  /// dos formas de invocar se haya usado.
+  /// **No declara nada que el documento de esa corrida no lleve ya.** Por eso
+  /// es excluyente con `--file`, `--slice`, `--intent`, `--branch` y `--base`
+  /// —volver a declararlos acá sería una segunda fuente del mismo hecho, y no
+  /// una preferencia entre dos formas válidas—. `--branch` entra en esa lista
+  /// aunque el resto de este archivo la trate como una ASERCIÓN y no como una
+  /// declaración: acá igual sobra, porque el filtro por estado de una tarea
+  /// posterior comprueba la rama del reintento contra la del documento sin
+  /// condición, así que la bandera no compraría ninguna garantía. Solo
+  /// `--dry-run` convive: un ensayo del reintento no escribe nada, y eso no
+  /// contradice a ningún documento. Viaja como un campo más de esta misma
+  /// clase, y no como un tipo aparte, por lo mismo que las demás: el resto de
+  /// la interpretación no cambia de forma según cuál de las dos formas de
+  /// invocar se haya usado.
   final String? reintentarPublicacion;
 
   EntradaDeShip({
@@ -79,6 +85,18 @@ void _exigirSinRepetidos(List<String> archivos) {
     }
   }
 }
+
+/// **Hueco declarado, más ancho que esta rebanada.** Esta función solo
+/// protege listas —`archivos` y `archivo.files`—. Ninguna de las banderas de
+/// valor escalar de este intérprete —`--intent`, `--branch`, `--base` y ahora
+/// `--retry-publication`— rechaza que se la repita: `interpretarShip` las
+/// sobrescribe una por una en el `for` de abajo, así que gana la última, EN
+/// SILENCIO. `_exigirSinRepetidos` no se puede reusar tal cual para cerrarlo
+/// —opera sobre listas, y estas cuatro son campos sueltos, no listas—, así que
+/// cerrarlo pide una forma nueva y una decisión de diseño —¿la primera manda?
+/// ¿la última? ¿es un error?— que ninguna tarea hasta ahora tomó. Queda
+/// escrito para que no se lo confunda con un descuido de esta rebanada en
+/// particular.
 
 /// Interpreta la invocación de `ship` entera.
 ///
@@ -151,14 +169,27 @@ EntradaDeShip interpretarShip(List<String> args) {
   }
 
   // **La exclusión con el reintento se comprueba antes que ninguna otra
-  // cosa**, igual que `--file` y `--slice` entre sí: un reintento no declara
-  // una rebanada —la rebanada ya está en el documento de la corrida que se
-  // quiere terminar— así que pasar `--file`, `--slice` o `--intent` junto con
+  // cosa**, igual que `--file` y `--slice` entre sí: todo lo que un reintento
+  // necesita ya está en el documento de la corrida que se quiere terminar, así
+  // que pasar `--file`, `--slice`, `--intent`, `--branch` o `--base` junto con
   // `--retry-publication` no es una preferencia entre dos formas válidas, es
-  // una contradicción sobre el mismo hecho —de dónde sale lo que se publica—,
-  // y este proyecto ya decidió que esas no se resuelven eligiendo una en
-  // silencio. El mensaje nombra las DOS banderas en conflicto, para que quien
-  // lo lee no tenga que adivinar cuál de las dos sobra.
+  // una SEGUNDA FUENTE del mismo hecho —y este proyecto ya vio ese patrón
+  // divergir más de una vez—. El mensaje nombra las DOS banderas en conflicto,
+  // para que quien lo lee no tenga que adivinar cuál de las dos sobra, y lo
+  // hace sin importar el orden en que se hayan pasado: los chequeos corren
+  // ACÁ, después de que el `for` de arriba terminó de parsear todo, así que a
+  // ninguno le importa si `--retry-publication` vino antes o después de la
+  // bandera con la que contradice.
+  //
+  // **`--branch` no es una excepción por ser una ASERCIÓN y no una
+  // declaración** —así distingue el resto de este archivo a `--branch` del
+  // resto, con razón; ver `_resolverBranch`, más abajo—. Acá igual se excluye,
+  // porque el filtro por estado de una tarea posterior comprueba la rama del
+  // reintento contra la del documento SIN condición: la bandera no sumaría
+  // ninguna garantía que esa comprobación no dé ya, solo un segundo lugar
+  // donde el mismo hecho puede discrepar. Y una aserción que no aporta nada es
+  // peor que ninguna: quien la pasa cree estar comprando una comprobación
+  // extra que no existe.
   if (reintentarPublicacion != null) {
     if (archivos.isNotEmpty) {
       throw const UsoInvalido(
@@ -184,6 +215,25 @@ EntradaDeShip interpretarShip(List<String> args) {
         'La intención de un reintento ya está en el documento de la corrida '
             'que se quiere terminar: sacá --intent, o sacá '
             '--retry-publication si lo que querés es una corrida nueva.',
+      );
+    }
+    if (branch != null) {
+      throw const UsoInvalido(
+        '--retry-publication y --branch se contradicen',
+        'La rama de un reintento ya está afirmada en el documento de la '
+            'corrida que se quiere terminar, y un filtro posterior la '
+            'comprueba contra esa sin condición: --branch no sumaría ninguna '
+            'garantía, solo una segunda fuente del mismo hecho. Sacá '
+            '--branch. Si lo que el documento dice está mal, no se corrige '
+            'con una bandera: volvé a correr `ship`.',
+      );
+    }
+    if (base != null) {
+      throw const UsoInvalido(
+        '--retry-publication y --base se contradicen',
+        'La base de un reintento ya está en el documento de la corrida que '
+            'se quiere terminar: sacá --base. Si lo que el documento dice '
+            'está mal, no se corrige con una bandera: volvé a correr `ship`.',
       );
     }
     // **`--yes` y `--allow-incomplete` no se aceptan, y no es la misma regla

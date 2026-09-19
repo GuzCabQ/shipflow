@@ -142,7 +142,13 @@ void main() {
       );
     });
 
-    for (final ajena in ['--file', '--slice', '--intent']) {
+    for (final ajena in [
+      '--file',
+      '--slice',
+      '--intent',
+      '--branch',
+      '--base',
+    ]) {
       test(
         '$ajena con el reintento es una CONTRADICCIÓN, no una preferencia',
         () {
@@ -163,6 +169,26 @@ void main() {
           );
         },
       );
+
+      test('$ajena con el reintento contradice SIN IMPORTAR el orden en que se '
+          'pasen', () {
+        // Los chequeos corren DESPUÉS de que el `for` de `interpretarShip`
+        // terminó de parsear todo: a ninguno le importa si
+        // `--retry-publication` vino antes o después de la bandera con la
+        // que contradice, y el mensaje sigue nombrando a las dos.
+        expect(
+          () => interpretarShip([ajena, 'x', '--retry-publication', 'r-1']),
+          throwsA(
+            isA<UsoInvalido>()
+                .having(
+                  (e) => e.reason,
+                  'reason',
+                  contains('--retry-publication'),
+                )
+                .having((e) => e.reason, 'reason', contains(ajena)),
+          ),
+        );
+      });
     }
 
     for (final ajena in ['--yes', '--allow-incomplete']) {

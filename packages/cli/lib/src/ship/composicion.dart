@@ -62,9 +62,9 @@ el pull request. Cada camino termina en un desenlace declarado.
   --base <rama>       Contra qué rama se abre el pull request.
   --retry-publication <runId>
                       Termina una corrida que ya commiteó. Excluyente con
-                      --intent, --file y --slice: la rebanada de esa corrida
-                      ya está en su documento. --yes y --allow-incomplete no
-                      se aceptan: esa compuerta ya pasó.
+                      --intent, --file, --slice, --branch y --base: todo eso
+                      ya está en el documento de esa corrida. --yes y
+                      --allow-incomplete no se aceptan: esa compuerta ya pasó.
   --dry-run           Solo la previsualización. Cero efectos persistentes.
   --yes               Autoriza a ESCRIBIR. No autoriza a publicar algo que no
                       concluyó: eso es --allow-incomplete.
