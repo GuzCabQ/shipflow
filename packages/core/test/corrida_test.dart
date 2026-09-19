@@ -2,6 +2,69 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('la compuerta por estado', () {
+    test('estado por estado, y --allow-incomplete solo compra lo que '
+        'concluyó mal', () {
+      expect(
+        autoriza(estado: EstadoDeCorrida.verde, allowIncomplete: false),
+        isTrue,
+      );
+      for (final e in [EstadoDeCorrida.rojo, EstadoDeCorrida.noConcluyente]) {
+        expect(
+          autoriza(estado: e, allowIncomplete: false),
+          isFalse,
+          reason: e.name,
+        );
+        expect(
+          autoriza(estado: e, allowIncomplete: true),
+          isTrue,
+          reason: e.name,
+        );
+      }
+      expect(
+        autoriza(estado: EstadoDeCorrida.errorInterno, allowIncomplete: true),
+        isFalse,
+        reason: '--allow-incomplete no autoriza el arnés roto',
+      );
+    });
+
+    test('la fábrica DECIDE con la compuerta: las dos respuestas son una '
+        'sola', () {
+      // **Lo que esta prueba mide, y lo que NO.** No mide que la compuerta
+      // cubra todos los estados: eso lo fuerza el compilador con un `switch`
+      // exhaustivo, y la prueba anterior —un `returnsNormally` sobre cada
+      // estado— pasaba igual con un comodín adentro, así que decía cubrir
+      // una decisión que en realidad no tocaba. Lo que SÍ mide es que la
+      // fábrica no tenga criterio propio: para cada estado y cada valor de
+      // la bandera, la corrida se detiene por `verificationGate`
+      // EXACTAMENTE cuando la compuerta no autoriza.
+      //
+      // Es la aserción que se pone roja el día que las dos vuelvan a ser
+      // dos: cualquier fila donde la fábrica conteste distinto de `autoriza`
+      // —la que antes caía en «cerrada» por omisión con un estado nuevo— la
+      // rompe.
+      for (final estado in EstadoDeCorrida.values) {
+        for (final allowIncomplete in [false, true]) {
+          final r = ShipOutcome.derivar(
+            verificacion: estado,
+            huboSecreto: false,
+            seConfirmo: true,
+            soloPreview: false,
+            autorizaIncompleto: allowIncomplete,
+            remoto: PullRequestOpen(url: 'https://forja/pr/1'),
+          );
+          final detenidaPorLaCompuerta =
+              r is NoIntentado && r.causa == CausaDeNoIntento.verificationGate;
+          expect(
+            detenidaPorLaCompuerta,
+            !autoriza(estado: estado, allowIncomplete: allowIncomplete),
+            reason: '${estado.name} · allowIncomplete=$allowIncomplete',
+          );
+        }
+      }
+    });
+  });
+
   group('EstadoPublicable', () {
     test('errorInterno NO tiene equivalente publicable', () {
       expect(EstadoPublicable.desde(EstadoDeCorrida.errorInterno), isNull);

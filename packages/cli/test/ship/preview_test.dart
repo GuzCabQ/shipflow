@@ -56,39 +56,10 @@ ArtefactoDeRevision artefactoDePrueba() {
 }
 
 void main() {
-  test('la compuerta, estado por estado', () {
-    expect(
-      autoriza(estado: EstadoDeCorrida.verde, allowIncomplete: false),
-      isTrue,
-    );
-    for (final e in [EstadoDeCorrida.rojo, EstadoDeCorrida.noConcluyente]) {
-      expect(
-        autoriza(estado: e, allowIncomplete: false),
-        isFalse,
-        reason: e.name,
-      );
-      expect(
-        autoriza(estado: e, allowIncomplete: true),
-        isTrue,
-        reason: e.name,
-      );
-    }
-    expect(
-      autoriza(estado: EstadoDeCorrida.errorInterno, allowIncomplete: true),
-      isFalse,
-      reason: '--allow-incomplete no autoriza el arnés roto',
-    );
-  });
-
-  test('la compuerta cubre TODOS los estados', () {
-    // Un estado nuevo tiene que obligar a decidir si publica.
-    for (final e in EstadoDeCorrida.values) {
-      expect(
-        () => autoriza(estado: e, allowIncomplete: false),
-        returnsNormally,
-      );
-    }
-  });
+  // **La compuerta ya no se prueba acá**: vive en `core`, al lado de la
+  // fábrica del desenlace, y ahí está su suite —incluida la que mide que la
+  // fábrica decida CON ella y no por su cuenta—. Probarla desde los dos
+  // paquetes repetiría la aserción sin cubrir nada más.
 
   test('la previsualización muestra la evidencia, no un resumen', () {
     final p = previsualizacion(

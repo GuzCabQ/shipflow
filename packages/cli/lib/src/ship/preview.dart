@@ -1,5 +1,9 @@
-/// Qué se le muestra a quien corre `ship` antes de preguntar, y qué estados
-/// autorizan publicar.
+/// Qué se le muestra a quien corre `ship` antes de preguntar.
+///
+/// **Qué estados autorizan publicar NO se decide acá.** La compuerta es lógica
+/// de dominio y vive donde vive la fábrica del desenlace, en `core`; esta
+/// previsualización la llama para saber si hay algo que mostrar. Ver la nota
+/// al pie de este archivo.
 ///
 /// **La previsualización es texto para una persona, no un protocolo.** Nadie
 /// la parsea: la lee quien está por confirmar un `--yes`, y por eso muestra
@@ -104,25 +108,9 @@ String previsualizacion({
   return b.toString();
 }
 
-/// Si [estado] autoriza publicar. **`switch` exhaustivo, sin comodín**: un
-/// [EstadoDeCorrida] nuevo no compila hasta que alguien decida acá si publica
-/// o no — el mismo criterio con el que se escribieron las funciones de código
-/// de salida de la rebanada anterior.
-///
-/// `--yes` no participa de esta decisión: autoriza a escribir, no a publicar
-/// algo que no concluyó, y por eso ni siquiera es un parámetro de esta
-/// función. La única bandera que sí importa acá es `--allow-incomplete`, y
-/// solo importa para lo que **concluyó mal** —`rojo`, `noConcluyente`—, nunca
-/// para el instrumento roto.
-bool autoriza({
-  required EstadoDeCorrida estado,
-  required bool allowIncomplete,
-}) => switch (estado) {
-  EstadoDeCorrida.verde => true,
-  EstadoDeCorrida.rojo || EstadoDeCorrida.noConcluyente => allowIncomplete,
-  // `--allow-incomplete` autoriza publicar una verificación que concluyó
-  // mal, no una que no concluyó porque el instrumento se rompió: acá no
-  // hay nada que el arnés pueda afirmar sobre el cambio, con o sin la
-  // bandera.
-  EstadoDeCorrida.errorInterno => false,
-};
+// **La compuerta por estado NO vive acá, y esa ausencia es el arreglo.**
+// `autoriza` está en `core`, al lado de la fábrica del desenlace: acá había
+// una copia exhaustiva y allá un `!= verde`, y nada sostenía que las dos
+// contestaran lo mismo. Duplicarla exhaustiva de los dos lados tampoco lo
+// sostendría: dos exhaustivas siguen siendo dos. La previsualización la
+// LLAMA, y no la reimplementa.

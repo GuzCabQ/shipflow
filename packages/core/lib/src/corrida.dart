@@ -62,6 +62,41 @@ enum EstadoPublicable {
   };
 }
 
+/// Si [estado] autoriza publicar. **`switch` exhaustivo, sin comodín**: un
+/// [EstadoDeCorrida] nuevo no compila hasta que alguien decida acá si publica
+/// o no.
+///
+/// **Es la ÚNICA compuerta, y por eso vive al lado de [ShipOutcome.derivar].**
+/// Estaba escrita dos veces: exhaustiva del lado de la previsualización, y
+/// como un `!= verde` del lado de la fábrica. Nada sostenía que las dos
+/// contestaran lo mismo, y la asimetría era la peligrosa: un estado nuevo NO
+/// compila del lado exhaustivo y SÍ del otro, donde cae en «compuerta
+/// cerrada» por omisión. Quien agregara un estado y decidiera —en lo único
+/// que el compilador le iba a pedir— que publica, se llevaba una corrida que
+/// pasaba la compuerta, creaba el directorio de corridas, promovía,
+/// commiteaba, movía la rama, abría el pull request, y recién ahí recibía de
+/// la fábrica un «no intentado» que no encaja con nada de eso. Es el mismo
+/// defecto que el predicado del canal seguro ya cerró en otro lado: dos
+/// decisiones que no pueden divergir porque son una sola función.
+///
+/// **Dos exhaustivas siguen siendo dos.** Por eso la previsualización no
+/// tiene la suya: llama a esta.
+///
+/// `--yes` no participa de esta decisión: autoriza a escribir, no a publicar
+/// algo que no concluyó, y por eso ni siquiera es un parámetro. La única
+/// bandera que sí importa acá es `--allow-incomplete`, y solo importa para lo
+/// que **concluyó mal** —`rojo`, `noConcluyente`—, nunca para el instrumento
+/// roto: ahí no hay nada que el arnés pueda afirmar sobre el cambio, con o
+/// sin la bandera.
+bool autoriza({
+  required EstadoDeCorrida estado,
+  required bool allowIncomplete,
+}) => switch (estado) {
+  EstadoDeCorrida.verde => true,
+  EstadoDeCorrida.rojo || EstadoDeCorrida.noConcluyente => allowIncomplete,
+  EstadoDeCorrida.errorInterno => false,
+};
+
 /// Por qué una corrida no intentó publicar.
 ///
 /// **Son cuatro y `errorInterno` no es una de ellas**: es un ESTADO, y entra
@@ -196,13 +231,20 @@ sealed class ShipOutcome {
         NoIntentado._(causa: causa, verificacion: verificacion);
 
     // 1 · El arnés roto. No lo autoriza ninguna bandera.
+    //
+    // **Esto es PRECEDENCIA, no una segunda compuerta.** [autoriza] ya
+    // contesta que no para `errorInterno`, y el paso 3 lo volvería a
+    // rechazar; lo que este paso decide es que gane sobre el secreto, que es
+    // lo único que el paso 3 —que corre después— no puede decidir.
     if (verificacion == EstadoDeCorrida.errorInterno) {
       return sinIntentar(CausaDeNoIntento.verificationGate);
     }
     // 2 · El secreto, antes que cualquier camino de autorización.
     if (huboSecreto) return sinIntentar(CausaDeNoIntento.secretDetected);
-    // 3 · La compuerta por estado.
-    if (verificacion != EstadoDeCorrida.verde && !autorizaIncompleto) {
+    // 3 · La compuerta por estado. **Es [autoriza] y no un `!= verde`
+    //     escrito acá**: esto se preguntaba en dos lados que nada obligaba a
+    //     contestar igual. Ver el doc de [autoriza].
+    if (!autoriza(estado: verificacion, allowIncomplete: autorizaIncompleto)) {
       return sinIntentar(CausaDeNoIntento.verificationGate);
     }
     // 4 · La previsualización, antes que la confirmación: quien previsualiza
