@@ -304,18 +304,47 @@ Future<bool> Function(String pregunta)? responderDeLaTerminal({
   };
 }
 
+/// El delimitador con el que la herramienta separa los registros cuando se le
+/// pide la salida sin citar.
+///
+/// **Se escribe con su escape y no con el byte crudo, a propósito.** Un cero
+/// literal adentro del archivo fuente hace que toda herramienta de búsqueda
+/// por texto lo trate como binario y deje de mirarlo — y el control que lee
+/// este árbol línea por línea es una de ellas. Ya pasó dos veces en esta
+/// rebanada.
+const _delimitadorNulo = '\u0000';
+
 /// Las rutas sucias del árbol de trabajo que **no** son de la rebanada.
 ///
 /// **Se miden, no se asumen.** La previsualización las imprime con su cuenta, y
 /// un cero sin haber mirado afirma que no queda nada afuera — que es justo lo
 /// que quien confirma necesita poder creerle.
 ///
-/// **Residuo declarado:** la ruta se toma de la cuarta columna en adelante, que
-/// es donde el formato de porcelana la escribe. Un renombrado la escribe como
-/// `origen -> destino` y acá viaja así, entera: es el texto que una persona
-/// necesita para reconocerlo, y partirlo pediría interpretar un formato que
-/// además entrecomilla las rutas con caracteres fuera de ASCII. Nada de esto
-/// entra en el artefacto ni en el pull request: es el canal local y solo eso.
+/// **La salida se pide delimitada por el carácter nulo, y eso NO es una
+/// preferencia de parseo.** El formato de porcelana, sin esa opción, CITA las
+/// rutas que llevan caracteres fuera de ASCII, comillas, barras invertidas o
+/// saltos de línea: las envuelve entre comillas dobles y escapa sus bytes en
+/// octal. Comparar ese texto citado contra las rutas que la rebanada declaró
+/// —que son las rutas de verdad— es decidir sobre una representación más
+/// pobre que el propio criterio, y el resultado era falso en la dirección
+/// más cara: con un archivo declarado cuyo nombre no es ASCII, la salida
+/// citada no coincidía con la declarada, así que ese archivo —que SÍ es de la
+/// rebanada— aparecía en la previsualización bajo «queda en el árbol de
+/// trabajo, NO se publica y NO está en el artefacto». Quien confirma la
+/// publicación lo hace mirando ese texto. Con el delimitador nulo no hay
+/// citado: cada ruta viaja con sus bytes tal cual.
+///
+/// **Y el renombrado lleva DOS rutas, en dos registros.** Con el delimitador
+/// nulo, un renombrado o una copia escribe primero el registro con la ruta
+/// nueva y después, como registro aparte, la ruta de origen. Un lector que no
+/// lo supiera leería esa segunda ruta como si fuera un registro de estado
+/// —con sus dos primeras letras confundidas con el par de columnas— y diría
+/// cualquier cosa sobre ella. Acá se consume de a pares cuando corresponde, y
+/// las dos rutas se comparan contra lo declarado: el registro es ajeno salvo
+/// que la rebanada haya declarado LAS DOS. Para mostrarlo se vuelve a armar
+/// `origen -> destino`, que es el texto que una persona necesita para
+/// reconocerlo. Nada de esto entra en el artefacto ni en el pull request: es
+/// el canal local y solo eso.
 Future<List<String>> cambiosAjenosDelArbol({
   required String directorio,
   required List<String> deLaRebanada,
@@ -329,6 +358,9 @@ Future<List<String>> cambiosAjenosDelArbol({
     '--literal-pathspecs',
     'status',
     '--porcelain',
+    // Sin esto las rutas vuelven CITADAS y el control decide sobre una
+    // representación más pobre que su criterio — ver el doc de esta función.
+    '-z',
     '--untracked-files=all',
   ];
   final r = await Process.run(
@@ -350,11 +382,37 @@ Future<List<String>> cambiosAjenosDelArbol({
     );
   }
   final declarados = deLaRebanada.toSet();
-  return [
-    for (final linea in const LineSplitter().convert(r.stdout as String))
-      if (linea.length > 3 && !declarados.contains(linea.substring(3)))
-        linea.substring(3),
-  ];
+  final registros = (r.stdout as String).split(_delimitadorNulo);
+  final ajenos = <String>[];
+  for (var i = 0; i < registros.length; i++) {
+    final registro = registros[i];
+    // Dos letras de estado, un espacio y al menos un carácter de ruta. El
+    // último registro es la cadena vacía que deja el delimitador final.
+    if (registro.length < 4) continue;
+    final destino = registro.substring(3);
+    // **Se miran las dos columnas de estado, no solo la del índice.** La
+    // herramienta escribe la ruta de origen cada vez que detectó un
+    // renombrado o una copia, y la letra que lo dice puede caer en
+    // cualquiera de las dos según de qué lado se haya detectado: mirar una
+    // sola dejaría el registro de origen suelto, leído como si fuera un
+    // estado más.
+    final llevaOrigen =
+        const {'R', 'C'}.contains(registro[0]) ||
+        const {'R', 'C'}.contains(registro[1]);
+    String? origen;
+    if (llevaOrigen && i + 1 < registros.length) {
+      i += 1;
+      origen = registros[i];
+    }
+    final rutas = origen == null ? [destino] : [origen, destino];
+    // **Ajeno salvo que la rebanada haya declarado TODAS las rutas del
+    // registro.** Un renombrado que solo declara una de las dos mueve un
+    // archivo que la rebanada no nombró, o hacia un nombre que no nombró:
+    // decirle a quien confirma que eso no queda afuera sería afirmar de más.
+    if (rutas.every(declarados.contains)) continue;
+    ajenos.add(origen == null ? destino : '$origen -> $destino');
+  }
+  return ajenos;
 }
 
 /// La forja que no está compuesta. **Lanza si alguien la usa.**
