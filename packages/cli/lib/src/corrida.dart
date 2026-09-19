@@ -162,7 +162,7 @@ enum QueHacerAlRecuperar {
 /// grafo del documento no tiene.
 ///
 /// **Asegurar la precondición es del llamador**, y ese llamador ya existe:
-/// es [puertaDelReintento]. Filtra por rama y por estado ANTES de invocar
+/// es [puertaDelReintento]. Filtra por rama, por destino y por estado ANTES de invocar
 /// esta función, así que quien llega hasta acá ya la tiene asegurada. Lo que
 /// corresponde acá sigue siendo declarar la precondición en vez de dejarla
 /// implícita —no repetir adentro el filtro que [puertaDelReintento] ya hizo
@@ -679,7 +679,8 @@ const _nadaQueEntregar = NoSeReintenta(
       'volver a correr `ship` desde el principio.',
 );
 
-/// La puerta de `--retry-publication`: filtra por rama y por estado antes de
+/// La puerta de `--retry-publication`: filtra por rama, por destino y por
+/// estado antes de
 /// dejar pasar a [decidirRecuperacion] o a los caminos de reconciliación que
 /// arrancan desde ella.
 ///

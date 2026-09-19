@@ -151,7 +151,7 @@ final class CorridaConOtroIdentificador extends ResultadoDelReintento {
   });
 }
 
-/// La puerta por rama y por estado dijo que no.
+/// La puerta por rama, por destino y por estado dijo que no.
 final class ReintentoRechazado extends ResultadoDelReintento {
   final NoSeReintenta porQue;
 
