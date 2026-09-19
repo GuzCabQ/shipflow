@@ -34,7 +34,7 @@ verify: ok — 2 de 2 pasos ejecutados, 0 diagnóstico(s).
 
 **La forja y el aislamiento de la credencial se implementaron en esta rama.** Le da a la salida del pull request un desenlace sellado que distingue abierto, cerrado, fusionado y *no sé si llegó*; parte el puerto de credenciales para que quien solo lee no tenga métodos que solo lanzan; y saca la credencial del entorno que heredan los subprocesos, en un solo sitio. Ver [La forja y el aislamiento de la credencial](#la-forja-y-el-aislamiento-de-la-credencial). El plan, tarea por tarea, está en [PLAN-forja-y-credencial.md](PLAN-forja-y-credencial.md); no le queda nada pendiente de esta rebanada — `ship`, que es quien llama a `PullRequestSink.open` de verdad, es la rebanada siguiente, y ya está construida.
 
-**El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y cuando se implementaron ninguno de los dos tenía productor.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una sola fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación—. **La 4b ya corre**, y con ella `ShipOutcome.derivar` ganó su productor; la 4c todavía no está construida.
+**El desenlace de una corrida de `ship` y el documento que la persiste se implementaron en esta rama, y cuando se implementaron ninguno de los dos tenía productor.** `ShipOutcome` es una jerarquía sellada de cinco variantes con constructores privados y una fábrica —`ShipOutcome.derivar`— que las deriva de los hechos de la corrida con precedencia explícita; los códigos de proceso `3` y `6` salen de una función total sobre ese dominio cerrado, con la acción siguiente derivada del mismo desenlace; y el documento autoritativo de la corrida persiste con temporal y `rename`, con la recuperación como una comparación de tres casos. Ver [El desenlace de una corrida, y su documento](#el-desenlace-de-una-corrida-y-su-documento). El plan, tarea por tarea, está en [PLAN-desenlace-de-la-corrida.md](PLAN-desenlace-de-la-corrida.md); es la primera de tres rebanadas —la 4b es el comando `ship` de punta a punta y la 4c es `--retry-publication` con la reconciliación—. **La 4b ya corre**, y con ella `ShipOutcome.derivar` ganó su productor. **4c le agregó una segunda fábrica**, `ShipOutcome.derivarReintento`, para la corrida que ya commiteó y cuyas compuertas ya son historia.
 
 **El comando `ship` se implementó en esta rama, y corre de punta a punta.** Es la segunda de las tres rebanadas en que se partió la cuarta —la primera construyó el desenlace de una corrida y el documento que la persiste; la tercera es `--retry-publication` con la reconciliación, y todavía no está construida—. Esta rebanada compone las piezas que ya existían —el candidato, la cascada sobre raíz arbitraria, la superficie, el artefacto, la forja— y agrega lo que ninguna tenía: la entrada, el preflight, el remapeo de rutas, la previsualización, la compuerta y la raíz de composición que arma los adapters de verdad. Ver [El comando `ship`, de punta a punta](#el-comando-ship-de-punta-a-punta). El plan, tarea por tarea, está en [PLAN-ship-el-comando.md](PLAN-ship-el-comando.md); lo que le queda abierto está en su propia sección de residuos.
 
@@ -3551,9 +3551,10 @@ serialización y la persistencia.
 
 `ShipOutcome` (`packages/core/lib/src/corrida.dart`) es una jerarquía sellada
 de cinco variantes —`NoIntentado`, `NoAplicado`, `LocalInconsistente`,
-`Publicado`, `PublicacionIncompleta`— con constructores **privados**. La
-única entrada real es `ShipOutcome.derivar`, que las deriva de los hechos de
-la corrida con una precedencia explícita:
+`Publicado`, `PublicacionIncompleta`— con constructores **privados**, y DOS
+fábricas —nunca una tercera forma de ensamblar esto a mano—. `ShipOutcome.derivar`
+es para la corrida que todavía no pasó sus compuertas, y de ahí sale
+cualquiera de las cinco variantes, con una precedencia explícita:
 
 ```
 errorInterno > secretDetected > verificationGate
@@ -3583,6 +3584,22 @@ corrida con el arnés roto deje de ser escribible: no tiene variante
 `errorInterno`, así que `Publicado` y `PublicacionIncompleta` —que llevan
 `EstadoPublicable` y no `EstadoDeCorrida`— no pueden construirse sobre ese
 estado. No hay que acordarse de comprobarlo aparte.
+
+**La otra fábrica es `ShipOutcome.derivarReintento`, de 4c, y no es un atajo
+sobre la primera.** Es para la corrida que YA pasó sus compuertas y ya
+commiteó: el secreto, la compuerta por estado y la confirmación ya corrieron,
+y que hayan corrido es lo que el estado de esa corrida SIGNIFICA — volverlos
+a evaluar sería decidir de nuevo algo ya decidido y registrado. La única
+forma de que `derivar` conteste bien sobre un reintento sería alimentarlo con
+hechos fabricados —«se confirmó», «autoriza incompleto»— que nadie midió en
+esa corrida, y eso es exactamente lo que los constructores privados existen
+para impedir, un nivel más arriba. Por eso `derivarReintento` deriva
+**solo** del estado de verificación —que viaja en el documento, dentro del
+artefacto del borrador, y no es un campo nuevo— y del desenlace remoto, y de
+ahí solo pueden salir las dos variantes de publicación, `Publicado` y
+`PublicacionIncompleta`: los hechos que producen las otras tres —el secreto,
+el CAS rechazado, el índice sucio— ya no pueden ocurrir en un punto donde la
+corrida ya commiteó.
 
 ### El ruling sobre las cuatro causas
 
