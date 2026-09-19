@@ -10,4 +10,5 @@
 library;
 
 export 'src/cascada.dart';
+export 'src/remapeo.dart';
 export 'src/superficie.dart';

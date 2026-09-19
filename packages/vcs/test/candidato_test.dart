@@ -82,6 +82,93 @@ void main() {
     '--batch-check=%(objectname)',
   ]).split('\n').where((l) => l.trim().isNotEmpty).toSet();
 
+  /// Qué objetos sueltos tiene el almacén **temporal** del candidato, por
+  /// ruta relativa dentro de `objetos`.
+  ///
+  /// **Se deriva de `c.root`**, que es la única ruta que el puerto expone:
+  /// `objetos` es carpeta hermana de `arbol` bajo el mismo directorio
+  /// temporal —está anotado donde se crean, en `_CandidatoGit.preparar`—, así
+  /// que restar `/arbol` y sumar `/objetos` llega ahí sin que
+  /// `PreparedCandidate` tenga que declarar su almacén. Es la misma
+  /// derivación que usa [ensuciarElArbolDelCandidato], y es lo que permite
+  /// comprobar que un paso NO escribe sin inventar un espía que el puerto no
+  /// tiene con qué sostener.
+  Set<String> objetosDelAlmacenTemporal(PreparedCandidate c) {
+    final objetos = Directory('${Directory(c.root).parent.path}/objetos');
+    if (!objetos.existsSync()) return {};
+    return objetos
+        .listSync(recursive: true)
+        .whereType<File>()
+        .map((f) => f.path.substring(objetos.path.length))
+        .toSet();
+  }
+
+  /// Corrompe, por fuera del candidato, el objeto que el árbol fijado usa
+  /// para [archivo] — sin pasar por ninguna costura del candidato.
+  ///
+  /// **Es un evento que ningún camino del comando puede producir, y por eso
+  /// esto NO mide ninguna ventana.** El par `baseRevision`/`contentRevision`
+  /// que diffea `exigirSinSecretos` es fijo desde que `prepareCandidate`
+  /// devuelve, y lo que `createRevision` commitea es ese mismo árbol: pedirle
+  /// el escaneo dos veces al mismo candidato da siempre el mismo resultado, y
+  /// entre las dos llamadas no hay ninguna ventana que cerrar. Para que la
+  /// segunda lectura vea algo que la primera no vio hace falta reescribir a
+  /// mano los bytes del objeto suelto del almacén temporal, que es lo que
+  /// este ayudante hace.
+  ///
+  /// Lo que habilita, entonces, es medir que `createRevision` **escanea por
+  /// su cuenta** en vez de confiar en que alguien haya pedido el escaneo
+  /// antes: hace falta un dato que diverja entre las dos lecturas, y
+  /// fabricarlo desde afuera es la única forma.
+  ///
+  /// **Un objeto suelto no lleva ninguna verificación de que su contenido
+  /// coincida con su nombre.** `git` la aplica en `fsck`, no al leer con
+  /// `cat-file` o `diff`: por eso alcanza con reemplazar los bytes del
+  /// archivo en disco, sin tocar el árbol que lo referencia.
+  void ensuciarElArbolDelCandidato(
+    PreparedCandidate c,
+    String archivo,
+    String contenidoConSecreto,
+  ) {
+    final objetos = Directory('${Directory(c.root).parent.path}/objetos');
+    final almacenReal = () {
+      final relativo = git(['rev-parse', '--git-path', 'objects']);
+      return relativo.startsWith('/') ? relativo : '${raiz.path}/$relativo';
+    }();
+    final entorno = {
+      ...Platform.environment,
+      'GIT_OBJECT_DIRECTORY': objetos.path,
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES': almacenReal,
+    };
+    final listado = Process.runSync(
+      'git',
+      ['ls-tree', c.identity.contentRevision, '--', archivo],
+      workingDirectory: raiz.path,
+      environment: entorno,
+    );
+    if (listado.exitCode != 0) {
+      throw StateError('ls-tree ${listado.exitCode}: ${listado.stderr}');
+    }
+    final sha = (listado.stdout as String).trim().split(RegExp(r'\s+'))[2];
+    final objeto = File(
+      '${objetos.path}/${sha.substring(0, 2)}/${sha.substring(2)}',
+    );
+    expect(
+      objeto.existsSync(),
+      isTrue,
+      reason:
+          'el blob de $archivo tiene que vivir en el almacén temporal para '
+          'que este ayudante lo pueda corromper',
+    );
+    final cuerpo = utf8.encode(contenidoConSecreto);
+    final crudo = [...utf8.encode('blob ${cuerpo.length}\u0000'), ...cuerpo];
+    // `git` escribe los objetos sueltos de solo lectura. Se borra y se
+    // recrea en vez de sobreescribir: reabrir el mismo archivo con el modo
+    // que `git` le puso falla con «permiso denegado».
+    objeto.deleteSync();
+    objeto.writeAsBytesSync(ZLibEncoder().convert(crudo));
+  }
+
   setUp(() {
     raiz = Directory.systemTemp.createTempSync('candidato_');
     repo = RepositorioGit(
@@ -1145,6 +1232,99 @@ void main() {
         () => repo.apply(rebanada(['b.txt'])),
         throwsA(isA<SecretoEnLaRebanada>()),
       );
+    });
+  });
+
+  group('el escaneo se puede pedir antes de escribir nada', () {
+    // El diseño lo pone en el paso 5, antes de la previsualización: mientras
+    // el único escaneo viviera dentro de `createRevision` —el paso 11—, una
+    // corrida sin `--yes` se comportaba como una previsualización, nunca
+    // llegaba ahí, y el secreto no aparecía nunca.
+    const clave = 'const k = "AKIAIOSFODNN7EXAMPLE";\n';
+
+    test('el escaneo se puede pedir SIN escribir ningún objeto', () async {
+      escribir('a.txt', clave);
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        // **Contra el almacén TEMPORAL, no el real.** `exigirSinSecretos`
+        // nunca promueve, así que comprobar solo el almacén real no
+        // distinguiría este paso de una implementación futura que sí
+        // escribiera objetos sueltos ahí adentro — la aserción pasaría
+        // igual, y el nombre de esta prueba mentiría. Listar `objetos` antes
+        // y después es lo que de verdad puede ponerse rojo si eso pasa.
+        final antes = objetosDelAlmacenTemporal(c);
+        await expectLater(
+          c.exigirSinSecretos(),
+          throwsA(isA<SecretoEnLaRebanada>()),
+        );
+        expect(
+          objetosDelAlmacenTemporal(c),
+          antes,
+          reason: 'el paso 5 no escribe en el almacén temporal del candidato',
+        );
+        return null;
+      });
+    });
+
+    test(
+      'la ventana REAL no la ve ningún escaneo, y la cubre otra cosa',
+      () async {
+        // **Lo que sí puede pasar entre el paso 4 y el 11**: un verificador
+        // escribe un secreto en la raíz del candidato. No lo ve ninguno de los
+        // dos escaneos —los dos diffean la revisión fijada, no el árbol de
+        // trabajo—, y esta prueba lo fija en vez de dejarlo implícito en la
+        // frase de que «el segundo cierra una ventana», que era falsa.
+        //
+        // Lo que la cubre son dos cosas: `alteraciones` la informa —y una
+        // alteración vuelve la corrida no concluyente, aguas arriba— y lo que
+        // se commitea es el árbol FIJADO, así que el secreto no entra al commit
+        // ni aunque alguien autorice publicar una corrida incompleta.
+        escribir('a.txt', 'limpio\n');
+        await conCandidato(rebanada(['a.txt']), (c) async {
+          File('${c.root}/a.txt').writeAsStringSync(clave);
+
+          // Ninguno de los dos escaneos lo ve: los dos miran lo fijado.
+          await c.exigirSinSecretos();
+          final revision = await c.createRevision();
+
+          // Lo informa la comprobación de integridad, que es la que sí mira el
+          // árbol del candidato.
+          expect(
+            {for (final a in await c.alteraciones()) a.ruta},
+            contains('a.txt'),
+            reason: 'sin esto, la escritura en la raíz no la ve NADIE',
+          );
+
+          // Y el commit se lleva el árbol fijado, no el workspace.
+          expect(
+            git(['cat-file', 'blob', '$revision:a.txt']),
+            'limpio',
+            reason: 'lo que se commitea es la revisión fijada',
+          );
+          return null;
+        });
+      },
+    );
+
+    test('createRevision escanea POR SU CUENTA: la garantía del commit no '
+        'depende de que se haya pedido el paso 5', () async {
+      // **Lo que se mide es la independencia del llamador, no una ventana.**
+      // Los dos escaneos miran el mismo par de revisiones inmutables, así que
+      // el segundo no puede encontrar nada que el primero no haya encontrado;
+      // lo que sostiene la repetición es que la promesa «una rebanada con
+      // secretos no se commitea» valga sin condiciones, y no solo si quien
+      // llama se acordó de pedir la otra operación antes. La divergencia que
+      // hace falta para observarlo la fabrica un ayudante desde afuera — ver
+      // su doc: ningún camino del comando la produce.
+      escribir('a.txt', 'limpio\n');
+      await conCandidato(rebanada(['a.txt']), (c) async {
+        await c.exigirSinSecretos(); // pasa: todavía no hay secreto
+        ensuciarElArbolDelCandidato(c, 'a.txt', clave);
+        await expectLater(
+          c.createRevision(),
+          throwsA(isA<SecretoEnLaRebanada>()),
+        );
+        return null;
+      });
     });
   });
 

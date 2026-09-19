@@ -14,6 +14,18 @@ import 'package:test/test.dart';
 /// `:refs/heads/<rama>`, que BORRA la rama del remoto.
 const revisionDePrueba = 'a4e66d50d152b67d451a9028fd1cf54c71e18e79';
 
+/// El `runId` de estas solicitudes. Antes vivía repetido como literal en
+/// [_solicitud] y en cada prueba que necesitaba comprobarlo; con las pruebas
+/// que agrega esta ronda —que lo buscan fuera del marcador— repetirlo a mano
+/// en un tercer lugar era el mismo riesgo que ya evitaba `revisionDePrueba`.
+const runIdDePrueba = 'corrida-1';
+
+/// Un sujeto larguísimo, para la prueba de que el bloque de testigos no
+/// trunca nada. **Sin la extensión del lenguaje del repositorio**: esa cadena
+/// solo puede aparecer en su propio plugin y en la raíz de composición, y
+/// esta suite no es ninguna de las dos cosas.
+final sujetoDelTestigoLargo = 'lib/${'a' * 500}.txt';
+
 /// Un control que solo declara: no ejecuta. Igual que en la suite de la
 /// superficie de verificación, en `core` — la fábrica de [AfirmacionCubierta]
 /// recibe el desenlace ya producido, así que `run` no hace falta para estas
@@ -81,10 +93,11 @@ ArtefactoDeRevision _artefacto({
 PullRequestRequest _solicitud(ArtefactoDeRevision artefacto) =>
     PullRequestRequest(
       draft: PullRequestDraft(
-        runId: 'corrida-1',
+        runId: runIdDePrueba,
         branch: 'rama-1',
         base: 'main',
         artefacto: artefacto,
+        rutas: const ['a.txt'],
       ),
       revision: revisionDePrueba,
       arbolDeLaRevision: 'arbol-1',
@@ -154,6 +167,15 @@ PullRequestRequest solicitudConSujetoYSinSujeto() => _solicitud(
         detalle: 'El entorno no se derivó, así que la cascada nunca corrió.',
       ),
     ],
+  ),
+);
+
+// Un solo testigo con un sujeto larguísimo: para la prueba de que el bloque
+// de testigos lo muestra entero, no truncado.
+PullRequestRequest solicitudConTestigoLargo() => _solicitud(
+  _artefacto(
+    estado: EstadoDeCorrida.verde,
+    cubierto: [_cubierta(sujetoDelTestigoLargo)],
   ),
 );
 
@@ -716,8 +738,116 @@ void main() {
     final cuerpo = cuerpoDeGitHub(solicitudVerde());
     final ultima = cuerpo.trimRight().split('\n').last;
     expect(ultima, startsWith('<!-- shipflow:pr formatVersion=1'));
-    expect(ultima, contains('runId=corrida-1'));
+    expect(ultima, contains('runId=$runIdDePrueba'));
     expect(ultima, contains('revision=$revisionDePrueba'));
+  });
+
+  group('lo que §13 exige y el marcador no le mostraba al revisor', () {
+    // **El hallazgo.** El marcador estable lleva la revisión y el `runId`,
+    // pero ADENTRO de un comentario HTML: la forja no lo muestra, así que
+    // para el revisor humano no están — que es exactamente para quien §13
+    // dice que el cuerpo tiene que ser autosuficiente. `contains` sobre el
+    // cuerpo entero no alcanzaría para probar esto: los dos valores YA
+    // estaban ahí, dentro del comentario, y esa aserción habría dado verde
+    // desde antes de este cambio. Por eso se filtra por `renglonesVisibles`
+    // primero.
+    test('la revisión y el runId se VEN, no solo en el marcador', () {
+      final visible = renglonesVisibles(
+        cuerpoDeGitHub(solicitudVerde()),
+      ).join('\n');
+      expect(visible, contains(revisionDePrueba));
+      expect(visible, contains(runIdDePrueba));
+    });
+
+    test('payloadVersion viaja en el cuerpo, visible', () {
+      final visible = renglonesVisibles(
+        cuerpoDeGitHub(solicitudVerde()),
+      ).join('\n');
+      expect(visible, contains('$payloadVersionDeShip'));
+    });
+
+    // El brief original le pedía a `cuerpoDeGitHub` un parámetro
+    // `accionSiguiente` compuesto por `cli` con `accionDe(ShipOutcome)`. No
+    // se hizo: `forge` no puede ver a `cli` —las flechas van hacia `core`—, y
+    // encima la operación que arma este cuerpo corre ANTES de que exista un
+    // `ShipOutcome` que dar, porque ese desenlace depende de lo que ELLA
+    // misma devuelva. La acción que sí puede llevar el cuerpo es la de la
+    // VERIFICACIÓN, no la de la publicación, y se deriva de
+    // `PullRequestRequest.incompleto`, que la solicitud ya tiene.
+    test(
+      'la acción siguiente aparece cuando la corrida se publica incompleta',
+      () {
+        final visible = renglonesVisibles(
+          cuerpoDeGitHub(solicitudIncompleta()),
+        ).join('\n');
+        expect(visible, contains('## Qué hacer'));
+      },
+    );
+
+    test('sin corrida incompleta no se inventa una sección "Qué hacer"', () {
+      expect(cuerpoDeGitHub(solicitudVerde()), isNot(contains('## Qué hacer')));
+    });
+
+    test('los testigos van en un bloque plegable, y no se truncan', () {
+      final cuerpo = cuerpoDeGitHub(solicitudConTestigoLargo());
+      expect(cuerpo, contains('<details>'));
+      expect(cuerpo, contains(sujetoDelTestigoLargo));
+      expect(
+        cuerpo,
+        isNot(contains('…')),
+        reason: 'nunca se truncan en silencio',
+      );
+    });
+
+    test('el bloque plegable va DESPUÉS de las dos secciones obligatorias', () {
+      final cuerpo = cuerpoDeGitHub(solicitudVerde());
+      expect(
+        cuerpo.indexOf('## Qué quedó cubierto'),
+        lessThan(cuerpo.indexOf('<details>')),
+      );
+    });
+
+    test('sin nada cubierto no hay bloque de testigos', () {
+      // El mismo principio que ya vale para las dos listas obligatorias —no
+      // se inventa una sección sobre una lista vacía— llevado al bloque
+      // plegable: acá ni siquiera hay una sección fija que rellenar.
+      final cuerpo = cuerpoDeGitHub(solicitudSinNadaQueMostrar());
+      expect(cuerpo, isNot(contains('<details>')));
+    });
+
+    test('un testigo con datos hostiles no rompe la estructura del cuerpo', () {
+      // El mismo control negativo que ya corre sobre los demás campos
+      // externos, aplicado al testigo: `invocation` y `subjects` llegan del
+      // control que ejecutó, no de este archivo, así que pasan por el mismo
+      // render seguro que todo lo demás.
+      final testigoHostil = Witness(
+        invocation: '<!-- de un testigo',
+        subjects: const ['a**b'],
+        exitCode: 0,
+        finishedAt: DateTime.utc(2026),
+        omitted: const [],
+      );
+      final cubierta = AfirmacionCubierta.desde(
+        control: _ControlDeclarado(
+          'formateador',
+          Afirmacion(id: 'formato.conforme', demuestra: 'x', noDemuestra: 'y'),
+        ),
+        desenlace: Executed(witness: testigoHostil, diagnostics: const []),
+        sujeto: 'a**b',
+      )!;
+      final cuerpo = cuerpoDeGitHub(
+        _solicitud(
+          _artefacto(estado: EstadoDeCorrida.verde, cubierto: [cubierta]),
+        ),
+      );
+      final visibles = renglonesVisibles(cuerpo);
+      expect(
+        visibles.where((r) => r.trimRight() == '## Qué quedó cubierto'),
+        hasLength(1),
+      );
+      expect(cuerpo, contains('&lt;!-- de un testigo'));
+      expect(cuerpo, contains('a&#42;&#42;b'));
+    });
   });
 
   test('no filtra nada local', () {

@@ -23,6 +23,54 @@ const _result = ResultEnvelope(
   data: {},
 );
 
+/// Las cinco variantes de [ShipOutcome]: las causas y los estados completos,
+/// los cuerpos remotos por muestra.
+///
+/// `Codigo.deShip` y `accionDe` son funciones totales sobre el tipo cerrado, y
+/// las dos pruebas que las cubren afirman propiedades sobre el dominio ENTERO
+/// —«seis códigos», «ningún código distinto de cero se queda mudo»—. Con una
+/// muestra elegida a mano, una variante nueva se quedaría fuera de la lista y
+/// las dos afirmaciones seguirían en verde cubriendo menos de lo que dicen.
+/// Por eso las causas y los estados salen de `values` y no de una lista.
+///
+/// **Los cuerpos remotos NO están completos, y no hace falta que lo estén**:
+/// hay dos de los cinco [PublicacionNoUtilizable] y un solo valor de
+/// [CausaDePublicacion]. Ni el código ni la acción de un [ShipOutcome] miran
+/// adentro del desenlace remoto —lo que miran es de qué lado del corte
+/// utilizable/no utilizable cae—, así que agregar los otros tres cuerpos
+/// repetiría filas sin ejercitar una rama más. Los dos
+/// [PublicacionUtilizable] sí están los dos, porque son dos.
+List<ShipOutcome> todosLosDesenlaces() => [
+  for (final causa in CausaDeNoIntento.values)
+    for (final estado in EstadoDeCorrida.values)
+      ShipOutcome.noIntentadoParaLaPrueba(causa: causa, verificacion: estado),
+  // **Las dos causas, no una.** Las propiedades de abajo son sobre el
+  // dominio ENTERO, y `NoAplicado` dejó de ser una sola fila el día que se
+  // le puso la causa adentro: con una muestra de una, «ningún código
+  // distinto de cero se queda mudo» volvería a cubrir menos de lo que dice.
+  for (final causa in CausaDeNoAplicacion.values)
+    ShipOutcome.noAplicadoParaLaPrueba(causa: causa, headObservado: 'a' * 40),
+  ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
+  for (final publicable in EstadoPublicable.values) ...[
+    ShipOutcome.publicadoParaLaPrueba(
+      pr: PullRequestOpen(url: 'https://forja/pr/1'),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicadoParaLaPrueba(
+      pr: PullRequestMerged(url: 'https://forja/pr/2'),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicacionIncompletaParaLaPrueba(
+      remoto: PushUnknown(causa: CausaDePublicacion.red),
+      verificacion: publicable,
+    ),
+    ShipOutcome.publicacionIncompletaParaLaPrueba(
+      remoto: PullRequestClosed(url: 'https://forja/pr/3'),
+      verificacion: publicable,
+    ),
+  ],
+];
+
 void main() {
   group('el protocolo con --json', () {
     test('todo es JSON Lines, y hay EXACTAMENTE un result, último', () async {
@@ -163,6 +211,7 @@ void main() {
             branch: 'rama-1',
             base: 'main',
             artefacto: artefacto,
+            rutas: const ['a.txt'],
           ),
           returnsNormally,
           reason: 'el generador produjo «$runId», que el dominio rechaza',
@@ -183,6 +232,379 @@ void main() {
       ).ultimoRecurso('se rompió', 'hacé esto');
       expect(err.toString(), contains('se rompió'));
       expect(err.toString(), contains('→ hacé esto'));
+    });
+  });
+
+  group('Codigo.deShip', () {
+    test('la tabla de §12, fila por fila', () {
+      final esperado = <int, ShipOutcome>{
+        0: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.previewOnly,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+        1: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.secretDetected,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+        2: ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.verificationGate,
+          verificacion: EstadoDeCorrida.noConcluyente,
+        ),
+        3: ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'a' * 40,
+        ),
+        6: ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushUnknown(causa: CausaDePublicacion.red),
+          verificacion: EstadoPublicable.verde,
+        ),
+        70: ShipOutcome.localInconsistenteParaLaPrueba(revision: 'b' * 40),
+      };
+      for (final fila in esperado.entries) {
+        expect(Codigo.deShip(fila.value), fila.key, reason: fila.value.kind);
+      }
+    });
+
+    test('confirmationMissing sale 0, y con un secreto sale 1', () {
+      expect(
+        Codigo.deShip(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.confirmationMissing,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        0,
+      );
+      expect(
+        Codigo.deShip(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.secretDetected,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('la compuerta lleva el código del estado que la cerró', () {
+      for (final par in {
+        EstadoDeCorrida.rojo: 1,
+        EstadoDeCorrida.noConcluyente: 2,
+        EstadoDeCorrida.errorInterno: 70,
+      }.entries) {
+        expect(
+          Codigo.deShip(
+            ShipOutcome.noIntentadoParaLaPrueba(
+              causa: CausaDeNoIntento.verificationGate,
+              verificacion: par.key,
+            ),
+          ),
+          par.value,
+          reason: par.key.name,
+        );
+      }
+    });
+
+    test('Publicado lleva el código de su verificación', () {
+      for (final par in {
+        EstadoPublicable.verde: 0,
+        EstadoPublicable.rojo: 1,
+        EstadoPublicable.noConcluyente: 2,
+      }.entries) {
+        expect(
+          Codigo.deShip(
+            ShipOutcome.publicadoParaLaPrueba(
+              pr: PullRequestOpen(url: 'https://forja/pr/1'),
+              verificacion: par.key,
+            ),
+          ),
+          par.value,
+          reason: par.key.name,
+        );
+      }
+    });
+
+    test('deShip produce SEIS códigos, y son los que la superficie nombra', () {
+      // El doc comment de `ResultEnvelope.verdict` los enumera. Enumerar
+      // vence: esta prueba ata la cifra al `switch` real, así que una
+      // variante nueva con un código nuevo la pone roja y obliga a tocar la
+      // oración en vez de dejarla envejecer en silencio.
+      expect(
+        {for (final d in todosLosDesenlaces()) Codigo.deShip(d)},
+        {0, 1, 2, 3, 6, 70},
+      );
+    });
+
+    test('la entrega incompleta sale 6 AUNQUE la verificación sea roja', () {
+      // Deliberado: `1` dice «el cambio no verificó» y `6` dice «el efecto
+      // remoto no se completó», y la segunda es la que decide qué hacer
+      // después. El precio está declarado: el estado viaja en `verdict` y en
+      // `data`, no en el código.
+      expect(
+        Codigo.deShip(
+          ShipOutcome.publicacionIncompletaParaLaPrueba(
+            remoto: PullRequestUnknown(causa: CausaDePublicacion.red),
+            verificacion: EstadoPublicable.rojo,
+          ),
+        ),
+        6,
+      );
+    });
+  });
+
+  group('accionDe', () {
+    // Esta función pública —nueve ramas y siete mensajes cuando se la
+    // encontró— no la referenciaba nada en el árbol, y el README afirmaba que
+    // su propia suite la ejercitaba. Reemplazar el cuerpo entero por
+    // `=> null` dejaba las 1061 pruebas en verde.
+
+    test('el switch cubre las CINCO variantes, y ninguna lanza', () {
+      final desenlaces = todosLosDesenlaces();
+      expect(
+        {for (final d in desenlaces) d.runtimeType},
+        hasLength(5),
+        reason:
+            'si nace una sexta variante y la lista no crece, las propiedades '
+            'de abajo vuelven a prometer «todo desenlace» cubriendo menos',
+      );
+      for (final d in desenlaces) {
+        expect(() => accionDe(d), returnsNormally, reason: d.kind);
+      }
+    });
+
+    test('ningún código distinto de 0 se queda sin acción siguiente', () {
+      // Es la promesa de `ResultEnvelope.nextAction`: toda salida que no sea
+      // verde tiene que poder decir qué hacer. Antes no valía —un `Publicado`
+      // con la verificación en rojo salía `1` con `nextAction` nulo— y el doc
+      // comment la afirmaba igual.
+      for (final d in todosLosDesenlaces()) {
+        if (Codigo.deShip(d) == Codigo.exito) continue;
+        expect(
+          accionDe(d),
+          isNotNull,
+          reason: '${d.kind} sale ${Codigo.deShip(d)} y no dice qué hacer',
+        );
+        expect(accionDe(d), isNotEmpty, reason: d.kind);
+      }
+    });
+
+    test('los únicos desenlaces sin acción son la previsualización y el '
+        'publicado verde', () {
+      // El control por el otro lado: sin esto, una `accionDe` que devolviera
+      // un mensaje para TODA variante pasaría la prueba de arriba.
+      final mudos = [
+        for (final d in todosLosDesenlaces())
+          if (accionDe(d) == null) d,
+      ];
+      expect(mudos, isNotEmpty);
+      for (final d in mudos) {
+        expect(
+          switch (d) {
+            NoIntentado(causa: CausaDeNoIntento.previewOnly) => true,
+            Publicado(verificacion: EstadoPublicable.verde) => true,
+            _ => false,
+          },
+          isTrue,
+          reason: '${d.kind} se quedó mudo y no es uno de los dos que pueden',
+        );
+      }
+    });
+
+    test('NoAplicado y LocalInconsistente NO dicen lo mismo, y el cruce '
+        'sería una instrucción prohibida', () {
+      // Intercambiar los dos mensajes compila —los dos llevan un `String`
+      // interpolado— y le diría a quien perdió el CAS que repare el índice y
+      // corra `--retry-publication`, que es justo lo que su mensaje correcto
+      // prohíbe: no hay entrega que recuperar.
+      final perdioElCas = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'c' * 40,
+        ),
+      )!;
+      expect(perdioElCas, contains('c' * 40));
+      expect(perdioElCas, contains('Volvé a correr ship'));
+      expect(
+        perdioElCas,
+        contains('No sirve --retry-publication'),
+        reason: 'mandarlo a reintentar la publicación no tiene qué recuperar',
+      );
+      expect(perdioElCas, isNot(contains('índice')));
+
+      final indiceSucio = accionDe(
+        ShipOutcome.localInconsistenteParaLaPrueba(revision: 'd' * 40),
+      )!;
+      expect(indiceSucio, contains('d' * 40));
+      expect(indiceSucio, contains('índice'));
+      expect(indiceSucio, contains('--retry-publication'));
+      expect(
+        indiceSucio,
+        isNot(contains('No sirve')),
+        reason: 'acá el reintento SÍ es el camino, después de reparar',
+      );
+    });
+
+    test('las DOS causas de no aplicar no dicen lo mismo, y la segunda no '
+        'afirma que la rama avanzó', () {
+      // **El hecho medido.** Con `ramaCambiada` no se intentó ningún
+      // compare-and-swap y la rama de la corrida no se movió: el `HEAD`
+      // observado es el de OTRA rama, la que quien corre se puso durante la
+      // cascada. El mensaje único decía «la rama avanzó a …, volvé a correr»
+      // para las dos, y ahí el consejo es peor que inútil: volver a correr
+      // reconstruye el candidato sobre esa otra rama y, sin la bandera que
+      // fija la rama, commitea ahí.
+      final baseMovida = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.baseMovida,
+          headObservado: 'c' * 40,
+        ),
+      )!;
+      final ramaCambiada = accionDe(
+        ShipOutcome.noAplicadoParaLaPrueba(
+          causa: CausaDeNoAplicacion.ramaCambiada,
+          headObservado: 'c' * 40,
+        ),
+      )!;
+
+      expect(
+        ramaCambiada,
+        isNot(baseMovida),
+        reason: 'dos hechos distintos con el mismo consejo es el defecto',
+      );
+      expect(
+        baseMovida,
+        contains('La rama avanzó'),
+        reason: 'acá sí avanzó: el compare-and-swap se rechazó por eso',
+      );
+      expect(
+        ramaCambiada,
+        isNot(contains('avanzó')),
+        reason:
+            'la rama de la corrida no se movió, y decir que avanzó es '
+            'afirmar un hecho que nadie midió',
+      );
+      // Y la prohibición no va sola: la alternativa viaja con ella.
+      expect(ramaCambiada, contains('--branch'));
+      expect(
+        ramaCambiada,
+        contains('Volvé a la rama'),
+        reason: '«no vuelvas a correrlo sin más» necesita su «hacé esto»',
+      );
+    });
+
+    test('la compuerta distingue el arnés roto del cambio que no verificó', () {
+      // Los dos salen por `verificationGate`, y la diferencia importa:
+      // `--allow-incomplete` autoriza uno y no autoriza el otro. Con los dos
+      // mensajes intercambiados, a quien se le rompió el arnés se le ofrece
+      // una bandera que no lo autoriza.
+      final arnesRoto = accionDe(
+        ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.verificationGate,
+          verificacion: EstadoDeCorrida.errorInterno,
+        ),
+      )!;
+      expect(arnesRoto, contains('arnés'));
+      expect(arnesRoto, contains('--allow-incomplete no autoriza esto'));
+
+      for (final estado in [
+        EstadoDeCorrida.rojo,
+        EstadoDeCorrida.noConcluyente,
+      ]) {
+        final verificoMal = accionDe(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.verificationGate,
+            verificacion: estado,
+          ),
+        )!;
+        expect(verificoMal, isNot(contains('arnés')), reason: estado.name);
+        expect(
+          verificoMal,
+          contains('--allow-incomplete'),
+          reason: '${estado.name}: la bandera SÍ autoriza este caso',
+        );
+        expect(
+          verificoMal,
+          isNot(contains('no autoriza esto')),
+          reason: estado.name,
+        );
+      }
+    });
+
+    test('la confirmación que falta y el secreto no comparten mensaje', () {
+      expect(
+        accionDe(
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.confirmationMissing,
+            verificacion: EstadoDeCorrida.verde,
+          ),
+        ),
+        contains('--yes'),
+      );
+      final secreto = accionDe(
+        ShipOutcome.noIntentadoParaLaPrueba(
+          causa: CausaDeNoIntento.secretDetected,
+          verificacion: EstadoDeCorrida.verde,
+        ),
+      )!;
+      expect(secreto, contains('secreto'));
+      expect(
+        secreto,
+        isNot(contains('--yes')),
+        reason: 'confirmar no saca el secreto del cambio',
+      );
+    });
+
+    test('un publicado que NO es verde dice qué hacer, y no manda a '
+        'reintentar la publicación', () {
+      // `Codigo.deShip(Publicado(rojo))` da 1 y `accionDe` daba nulo: un
+      // código distinto de cero sin acción siguiente, contra lo que
+      // `ResultEnvelope.nextAction` promete. El desenlace es alcanzable con
+      // `--allow-incomplete`.
+      for (final estado in [
+        EstadoPublicable.rojo,
+        EstadoPublicable.noConcluyente,
+      ]) {
+        final accion = accionDe(
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja/pr/7'),
+            verificacion: estado,
+          ),
+        )!;
+        expect(accion, contains('https://forja/pr/7'), reason: estado.name);
+        expect(accion, contains(estado.name), reason: estado.name);
+        expect(
+          accion,
+          contains('No sirve --retry-publication'),
+          reason: 'la publicación se completó: no hay nada que reintentar',
+        );
+      }
+      expect(
+        accionDe(
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja/pr/7'),
+            verificacion: EstadoPublicable.verde,
+          ),
+        ),
+        isNull,
+        reason: 'el verde publicado no tiene nada pendiente',
+      );
+    });
+
+    test('la publicación incompleta manda al reintento, y dice que no '
+        'duplica', () {
+      final accion = accionDe(
+        ShipOutcome.publicacionIncompletaParaLaPrueba(
+          remoto: PushUnknown(causa: CausaDePublicacion.red),
+          verificacion: EstadoPublicable.verde,
+        ),
+      )!;
+      expect(accion, contains('--retry-publication'));
+      expect(
+        accion,
+        contains('No se creará otro commit ni un segundo pull request'),
+        reason:
+            'sin esa promesa, el reintento se lee como «volvé a correr todo»',
+      );
     });
   });
 }

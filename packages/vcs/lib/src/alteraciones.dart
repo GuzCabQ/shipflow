@@ -15,11 +15,23 @@ part of 'repositorio.dart';
 /// `diff-index` no hashea el árbol de trabajo — y eso es lo que obliga a leer
 /// los MODOS para distinguir un cambio de permisos de uno de contenido.
 ///
-/// **Falla cerrado ante una letra que no sea `M`, `D` ni `T`.** Con un índice
-/// recién leído del árbol no puede aparecer una `A`; una `R` o una `C` solo
-/// aparecen con detección de renombres, que no se pide. Si aparece algo así,
-/// `git` vio algo que este control no previó, y descartarlo sería leer un hueco
-/// como un candidato intacto.
+/// **Falla cerrado ante una letra que no sea `M`, `D` ni `T`**, y las que
+/// quedan afuera no se adivinan: el manual de `git-diff-index(1)` enumera en
+/// su sección de la salida cruda las ocho que el formato admite —`A`, `C`,
+/// `D`, `M`, `R`, `T`, `U` y `X`—, y de ahí sale esta lista. De las cinco que
+/// este parser no clasifica: con un índice recién leído del árbol no puede
+/// aparecer una `A`; una `R` o una `C` solo aparecen con detección de
+/// renombres o de copias, que no se pide; una `U` pide una entrada sin
+/// fusionar, y el índice aislado del candidato se arma leyendo un árbol, no
+/// fusionando nada; y una `X` la declara el propio manual como un error de la
+/// herramienta. Si aparece cualquiera de ellas, `git` vio algo que este
+/// control no previó, y descartarlo sería leer un hueco como un candidato
+/// intacto.
+///
+/// **Ese dominio es el del índice AISLADO del candidato, y no se hereda.**
+/// Quien compare el índice REAL de quien corre contra un árbol arbitrario
+/// tiene otro conjunto alcanzable —`A` y `U` sí lo son ahí— y le toca
+/// resolverlas antes de llegar acá: ver [RepositorioGit.rutasQueDifierenDelArbol].
 ///
 /// [declaradas] son las rutas que el candidato **no materializó a propósito**
 /// —enlaces absolutos, enlaces con `..`, destinos que no son UTF-8,

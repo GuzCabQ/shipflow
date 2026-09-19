@@ -110,6 +110,15 @@ enum AccionSiguiente {
 /// Dos enums independientes admitían el producto cartesiano —`push: failed,
 /// pullRequest: succeeded`— y `succeeded` no distinguía abierto de cerrado ni
 /// de fusionado.
+///
+/// **Una hoja nueva bajo [PublicacionUtilizable] o [PublicacionNoUtilizable]
+/// tiene que sumarse también a la lista de desenlaces canónicos que ejercita
+/// `ShipOutcome.derivarReintento` en la suite de `corrida`.** No hay forma de
+/// derivar esa lista acá adentro sin traer algo que este paquete no puede
+/// tener —reflexión, o un registro que se llena en tiempo de ejecución—, así
+/// que la garantía queda escrita en vez de forzada: agregar una hoja no rompe
+/// ningún compilador, y una lista que no crece con ella deja de cubrir «todas
+/// las formas» para cubrir silenciosamente «todas las de antes».
 sealed class PublicationOutcome {
   PublicationOutcome();
 
@@ -437,6 +446,13 @@ final class PullRequestClosed extends PublicacionNoUtilizable {
 }
 
 /// Antes del commit. **No tiene revisión porque todavía no existe.**
+///
+/// **Serializa.** El documento autoritativo de la corrida —`DocumentoDeCorrida`—
+/// lo lleva adentro para poder reconstruir la solicitud de pull request
+/// después de una interrupción, sin volver a correr la cascada de
+/// verificación. Antes de esta rebanada estaba declarado opaco en
+/// `arquitectura.json`: nadie necesitaba que cruzara un límite de proceso, y
+/// ahora sí.
 class PullRequestDraft {
   /// Identifica la corrida. **No puede contener `<!--`, `-->` ni saltos de
   /// línea**, y el invariante vive acá y no en el render — ver el constructor.
@@ -445,6 +461,25 @@ class PullRequestDraft {
   final String branch;
   final String base;
   final ArtefactoDeRevision artefacto;
+
+  /// Las rutas de archivo que la rebanada declaró. El paso 4 de la
+  /// reconciliación compara el índice **solo en estas rutas**, y por eso
+  /// viajan acá adentro.
+  ///
+  /// **Se persisten, no se derivan de un `diff-tree`.** La declaración es un
+  /// hecho de la corrida original, y derivarla al reintentar crea una
+  /// segunda fuente del mismo hecho. Peor: una ruta declarada cuyo contenido
+  /// no cambió no aparece en ningún diff, así que derivarla la sacaría del
+  /// control del índice sin que nadie lo note — un alcance equivocado, que
+  /// este corpus ya distingue de un veredicto equivocado por ser mudo en vez
+  /// de ruidoso.
+  ///
+  /// **No vacía, sin repetidos, y siempre ordenada** — normalizada acá, una
+  /// sola vez, para que quien la reciba de vuelta del disco no tenga que
+  /// volver a ordenar antes de comparar. Es la misma razón por la que
+  /// `rutasQueDifierenDelArbol` ordena al final y no en cada fuente por
+  /// separado.
+  final List<String> rutas;
 
   /// **El `runId` viaja adentro de un comentario HTML, y por eso tiene una
   /// forma prohibida.**
@@ -479,7 +514,29 @@ class PullRequestDraft {
     required this.branch,
     required this.base,
     required this.artefacto,
-  }) {
+    required List<String> rutas,
+  }) : rutas = List<String>.unmodifiable(List<String>.of(rutas)..sort()) {
+    if (this.rutas.isEmpty) {
+      throw ArgumentError.value(
+        rutas,
+        'rutas',
+        'Una rebanada sin archivos no es una rebanada, y el paso 4 de la '
+            'reconciliación —que compara el índice solo en estas rutas— no '
+            'tendría sobre qué opinar.',
+      );
+    }
+    final vistas = <String>{};
+    for (final ruta in this.rutas) {
+      if (!vistas.add(ruta)) {
+        throw ArgumentError.value(
+          rutas,
+          'rutas',
+          'La ruta «$ruta» está declarada más de una vez. Repetirla no '
+              'ensancha lo que el reintento compara, y esconde que dos '
+              'entradas nombran el mismo archivo.',
+        );
+      }
+    }
     const prohibidas = ['<!--', '-->', '\n', '\r'];
     for (final prohibida in prohibidas) {
       if (!runId.contains(prohibida)) continue;
@@ -501,6 +558,51 @@ class PullRequestDraft {
   /// también acá serían dos cadenas independientes para una cosa, y la que el
   /// adapter eligiera decidiría qué lee el revisor.
   String get intent => artefacto.intent;
+
+  Map<String, Object?> toJson() => {
+    'runId': runId,
+    'branch': branch,
+    'base': base,
+    'artefacto': artefacto.toJson(),
+    'rutas': rutas,
+  };
+
+  /// **`factory`, no un método estático.** Mismo motivo que
+  /// `DocumentoDeCorrida.fromJson`: el verificador de serialización deriva
+  /// las claves de un `ConstructorDeclaration` con ese nombre, y esta clase
+  /// no es una base sellada —no hay tensión con «un factory acá se lee como
+  /// serializa»— así que el patrón de las otras clases concretas de `core`
+  /// (`ArtefactoDeRevision`, `SuperficieDeVerificacion`) aplica igual.
+  ///
+  /// El documento de la corrida necesita reconstruir este borrador **sin
+  /// volver a correr la cascada**, y esto es lo que se lo permite.
+  ///
+  /// **`rutas` ausente nombra el formatVersion, no dice «JSON roto».** Este
+  /// campo es nuevo y no lo subió: es la misma decisión que ya toma
+  /// `DocumentoDeCorrida.fromJson` con el desenlace de una corrida vieja.
+  /// Quien lea un documento sin este campo tiene que entender «esta es una
+  /// forma anterior a que `rutas` existiera», no «esto se corrompió» — y esa
+  /// distinción solo se sostiene si el mensaje nombra el mecanismo que la
+  /// explica.
+  factory PullRequestDraft.fromJson(Map<String, Object?> json) {
+    final rutas = json['rutas'];
+    if (rutas == null) {
+      throw FormatException(
+        'El borrador no trae «rutas». No subió el formatVersion del '
+        'documento que lo contiene cuando este campo se agregó, así que '
+        'la ausencia es una forma más vieja, no un JSON corrupto.',
+      );
+    }
+    return PullRequestDraft(
+      runId: json['runId']! as String,
+      branch: json['branch']! as String,
+      base: json['base']! as String,
+      artefacto: ArtefactoDeRevision.fromJson(
+        Map<String, Object?>.from(json['artefacto']! as Map),
+      ),
+      rutas: List<String>.from(rutas as List),
+    );
+  }
 }
 
 /// Después del commit.

@@ -27,6 +27,7 @@ import 'secretos.dart';
 
 part 'candidato.dart';
 part 'alteraciones.dart';
+part 'indice.dart';
 
 /// Se lanza cuando `git` no hizo lo que se le pidió.
 ///
@@ -68,6 +69,55 @@ class PromesaIncumplida implements Exception {
 
   @override
   String toString() => 'PromesaIncumplida: se pidió $sePidio; quedó $quedo';
+}
+
+/// El commit existe y el índice quedó sin sincronizar.
+///
+/// **La revisión va como campo y no solo en el mensaje.** Antes esto salía
+/// como una `PromesaIncumplida` con dos `String`, y la revisión vivía
+/// interpolada en el texto: quien recuperara la corrida tenía que parsear un
+/// mensaje para saber qué comprobar. Un dato que solo existe dentro de una
+/// oración no es un dato.
+///
+/// **Valida como su análogo `LocalInconsistent`**
+/// (`packages/core/lib/src/desenlace`), con el mismo argumento: el
+/// commit existe, así que sin su revisión nadie puede repararlo, y un estado
+/// a medias sin detalle no dice qué hay que reparar.
+///
+/// **El invariante es el tipo más la validación, no el tipo solo.** Un campo
+/// tipado `String` admite la cadena vacía, y un `IndiceDesincronizado` con la
+/// revisión vacía vuelve a ser el defecto que esta clase existe para cerrar:
+/// el dato deja de estar interpolado en una oración y pasa a no estar. Por eso
+/// los dos campos se comprueban acá y no en quien la lanza — ahí sería una
+/// costumbre, y basta un sitio que se la olvide.
+class IndiceDesincronizado implements Exception {
+  /// El commit que sí se creó.
+  final String revision;
+
+  /// Qué quedó mal, en las palabras de `git`.
+  final String detalle;
+
+  IndiceDesincronizado(this.revision, this.detalle) {
+    if (revision.trim().isEmpty) {
+      throw ArgumentError.value(
+        revision,
+        'revision',
+        'El commit existe: sin su revisión nadie puede repararlo.',
+      );
+    }
+    if (detalle.trim().isEmpty) {
+      throw ArgumentError.value(
+        detalle,
+        'detalle',
+        'Un estado a medias sin detalle no dice qué hay que reparar.',
+      );
+    }
+  }
+
+  @override
+  String toString() =>
+      'IndiceDesincronizado: la revisión $revision se creó y el índice quedó '
+      'sin sincronizar. $detalle';
 }
 
 class RepositorioGit implements ChangeSink {
@@ -729,11 +779,10 @@ class RepositorioGit implements ChangeSink {
     // estado parcial se nombra entero, con la revisión adentro.
     final sincronizado = await _git(['reset', '--quiet', '--', ...rutas]);
     if (sincronizado.exitCode != 0) {
-      throw PromesaIncumplida(
-        'dejar el índice al día con el commit $revision',
-        'la revisión $revision creada y el índice sin sincronizar en '
-            '${rutas.join(", ")}: '
-            '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
+      throw IndiceDesincronizado(
+        revision,
+        'En ${rutas.join(", ")}: '
+        '${"${sincronizado.stdout}${sincronizado.stderr}".trim()}',
       );
     }
     return revision;
@@ -780,7 +829,318 @@ class RepositorioGit implements ChangeSink {
   /// error: quien la use tiene que poder distinguirlo.
   Future<String> get ramaActual => _exigir(['branch', '--show-current']);
 
+  /// El `HEAD` de la rama actual, resuelto a su OID.
+  ///
+  /// **Público desde esta rebanada, y no antes.** Tres lugares de este paquete
+  /// ya lo leían en privado; la comparación de tres casos de la recuperación
+  /// pide el `HEAD` como argumento —a propósito, para no leer el repositorio y
+  /// poder probar sus casos sin montar uno— y sin esta lectura su llamador no
+  /// tiene de dónde sacarlo.
+  Future<String> get head => _exigir(['rev-parse', 'HEAD']);
+
+  /// El padre de [revision], o nulo si no tiene ninguno.
+  ///
+  /// **Nulo es un HECHO y no un error**: la primera revisión de un repositorio
+  /// no tiene padre, y quien reconcilia tiene que poder distinguir «no tiene»
+  /// de «no se pudo leer».
+  ///
+  /// **Con DOS padres lanza, y eso es deliberado.** Devolver el primero haría
+  /// pasar el paso 1 de la reconciliación sobre un commit de fusión que no es
+  /// hijo de la base en el sentido que ese paso afirma. Ante una forma que la
+  /// pregunta no contempla, fallar cerrado.
+  Future<String?> padreDe(String revision) async {
+    final salida = await _exigir([
+      'rev-list',
+      '--parents',
+      '-n',
+      '1',
+      revision,
+    ]);
+    final campos = salida.split(' ').where((c) => c.isNotEmpty).toList();
+    if (campos.length == 1) return null;
+    if (campos.length > 2) {
+      throw GitFallo(
+        'rev-list --parents $revision',
+        0,
+        'La revisión tiene ${campos.length - 1} padres. «El» padre no existe, '
+            'y elegir uno afirmaría una ascendencia que nadie midió. Si esto es '
+            'una fusión, la corrida que la produjo no es una que ship pueda '
+            'reconciliar: volvé a correr ship desde cero.',
+      );
+    }
+    return campos[1];
+  }
+
+  /// El OID del árbol de [revision]. **No es el OID de la revisión.**
+  Future<String> arbolDe(String revision) =>
+      _exigir(['rev-parse', '$revision^{tree}']);
+
+  /// El mensaje entero de [revision], sin los saltos finales que `git`
+  /// agrega.
+  ///
+  /// **`%B` y no `%s`**: el paso 3 compara el mensaje esperado, y el asunto
+  /// solo sería una comparación más pobre que su criterio.
+  ///
+  /// **Son DOS saltos, no uno, y ninguno pertenece al mensaje.** `git commit`
+  /// normaliza lo que se guarda: cualquier cantidad de líneas en blanco al
+  /// final —o ninguna— queda en exactamente un `\n` final en el objeto
+  /// commit, medido acá mismo con `cat-file`. `git log --format=%B` agrega
+  /// **otro**, el suyo propio, para separar el registro del que viene
+  /// después. Cortar uno solo —lo que un review de esta misma tarea midió
+  /// que hacía la primera versión— deja pasar ese segundo salto y el mensaje
+  /// sale con una línea vacía que nadie escribió. Cortar los dos es seguro:
+  /// la normalización de `git` ya borró cualquier diferencia entre «el
+  /// usuario no puso salto final» y «el usuario puso varios», así que no hay
+  /// información legítima que perder.
+  Future<String> mensajeDe(String revision) async {
+    final salida = await _exigirCrudo(['log', '-1', '--format=%B', revision]);
+    return salida.replaceFirst(RegExp(r'\n+$'), '');
+  }
+
+  /// Las rutas, de entre [rutas], donde el índice de quien corre NO coincide
+  /// con [arbol], **ordenadas**. Vacía significa que coincide.
+  ///
+  /// **El orden se garantiza acá, sobre el resultado ya junto, y en ningún
+  /// otro lado.** Esta función junta dos fuentes —lo que `diff-index` marcó
+  /// sobre las rutas que el árbol tiene, y lo que `ls-files` marcó sobre las
+  /// que no— y solo después de juntarlas tiene sentido ordenar: ordenar cada
+  /// fuente por separado antes de unirlas sería trabajo que el propio orden
+  /// final vuelve a hacer, sin que ninguna prueba pudiera notar su ausencia.
+  ///
+  /// **Acotada a [rutas] a propósito, y no el índice entero.** Comparar el
+  /// índice entero rechazaría cambios preparados ajenos que la operación de
+  /// aplicar promete preservar: el reintento no es dueño del índice de quien
+  /// corre, y solo puede opinar sobre las rutas que la rebanada declaró.
+  ///
+  /// **Con [rutas] vacía devuelve vacío, y no «todas».** Un alcance vacío es
+  /// el más angosto que existe, no el más ancho; leerlo al revés convertiría
+  /// este control en uno que mira el repositorio entero sin que nadie se lo
+  /// haya pedido.
+  ///
+  /// **Sin `update-index --refresh`, y está medido que no hace falta.** El
+  /// trío que usa [_CandidatoGit.alteraciones] lo necesita porque compara el
+  /// árbol de TRABAJO contra un árbol —ahí el `mtime` en disco decide si hay
+  /// que releer un archivo—. Acá se compara con `--cached`: índice contra
+  /// árbol, dos objetos que `git` ya tiene resueltos, sin tocar el disco. Con
+  /// un archivo cuyo `mtime` se adelantó un mes y el contenido intacto,
+  /// `diff-index --raw -z --cached` no reporta nada, CON o SIN refresco
+  /// previo: la comparación nunca mira el reloj del archivo, mira el blob que
+  /// el índice ya tiene anotado desde el último `add`. Agregar el refresco
+  /// —que además exige filtrar antes con `ls-files`, porque sobre una ruta
+  /// que ya salió del índice `update-index --refresh` no dice «nada que
+  /// hacer»: dice `fatal: Unable to process path` y sale con `128`— sería
+  /// código que una mutación no puede matar, y este archivo no lo escribe.
+  ///
+  /// **De las ocho letras del formato, dos no pueden llegar al parser, y de
+  /// dónde sale esa lista está dicho.** La lista NO es una intuición sobre
+  /// qué puede pasar: es la enumeración cerrada que el manual de
+  /// `git-diff-index(1)` declara en su sección de la salida cruda —«possible
+  /// status letters»—, leída de la herramienta instalada: `A`, `C`, `D`, `M`,
+  /// `R`, `T`, `U` y `X`. Sobre esas ocho, y solo sobre esas, se argumenta
+  /// cuáles alcanzan a [rutasDeDiffRaw] desde acá:
+  ///
+  /// - `M`, `D` y `T` son las tres que ese parser conoce, y son el caso
+  ///   normal de este control.
+  /// - `A` es alcanzable con el índice REAL y un árbol arbitrario —el árbol
+  ///   candidato borró la ruta y quien corre la volvió a preparar—, y por eso
+  ///   esa ruta ni siquiera llega a `diff-index`: se resuelve preguntándole a
+  ///   `ls-files` si el índice real la tiene, y si la tiene, es una
+  ///   diferencia sin más trámite.
+  /// - `U` es alcanzable con un `merge`, un `rebase` o un `cherry-pick` con
+  ///   conflicto sin resolver en una de estas rutas, y se resuelve por
+  ///   nombre antes de la comparación cruda, que la excluye con el filtro en
+  ///   minúscula.
+  /// - `R` y `C` piden detección de renombres o de copias, que esta
+  ///   invocación no pide. **Y no alcanza con no pasar `-M`**: está medido
+  ///   que este comando de plomería tampoco lee la configuración que
+  ///   enciende esa detección para los comandos de porcelana —con esa
+  ///   configuración puesta, la salida sigue trayendo un borrado y un
+  ///   agregado, no un renombre—.
+  /// - `X` la declara el propio manual como «un tipo de cambio desconocido,
+  ///   casi seguro un error» de la herramienta. Ésa sí tiene que seguir
+  ///   fallando cerrado: no hay ninguna lectura correcta que darle.
+  ///
+  /// **Lo que esta lista promete es lo que se pudo argumentar, no que el
+  /// futuro esté cubierto.** Una versión nueva de la herramienta que agregue
+  /// una letra la deja fuera de este razonamiento, y lo que pasa entonces es
+  /// que el parser falla cerrado: ruidoso y no silencioso, que es el modo
+  /// correcto de envejecer para un control que decide si se publica.
+  Future<List<String>> rutasQueDifierenDelArbol({
+    required String arbol,
+    required List<String> rutas,
+  }) async {
+    if (rutas.isEmpty) return const [];
+
+    final enElArbol = (await _exigirCrudo([
+      'ls-tree',
+      '-z',
+      '--name-only',
+      arbol,
+      '--',
+      ...rutas,
+    ])).split('\u0000').where((s) => s.isNotEmpty).toSet();
+
+    final diferentes = <String>{};
+    if (enElArbol.isNotEmpty) {
+      // **Las entradas sin fusionar se resuelven ACÁ y no en el parser**, por
+      // lo mismo que la ruta ausente del árbol: ensanchar el parser
+      // compartido aflojaría, del lado del candidato, una garantía que ahí
+      // sí vale. Se piden por nombre —sin la forma cruda— y la comparación
+      // de abajo las excluye con el filtro en minúscula, así que la letra
+      // que las marca no llega nunca al parser.
+      //
+      // **Y son una diferencia, no un fallo.** Una entrada sin fusionar no
+      // coincide con ningún árbol: el índice todavía no decidió qué
+      // contiene. Sale como índice distinto, con el código de configuración
+      // y el comando de reparación que le corresponden a cualquier otra
+      // diferencia, en vez de subir como excepción hasta la red de último
+      // recurso sobre una corrida donde lo único que pasa es que quien corre
+      // tiene un conflicto sin resolver.
+      final sinFusionar = (await _exigirCrudo([
+        'diff-index',
+        '-z',
+        '--name-only',
+        '--diff-filter=U',
+        '--cached',
+        arbol,
+        '--',
+        ...enElArbol,
+      ])).split('\u0000').where((s) => s.isNotEmpty);
+      diferentes.addAll(sinFusionar);
+
+      final crudo = await _exigirBytes([
+        'diff-index',
+        '--raw',
+        '-z',
+        // La minúscula EXCLUYE esa letra de la salida, y es lo que deja al
+        // parser con el dominio que su contrato declara. Medido con la
+        // herramienta instalada, no supuesto.
+        '--diff-filter=u',
+        '--cached',
+        arbol,
+        '--',
+        ...enElArbol,
+      ]);
+      diferentes.addAll(rutasDeDiffRaw(crudo));
+    }
+
+    // **Lo que el árbol no tiene solo es una diferencia si el índice real SÍ
+    // lo tiene.** Si ninguno de los dos la conoce, no hay nada que opinar:
+    // es el mismo hecho que una ruta que nunca existió en ningún lado.
+    final fueraDelArbol = rutas.toSet().difference(enElArbol);
+    if (fueraDelArbol.isNotEmpty) {
+      final enElIndice = (await _exigirCrudo([
+        'ls-files',
+        '-z',
+        '--cached',
+        '--',
+        ...fueraDelArbol,
+      ])).split('\u0000').where((s) => s.isNotEmpty);
+      diferentes.addAll(enElIndice);
+    }
+
+    final resultado = diferentes.toList();
+    resultado.sort();
+    return resultado;
+  }
+
+  /// El código con el que `git remote get-url` dice que **ese remoto no está
+  /// configurado**.
+  ///
+  /// **Medido, no supuesto**: `git` 2.50.1 contesta `2` y escribe
+  /// «error: No such remote» —no `fatal:`— tanto cuando no hay ningún remoto
+  /// como cuando se pregunta por un nombre que nadie configuró, que son el
+  /// mismo hecho. Lo sostiene la prueba del nombre inexistente: si una
+  /// versión futura cambiara ese código, esa prueba se pone roja en vez de
+  /// dejar pasar un fallo leído como ausencia.
+  static const _remotoNoConfigurado = 2;
+
+  /// La URL del remoto [nombre], o **nulo cuando no hay ninguno**.
+  ///
+  /// **El nombre no dice «forja», y eso no es timidez.** Lo que vuelve de acá
+  /// es una URL de `git`: puede apuntar a una forja, a un espejo, a un
+  /// directorio del disco o a nada que sepamos atender. Quién de esos
+  /// destinos tiene una API con pull requests lo decide el adapter de la
+  /// forja, que es el único paquete que puede saberlo; `vcs` solo lee la
+  /// configuración y la entrega tal cual.
+  ///
+  /// **Nulo es un hecho, no un fallo.** No tener remoto es la configuración
+  /// legítima de un repositorio que todavía no publica, y preguntar por un
+  /// nombre que nadie configuró es ese mismo hecho por otra puerta. Lanzar
+  /// obligaría a quien compone a atrapar una excepción para enterarse de algo
+  /// que puede ramificar.
+  ///
+  /// **Y NO se degrada a nulo cualquier fallo.** Fuera de un repositorio
+  /// `git` contesta otra cosa, y eso sale como [GitFallo]: confundir «no pude
+  /// preguntar» con «no hay remoto» haría que la raíz de composición dijera
+  /// que este repositorio no tiene forja cuando lo que no hay es repositorio.
+  Future<String?> urlDelRemoto({String nombre = 'origin'}) async {
+    final r = await _git(['remote', 'get-url', nombre]);
+    if (r.exitCode == _remotoNoConfigurado) return null;
+    if (r.exitCode != 0) {
+      throw GitFallo(
+        '$programa --literal-pathspecs remote get-url $nombre',
+        r.exitCode,
+        '${r.stdout}${r.stderr}'.trim(),
+      );
+    }
+    // **Vacía es nulo.** Un remoto declarado sin URL no identifica ningún
+    // destino, y devolver la cadena vacía obligaría a cada llamador a volver
+    // a preguntar lo mismo.
+    final url = (r.stdout as String).trim();
+    return url.isEmpty ? null : url;
+  }
+
   /// Si el árbol tiene cambios sin commitear.
   Future<bool> get sucio async =>
       (await _exigir(['status', '--porcelain'])).isNotEmpty;
+
+  /// Si `git` ignora [ruta]. **La pregunta es para `git`, no para el disco.**
+  ///
+  /// Que un `.gitignore` EXISTA no dice que APLIQUE: una regla de negación más
+  /// abajo en el mismo archivo, o un `core.excludesFile` que declare otro,
+  /// pueden dejarlo sin efecto sobre esta ruta en particular. `check-ignore`
+  /// es la misma máquina que decide qué entra en un commit; volver a
+  /// implementar la resolución de patrones para responder esto a mano sería
+  /// otra fuente de verdad que puede divergir de la real.
+  ///
+  /// **Sin `--literal-pathspecs`.** El resto de esta clase lo antepone
+  /// siempre —ver [_git]— porque sin él `git` lee una ruta como un patrón.
+  /// Acá no hace falta y no se puede: `check-ignore` no toma pathspecs, toma
+  /// nombres de archivo, y de hecho RECHAZA esa bandera con un error fatal —
+  /// está medido. No hay pathspec que sanear porque este comando no tiene esa
+  /// noción; por eso este lanzamiento no pasa por [_git] y arma el suyo.
+  ///
+  /// El código de salida de `check-ignore` ES la respuesta: `0` ignorada, `1`
+  /// no ignorada. Cualquier otro código es un fallo de la herramienta —no una
+  /// tercera respuesta— y se lanza como tal, igual que el resto de los
+  /// lanzamientos de esta clase.
+  Future<bool> rutaIgnorada(String ruta) async {
+    final args = ['check-ignore', '--quiet', '--', ruta];
+    final ProcessResult r;
+    try {
+      r = await Process.run(
+        programa,
+        args,
+        workingDirectory: directorio,
+        environment: entornoSaneado(_padre),
+        includeParentEnvironment: false,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+    } on ProcessException catch (e) {
+      throw GitFallo(
+        '$programa ${args.join(" ")}',
+        -1,
+        '${e.message} (${e.executable})',
+      );
+    }
+    if (r.exitCode == 0) return true;
+    if (r.exitCode == 1) return false;
+    throw GitFallo(
+      '$programa ${args.join(" ")}',
+      r.exitCode,
+      '${r.stdout}${r.stderr}'.trim(),
+    );
+  }
 }

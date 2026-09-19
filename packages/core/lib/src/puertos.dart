@@ -421,6 +421,51 @@ abstract interface class PreparedCandidate {
   /// afirmar nada sobre un árbol que dejó de ser el que se fijó.
   Future<List<AlteracionDelCandidato>> alteraciones();
 
+  /// Escanea el diff entre `identity.baseRevision` y `identity.contentRevision`
+  /// en busca de secretos, y se niega con la misma causa tipada que
+  /// [createRevision] si encuentra alguno.
+  ///
+  /// **Se puede pedir después de materializar y antes de escribir nada.** Es
+  /// lo que le permite a una previsualización ver un secreto: si el único
+  /// escaneo viviera dentro de [createRevision], una corrida sin confirmar se
+  /// comporta como una previsualización, nunca llega ahí, y el secreto no
+  /// aparece nunca — la previsualización informa cero hallazgos y da la
+  /// impresión de que no hay nada que corregir.
+  ///
+  /// **No escribe ningún objeto.** Es una lectura contra el par de
+  /// revisiones que [identity] ya fijó.
+  ///
+  /// **Revisa líneas agregadas de un diff, y eso es un límite declarado, no
+  /// un descuido.** Lo que el diff declara binario queda afuera: cualquier
+  /// implementación de este puerto hereda esa misma zona ciega, o tiene que
+  /// decir explícitamente que la cierra distinto.
+  ///
+  /// **[createRevision] vuelve a escanear, y NO es una segunda ventana.** Lo
+  /// que este escaneo diffea son `identity.baseRevision` e
+  /// `identity.contentRevision`, y las dos son inmutables desde que el
+  /// candidato se prepara; [createRevision] llama al mismo escaneo y después
+  /// commitea ese mismo árbol fijado. O sea que la segunda llamada computa lo
+  /// mismo que la primera sobre los mismos objetos: **no puede encontrar nada
+  /// que la primera no haya encontrado.**
+  ///
+  /// **Lo que sí justifica la segunda llamada es la independencia del
+  /// llamador.** Depender de la primera convertiría la garantía del commit en
+  /// una que solo vale si quien llama se acordó de pedir esta operación
+  /// antes; y entonces la promesa «una rebanada con secretos no se commitea»
+  /// pasaría a tener dos valores distintos según por dónde se entre. Es la
+  /// misma promesa, cumplida sin condiciones, no una cobertura extra.
+  ///
+  /// **La ventana que sí existe no la cierra ninguno de los dos escaneos, y
+  /// está cubierta por otra cosa.** Un verificador que escriba un secreto en
+  /// la raíz del candidato entre la materialización y el commit no lo ve ni
+  /// esta operación ni [createRevision], porque las dos miran la revisión
+  /// fijada y no el árbol de trabajo. Lo que la cubre son [alteraciones] —una
+  /// escritura en esa raíz aparece ahí, y una alteración vuelve la corrida no
+  /// concluyente— más el hecho de que lo que se commitea es el árbol fijado:
+  /// el secreto escrito en el workspace no entra al commit ni siquiera si
+  /// alguien autoriza publicar una corrida incompleta.
+  Future<void> exigirSinSecretos();
+
   /// Crea la revisión y devuelve su identificador. **No mueve ninguna rama.**
   ///
   /// Es el primer paso que escribe en el repositorio, y está separado de
@@ -431,7 +476,10 @@ abstract interface class PreparedCandidate {
   /// recuperar no tendría identidad que consultar. Como crear un commit no
   /// mueve nada, hacerlo antes no tiene efecto observable.
   ///
-  /// **Se niega si la rebanada trae un secreto**, antes de escribir nada.
+  /// **Se niega si la rebanada trae un secreto**, antes de escribir nada —
+  /// vuelve a llamar a [exigirSinSecretos] aunque el llamador ya la haya
+  /// pedido, porque la ventana que esta comprobación cierra es la que queda
+  /// entre mostrar y commitear, y ninguna llamada anterior la cubre.
   ///
   /// Idempotente: llamarla dos veces devuelve la misma revisión.
   Future<String> createRevision();

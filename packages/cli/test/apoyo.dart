@@ -8,6 +8,73 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 import 'package:plugin_fake/plugin_fake.dart';
 
+/// Un remoto que la fábrica del paquete de la forja SÍ atiende.
+///
+/// **Vive acá y no en cada suite** porque lo usan dos —la del comando y la del
+/// reintento— y es el mismo hecho: qué forma de remoto hace que
+/// `salidaDePrDelRemoto` devuelva una salida en vez de nulo. Escrito dos veces,
+/// el día que esa fábrica cambie de criterio una de las dos suites lo descubre
+/// y la otra sigue montando un mundo que ya no representa nada.
+const remotoAtendible = 'https://github.com/duenio/repo.git';
+
+/// La clave con la que una forja de verdad separa un pull request de otro, y
+/// con la que **todo servidor de prueba de este árbol tiene que separarlos**.
+///
+/// **Tres dimensiones, no una, y ninguna es decorativa.** El repositorio viaja
+/// en la ruta del pedido; la rama de origen y la base viajan en la consulta de
+/// la búsqueda idempotente —`head` y `base`— y en el cuerpo de la creación. Un
+/// servidor que guarde una sola lista, o que particione solo por repositorio,
+/// devuelve pull requests que la forja de verdad no habría devuelto — y
+/// entonces la búsqueda idempotente encuentra lo que no existe.
+///
+/// **Lo que eso costaba, medido.** Con los tres servidores de este árbol
+/// ciegos a estos parámetros: apuntando la búsqueda del adapter a OTRO
+/// repositorio, dos de las tres suites quedaban enteras en verde; apuntando su
+/// filtro de rama —o el de base— a uno que no existe, las TRES quedaban en
+/// verde y la suite completa también. O sea que nada cubría la elección de
+/// rama y base de esa búsqueda, mientras tres suites afirmaban que un
+/// reintento no abre un segundo pull request. Si esa elección estuviera mal,
+/// la búsqueda no encontraría nada y se abriría un segundo pull request para
+/// la misma rama y en el mismo repositorio, sin remoto mudado ni nada raro.
+///
+/// **Esta función NO se usa para anclarse a sí misma.** Las pruebas que
+/// sostienen la partición miden lo que el servidor VIO —ver las consultas que
+/// cada servidor registra— y el efecto observable de pedirle lo mismo a dos
+/// repositorios distintos. Un ancla escrita con esta misma función pasaría
+/// verde con la partición colapsada, porque las dos mitades de la comparación
+/// se colapsarían juntas: medido.
+///
+/// **Hay una copia de esta función en la suite del adapter**, bajo
+/// `packages/forge`, porque ese paquete no puede importar este archivo —las
+/// flechas apuntan al revés—. Son dos y no tres: las dos suites del CLI usan
+/// ésta. Si una cambia, la otra tiene que cambiar con ella.
+String claveDeLaConsultaDePrs({
+  required String ruta,
+  required String? head,
+  required String? base,
+}) => '$ruta|head=${head ?? ""}|base=${base ?? ""}';
+
+/// El `head` con el que la forja indexa un pull request **recién creado**.
+///
+/// La creación manda la rama pelada en el cuerpo; la búsqueda pregunta por
+/// `duenio:rama`. Son la misma clave dicha de dos formas, y quien las tiene
+/// que unificar es quien guarda —igual que del otro lado—: sin esto, un pull
+/// request creado no lo encontraría nunca la búsqueda que lo busca.
+String headDeLaCreacion({required String ruta, required String ramaDelCuerpo}) {
+  // `/repos/<duenio>/<repositorio>/pulls`
+  final segmentos = ruta.split('/').where((s) => s.isNotEmpty).toList();
+  final duenio = segmentos.length > 1 ? segmentos[1] : '';
+  return '$duenio:$ramaDelCuerpo';
+}
+
+/// Lo que un servidor de prueba VIO cuando le pidieron la búsqueda
+/// idempotente: la ruta del pedido y los dos filtros, crudos.
+///
+/// **Existe para que la elección de la búsqueda se pueda anclar sin pasar por
+/// [claveDeLaConsultaDePrs].** Un ancla escrita con esa función se colapsa
+/// junto con ella; ésta guarda lo que llegó por el cable.
+typedef ConsultaVista = ({String ruta, String? head, String? base});
+
 /// Un testigo, con lo mínimo para que el invariante no lo rechace: si no
 /// cubre ningún sujeto, tiene que traer al menos una omisión.
 Witness testigo({
@@ -20,6 +87,42 @@ Witness testigo({
   exitCode: 0,
   finishedAt: DateTime.utc(2026),
 );
+
+/// Un entorno de verificación que siempre deriva, y registra sobre qué raíz lo
+/// hicieron.
+///
+/// **No reimplementa nada**: el entorno real corre una toolchain sobre el
+/// candidato, y lo que estas pruebas miden no es eso. Lo que sí aporta es el
+/// hecho que el mundo necesita para ubicar el almacén temporal del candidato
+/// sin que el puerto tenga que exponerlo.
+class EntornoFalso implements VerificationEnvironment {
+  String? raizDelCandidato;
+
+  /// Qué pasa en el árbol del candidato MIENTRAS se deriva el entorno. Es la
+  /// ventana que solo la primera lectura de integridad puede ver: lo que se
+  /// escriba acá y se deshaga antes de la cascada no deja rastro para la
+  /// segunda.
+  final void Function(String raizDelCandidato)? alDerivar;
+
+  EntornoFalso({this.alDerivar});
+
+  @override
+  Future<ResultadoDeEntorno> derivar(
+    String candidateRoot, {
+    required List<String> archivos,
+    required Duration presupuesto,
+  }) async {
+    raizDelCandidato = candidateRoot;
+    alDerivar?.call(candidateRoot);
+    return EntornoDerivado(
+      paquetes: 1,
+      raices: 1,
+      toolchain: IdentidadDeToolchain(
+        version: const QuotedText('doble 0.0.0', source: 'prueba'),
+      ),
+    );
+  }
+}
 
 /// Un paso de doble propósito: sus fábricas cubren `subjects` tal como
 /// llegan, así que sirven con cualquier alcance que la corrida les dé, no

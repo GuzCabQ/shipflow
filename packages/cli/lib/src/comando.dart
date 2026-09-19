@@ -14,6 +14,7 @@ import 'package:core/core.dart';
 import 'package:orchestration/orchestration.dart';
 
 import 'salida.dart';
+import 'ship/composicion.dart';
 import 'uso.dart';
 import 'verify.dart';
 
@@ -40,6 +41,11 @@ const _ayuda = r'''
 shipflow — arnés de desarrollo asistido por agentes
 
   verify [rutas...]   Corre la cascada de verificación y reporta con testigo.
+  ship [opciones]     Prepara un candidato, lo verifica sobre él, lo commitea
+                      y abre el pull request. Sus banderas son --intent,
+                      --file, --slice, --branch, --base, --retry-publication,
+                      --dry-run, --yes y --allow-incomplete; `shipflow ship
+                      --help` las explica.
 
 Banderas globales (valen antes o después del comando):
   --json              Protocolo de salida: eventos y resultado en JSON Lines
@@ -49,7 +55,8 @@ Banderas globales (valen antes o después del comando):
   --help, -h          Esto.
 
 Códigos: 0 verde · 1 diagnósticos bloqueantes · 2 no concluyente ·
-         5 error de uso · 70 error interno del arnés.''';
+         3 detención declarada · 4 falta configuración o credencial ·
+         5 error de uso · 6 entrega incompleta · 70 error interno del arnés.''';
 
 /// Ejecuta la invocación entera y devuelve el código de proceso.
 ///
@@ -68,6 +75,13 @@ Future<int> ejecutar(
   /// garantía de entrega que no se puede romper en una prueba es una garantía
   /// que nadie comprobó.
   void Function(String id, StepOutcome desenlace)? alTerminarDeProgreso,
+
+  /// Con qué corre `ship`. **Nulo es la composición real**, la misma que corre
+  /// el binario. Se inyecta entera y no colaborador por colaborador: el
+  /// despachador no compone nada, y nombrar los trece acá sería moverle la raíz
+  /// de composición encima.
+  ColaboradoresDeShip Function(String directorio, Globales globales)?
+  construirShip,
 }) async {
   // `--json` y `--quiet` se detectan antes de interpretar, porque hasta un
   // error de interpretación tiene que salir por el canal que se pidió. Su
@@ -124,9 +138,18 @@ Future<int> ejecutar(
           codigo: Codigo.errorDeUso,
           verdict: null,
           humano: _ayuda,
-          queHacer: 'Elegí un comando. Hoy existe `verify`.',
+          queHacer: 'Elegí un comando. Hoy existen `verify` y `ship`.',
           datos: {'error': 'invocación sin acción', 'help': _ayuda},
         ),
+      );
+    }
+
+    if (g.comando == nombreDeShip) {
+      return await correrShipDelComando(
+        g,
+        directorio: directorio,
+        impresora: imp,
+        construirColaboradores: construirShip,
       );
     }
 
@@ -138,7 +161,8 @@ Future<int> ejecutar(
           codigo: Codigo.errorDeUso,
           verdict: null,
           humano: 'shipflow: no conozco el comando «${g.comando}».',
-          queHacer: 'Hoy solo existe `verify`. El resto llega con su fase.',
+          queHacer:
+              'Hoy existen `verify` y `ship`. El resto llega con su fase.',
           datos: {'error': 'comando desconocido: ${g.comando}'},
         ),
       );

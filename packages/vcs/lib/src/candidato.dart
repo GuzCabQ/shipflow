@@ -13,15 +13,25 @@ part of 'repositorio.dart';
 /// Existe con nombre propio porque el llamador tiene que poder distinguirla de
 /// un fallo del commit: acá el cambio está en la rama y no se deshace. Viaja
 /// dentro de [LocalInconsistent], que es lo que la vuelve inolvidable.
-class IndiceDesincronizado implements Exception {
+///
+/// **Privada, y con un nombre distinto del `IndiceDesincronizado` público del
+/// archivo `repositorio`.** Nunca se lanza —solo arma el texto de `detalle` para
+/// [LocalInconsistent], que ya tiene su propia `revision` tipada— así que no
+/// necesita ser parte de la superficie del archivo. El nombre público quedó
+/// libre para la excepción que sí viaja como tal desde `apply`.
+class _IndiceDesincronizadoDelCandidato implements Exception {
   final String revision;
   final List<String> rutas;
   final String salida;
 
-  const IndiceDesincronizado(this.revision, this.rutas, this.salida);
+  const _IndiceDesincronizadoDelCandidato(
+    this.revision,
+    this.rutas,
+    this.salida,
+  );
 
   @override
-  String toString() => 'IndiceDesincronizado($revision): $salida';
+  String toString() => '_IndiceDesincronizadoDelCandidato($revision): $salida';
 }
 
 /// La rebanada trae un secreto, así que no se commitea.
@@ -167,6 +177,11 @@ class _CandidatoGit implements PreparedCandidate {
     final temporal = await Directory.systemTemp.createTemp(
       'shipflow-candidato-',
     );
+    // **`objetos` y `arbol` son hermanos, bajo el mismo `temporal`.** No es
+    // solo geometría interna: `candidato_test` deriva esta ruta a partir de
+    // `root` (que es `arbol.path`) para llegar al almacén temporal sin que el
+    // puerto tenga que exponerlo. Mover `objetos` de acá sin tocar esa
+    // prueba la deja fallando con un mensaje que señala exactamente esto.
     final objetos = Directory('${temporal.path}/objetos');
     final indice = File('${temporal.path}/indice');
     final indiceDeIntegridad = File('${temporal.path}/indice-integridad');
@@ -472,7 +487,20 @@ class _CandidatoGit implements PreparedCandidate {
     // llamador se acuerde de preguntar: `apply` la cumple adentro, y este
     // camino tiene que cumplirla igual o `ChangeSink` pasa a tener dos
     // garantías distintas según por dónde se entre.
-    await _exigirSinSecretos();
+    //
+    // **Se escanea de nuevo aunque el llamador ya haya pedido
+    // `exigirSinSecretos` antes de esto, y NO es una segunda ventana.** El par
+    // de revisiones que se diffea es inmutable desde que el candidato se
+    // prepara, y lo que se commitea abajo es ese mismo árbol fijado: esta
+    // llamada computa lo mismo que la anterior sobre los mismos objetos y no
+    // puede encontrar nada que aquélla no haya encontrado.
+    //
+    // Lo que sostiene la repetición es la INDEPENDENCIA DEL LLAMADOR:
+    // apoyarse en la llamada anterior dejaría la promesa de arriba valiendo
+    // solo si quien entra por acá se acordó de pedir la otra operación
+    // primero, y entonces serían dos promesas distintas según por dónde se
+    // entre.
+    await exigirSinSecretos();
 
     await _promover();
 
@@ -568,7 +596,7 @@ class _CandidatoGit implements PreparedCandidate {
     if (sincronizado.exitCode != 0) {
       return LocalInconsistent(
         revision: revision,
-        detalle: IndiceDesincronizado(
+        detalle: _IndiceDesincronizadoDelCandidato(
           revision,
           _rutas,
           '${sincronizado.stdout}${sincronizado.stderr}'.trim(),
@@ -583,11 +611,25 @@ class _CandidatoGit implements PreparedCandidate {
   /// del candidato.**
   ///
   /// El diff se deriva de `baseRevision` y `contentRevision` —un objeto, no dos
-  /// lecturas del árbol— así que acá no hay ventana entre lo que se inspecciona
-  /// y lo que se commitea. Lo que **no** cubre es el árbol entero: el detector
-  /// revisa las líneas agregadas de un diff, y lo que `git` declara binario
-  /// queda afuera por límite declarado.
-  Future<void> _exigirSinSecretos() async {
+  /// lecturas del árbol— así que en una sola llamada no hay ventana entre lo
+  /// que se inspecciona y lo que esa llamada ve. Lo que **no** cubre es el
+  /// árbol entero: el detector revisa las líneas agregadas de un diff, y lo
+  /// que `git` declara binario queda afuera por límite declarado.
+  ///
+  /// **Pública, y pensada para pedirse dos veces por corrida.** El diseño la
+  /// pone antes de la previsualización: sin esto, una corrida sin confirmar
+  /// se comporta como una previsualización, nunca llega a [createRevision], y
+  /// el secreto no se ve nunca — la previsualización informa `0` y da la
+  /// impresión de que no hay nada que corregir. `createRevision` la sigue
+  /// llamando también, y eso no es la misma garantía repetida: entre que
+  /// esto se pide y que el commit se hace puede pasar cualquier cosa que la
+  /// orquestación haga con el candidato, y esa ventana —la que queda entre
+  /// mostrar y commitear— no la tapa haber preguntado antes de mostrar.
+  @override
+  Future<void> exigirSinSecretos() async {
+    if (_dispuesto) {
+      throw StateError('El candidato ya se liberó: no hay diff que escanear.');
+    }
     for (final ruta in _rutas) {
       final diff = await _repo._exigir([
         'diff',

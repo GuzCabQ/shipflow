@@ -14,13 +14,6 @@ import 'package:core/core.dart';
 import 'cuerpo.dart';
 import 'empuje.dart';
 
-/// La clave del entorno bajo la que viaja el token de GitHub. Es la misma que
-/// declara `clavesDeCredencial` en `core`; se repite acá como literal, y no
-/// se importa esa constante, porque esta clase necesita UNA clave concreta de
-/// GitHub y `clavesDeCredencial` es la lista de todas las que existen en el
-/// repositorio, presente o futura.
-const _claveDeCredencial = 'SHIPFLOW_GITHUB_TOKEN';
-
 /// Dónde vive el repositorio y cómo se habla con su API. **Quién es la
 /// forja no lo sabe `core`**: vive acá, en su propio adapter.
 class ConfiguracionDeGitHub {
@@ -73,6 +66,21 @@ String marcadorEstable(PullRequestRequest solicitud) =>
 class SalidaDePrDeGitHub implements PullRequestSink {
   final ConfiguracionDeGitHub configuracion;
   final CredentialSource credenciales;
+
+  /// Bajo qué clave se le pide la credencial a [credenciales].
+  ///
+  /// **Era una constante escrita adentro de `open`, y eso era un hecho
+  /// decidido dos veces.** Quien compone ya elige esa clave —el preflight de
+  /// la corrida aprueba o rechaza leyéndola— y este adapter la volvía a
+  /// elegir por su cuenta. Mientras las dos coincidieran no se notaba; el día
+  /// que no, el preflight aprueba por una clave y la publicación falla por
+  /// otra, sin que nada lo explique. Ahora hay un solo lugar donde se decide
+  /// y este campo la transporta.
+  ///
+  /// El valor por omisión es el que ya estaba escrito, así que componer sin
+  /// nombrarla se comporta igual que antes.
+  final String claveDeCredencial;
+
   final EmpujeAislado empuje;
   final HttpClient Function() _crearCliente;
   final Duration _presupuestoDeRed;
@@ -101,6 +109,7 @@ class SalidaDePrDeGitHub implements PullRequestSink {
     required this.configuracion,
     required this.credenciales,
     required this.empuje,
+    this.claveDeCredencial = claveDeCredencialDeLaForja,
     HttpClient Function()? clienteHttp,
     Duration presupuestoDeRed = presupuestoDeRedPorDefecto,
   }) : _crearCliente = clienteHttp ?? HttpClient.new,
@@ -108,7 +117,7 @@ class SalidaDePrDeGitHub implements PullRequestSink {
 
   @override
   Future<PublicationOutcome> open(PullRequestRequest request) async {
-    final credencial = await credenciales.read(_claveDeCredencial);
+    final credencial = await credenciales.read(claveDeCredencial);
     if (credencial == null) {
       // Sin credencial no se toca la red: no hay con qué autenticar ni la
       // búsqueda ni el push. Es `PushFailed` y no `PullRequestFailed` porque

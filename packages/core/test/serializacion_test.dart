@@ -26,8 +26,25 @@
 /// `CandidateIdentity · hexadecimal en mayúsculas`—; para el resto, la
 /// cobertura de esa partición la sostiene hoy una revisión humana. Medido al
 /// cerrar la ronda 7: el único constructor de `packages/core/lib/src` que
-/// transforma lo que recibe es `PullRequestRequest.revision`, y
+/// transformaba lo que recibía era `PullRequestRequest.revision`, y
 /// `PullRequestRequest` no serializa.
+///
+/// **Actualizado en la rebanada de `--retry-publication`, tarea 3:**
+/// `PullRequestDraft.rutas` se sumó a la lista. También transforma —ordena
+/// lo que recibe— y, a diferencia de `PullRequestRequest.revision`, SÍ
+/// serializa: cae de lleno en el residuo de arriba. El orden se resuelve en
+/// el constructor, ANTES de la primera serialización, así que para cuando
+/// `draft.toJson()` arma la instancia canónica las dos mitades de la
+/// igualdad ya parten del mismo valor —ya ordenado—. `draft` (más abajo)
+/// pasa las rutas fuera de orden, pero **eso no ejercita nada que este
+/// archivo pueda medir**: sacar el `.sort()` del constructor no rompería
+/// ninguna prueba de acá, estén las rutas de entrada ordenadas o no —se
+/// dejan así solo porque es más parecido a como llega una lista real, sin
+/// garantía de orden de quien la arma, no por cobertura—. **Quien sostiene
+/// el invariante de orden es la prueba «las rutas quedan ordenadas, sin
+/// importar en qué orden se declararon», en la suite de `publicacion` junto
+/// al resto de las pruebas del borrador**, que compara contra un resultado
+/// escrito a mano y no contra el propio `toJson`.
 ///
 /// **Y el mismo residuo del otro lado:** la precondición de arriba —ningún
 /// valor por defecto— OBLIGA a que todo campo anulable venga con valor en la
@@ -272,6 +289,49 @@ void main() {
     alcanceDeLoAfirmado: 'propiedades de herramienta, nada de comportamiento',
   );
 
+  // **Más de una ruta, a propósito.** Con una sola, un `toJson` que
+  // escribiera la primera y perdiera el resto produciría la misma lista de
+  // un elemento a la ida y a la vuelta: el falso verde que ya costó dos
+  // rondas en otras clases de este archivo.
+  //
+  // **Sin orden alfabético al pasarlas, pero no para ejercitar nada de acá.**
+  // El constructor ordena antes de esta primera serialización —ver el
+  // párrafo del encabezado—, así que esta instancia no puede demostrar el
+  // invariante de orden: se pasan así solo porque es más parecido a como
+  // llega una lista real, sin garantía de orden de quien la arma. Quien
+  // sostiene ese invariante es la prueba «las rutas quedan ordenadas, sin
+  // importar en qué orden se declararon», en la suite de `publicacion`.
+  final draft = PullRequestDraft(
+    runId: 'corrida-para-el-documento',
+    branch: 'rama-de-la-corrida',
+    base: 'develop',
+    artefacto: artefacto,
+    rutas: const ['lib/segundo.fuente', 'lib/primero.fuente'],
+  );
+
+  // **El desenlace tiene que ser el que afirma `publicationComplete`.** Acá
+  // había un `LocalInconsistente`, y el documento canónico de esta suite era
+  // el estado contradictorio en persona: decía «el commit existe y el índice
+  // quedó sucio» sobre un estado que afirma que la publicación se completó.
+  // Se construía, serializaba y volvía igual, así que la ida y vuelta no
+  // notaba nada. Ahora el constructor lo rechaza.
+  final desenlaceDelDocumento = ShipOutcome.publicadoParaLaPrueba(
+    pr: PullRequestOpen(url: 'https://forja/pr/canonico'),
+    verificacion: EstadoPublicable.noConcluyente,
+  );
+
+  final documento =
+      DocumentoDeCorrida.preparado(
+            revision: 'e' * 40,
+            draft: draft,
+            destino: 'forja.ejemplo/duenio/repo',
+          )
+          .avanzarA(EstadoDelDocumento.committed)
+          .avanzarA(
+            EstadoDelDocumento.publicationComplete,
+            desenlace: desenlaceDelDocumento,
+          );
+
   /// Cada entrada: la instancia canónica y cómo se la reconstruye.
   final canonicas =
       <String, (Map<String, Object?>, Object Function(Map<String, Object?>))>{
@@ -499,6 +559,50 @@ void main() {
           PullRequestUnknown(causa: CausaDePublicacion.autenticacion).toJson(),
           PullRequestUnknown.fromJson,
         ),
+        'NoIntentado': (
+          // **`verificationGate`, no `secretDetected`.** Con el secreto, esta
+          // instancia canónica era una combinación que no produce nada:
+          // `derivar` chequea el arnés roto en el paso 1, ANTES del secreto,
+          // así que con `errorInterno` lo que sale es la compuerta. Es la
+          // misma clase que el documento canónico de más arriba, con el
+          // agravante de que el ruling de las cuatro causas existe justamente
+          // para que «compuerta con arnés roto» sea la fila ALCANZABLE. Los
+          // dos campos siguen sin ser el valor por omisión de nada.
+          ShipOutcome.noIntentadoParaLaPrueba(
+            causa: CausaDeNoIntento.verificationGate,
+            verificacion: EstadoDeCorrida.errorInterno,
+          ).toJson(),
+          NoIntentado.fromJson,
+        ),
+        'NoAplicado': (
+          ShipOutcome.noAplicadoParaLaPrueba(
+            causa: CausaDeNoAplicacion.baseMovida,
+            headObservado: 'c' * 40,
+          ).toJson(),
+          NoAplicado.fromJson,
+        ),
+        'LocalInconsistente': (
+          ShipOutcome.localInconsistenteParaLaPrueba(
+            revision: 'd' * 40,
+          ).toJson(),
+          LocalInconsistente.fromJson,
+        ),
+        'Publicado': (
+          ShipOutcome.publicadoParaLaPrueba(
+            pr: PullRequestOpen(url: 'https://forja.ejemplo/o/r/pull/4'),
+            verificacion: EstadoPublicable.verde,
+          ).toJson(),
+          Publicado.fromJson,
+        ),
+        'PublicacionIncompleta': (
+          ShipOutcome.publicacionIncompletaParaLaPrueba(
+            remoto: PushFailed(causa: CausaDePublicacion.permisos),
+            verificacion: EstadoPublicable.rojo,
+          ).toJson(),
+          PublicacionIncompleta.fromJson,
+        ),
+        'PullRequestDraft': (draft.toJson(), PullRequestDraft.fromJson),
+        'DocumentoDeCorrida': (documento.toJson(), DocumentoDeCorrida.fromJson),
       };
 
   /// Clases cuyos campos son EXCLUYENTES: ninguna instancia puede tenerlos
@@ -530,6 +634,12 @@ void main() {
       // silencio.
       'plan',
     },
+    // El mismo `plan` nulo de arriba, visto desde el JSON anidado de cada
+    // envoltorio que lleva un `ArtefactoDeRevision` adentro: la ruta cambia
+    // con el prefijo, pero el motivo —y el campo que sí queda cubierto,
+    // `sinPlanPorque`— es el mismo.
+    'PullRequestDraft': {'artefacto.plan'},
+    'DocumentoDeCorrida': {'draft.artefacto.plan'},
   };
 
   group('la instancia canónica no trae valores por defecto', () {

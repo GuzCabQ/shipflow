@@ -108,6 +108,130 @@ void main() {
     String intent = 'porque sí',
   }) => PullRequestSlice(id: 'r1', intent: intent, files: files);
 
+  /// Dos commits reales sobre `main`: [primero] es el `base` que arma
+  /// [setUp] y [segundo] uno nuevo encima, así que `HEAD` y el padre nunca
+  /// coinciden y las pruebas pueden distinguir uno del otro.
+  ({RepositorioGit repo, String primero, String segundo}) repoConDosCommits() {
+    final primero = correr('git', ['rev-parse', 'HEAD']);
+    escribir('a.txt', 'cambio\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'segundo commit']);
+    final segundo = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, primero: primero, segundo: segundo);
+  }
+
+  /// Un commit de fusión real, con DOS padres. **`--no-ff`, a propósito**:
+  /// sin eso `git` resolvería como *fast-forward* y no habría fusión que
+  /// crear, y la prueba que esto sostiene necesita un commit con más de un
+  /// padre para poder afirmar que pedir «el» padre falla.
+  ({RepositorioGit repo, String merge}) repoConMerge() {
+    git(['checkout', '-b', 'rama-de-fusion']);
+    escribir('c.txt', 'tres\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'commit en la rama']);
+    git(['checkout', 'main']);
+    escribir('d.txt', 'cuatro\n');
+    git(['add', '-A']);
+    git(['commit', '-m', 'commit en main']);
+    git(['merge', '--no-ff', '-m', 'merge de la rama', 'rama-de-fusion']);
+    final merge = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, merge: merge);
+  }
+
+  /// Un commit cuyo mensaje es exactamente [mensaje], **con cuerpo**. Sirve
+  /// para distinguir `%B` (el mensaje entero) de `%s` (solo el asunto): un
+  /// mensaje de una sola línea no alcanzaría para esa distinción.
+  ({RepositorioGit repo, String revision}) repoConMensaje(String mensaje) {
+    escribir('c.txt', 'contenido\n');
+    git(['add', '-A']);
+    git(['commit', '-m', mensaje]);
+    final revision = correr('git', ['rev-parse', 'HEAD']);
+    return (repo: repo, revision: revision);
+  }
+
+  /// Lo que el `git` falso de [repositorioConIndiceQueFalla] escribe en
+  /// `stderr` antes de fallar. **Con nombre propio para poder afirmar que
+  /// llega hasta `detalle`** — sin esto, la salida (real o falsa) de `git`
+  /// nunca se ve obligada a atravesar el campo, y un `detalle` que ignorara
+  /// lo que `git` dijo pasaría la prueba igual.
+  const quejaDelGitFalso = 'fatal: el índice simulado no se escribe';
+
+  /// Un repositorio cuyo `reset` posterior al commit siempre falla.
+  ///
+  /// **Inyectado por la costura de [RepositorioGit.programa], no producido
+  /// por el repositorio de prueba real.** No hay forma conocida de hacer que
+  /// un `git reset --quiet` sobre un commit que se acaba de crear falle por
+  /// sí solo sin corromper el repositorio de un modo que rompería la
+  /// premisa del resto de la prueba (el commit tiene que haber salido bien).
+  /// Es el mismo mecanismo que usan las pruebas de la toolchain ausente: se
+  /// reemplaza `git` por un envoltorio que deja pasar todo salvo la
+  /// operación que hace falta ver fallar. Lo que esto NO demuestra es que un
+  /// fallo real de `reset` —disco lleno, permisos, lo que sea— pase por este
+  /// mismo `if`; solo que, si pasa por acá, sale como [IndiceDesincronizado]
+  /// con la revisión como dato y con lo que `git` dijo, dentro de `detalle`.
+  RepositorioGit repositorioConIndiceQueFalla() {
+    final falso = envoltorio('git-reset-roto', '''#!/bin/sh
+if [ "\$2" = "reset" ]; then echo '$quejaDelGitFalso' >&2; exit 91; fi
+exec git "\$@"
+''');
+    escribir('a.txt', 'cambio\n');
+    return RepositorioGit(
+      directorio: raiz.path,
+      politica: politica,
+      programa: falso,
+    );
+  }
+
+  /// La rebanada que acompaña a [repositorioConIndiceQueFalla]: toca
+  /// exactamente el archivo que ese repositorio deja modificado.
+  final rebanadaDePrueba = rebanada(['a.txt']);
+
+  group('la URL del remoto', () {
+    test('la devuelve cuando hay uno configurado', () async {
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      expect(await repo.urlDelRemoto(), 'https://un.host/duenio/repo.git');
+    });
+
+    test('sin remoto configurado es nulo, y eso es un hecho', () async {
+      // No tener remoto no es un fallo: es la configuración de un
+      // repositorio que todavía no publica. Quien componga tiene que poder
+      // ramificar sobre eso en vez de atrapar una excepción.
+      expect(await repo.urlDelRemoto(), isNull);
+    });
+
+    test('un nombre de remoto que no existe también es nulo', () async {
+      // Mismo hecho por la otra puerta: preguntar por un remoto que nadie
+      // configuró no es distinto de no tener ninguno.
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      expect(await repo.urlDelRemoto(nombre: 'upstream'), isNull);
+    });
+
+    test('un remoto que no es el primero se lee por su nombre', () async {
+      // Sin esto, una implementación que ignorara `nombre` y leyera siempre
+      // `origin` pasaría las tres pruebas de arriba.
+      git(['remote', 'add', 'origin', 'https://un.host/duenio/repo.git']);
+      git(['remote', 'add', 'upstream', 'https://otro.host/arriba/repo.git']);
+      expect(
+        await repo.urlDelRemoto(nombre: 'upstream'),
+        'https://otro.host/arriba/repo.git',
+      );
+    });
+
+    test('fuera de un repositorio NO es nulo: es un fallo de git', () async {
+      // La distinción que sostiene todo lo anterior. Si «no se pudo
+      // preguntar» se leyera como «no hay remoto», la raíz de composición
+      // diría que el repositorio no tiene forja cuando lo que pasa es que
+      // no hay repositorio.
+      final afuera = Directory.systemTemp.createTempSync('vcs_sin_repo_');
+      addTearDown(() => afuera.deleteSync(recursive: true));
+      final sinRepo = RepositorioGit(
+        directorio: afuera.path,
+        politica: politica,
+      );
+      expect(() => sinRepo.urlDelRemoto(), throwsA(isA<GitFallo>()));
+    });
+  });
+
   group('la rama', () {
     test('se crea si no existe', () async {
       await repo.useBranch('shipflow/algo');
@@ -968,24 +1092,20 @@ exec git "$@"
       // Son dos efectos distintos: la revisión existe y el índice quedó
       // desincronizado. El `reset` usaba la llamada que NO lanza, así que
       // `apply` devolvía la revisión como si todo hubiera salido bien.
-      final falso = envoltorio('git-reset-roto', r'''#!/bin/sh
-if [ "$2" = "reset" ]; then exit 91; fi
-exec git "$@"
-''');
-      escribir('a.txt', 'cambio\n');
-      final torcido = RepositorioGit(
-        directorio: raiz.path,
-        politica: politica,
-        programa: falso,
-      );
       await expectLater(
-        torcido.apply(rebanada(['a.txt'])),
+        repositorioConIndiceQueFalla().apply(rebanadaDePrueba),
         throwsA(
-          isA<PromesaIncumplida>()
-              .having((e) => e.quedo, 'nombra la revisión', contains('creada'))
+          isA<IndiceDesincronizado>()
+              .having((e) => e.revision, 'revisión', hasLength(40))
+              .having((e) => e.detalle, 'detalle', contains('a.txt'))
               .having(
-                (e) => e.quedo,
-                'y qué quedó sin hacer',
+                (e) => e.detalle,
+                'con lo que git dijo de verdad, no solo el prefijo estático',
+                contains(quejaDelGitFalso),
+              )
+              .having(
+                (e) => e.toString(),
+                'el mensaje',
                 contains('sin sincronizar'),
               ),
         ),
@@ -995,6 +1115,23 @@ exec git "$@"
         'porque sí',
         reason: 'el commit se hizo, y no se deshace: eso salió bien',
       );
+    });
+
+    test('el índice sin sincronizar lleva la revisión como DATO', () async {
+      // El mensaje sigue existiendo y sigue siendo útil; lo que no puede pasar
+      // es que sea el único lugar donde está la revisión.
+      try {
+        await repositorioConIndiceQueFalla().apply(rebanadaDePrueba);
+        fail('se esperaba IndiceDesincronizado');
+      } on IndiceDesincronizado catch (e) {
+        expect(e.revision, matches(RegExp(r'^[0-9a-f]{40}$')));
+        expect(e.detalle, isNotEmpty);
+        expect(
+          e.toString(),
+          contains(e.revision),
+          reason: 'el texto sigue nombrándola, además del campo',
+        );
+      }
     });
 
     test('un archivo cuyo nombre empieza con espacio no se corrompe', () async {
@@ -1012,6 +1149,31 @@ exec git "$@"
           'HEAD',
         ]).split('\u0000').where((s) => s.isNotEmpty),
         [' a.txt'],
+      );
+    });
+  });
+
+  group('IndiceDesincronizado valida sus campos', () {
+    // El mismo criterio que su análogo `LocalInconsistent`
+    // (`packages/core/lib/src/desenlace`): sin esto,
+    // `IndiceDesincronizado('', '')` se construía sin quejarse, y era
+    // exactamente el defecto que esta clase existe para cerrar —una
+    // revisión que no es un dato real— con la interpolación cambiada por
+    // una cadena vacía.
+    test(
+      'sin revisión no se construye: el commit existe y hay que repararlo',
+      () {
+        expect(
+          () => IndiceDesincronizado('', 'x'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('sin detalle no se construye: no diría qué reparar', () {
+      expect(
+        () => IndiceDesincronizado('d' * 40, ' '),
+        throwsA(isA<ArgumentError>()),
       );
     });
   });
@@ -1313,6 +1475,69 @@ exec git "$@"
       expect(visto, contains('PATH='));
       expect(visto, isNot(contains('ghp_no_debe_llegar')));
       expect(visto, isNot(contains('SHIPFLOW_GITHUB_TOKEN')));
+    });
+  });
+
+  group('leer un objeto commit', () {
+    test('el HEAD es el de la rama actual', () async {
+      final r = repoConDosCommits();
+      expect(await r.repo.head, r.segundo);
+    });
+
+    test('el padre de una revisión es su antecesor', () async {
+      final r = repoConDosCommits();
+      expect(await r.repo.padreDe(r.segundo), r.primero);
+    });
+
+    test(
+      'la PRIMERA revisión no tiene padre, y eso es un HECHO, no un error',
+      () async {
+        final r = repoConDosCommits();
+        expect(await r.repo.padreDe(r.primero), isNull);
+      },
+    );
+
+    test('un merge tiene DOS padres, y pedir «el» padre miente', () async {
+      final r = repoConMerge();
+      expect(
+        () => r.repo.padreDe(r.merge),
+        throwsA(isA<GitFallo>()),
+        reason:
+            'devolver el primero haría pasar el paso 1 de la '
+            'reconciliación sobre un commit que no es hijo de la base',
+      );
+    });
+
+    test(
+      'el árbol de una revisión es su OID de árbol, no el del commit',
+      () async {
+        final r = repoConDosCommits();
+        final arbol = await r.repo.arbolDe(r.segundo);
+        expect(arbol, isNot(r.segundo));
+        expect(arbol, matches(RegExp(r'^[0-9a-f]{40,64}$')));
+      },
+    );
+
+    test(
+      'el mensaje sale ENTERO y sin el salto final que git agrega',
+      () async {
+        // El espacio inicial no es decoración: es lo único que distingue
+        // `_exigirCrudo` de `_exigir` en esta prueba. `git` no lo toca —se
+        // midió con `cat-file`— así que si `mensajeDe` usara `_exigir`, el
+        // `.trim()` de ese lanzador se lo comería y esta prueba seguiría
+        // en verde por casualidad: el mismo defecto que el mensaje entero
+        // existe para cazar, colado en el instrumento que lo mide.
+        final r = repoConMensaje(' primera línea\n\ncuerpo del mensaje');
+        expect(
+          await r.repo.mensajeDe(r.revision),
+          ' primera línea\n\ncuerpo del mensaje',
+        );
+      },
+    );
+
+    test('una revisión que no existe falla, no devuelve vacío', () async {
+      final r = repoConDosCommits();
+      expect(() => r.repo.arbolDe('0' * 40), throwsA(isA<GitFallo>()));
     });
   });
 }

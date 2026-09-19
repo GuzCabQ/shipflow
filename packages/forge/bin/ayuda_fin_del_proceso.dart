@@ -163,6 +163,7 @@ Future<Object> _medirLaForja(List<String> argumentos) async {
           sinPlanPorque: 'no hay elementos de trabajo',
           alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
         ),
+        rutas: const ['x.fuente'],
       ),
       revision: revision,
       arbolDeLaRevision: arbol,

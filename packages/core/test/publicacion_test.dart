@@ -223,6 +223,7 @@ void main() {
       branch: 'rama',
       base: 'develop',
       artefacto: artefacto(estado: estado),
+      rutas: const ['a.txt'],
     );
 
     test('la intención no se repite: sale del artefacto', () {
@@ -279,6 +280,7 @@ void main() {
               estado: EstadoDeCorrida.verde,
               arbol: 'arbol-A',
             ),
+            rutas: const ['a.txt'],
           ),
           revision: oidSha1,
           arbolDeLaRevision: 'arbol-a',
@@ -313,6 +315,7 @@ void main() {
                 estado: EstadoDeCorrida.verde,
                 arbol: arbolDelCandidato,
               ),
+              rutas: const ['a.txt'],
             ),
             revision: oidSha256,
             arbolDeLaRevision: arbolDelParametro,
@@ -373,6 +376,7 @@ void main() {
             branch: 'rama',
             base: 'develop',
             artefacto: artefacto(estado: EstadoDeCorrida.verde),
+            rutas: const ['a.txt'],
           ),
           throwsArgumentError,
           reason: 'se aceptó «$hostil» como runId',
@@ -392,6 +396,7 @@ void main() {
           branch: 'rama',
           base: 'develop',
           artefacto: artefacto(estado: EstadoDeCorrida.verde),
+          rutas: const ['a.txt'],
         ).runId,
         '1789456321987654-3',
       );
@@ -538,6 +543,89 @@ void main() {
       );
       expect(rojo.titulo, startsWith(PullRequestRequest.prefijoIncompleto));
       expect(rojo.titulo, contains('sostener el arnés'));
+    });
+
+    group('las rutas de la rebanada', () {
+      PullRequestDraft borradorDePrueba({required List<String> rutas}) =>
+          PullRequestDraft(
+            runId: 'corrida-1',
+            branch: 'rama',
+            base: 'develop',
+            artefacto: artefacto(estado: EstadoDeCorrida.verde),
+            rutas: rutas,
+          );
+
+      // **Extensión ficticia, y no la real.** El nombre del lenguaje en el
+      // que está escrito este repositorio está acotado a un paquete puntual
+      // del stack y al punto de composición del CLI, y `core` no es ninguno
+      // de los dos. El nombre de archivo no es el dato que esta prueba
+      // necesita —cualquier ruta sirve—, así que se usa la misma extensión de
+      // mentira que ya usa el resto de esta suite (la de serialización, y
+      // los archivos de un plan).
+      test('el borrador lleva las rutas de la rebanada', () {
+        final d = borradorDePrueba(
+          rutas: const ['lib/a.fuente', 'lib/b.fuente'],
+        );
+        expect(d.rutas, ['lib/a.fuente', 'lib/b.fuente']);
+      });
+
+      test('un borrador SIN rutas no se construye', () {
+        expect(
+          () => borradorDePrueba(rutas: const []),
+          throwsArgumentError,
+          reason:
+              'una rebanada sin archivos no es una rebanada, y el paso 4 '
+              'de la reconciliación no tendría sobre qué opinar',
+        );
+      });
+
+      test('las rutas repetidas no se construyen', () {
+        expect(
+          () => borradorDePrueba(rutas: const ['a.txt', 'a.txt']),
+          throwsArgumentError,
+        );
+      });
+
+      test('las rutas viajan en la ida y vuelta', () {
+        final d = borradorDePrueba(
+          rutas: const ['lib/b.fuente', 'lib/a.fuente'],
+        );
+        expect(PullRequestDraft.fromJson(d.toJson()).rutas, d.rutas);
+      });
+
+      // **Hallazgo, medido con la mutación:** ninguna de las pruebas de
+      // arriba nota si se borra el `.sort()` del constructor —la de la ida y
+      // vuelta compara contra `d.rutas`, que es el MISMO objeto ya
+      // (des)ordenado de la misma manera de los dos lados, así que un
+      // constructor que dejara pasar las rutas tal cual las declararon
+      // seguiría en verde. «Ordenada» es parte de la interfaz que pide esta
+      // tarea, y esta es la única prueba que la ejercita comparando contra un
+      // resultado escrito a mano, no contra la propia entrada.
+      test('las rutas quedan ordenadas, sin importar en qué orden se '
+          'declararon', () {
+        final d = borradorDePrueba(
+          rutas: const ['z.fuente', 'a.fuente', 'm.fuente'],
+        );
+        expect(d.rutas, ['a.fuente', 'm.fuente', 'z.fuente']);
+      });
+
+      test('un JSON sin rutas falla NOMBRANDO la versión', () {
+        final json = borradorDePrueba(rutas: const ['a.txt']).toJson()
+          ..remove('rutas');
+        expect(
+          () => PullRequestDraft.fromJson(json),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'mensaje',
+              contains('formatVersion'),
+            ),
+          ),
+          reason:
+              'quien lo lea tiene que entender «esta es una forma más '
+              'vieja», no «este JSON está roto»',
+        );
+      });
     });
   });
 }
