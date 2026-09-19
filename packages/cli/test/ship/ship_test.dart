@@ -40,6 +40,11 @@ const _archivo = 'lib/a.txt';
 /// dato: `ship` no sabe quién es la forja.
 const _clave = 'CREDENCIAL_DE_LA_FORJA';
 
+/// Una ruta sucia que no es de la rebanada. Queda en el árbol de trabajo, no
+/// se publica y no entra en el artefacto: por eso la previsualización la
+/// nombra aparte y con su cuenta.
+const _ajeno = 'ajeno.txt';
+
 /// Una línea que el detector de secretos reconoce por el NOMBRE al que se
 /// asigna, no por la forma del valor: no se parece a la credencial de ningún
 /// proveedor y aun así es exactamente lo que no se commitea.
@@ -181,6 +186,12 @@ class MundoDePrueba {
   /// que este mecanismo no escribiría. No se pisa: puede ser deliberado.
   final bool gitignoreAjeno;
 
+  /// El árbol de trabajo tiene una ruta sucia que NO es de la rebanada. Es lo
+  /// que la previsualización tiene que nombrar con su cuenta: quien confirma
+  /// es la única persona a la que se le puede mostrar, porque el revisor
+  /// remoto nunca la ve.
+  final bool conCambioAjeno;
+
   late final Directory _raiz;
   late final RepoQueAnota repo;
   late final RegistroDeCorridas registro;
@@ -219,6 +230,7 @@ class MundoDePrueba {
     this.sinCredencial = false,
     this.documentoVersionado = false,
     this.gitignoreAjeno = false,
+    this.conCambioAjeno = false,
   }) {
     _raiz = Directory.systemTemp.createTempSync('ship_orquestacion_');
     addTearDown(() => _raiz.deleteSync(recursive: true));
@@ -242,6 +254,9 @@ class MundoDePrueba {
       _git(['add', '-f', '.shipflow/runs/r-1.json']);
       File('${_raiz.path}/.shipflow/runs/r-1.json').deleteSync();
     }
+    if (conCambioAjeno) {
+      _escribir(_ajeno, 'trabajo de al lado, sin commitear\n');
+    }
     if (gitignoreAjeno) {
       _escribir(
         '.shipflow/.gitignore',
@@ -250,12 +265,21 @@ class MundoDePrueba {
     }
   }
 
-  String _git(List<String> args) {
+  String _git(List<String> args) => _gitCrudo(args).trim();
+
+  /// Lo mismo, **sin recortar por la izquierda**. `git status --porcelain`
+  /// codifica el estado en las dos primeras columnas, y la primera suele ser
+  /// un espacio: recortar la salida entera se come el espacio inicial de la
+  /// PRIMERA línea y corre su ruta un carácter. Con eso, la ruta de la
+  /// rebanada salía mutilada, no coincidía consigo misma y la rebanada se
+  /// contaba como cambio ajeno. No se veía porque `confirmar` era nulo y esta
+  /// función nunca corría.
+  String _gitCrudo(List<String> args) {
     final r = Process.runSync('git', args, workingDirectory: _raiz.path);
     if (r.exitCode != 0) {
       throw StateError('git ${args.join(" ")} → ${r.exitCode}: ${r.stderr}');
     }
-    return (r.stdout as String).trim();
+    return (r.stdout as String).trimRight();
   }
 
   void _escribir(String ruta, String contenido) {
@@ -323,8 +347,8 @@ class MundoDePrueba {
   /// la previsualización las imprime con su cuenta, y un cero sin haber mirado
   /// es una afirmación sobre lo que queda afuera.
   Future<List<String>> _cambiosAjenos() async => [
-    for (final l in _git(['status', '--porcelain']).split('\n'))
-      if (l.trim().isNotEmpty && l.substring(3) != _archivo) l.substring(3),
+    for (final l in _gitCrudo(['status', '--porcelain']).split('\n'))
+      if (l.length > 3 && l.substring(3) != _archivo) l.substring(3),
   ];
 
   Future<ShipOutcome> correr({
@@ -551,6 +575,42 @@ void main() {
         reason: '$ruta no está ignorada: terminaría commiteada en el PR',
       );
     }
+  });
+
+  group('el camino de `confirmar`', () {
+    // Hasta esta ronda la suite pasaba `confirmar: null` siempre, así que por
+    // corto-circuito ni la previsualización ni los cambios ajenos se
+    // ejecutaban: borrar el colaborador `cambiosAjenos` de la firma no ponía
+    // roja ninguna prueba.
+
+    test(
+      'un «no» deja la corrida sin confirmar, y sin escribir nada',
+      () async {
+        final mundo = MundoDePrueba(conCambioAjeno: true);
+        String? loQueLeYO;
+        final r = await mundo.correr(
+          confirmar: (texto) async {
+            loQueLeYO = texto;
+            return false;
+          },
+        );
+        expect((r as NoIntentado).causa, CausaDeNoIntento.confirmationMissing);
+        expect(mundo.commits, isEmpty);
+        expect(mundo.pullRequests, isEmpty);
+        // Y lo que se le mostró llevaba los cambios ajenos REALES: sin ese
+        // colaborador, quien confirma no sabe qué queda afuera.
+        expect(loQueLeYO, contains(_ajeno));
+        expect(loQueLeYO, contains('cambios ajenos a la rebanada (1)'));
+      },
+    );
+
+    test('un «sí» autoriza la escritura y la corrida publica', () async {
+      final mundo = MundoDePrueba();
+      final r = await mundo.correr(confirmar: (_) async => true);
+      expect(r, isA<Publicado>());
+      expect(mundo.commits, isNotEmpty);
+      expect(mundo.pullRequests, hasLength(1));
+    });
   });
 
   group('las cuatro salidas por excepción, que NO son desenlace', () {
