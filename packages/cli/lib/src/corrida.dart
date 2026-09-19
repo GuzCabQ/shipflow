@@ -470,13 +470,18 @@ final class IndiceNoCoincide extends IndiceDelReintento {
 /// Fuera de ese estado, las dos respuestas de esta función no significan
 /// nada —o significan algo falso—: es la puerta de UN solo estado, la misma
 /// idea que ya declara [decidirRecuperacion] al dejar la comprobación de
-/// estado y de rama en manos de quien la llama. Ahí esa comprobación queda
-/// afuera porque [puertaDelReintento] ya la asegura antes; acá, en cambio, no
-/// hay ningún llamador que la asegure todavía, así que se comprueba adentro
-/// y se lanza si falla: usar esta función sobre otro estado promovería por
-/// una arista que ese estado no tiene, y eso no es un hecho del dominio que
-/// quien llama tenga que poder ramificar —es un defecto de quien la
-/// invocó—.
+/// estado y de rama en manos de quien la llama.
+///
+/// **Y acá SÍ se comprueba adentro, aunque el llamador ya la asegure.** La
+/// razón escrita era que no había ningún llamador que la asegurara todavía, y
+/// eso venció: la composición del reintento entra acá solo desde la rama que
+/// ya comparó el estado con `localInconsistent`. La guarda se queda igual, y
+/// el motivo que la sostiene es otro: es defensa en profundidad sobre la
+/// única precondición cuyo incumplimiento no se nota mirando la salida
+/// —promovería por una arista que ese estado no tiene, y lo haría en
+/// silencio—. Lanza en vez de devolver un caso porque no es un hecho del
+/// dominio sobre el que quien llama tenga que poder ramificar: es un defecto
+/// de quien la invocó.
 IndiceDelReintento comprobarIndice({
   required DocumentoDeCorrida documento,
   required List<String> rutasQueDifieren,

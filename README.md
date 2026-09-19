@@ -3542,8 +3542,8 @@ cierra qué le pasó a una
 corrida **completa** —no a un paso, no a una publicación: a la corrida
 entera— y el documento que la persiste para poder recuperarla si el proceso
 muere a la mitad. **Es la primera de tres**: 4b es el comando de punta a
-punta —ya construido— y 4c es `--retry-publication` con la reconciliación, que
-no. Nada de acá compone una corrida; se prueba el tipo, la derivación, la
+punta —ya construido— y 4c es `--retry-publication` con la reconciliación,
+que también. Nada de acá compone una corrida; se prueba el tipo, la derivación, la
 serialización y la persistencia.
 
 ### `ShipOutcome` deriva de los hechos, no se ensambla a mano
@@ -3686,7 +3686,8 @@ El grafo de transiciones válidas es un mapa, no una cadena de `if`:
 prepared               → committed, notApplied, localInconsistent
 committed              → publicationComplete, publicationIncomplete
 publicationIncomplete  → publicationComplete
-publicationComplete, notApplied, localInconsistent → (terminales)
+localInconsistent      → committed
+publicationComplete, notApplied                    → (terminales)
 ```
 
 **`publicationIncomplete → publicationComplete` está, aunque el diagrama de
@@ -3695,13 +3696,19 @@ publica desde `committed` o `publicationIncomplete`», y sin esa arista una
 publicación que quedó a medias no tendría adónde avanzar cuando el reintento
 sí completa. El diagrama está incompleto, no este mapa.
 
-**Los tres estados terminales se prueban terminales**, no solo se leen del
-mapa: la suite intenta avanzar desde `publicationComplete`, `notApplied` y
-`localInconsistent` hacia cada uno de los seis estados, y exige que los
-dieciocho intentos lancen. Cubría solo `notApplied`, y con eso cambiarle a
-`publicationComplete` el conjunto vacío por `{committed}` dejaba la suite
-entera en verde — y `publicationComplete` terminal es lo único que impide que
-`--retry-publication` vuelva a publicar una corrida ya publicada.
+**`localInconsistent → committed` es de 4c**, y con ella ese estado dejó de
+ser terminal: §9 exige que el reintento, cuando comprueba que el índice ya
+coincide con la revisión, lo promueva en vez de dejarlo varado. Este bloque
+lo listaba entre los terminales y quedó falso ahí; la suite ya se había
+corregido.
+
+**Los terminales que quedan se prueban terminales**, no solo se leen del
+mapa: la suite intenta avanzar desde cada uno hacia cada uno de los seis
+estados y exige que todos esos intentos lancen. Cubría solo `notApplied`, y
+con eso cambiarle a `publicationComplete` el conjunto vacío por `{committed}`
+dejaba la suite entera en verde — y `publicationComplete` terminal es lo
+único que impide que `--retry-publication` vuelva a publicar una corrida ya
+publicada.
 
 ### El estado y el desenlace son el mismo hecho
 
@@ -3881,7 +3888,7 @@ medias sin detalle no dice qué hay que reparar.
   seguía adentro, y el constructor lo rechazaba siempre. Las dos pruebas que
   decían cubrir esa promoción pasaban igual porque usaban un documento **sin
   desenlace**, que ninguna corrida real escribe —`ShipOutcome.derivar`
-  siempre deja uno puesto—. Se cierra con `_admiteDesenlace`
+  siempre deja uno puesto—. Se cierra con `admiteDesenlace`
   (`packages/core/lib/src/documento.dart`): un `switch` exhaustivo, imagen
   inversa de `estadoQueAfirma`, que dice si el estado de destino admite
   desenlace o lo descarta. El invariante pasa a ser estructural —lo decide el
@@ -3941,7 +3948,15 @@ medias sin detalle no dice qué hay que reparar.
   documento persistido del que 4c lee.
 - **La reconciliación de una publicación a medias no existía acá.** Es el otro
   contenido de 4c, y ya está: el reintento publica desde
-  `publicationIncomplete` sin abrir un segundo pull request.
+  `publicationIncomplete` sin abrir un segundo pull request. **Y ahora está
+  anclado, no solo argumentado**: era cierto por mecanismo —el camino que
+  publica es el mismo que desde `committed`— y ninguna prueba salía de ese
+  estado con un pull request ya abierto del otro lado, porque la que mide la
+  idempotencia arranca desde `committed`. La prueba «desde la publicación
+  INCOMPLETA tampoco se abre un segundo»
+  (`packages/cli/test/reintento_test.dart`) publica, rebobina el documento a
+  `publicationIncomplete` y vuelve a entrar: la forja recibe una segunda
+  solicitud y sigue con un solo pull request abierto.
 
 ## El comando `ship`, de punta a punta
 
@@ -4379,9 +4394,17 @@ mecanismo que hace segura esta rebanada entera.
   entre «ya aplicada» y «plan mal declarado» en vez de resolverla, que es
   justo lo que la guardia de `RebanadaNoAplicable` no puede hacer sin marcar
   el commit— y no gana ningún llamador nuevo. Es el camino obsoleto, no la
-  superficie pendiente: lo único que 4c reusó de él fue la **forma**,
-  `reset --quiet -- <rutas>` acotado a las rutas de la rebanada, no la
-  función. Su retiro no es trabajo de esta rebanada; lo que corresponde acá es
+  superficie pendiente: lo único que 4c reusó de él fue la **idea** de acotar
+  un `reset` a las rutas de la rebanada, no la función ni su forma. Lo que 4c
+  emite no es `reset --quiet -- <rutas>`: es
+  `git reset <revision> -- '<ruta>' …`, un texto para que lo pegue quien
+  corre —con la revisión adentro, porque el índice se sincroniza contra ESA y
+  no contra el `HEAD` de ahora; con cada ruta entre comillas, porque sin
+  ellas una ruta con espacios se parte en varios pathspecs y `git` sale con
+  cero igual; y sin `--quiet`, que es una opción para un subproceso y no para
+  alguien que quiere ver qué pasó—. Sale de `_reparacionDelIndice`
+  (`packages/cli/lib/src/corrida.dart`), un solo sitio para las dos
+  reconciliaciones. Su retiro no es trabajo de esta rebanada; lo que corresponde acá es
   dejar medido que sigue sin llamador, para que la próxima vez que alguien se
   encuentre con esta duda no la vuelva a plantear desde cero.
 

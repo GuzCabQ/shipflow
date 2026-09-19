@@ -483,10 +483,20 @@ class MundoDeReintento {
   /// Es el hecho que el reintento deja atrás, no lo que la función interna
   /// devolvió: nulo cuando no hay documento, y el desenlace que el documento
   /// lleva adentro cuando sí lo hay.
-  Future<ShipOutcome?> correr(String cual, {bool dryRun = false}) async {
+  Future<ShipOutcome?> correr(
+    String cual, {
+    bool dryRun = false,
+    bool json = false,
+  }) async {
     final salida = StringBuffer();
     _codigo = await ejecutar(
-      ['ship', '--retry-publication', cual, if (dryRun) '--dry-run'],
+      [
+        'ship',
+        '--retry-publication',
+        cual,
+        if (dryRun) '--dry-run',
+        if (json) '--json',
+      ],
       directorio: raiz.path,
       salida: salida,
       error: StringBuffer(),
@@ -535,6 +545,23 @@ class MundoDeReintento {
 
   /// Todo lo que la última corrida le escribió a quien la corrió.
   String get mensaje => _salida;
+
+  /// El payload de máquina del resultado de la última corrida, que tiene que
+  /// haberse corrido con `json: true`.
+  ///
+  /// **Se lee el ÚLTIMO sobre y no el primero**: el protocolo emite cero o
+  /// más eventos y después exactamente un resultado, y lo que esta lectura
+  /// necesita es el resultado.
+  Map<String, Object?> get payload {
+    final lineas = _salida.split('\n').where((l) => l.trim().isNotEmpty);
+    if (lineas.isEmpty) {
+      throw StateError(
+        'Esa corrida no escribió ningún sobre: ¿se corrió sin `json: true`?',
+      );
+    }
+    final sobre = jsonDecode(lineas.last) as Map<String, Object?>;
+    return Map<String, Object?>.from(sobre['data']! as Map);
+  }
 
   /// La acción siguiente de la última corrida, o vacía si no dio ninguna.
   ///
@@ -836,6 +863,64 @@ void main() {
       expect(await m.instantanea(), antes);
     });
 
+    test('un rechazo que sale con ÉXITO no manda una clave de error, y uno '
+        'que no, sí', () async {
+      // **Las dos reglas no podían ser las dos.** Este camino decidía salir
+      // con éxito argumentando que lo es —«ya está publicado»: lo que se
+      // pidió ya es cierto— y mandaba igual `error` en sus datos, mientras
+      // el ensayo, tres casos más abajo, omite esa clave precisamente porque
+      // ahí no hubo ninguno. Un consumidor automático tenía que elegir a cuál
+      // de los dos creerle.
+      final publicada = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.publicationComplete,
+      );
+      final r = await publicada.correr(publicada.runId, json: true);
+      expect(publicada.codigo(r), Codigo.exito);
+      expect(publicada.payload, isNot(contains('error')));
+      expect(
+        publicada.payload['causaDeNoReintento'],
+        CausaDeNoReintento.yaPublicado.name,
+        reason: 'el discriminador se manda igual: es lo que distingue el caso',
+      );
+
+      // Y la otra mitad de la regla: donde el código SÍ dice que algo falta,
+      // la clave sigue estando. Sin esta segunda mitad, omitirla siempre
+      // pasaría la prueba.
+      final otraRama = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      Process.runSync('git', [
+        'switch',
+        '-c',
+        'otra',
+      ], workingDirectory: otraRama.raiz.path);
+      final r2 = await otraRama.correr(otraRama.runId, json: true);
+      expect(otraRama.codigo(r2), Codigo.errorDeConfiguracion);
+      expect(otraRama.payload, contains('error'));
+    });
+
+    test('desde el índice inconsistente, con la rama YA EN OTRA revisión no '
+        'se promueve', () async {
+      // **La asimetría entre las dos reconciliaciones, cerrada y medida.**
+      // Desde `prepared`, la comparación de tres casos exige que el `HEAD`
+      // sea la revisión candidata; desde `localInconsistent` no lo exigía
+      // nadie. El índice acá COINCIDE —el commit de al lado tocó otra ruta—,
+      // así que sin la comprobación nueva este caso promovía y publicaba: un
+      // pull request con lo que otro commiteó encima adentro, sobre un
+      // artefacto que solo afirma la verificación de este candidato.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.localInconsistent,
+        ramaAvanzada: true,
+      );
+      final antes = await m.instantanea();
+      final r = await m.correr(m.runId);
+      expect(m.codigo(r), Codigo.errorDeConfiguracion);
+      expect(m.forja.recibidas, isEmpty);
+      expect(m.mensaje, contains(QueHacerAlRecuperar.alguienMasAvanzo.name));
+      expect(m.accion, contains('volver a correr'));
+      expect(await m.instantanea(), antes);
+    });
+
     test('un conflicto SIN RESOLVER sale como índice distinto, no como el '
         'arnés roto', () async {
       // **La misma ruta de la rebanada, con un `merge` que no cerró.** La
@@ -1070,5 +1155,40 @@ void main() {
       expect(d, isA<Publicado>());
       expect((d! as Publicado).pr.url, contains('/pr/1'));
     });
+
+    test(
+      'desde la publicación INCOMPLETA tampoco se abre un segundo',
+      () async {
+        // **El ancla de una afirmación que estaba escrita y sin medir.** El
+        // README dice que el reintento publica desde `publicationIncomplete`
+        // sin abrir un segundo pull request; era cierto por mecanismo —el
+        // camino es el mismo— y ninguna prueba salía de ese estado con un pull
+        // request ya abierto del otro lado: la que mide la idempotencia
+        // arranca desde `committed`. Y es el estado que MÁS lo necesita: un
+        // documento en `publicationIncomplete` es justamente el que quedó
+        // cuando el efecto remoto no se pudo confirmar, así que el reintento
+        // desde ahí corre sin saber si del otro lado hay uno o ninguno.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.committed,
+        );
+        await m.correr(m.runId);
+        expect(m.forja.pullRequestsAbiertos, 1);
+        await m.rebobinarA(EstadoDelDocumento.publicationIncomplete);
+
+        final d = await m.correr(m.runId);
+        expect(
+          m.forja.recibidas,
+          hasLength(2),
+          reason: 'este camino SÍ le vuelve a pedir publicar a la forja',
+        );
+        expect(m.forja.pullRequestsAbiertos, 1);
+        expect(d, isA<Publicado>());
+        expect((d! as Publicado).pr.url, contains('/pr/1'));
+        expect(
+          (await m.documento()).estado,
+          EstadoDelDocumento.publicationComplete,
+        );
+      },
+    );
   });
 }

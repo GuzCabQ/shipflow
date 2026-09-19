@@ -194,6 +194,61 @@ void main() {
     });
   });
 
+  test('los dos despachos exhaustivos sobre la misma relación se CRUZAN', () {
+    // **Son imagen inversa uno del otro y nada los obligaba a coincidir.**
+    // `estadoQueAfirma` dice qué estado afirma cada desenlace;
+    // `admiteDesenlace` dice qué destino puede llevar uno. Los dos son
+    // `switch` exhaustivos sin comodín, así que el compilador fuerza que
+    // alguien DECIDA en cada uno — pero no que las dos decisiones digan lo
+    // mismo. Si un desenlace nuevo afirmara un estado que hoy no admite
+    // ninguno, todo sigue compilando y `avanzarA` descarta ese desenlace en
+    // silencio: el documento llegaría a un estado terminal sin el desenlace
+    // que lo afirma, que es exactamente la ausencia que esta clase existe
+    // para no tener.
+    //
+    // **La lista de desenlaces es a mano, y no se puede derivar.**
+    // `ShipOutcome` es sellada y no expone sus variantes, así que recorrer su
+    // imagen pide construir una de cada una. Lo que impide que esta lista
+    // envejezca en silencio es que una variante nueva no compila hasta que
+    // alguien la agregue al `switch` de `estadoQueAfirma`, y su doc manda
+    // acá. Se dice en vez de prometer que está completa por sí sola.
+    final desenlaces = <ShipOutcome>[
+      ShipOutcome.noIntentadoParaLaPrueba(
+        causa: CausaDeNoIntento.previewOnly,
+        verificacion: EstadoDeCorrida.verde,
+      ),
+      ShipOutcome.noAplicadoParaLaPrueba(
+        causa: CausaDeNoAplicacion.baseMovida,
+        headObservado: 'b' * 40,
+      ),
+      ShipOutcome.localInconsistenteParaLaPrueba(revision: 'a' * 40),
+      ShipOutcome.publicadoParaLaPrueba(
+        pr: PullRequestOpen(url: 'https://forja.invalida/pr/1'),
+        verificacion: EstadoPublicable.verde,
+      ),
+      ShipOutcome.publicacionIncompletaParaLaPrueba(
+        remoto: PushUnknown(causa: CausaDePublicacion.red),
+        verificacion: EstadoPublicable.verde,
+      ),
+    ];
+
+    final afirmados = desenlaces
+        .map(DocumentoDeCorrida.estadoQueAfirma)
+        .nonNulls
+        .toSet();
+
+    for (final estado in EstadoDelDocumento.values) {
+      expect(
+        DocumentoDeCorrida.admiteDesenlace(estado),
+        afirmados.contains(estado),
+        reason:
+            'los dos despachos discrepan sobre «${estado.name}»: uno dice '
+            'que admite desenlace y el otro que ningún desenlace lo afirma, '
+            'o al revés',
+      );
+    }
+  });
+
   group('el estado y el desenlace son el mismo hecho', () {
     // `estado` y `desenlace` se asignaban por separado y el segundo determina
     // al primero, así que esto se construía, se persistía y se releía: un

@@ -144,12 +144,17 @@ final class ReintentoAmbiguo extends ResultadoDelReintento {
 /// La reconciliación cerró sin ambigüedad y lo que dijo **no es promover**:
 /// no hay ninguna revisión nuestra en la rama sobre la que publicar.
 ///
-/// Son los dos casos que la comparación de tres casos contesta cuando el
-/// `HEAD` no es la revisión candidata: el compare-and-swap nunca corrió, o la
-/// rama avanzó a otra cosa. Ninguno de los dos se arregla desde acá —el
+/// Desde `prepared` son los dos casos que la comparación de tres casos
+/// contesta cuando el `HEAD` no es la revisión candidata: el compare-and-swap
+/// nunca corrió, o la rama avanzó a otra cosa. **Desde `localInconsistent`
+/// sale también**, con [QueHacerAlRecuperar.alguienMasAvanzo], cuando la rama
+/// dejó de estar en la revisión de esta corrida: ahí el compare-and-swap sí
+/// corrió, y lo que ya no vale es que lo que dejó siga puesto.
+///
+/// Ninguno de los casos se arregla desde acá —el
 /// almacén de objetos del candidato que haría falta para reintentar el
 /// compare-and-swap se liberó cuando aquella corrida terminó—, así que la
-/// alternativa es la misma para los dos y [detalle] la nombra.
+/// alternativa es la misma para todos y [detalle] la nombra.
 final class SinRevisionEnLaRama extends ResultadoDelReintento {
   final QueHacerAlRecuperar queHacer;
   final String detalle;
@@ -285,7 +290,40 @@ Future<ResultadoDelReintento> _reconciliarYPublicar({
     rutas: documento.draft.rutas,
   );
 
+  // **El `HEAD` se lee UNA vez y alimenta a los dos caminos**, por lo mismo
+  // que el árbol de la revisión: dos lecturas del mismo hecho pueden
+  // discrepar entre sí, y entonces cada camino estaría decidiendo sobre una.
+  final headActual = await repo.head;
+
   if (documento.estado == EstadoDelDocumento.localInconsistent) {
+    // **La asimetría entre las dos reconciliaciones se CIERRA acá, no se
+    // argumenta.** Desde `prepared`, la comparación de tres casos exige que
+    // el `HEAD` sea la revisión candidata antes de mirar nada más; desde
+    // `localInconsistent` no lo exigía nadie, y era defendible —el documento
+    // afirma que el compare-and-swap corrió— pero lo que el documento afirma
+    // es lo que pasó ENTONCES, no dónde está la rama AHORA. Sin esta
+    // comprobación quedaban dos salidas falsas sobre la misma corrida: el
+    // comando de reparación apunta a un commit que ya no es el `HEAD` —y
+    // reparar con él deja el índice discrepando con la rama—, y el camino
+    // que promueve abre un pull request cuyo contenido incluye lo que otro
+    // commiteó encima, sobre un artefacto que solo afirma la verificación de
+    // este candidato. Lo segundo es exactamente el falso verde que esta
+    // rebanada entera existe para cerrar.
+    if (headActual != documento.revision) {
+      return SinRevisionEnLaRama(
+        queHacer: QueHacerAlRecuperar.alguienMasAvanzo,
+        detalle:
+            'La rama «${documento.draft.branch}» está en «$headActual», y '
+            'esta corrida commiteó «${documento.revision}»: ya no es la '
+            'revisión de esta corrida la que está puesta. Desde acá no se '
+            'puede reparar el índice ni publicar —el comando de reparación '
+            'apuntaría a un commit que ya no es el HEAD, y publicar abriría '
+            'un pull request con lo que se commiteó encima adentro, sobre un '
+            'artefacto que solo afirma la verificación de este candidato—. '
+            'La forma de seguir es volver a correr `ship` desde el principio.',
+      );
+    }
+
     switch (comprobarIndice(
       documento: documento,
       rutasQueDifieren: rutasQueDifieren,
@@ -320,7 +358,8 @@ Future<ResultadoDelReintento> _reconciliarYPublicar({
     documento: documento,
     // La comparación de tres casos pide el `HEAD` como argumento a propósito:
     // no lee el repositorio, y por eso sus casos se prueban sin montar uno.
-    headActual: await repo.head,
+    // Es la MISMA lectura que usa el otro camino, de más arriba.
+    headActual: headActual,
     hechos: hechos,
   )) {
     case Ambigua(:final causa, :final detalle):

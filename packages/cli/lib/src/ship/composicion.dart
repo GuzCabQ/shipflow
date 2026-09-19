@@ -946,18 +946,19 @@ Future<int> _correrElReintento(
       );
 
     case ReintentoRechazado(:final porQue):
+      // **El código sale de la causa, con un `switch` exhaustivo.** «Ya está
+      // publicado» es un éxito —lo que se pidió ya es cierto, y salir
+      // distinto de cero mandaría a arreglar algo que no está roto—; las
+      // otras dos son precondiciones del entorno que no valen, con cero
+      // escrituras detrás, que es lo que el `4` nombra.
+      final codigoDelRechazo = switch (porQue.causa) {
+        CausaDeNoReintento.yaPublicado => Codigo.exito,
+        CausaDeNoReintento.ramaDistinta => Codigo.errorDeConfiguracion,
+        CausaDeNoReintento.nadaQueEntregar => Codigo.errorDeConfiguracion,
+      };
       return _detener(
         impresora,
-        // **El código sale de la causa, con un `switch` exhaustivo.** «Ya
-        // está publicado» es un éxito —lo que se pidió ya es cierto, y salir
-        // distinto de cero mandaría a arreglar algo que no está roto—; las
-        // otras dos son precondiciones del entorno que no valen, con cero
-        // escrituras detrás, que es lo que el `4` nombra.
-        codigo: switch (porQue.causa) {
-          CausaDeNoReintento.yaPublicado => Codigo.exito,
-          CausaDeNoReintento.ramaDistinta => Codigo.errorDeConfiguracion,
-          CausaDeNoReintento.nadaQueEntregar => Codigo.errorDeConfiguracion,
-        },
+        codigo: codigoDelRechazo,
         humano:
             'shipflow ship: el reintento de «$runId» no actúa '
             '(${porQue.causa.name}).',
@@ -968,7 +969,18 @@ Future<int> _correrElReintento(
         // líneas de la salida dejaría a una de las dos mintiendo por omisión.
         queHacer: porQue.detalle,
         datos: {
-          'error': 'el reintento no actúa',
+          // **La clave `error` solo sale cuando el código dice que hubo
+          // uno.** De las tres causas de este rechazo, una sale con éxito
+          // —«ya está publicado»: lo que se pidió ya es cierto—, y mandar
+          // `error` junto con un código cero obliga a un consumidor
+          // automático a elegir cuál de los dos le cree. Es la misma regla
+          // que el ensayo, tres casos más abajo, ya aplica por su lado: ahí
+          // la clave se omite porque no hubo ningún error, y las dos no
+          // podían ser la regla a la vez.
+          if (codigoDelRechazo != Codigo.exito)
+            'error':
+                'el reintento no '
+                'actúa',
           // **Clave propia, y no `causa`.** Bajo esa clave ya viajan los dos
           // enums del desenlace, y el preflight y la ausencia de forja ya
           // eligieron la suya por el mismo motivo: acá no hay ningún `kind`

@@ -480,6 +480,26 @@ Future<ResultadoDeShip> correrShip({
 
     // 15 · La publicación. **Idempotente**: repetirla con la misma solicitud
     //     no abre un segundo pull request.
+    //
+    // **El tercer argumento se COPIA del candidato acá, y eso vacía la guarda
+    // del constructor — que por este camino es inocuo, por construcción.** El
+    // constructor valida que el árbol de la revisión sea el que el candidato
+    // declaró haber expuesto a los controles; pasarle el valor declarado lo
+    // hace comparar el dato contra sí mismo. Acá no hay nada que esa
+    // comparación pudiera atrapar: el árbol lo fijó este mismo proceso unas
+    // líneas más arriba, el commit se creó sobre ESE árbol fijado, y entre
+    // las dos cosas no hubo ningún otro proceso ni ninguna otra lectura de la
+    // que discrepar. Medirlo con la herramienta acá sería una lectura más que
+    // ninguna prueba puede matar, porque no hay documento en el disco que
+    // pueda decir otra cosa.
+    //
+    // **Donde SÍ cambia es en el reintento**, y por eso allá se mide y acá
+    // no: ese camino reconstruye la solicitud desde un documento que escribió
+    // OTRO proceso, así que el valor declarado y el árbol que el repositorio
+    // tiene son dos hechos distintos que pueden discrepar, y la guarda es lo
+    // único que los cruza. Queda dicho en los dos lados —acá por qué copiar
+    // no cuesta nada, allá por qué copiar sería el defecto— para que no
+    // parezca que uno de los dos se olvidó.
     final remoto = await forja.open(
       PullRequestRequest(
         draft: borrador,

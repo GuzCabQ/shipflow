@@ -169,7 +169,18 @@ class DocumentoDeCorrida {
   /// decide si el desenlace anterior lo acompaña o se descarta —nunca quien
   /// llama, que hoy no tiene con qué distinguir «no paso ninguno, arrastrá
   /// el que había» de «no paso ninguno, quiero que no lleve ninguno»—.
-  static bool _admiteDesenlace(EstadoDelDocumento estado) => switch (estado) {
+  ///
+  /// **Es pública por el mismo motivo que [destinosDe].** Son dos despachos
+  /// exhaustivos sobre la misma relación —éste dice qué destino admite
+  /// desenlace, [estadoQueAfirma] dice qué estado afirma cada desenlace— y
+  /// **nada los obliga a coincidir**: el día que un desenlace nuevo afirmara
+  /// un estado que hoy no admite ninguno, los dos `switch` siguen siendo
+  /// exhaustivos, todo compila, y [avanzarA] descarta ese desenlace en
+  /// silencio. Lo único que puede cruzarlos es una prueba que recorra los
+  /// estados y compare las dos respuestas, y para eso tiene que poder
+  /// llamarlas a las dos. Privada, esa prueba no existe y el cruce queda como
+  /// un comentario que nadie ejecuta.
+  static bool admiteDesenlace(EstadoDelDocumento estado) => switch (estado) {
     EstadoDelDocumento.prepared => false,
     EstadoDelDocumento.committed => false,
     EstadoDelDocumento.publicationComplete => true,
@@ -296,7 +307,7 @@ class DocumentoDeCorrida {
   ///
   /// **El desenlace que decide [destino], no quien llama.** Cuando no se pasa
   /// uno nuevo, el desenlace del documento resultante sale de
-  /// [_admiteDesenlace]: si [destino] afirma alguno, se arrastra el que ya
+  /// [admiteDesenlace]: si [destino] afirma alguno, se arrastra el que ya
   /// había —así avanzar de `publicationIncomplete` a `publicationComplete`
   /// sin dar el desenlace nuevo sigue dejando adentro el que dice «la
   /// publicación no se completó», y el chequeo del constructor lo rechaza—;
@@ -333,7 +344,7 @@ class DocumentoDeCorrida {
       revision: revision,
       draft: draft,
       desenlace:
-          desenlace ?? (_admiteDesenlace(destino) ? this.desenlace : null),
+          desenlace ?? (admiteDesenlace(destino) ? this.desenlace : null),
     );
   }
 

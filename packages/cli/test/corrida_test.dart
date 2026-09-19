@@ -588,7 +588,7 @@ void main() {
     // comprobarIndice— pasaba igual con una arista que ningún documento
     // real de producción podía tomar. `avanzarA` descarta el desenlace de
     // `localInconsistent` porque `committed` no admite ninguno —ver
-    // `_admiteDesenlace` en el documento—; antes de esa corrección, el
+    // `admiteDesenlace` en el documento—; antes de esa corrección, el
     // desenlace se arrastraba sin mirar el destino y esto lanzaba SIEMPRE.
     final d = documentoEn(EstadoDelDocumento.localInconsistent);
     final r = comprobarIndice(documento: d, rutasQueDifieren: const []);
