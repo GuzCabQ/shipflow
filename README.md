@@ -4480,6 +4480,15 @@ decidiendo:
   de que esa URL es del destino de aquella corrida y no del que hay
   configurado ahora. Convertirla en fallo se llevaba puesta la única forma que
   tiene de preguntar quien movió el remoto por un motivo ajeno.
+- **Y lo mismo vale para la DISPONIBILIDAD de una forja, no solo para el
+  cambio de destino.** Para un reintento, si se publica o no lo decide el
+  estado del documento, nunca la bandera con la que se invocó: la forja se
+  exige en el único punto del que no se vuelve sin pedirle un pull request. Una
+  corrida ya publicada sin remoto sale con `0` y su URL; un compare-and-swap
+  rechazado sin remoto dice que no hay nada que entregar, que es cierto con
+  remoto y sin él. El único caso en que la falta de forja decide un reintento
+  es el que de verdad iba a publicar y no tiene por dónde — por ejemplo, el
+  mismo destino por un canal que no puede llevar la credencial.
 - **El mismo repositorio escrito de otra forma es el mismo destino.** Con o
   sin el sufijo de repositorio desnudo, por `https` o por la forma corta de
   `ssh`, con el host en otra caja: la identidad es canónica entre protocolos a
