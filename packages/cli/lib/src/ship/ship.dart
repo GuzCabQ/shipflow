@@ -180,6 +180,18 @@ Future<ResultadoDeShip> correrShip({
   /// frase solo podía pedir que coincidieran.
   required String claveDeCredencial,
   required PullRequestSink forja,
+
+  /// **A dónde publica esta corrida**, como la cadena opaca que produce el
+  /// paquete que sabe quién atiende cada remoto. Se persiste en el documento
+  /// para que un reintento pueda comprobar que sigue publicando ahí — ver
+  /// `DocumentoDeCorrida.destino`.
+  ///
+  /// **Nulo solo en una composición que NO puede publicar**, y es la misma
+  /// cuenta que sostiene a la forja ausente: sale del mismo remoto del que
+  /// sale la forja, así que una composición con forja tiene destino. Ningún
+  /// camino que escriba el documento llega con esta nula — ver el sitio donde
+  /// se persiste.
+  required String? destino,
   required RegistroDeCorridas registro,
   required String ramaActual,
   required Future<List<String>> Function() cambiosAjenos,
@@ -444,9 +456,19 @@ Future<ResultadoDeShip> correrShip({
     // 12 · `prepared`, CON la revisión. Entre crear el objeto y mover la
     //     referencia hay que poder persistir la identidad: si no, un proceso
     //     que muera en el medio deja una revisión que nadie anotó.
+    // **`!`, y la cuenta que lo sostiene es la misma que vuelve inalcanzable
+    // a la forja ausente.** Un documento solo se escribe pasadas las cuatro
+    // condiciones del retorno de arriba —no hubo secreto, la compuerta
+    // autorizó, se confirmó y no es un ensayo—, y confirmar exige `--yes` o
+    // alguien que conteste. Esas son exactamente las condiciones con las que
+    // la raíz de composición decide que esta corrida PODRÍA publicar, y una
+    // corrida que podría publicar y no tiene forja se detiene antes de llegar
+    // acá, con cero escrituras. La forja y el destino salen del MISMO remoto
+    // leído una sola vez: donde hay una, hay el otro.
     var documento = DocumentoDeCorrida.preparado(
       revision: revision,
       draft: borrador,
+      destino: destino!,
     );
     await registro.escribir(runId, documento);
 

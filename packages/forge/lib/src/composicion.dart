@@ -127,6 +127,44 @@ PullRequestSink? salidaDePrDelRemoto({
   );
 }
 
+/// **La identidad del destino** que [urlDelRemoto] nombra, o nulo cuando de
+/// esa URL no sale ningún destino.
+///
+/// **Sale por la misma puerta que la fábrica, y por el mismo motivo.** Quién
+/// es la forja lo sabe este paquete y ningún otro: si quien compone tuviera
+/// que derivar la identidad del destino, tendría que saber leer la URL de un
+/// remoto y comparar su host, que es exactamente el conocimiento que la regla
+/// `forja-en-su-adapter` prohíbe que salga de acá. Lo que cruza el límite es
+/// una cadena opaca, y quien la recibe solo puede hacer con ella una cosa:
+/// compararla con otra.
+///
+/// **Saneada: la credencial NO viaja.** Un remoto puede traerla en su parte
+/// de autoridad, y esta cadena se persiste en el documento de la corrida y se
+/// imprime en el mensaje que explica por qué un reintento no actúa. De acá
+/// sale el host, el dueño y el repositorio, y nada más: ni la contraseña ni
+/// el nombre de usuario, que en las formas con esquema es donde la credencial
+/// se escribe.
+///
+/// **Canónica entre protocolos, a propósito.** El mismo repositorio nombrado
+/// por `https` y por la forma corta de `ssh` produce la MISMA identidad,
+/// porque es el mismo destino: distinguirlos haría que cambiar el protocolo
+/// del remoto —sin cambiar a dónde apunta— pareciera un cambio de
+/// repositorio, y el reintento se detendría por algo que no pasó. El host se
+/// compara y se emite en minúsculas por lo mismo: en un nombre de dominio la
+/// caja no distingue destinos.
+///
+/// **No exige que este paquete ATIENDA el destino**, y eso no es un descuido:
+/// lo que se compara con esta cadena es si el remoto de hoy es el de aquella
+/// corrida, y esa pregunta tiene respuesta aunque ninguna forja conocida
+/// atienda a ninguno de los dos. Hacerla depender de [salidaDePrDelRemoto]
+/// devolvería nulo —«no sé quién es»— para un remoto que sí se puede nombrar,
+/// y un nulo no se puede comparar con nada.
+String? identidadDelDestino(String urlDelRemoto) {
+  final remoto = _RemotoLeido.de(urlDelRemoto);
+  if (remoto == null) return null;
+  return '${remoto.host.toLowerCase()}/${remoto.duenio}/${remoto.repositorio}';
+}
+
 /// Por qué [urlDelRemoto] no tiene una salida de pull requests, para quien ya
 /// sabe —por el nulo de [salidaDePrDelRemoto]— que no la tiene.
 ///

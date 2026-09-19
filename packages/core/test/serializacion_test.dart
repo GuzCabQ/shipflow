@@ -321,7 +321,11 @@ void main() {
   );
 
   final documento =
-      DocumentoDeCorrida.preparado(revision: 'e' * 40, draft: draft)
+      DocumentoDeCorrida.preparado(
+            revision: 'e' * 40,
+            draft: draft,
+            destino: 'forja.ejemplo/duenio/repo',
+          )
           .avanzarA(EstadoDelDocumento.committed)
           .avanzarA(
             EstadoDelDocumento.publicationComplete,

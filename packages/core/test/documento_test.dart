@@ -23,6 +23,11 @@ PullRequestDraft draftDePrueba() => PullRequestDraft(
   rutas: const ['a.txt'],
 );
 
+/// La identidad opaca del destino de las corridas de prueba. **Opaca de
+/// verdad**: `core` no sabe leerla, así que cualquier cadena estable sirve —
+/// lo único que se hace con ella es compararla.
+const destinoDePrueba = 'forja.ejemplo/duenio/repo';
+
 /// Un documento que ya llegó a [estado], por el único camino que el grafo de
 /// §9 declara para llegar ahí. Sin desenlace: los estados no terminales lo
 /// llevan nulo sin problema —es «todavía no hay», nunca incoherencia— y para
@@ -32,6 +37,7 @@ DocumentoDeCorrida documentoDePrueba(EstadoDelDocumento estado) {
   final preparado = DocumentoDeCorrida.preparado(
     revision: 'a' * 40,
     draft: draftDePrueba(),
+    destino: destinoDePrueba,
   );
   return switch (estado) {
     EstadoDelDocumento.prepared => preparado,
@@ -45,8 +51,11 @@ DocumentoDeCorrida documentoDePrueba(EstadoDelDocumento estado) {
 }
 
 void main() {
-  DocumentoDeCorrida preparado() =>
-      DocumentoDeCorrida.preparado(revision: 'a' * 40, draft: draftDePrueba());
+  DocumentoDeCorrida preparado() => DocumentoDeCorrida.preparado(
+    revision: 'a' * 40,
+    draft: draftDePrueba(),
+    destino: destinoDePrueba,
+  );
 
   test('prepared LLEVA la revisión, porque commit-tree ya corrió', () {
     // La versión anterior del diseño lo persistía antes de `commit-tree`, y

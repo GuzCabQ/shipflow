@@ -273,6 +273,15 @@ Future<ResultadoDelReintento> correrReintento({
   required RepositorioGit repo,
   required PullRequestSink forja,
   required String ramaActual,
+
+  /// **A dónde publicaría este repositorio HOY**, o nulo si su remoto no
+  /// nombra ningún destino.
+  ///
+  /// **Llega leído de afuera**, por lo mismo que [ramaActual]: sale del
+  /// remoto configurado, que es una lectura del entorno, y quien la
+  /// convierte en una identidad es el paquete que sabe quién atiende cada
+  /// remoto — nunca este archivo, que no sabe leer una URL de `git`.
+  required String? destinoActual,
   required bool dryRun,
 }) async {
   final DocumentoDeCorrida? leido;
@@ -317,6 +326,7 @@ Future<ResultadoDelReintento> correrReintento({
   final puerta = puertaDelReintento(
     documento: documento,
     ramaActual: ramaActual,
+    destinoActual: destinoActual,
   );
   switch (puerta) {
     case NoSeReintenta():

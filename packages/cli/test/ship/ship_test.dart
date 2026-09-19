@@ -479,6 +479,10 @@ class MundoDePrueba {
               ),
         claveDeCredencial: _clave,
         forja: forja,
+        // La identidad opaca del destino de esta corrida: se persiste en el
+        // documento y el reintento la compara. Esta suite no la ejercita —lo
+        // hace la del reintento—, así que alcanza con un valor estable.
+        destino: 'forja.ejemplo/duenio/repo',
         registro: registro,
         ramaActual: 'trabajo',
         cambiosAjenos: _cambiosAjenos,

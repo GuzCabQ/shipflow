@@ -141,6 +141,24 @@ class ColaboradoresDeShip {
   /// nulo, y el mensaje las distingue.
   final PullRequestSink? Function(String urlDelRemoto) forjaDelRemoto;
 
+  /// **La identidad del destino que ese remoto nombra**, o nulo cuando de esa
+  /// URL no sale ninguno.
+  ///
+  /// **Viaja como colaborador y no se deriva acá**, por lo mismo que
+  /// [forjaDelRemoto]: leer una URL de `git` y decir a qué destino apunta es
+  /// conocimiento del paquete que sabe quién es la forja, y esta composición
+  /// no puede tenerlo sin volverse el segundo lugar del árbol que lo sabe.
+  /// Lo que cruza es una cadena opaca que solo se compara por igualdad.
+  ///
+  /// **Es una función SEPARADA de [forjaDelRemoto] y no un segundo valor que
+  /// aquélla devuelva.** Las dos preguntas no tienen el mismo dominio: hay
+  /// remotos que nombran un destino perfectamente y que ninguna forja
+  /// conocida atiende —otro host, o un canal que no puede llevar la
+  /// credencial—, y para el reintento eso sigue siendo un destino
+  /// comparable. Fundirlas dejaría a la comparación sin nada que comparar
+  /// justo cuando más hace falta.
+  final String? Function(String urlDelRemoto) identidadDelDestinoDelRemoto;
+
   final RegistroDeCorridas registro;
 
   /// Las rutas sucias que no son de la rebanada. **Recibe los archivos
@@ -181,6 +199,7 @@ class ColaboradoresDeShip {
     required this.leerArchivo,
     required this.urlDelRemoto,
     required this.forjaDelRemoto,
+    required this.identidadDelDestinoDelRemoto,
     this.claveDeCredencial = claveDeCredencialDeLaForja,
     this.nuevoRunId = generarRunId,
     this.responder,
@@ -247,6 +266,9 @@ ColaboradoresDeShip colaboradoresDelSistema(String directorio, Globales g) {
       directorio: directorio,
       entornoDelPadre: entorno,
     ),
+    // **Tampoco acá se nombra a ninguna forja.** Lo que vuelve es una cadena
+    // que esta composición no sabe leer: solo la persiste y la compara.
+    identidadDelDestinoDelRemoto: identidadDelDestino,
     claveDeCredencial: clave,
     construirCascada: (raiz) => cascadaPorDefecto(directorio: raiz),
     controles: {for (final paso in registrados) paso.id: paso},
@@ -560,6 +582,12 @@ Future<int> correrShipDelComando(
   final forja = urlDelRemoto == null
       ? null
       : colaboradores.forjaDelRemoto(urlDelRemoto);
+  // **Del MISMO remoto leído una sola vez**, y por la misma puerta neutra.
+  // Dos lecturas del remoto podrían discrepar entre sí, y entonces la forja
+  // publicaría en un destino y el documento anotaría otro.
+  final destinoDelRemoto = urlDelRemoto == null
+      ? null
+      : colaboradores.identidadDelDestinoDelRemoto(urlDelRemoto);
   if (forja == null &&
       _puedePublicar(entrada, hayQuienConfirme: hayQuienConfirme)) {
     // **Los dos nulos de arriba —sin remoto, remoto sin forja— se dicen
@@ -696,6 +724,7 @@ Future<int> correrShipDelComando(
       colaboradores: colaboradores,
       forja: forja ?? const _ForjaAusente(),
       ramaActual: ramaActual,
+      destinoActual: destinoDelRemoto,
       dryRun: entrada.dryRun,
     );
   }
@@ -743,6 +772,7 @@ Future<int> correrShipDelComando(
       credenciales: colaboradores.credenciales,
       claveDeCredencial: colaboradores.claveDeCredencial,
       forja: forja ?? const _ForjaAusente(),
+      destino: destinoDelRemoto,
       registro: colaboradores.registro,
       ramaActual: ramaActual,
       cambiosAjenos: () => colaboradores.cambiosAjenos(entrada.archivos),
@@ -927,6 +957,7 @@ Future<int> _correrElReintento(
   required ColaboradoresDeShip colaboradores,
   required PullRequestSink forja,
   required String ramaActual,
+  required String? destinoActual,
   required bool dryRun,
 }) async {
   final ResultadoDelReintento resultado;
@@ -937,6 +968,7 @@ Future<int> _correrElReintento(
       repo: colaboradores.repo,
       forja: forja,
       ramaActual: ramaActual,
+      destinoActual: destinoActual,
       dryRun: dryRun,
     );
   } on GitFallo catch (e) {
@@ -1036,6 +1068,7 @@ Future<int> _correrElReintento(
       final codigoDelRechazo = switch (porQue.causa) {
         CausaDeNoReintento.yaPublicado => Codigo.exito,
         CausaDeNoReintento.ramaDistinta => Codigo.errorDeConfiguracion,
+        CausaDeNoReintento.destinoDistinto => Codigo.errorDeConfiguracion,
         CausaDeNoReintento.nadaQueEntregar => Codigo.errorDeConfiguracion,
       };
       return _detener(

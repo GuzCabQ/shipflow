@@ -240,6 +240,10 @@ class Mundo {
           ),
     urlDelRemoto: repo.urlDelRemoto,
     forjaDelRemoto: _forjaDelRemoto,
+    // **La MISMA función que usa la composición real.** Un doble acá
+    // produciría una identidad que nadie más produce, y la comparación del
+    // reintento mediría ese doble.
+    identidadDelDestinoDelRemoto: identidadDelDestino,
     registro: registro,
     cambiosAjenos: (List<String> archivos) =>
         cambiosAjenosDelArbol(directorio: raiz.path, deLaRebanada: archivos),

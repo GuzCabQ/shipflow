@@ -39,8 +39,16 @@ PullRequestDraft _draftDePrueba({
   rutas: const ['a.txt'],
 );
 
-DocumentoDeCorrida documentoDePrueba() =>
-    DocumentoDeCorrida.preparado(revision: 'a' * 40, draft: _draftDePrueba());
+/// El destino de todo documento que estas pruebas construyen. **Es una
+/// cadena opaca**: nadie de este lado sabe leerla, así que lo único que se
+/// mide con ella es la igualdad.
+const destinoDeLosDocumentosDePrueba = 'forja.ejemplo/duenio/repo';
+
+DocumentoDeCorrida documentoDePrueba() => DocumentoDeCorrida.preparado(
+  revision: 'a' * 40,
+  draft: _draftDePrueba(),
+  destino: destinoDeLosDocumentosDePrueba,
+);
 
 /// Un documento `prepared` con la base y la revisión que pida la prueba —los
 /// dos datos que [decidirRecuperacion] compara contra el `HEAD` observado.
@@ -59,6 +67,7 @@ DocumentoDeCorrida documentoPreparado({
 }) => DocumentoDeCorrida.preparado(
   revision: revision,
   draft: _draftDePrueba(base: base),
+  destino: destinoDeLosDocumentosDePrueba,
 );
 
 /// La rama de todo documento que [documentoEn] construye. Las pruebas de la
@@ -79,6 +88,7 @@ DocumentoDeCorrida documentoEn(EstadoDelDocumento estado) {
   final preparado = DocumentoDeCorrida.preparado(
     revision: 'a' * 40,
     draft: _draftDePrueba(branch: ramaDeLosDocumentosDePrueba),
+    destino: destinoDeLosDocumentosDePrueba,
   );
   return switch (estado) {
     EstadoDelDocumento.prepared => preparado,
@@ -198,6 +208,7 @@ void main() {
           () => puertaDelReintento(
             documento: documentoEn(estado),
             ramaActual: ramaDeLosDocumentosDePrueba,
+            destinoActual: destinoDeLosDocumentosDePrueba,
           ),
           returnsNormally,
           reason: estado.name,
@@ -211,6 +222,7 @@ void main() {
       puertaDelReintento(
         documento: documentoEn(EstadoDelDocumento.committed),
         ramaActual: ramaDeLosDocumentosDePrueba,
+        destinoActual: destinoDeLosDocumentosDePrueba,
       ),
       isA<PublicarDirecto>(),
     );
@@ -221,6 +233,7 @@ void main() {
       puertaDelReintento(
         documento: documentoEn(EstadoDelDocumento.publicationIncomplete),
         ramaActual: ramaDeLosDocumentosDePrueba,
+        destinoActual: destinoDeLosDocumentosDePrueba,
       ),
       isA<PublicarDirecto>(),
     );
@@ -231,6 +244,7 @@ void main() {
       puertaDelReintento(
         documento: documentoEn(EstadoDelDocumento.prepared),
         ramaActual: ramaDeLosDocumentosDePrueba,
+        destinoActual: destinoDeLosDocumentosDePrueba,
       ),
       isA<Reconciliar>(),
     );
@@ -243,6 +257,7 @@ void main() {
         puertaDelReintento(
           documento: documentoEn(EstadoDelDocumento.localInconsistent),
           ramaActual: ramaDeLosDocumentosDePrueba,
+          destinoActual: destinoDeLosDocumentosDePrueba,
         ),
         isA<Reconciliar>(),
       );
@@ -253,6 +268,7 @@ void main() {
     final p = puertaDelReintento(
       documento: documentoEn(EstadoDelDocumento.publicationComplete),
       ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: destinoDeLosDocumentosDePrueba,
     );
     expect(p, isA<NoSeReintenta>());
     expect((p as NoSeReintenta).causa, CausaDeNoReintento.yaPublicado);
@@ -269,6 +285,7 @@ void main() {
     final p = puertaDelReintento(
       documento: documentoEn(EstadoDelDocumento.notApplied),
       ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: destinoDeLosDocumentosDePrueba,
     );
     expect((p as NoSeReintenta).causa, CausaDeNoReintento.nadaQueEntregar);
     expect(
@@ -285,6 +302,7 @@ void main() {
     final p = puertaDelReintento(
       documento: documentoEn(EstadoDelDocumento.committed),
       ramaActual: 'otra-rama',
+      destinoActual: destinoDeLosDocumentosDePrueba,
     );
     expect((p as NoSeReintenta).causa, CausaDeNoReintento.ramaDistinta);
     expect(
@@ -294,10 +312,65 @@ void main() {
     );
   });
 
+  test('con el destino cambiado NO se reintenta, y lo dice', () {
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.committed),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: 'otra-forja/otro/repositorio',
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.destinoDistinto);
+    expect(
+      p.detalle,
+      allOf(
+        contains(destinoDeLosDocumentosDePrueba),
+        contains('otra-forja/otro/repositorio'),
+      ),
+      reason: 'un mensaje que no nombra los dos destinos no dice cuál devolver',
+    );
+  });
+
+  test('sin destino que nombrar tampoco se reintenta', () {
+    // Nulo nunca es igual al destino de un documento: no hay remoto, o el que
+    // hay no nombra ningún destino, y en los dos casos no se puede afirmar
+    // que se siga publicando donde se publicaba.
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.committed),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: null,
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.destinoDistinto);
+  });
+
+  test('el destino se comprueba ANTES que el estado', () {
+    // **Incluido el estado que sale con ÉXITO.** «Ya está publicado» sería
+    // cierto sobre el destino de aquella corrida y falso como respuesta a
+    // «¿qué pasa si reintento acá?»: sin esta precedencia, un reintento
+    // contra otro repositorio salía con cero diciendo que ya estaba hecho.
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.publicationComplete),
+      ramaActual: ramaDeLosDocumentosDePrueba,
+      destinoActual: 'otra-forja/otro/repositorio',
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.destinoDistinto);
+  });
+
+  test('la rama se comprueba ANTES que el destino', () {
+    // Quien está parado en otra rama tampoco está mirando este documento, y
+    // esa es la causa más alcanzable: cambiarse de rama es más común que
+    // mudar un remoto.
+    final p = puertaDelReintento(
+      documento: documentoEn(EstadoDelDocumento.committed),
+      ramaActual: 'otra-rama',
+      destinoActual: 'otra-forja/otro/repositorio',
+    );
+    expect((p as NoSeReintenta).causa, CausaDeNoReintento.ramaDistinta);
+  });
+
   test('la rama se comprueba ANTES que el estado', () {
     final p = puertaDelReintento(
       documento: documentoEn(EstadoDelDocumento.publicationComplete),
       ramaActual: 'otra-rama',
+      destinoActual: destinoDeLosDocumentosDePrueba,
     );
     expect(
       (p as NoSeReintenta).causa,

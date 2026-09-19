@@ -1,7 +1,8 @@
 /// La fábrica neutra: **lo único que la raíz de composición nombra de este
 /// paquete**.
 ///
-/// Mide cuatro cosas que ninguna otra suite puede medir. La primera, que de
+/// Mide CINCO cosas que ninguna otra suite puede medir — contadas sobre los
+/// grupos de abajo, una por una. La primera, que de
 /// una URL de `git` salen el dueño y el repositorio —y nulo, nunca una
 /// excepción, cuando no sale—. La segunda, que «saber atender» quiere decir el
 /// camino entero y no el parseo: una forma que se lee perfectamente pero que
@@ -11,7 +12,10 @@
 /// esta suite exista: que **envolver al adapter no le tapó las costuras**. El
 /// adapter recibe una fábrica de cliente y dos presupuestos a propósito, para
 /// que sus pruebas no salgan a la red ni esperen minutos; una fábrica que los
-/// fijara adentro dejaría a este archivo sin forma de probarse sin red.
+/// fijara adentro dejaría a este archivo sin forma de probarse sin red. Y la
+/// quinta, que la **identidad del destino** sale por esta misma puerta neutra:
+/// saneada, canónica entre protocolos, y nula solo cuando de la URL no sale
+/// ningún destino.
 library;
 
 import 'dart:convert';
@@ -377,4 +381,70 @@ void main() {
       expect(reloj.elapsed, lessThan(const Duration(seconds: 5)));
     },
   );
+
+  group('la identidad del destino', () {
+    test('el mismo repositorio por distintos caminos da la MISMA', () {
+      // **Canónica entre protocolos, y eso es una decisión.** Cambiar el
+      // remoto de forma sin cambiar a dónde apunta no es mudarse de
+      // repositorio: si estas cadenas difirieran, el reintento se detendría
+      // por algo que no pasó.
+      const iguales = [
+        'https://github.com/duenio/repo.git',
+        'https://github.com/duenio/repo',
+        'git@github.com:duenio/repo.git',
+        'ssh://git@github.com/duenio/repo.git',
+        'https://GitHub.com/duenio/repo.git',
+      ];
+      final identidades = iguales.map(identidadDelDestino).toSet();
+      expect(identidades, hasLength(1), reason: '$identidades');
+      expect(identidades.single, isNotNull);
+    });
+
+    test('otro repositorio da OTRA identidad', () {
+      expect(
+        identidadDelDestino('https://github.com/duenio/repo.git'),
+        isNot(identidadDelDestino('https://github.com/otro/repo.git')),
+      );
+      expect(
+        identidadDelDestino('https://github.com/duenio/repo.git'),
+        isNot(identidadDelDestino('https://github.com/duenio/otro.git')),
+      );
+      expect(
+        identidadDelDestino('https://github.com/duenio/repo.git'),
+        isNot(identidadDelDestino('https://otra-forja.invalida/duenio/repo')),
+      );
+    });
+
+    test('la credencial embebida NO sobrevive', () {
+      // Esta cadena se persiste en el documento de la corrida y se imprime en
+      // el mensaje que explica por qué un reintento no actúa: un secreto
+      // adentro se publicaría dos veces.
+      const conSecreto =
+          'https://usuario:un-secreto@github.com/duenio/repo.git';
+      final identidad = identidadDelDestino(conSecreto)!;
+      expect(identidad, isNot(contains('un-secreto')));
+      expect(identidad, isNot(contains('usuario')));
+      expect(
+        identidad,
+        identidadDelDestino('https://github.com/duenio/repo.git'),
+        reason: 'y sigue nombrando el mismo destino',
+      );
+    });
+
+    test('lo que no nombra ningún destino vuelve nulo', () {
+      for (final url in const ['', 'no-es-una-url', 'https://github.com/']) {
+        expect(identidadDelDestino(url), isNull, reason: url);
+      }
+    });
+
+    test('un destino que este paquete NO atiende igual se puede nombrar', () {
+      // **No depende de la fábrica, y no es un descuido.** Lo que se compara
+      // con esta cadena es si el remoto de hoy es el de aquella corrida, y esa
+      // pregunta tiene respuesta aunque ninguna forja conocida atienda a
+      // ninguno de los dos.
+      const ajeno = 'https://otra-forja.invalida/duenio/repo.git';
+      expect(construir(ajeno), isNull);
+      expect(identidadDelDestino(ajeno), isNotNull);
+    });
+  });
 }

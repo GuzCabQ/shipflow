@@ -589,6 +589,12 @@ enum CausaDeNoReintento {
   /// misma referencia solo porque hoy apunten al mismo commit.
   ramaDistinta,
 
+  /// El remoto de este repositorio ya no nombra el destino donde esta corrida
+  /// iba a publicar. Publicar acá abriría un pull request en otro
+  /// repositorio, y la búsqueda que impide abrir un SEGUNDO correría contra
+  /// un destino donde el primero no está.
+  destinoDistinto,
+
   /// Ya hay un pull request utilizable: no queda nada que publicar de nuevo.
   yaPublicado,
 
@@ -704,6 +710,26 @@ const _nadaQueEntregar = NoSeReintenta(
 /// hacer» sobre una corrida que no tiene nada que ver con la rama en la que
 /// está parada.
 ///
+/// **Por qué el DESTINO se comprueba después de la rama y antes del estado.**
+/// Es el mismo argumento que sostiene a la rama, sobre el otro eje: si el
+/// remoto ya no nombra el destino de esta corrida, lo que [documento] afirma
+/// no es sobre el lugar donde este reintento publicaría. La diferencia con la
+/// rama es qué se rompe cuando se ignora, y acá es lo más caro que este
+/// camino puede romper: la búsqueda idempotente que impide abrir un SEGUNDO
+/// pull request es una búsqueda EN EL DESTINO, así que contra un destino
+/// nuevo no encuentra nada —correctamente: ahí no hay nada— y publica otra
+/// vez. Va después de la rama porque quien se cambió de rama tampoco está
+/// mirando este documento; va antes del estado por lo mismo que la rama: el
+/// estado describe una corrida hecha contra OTRO destino, y cualquier cosa
+/// que diga es una respuesta cierta sobre otra pregunta — incluido «ya está
+/// publicado», que sería cierto allá y no acá.
+///
+/// **[destinoActual] es nulo cuando el remoto de hoy no nombra ningún
+/// destino** —no hay remoto, o el que hay no se puede leer como uno—. Nulo
+/// nunca es igual al destino de un documento, así que ese caso entra por la
+/// misma puerta y con el mismo texto: no se puede afirmar que se siga
+/// publicando donde se publicaba.
+///
 /// **El `switch` sobre [EstadoDelDocumento] es exhaustivo y sin `default`.**
 /// Es el mismo criterio que ya instaló la compuerta por estado de la
 /// cascada, después de que una comparación con `!=` dejara compilar un
@@ -717,6 +743,7 @@ const _nadaQueEntregar = NoSeReintenta(
 PuertaDelReintento puertaDelReintento({
   required DocumentoDeCorrida documento,
   required String ramaActual,
+  required String? destinoActual,
 }) {
   final ramaDeLaCorrida = documento.draft.branch;
   if (ramaActual != ramaDeLaCorrida) {
@@ -726,6 +753,21 @@ PuertaDelReintento puertaDelReintento({
           'Estás parado en «$ramaActual», pero esta corrida se preparó y '
           'commiteó en «$ramaDeLaCorrida». Reintentar acá movería la rama '
           'equivocada: cambiá a «$ramaDeLaCorrida» antes de reintentar.',
+    );
+  }
+  if (destinoActual != documento.destino) {
+    return NoSeReintenta(
+      causa: CausaDeNoReintento.destinoDistinto,
+      detalle:
+          'Esta corrida se preparó para publicar en «${documento.destino}», y '
+          'el remoto de este repositorio apunta ahora a '
+          '${destinoActual == null ? "ningún destino que se pueda nombrar" : "«$destinoActual»"}. '
+          'Reintentar acá NO terminaría aquella publicación: la búsqueda que '
+          'impide abrir un segundo pull request corre contra el destino de '
+          'ahora, donde el de aquella corrida no está ni puede estar, así que '
+          'se abriría uno nuevo en otro repositorio. Devolvé el remoto a '
+          '«${documento.destino}» y reintentá, o volvé a correr `ship` desde '
+          'el principio si lo que querés es publicar en el destino de ahora.',
     );
   }
   return switch (documento.estado) {

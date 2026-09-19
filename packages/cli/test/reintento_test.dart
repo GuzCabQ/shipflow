@@ -71,13 +71,32 @@ class ForjaDeLaPrueba {
   /// compara contra la que trae la solicitud.
   final String revision;
 
-  final List<Map<String, Object?>> _abiertos = [];
+  /// Los pull requests que existen del otro lado, **por repositorio**.
+  ///
+  /// **La clave es la ruta del pedido, que lleva el dueño y el repositorio
+  /// adentro — y esa partición es el arreglo de un falso verde.** Antes esta
+  /// forja guardaba una sola lista para todos: contestaba con los mismos pull
+  /// requests sin importar a qué repositorio se los pidieran. Con eso, la
+  /// prueba que mide que un reintento NO abre un segundo pull request pasaba
+  /// igual con el remoto cambiado —la búsqueda encontraba el pull request de
+  /// OTRO repositorio— y el agujero que la revisión humana encontró vivía
+  /// justo debajo de la prueba que decía cubrirlo. Una forja de verdad
+  /// particiona por repositorio; ésta también.
+  final Map<String, List<Map<String, Object?>>> _abiertosPorRepo = {};
 
   /// Cada solicitud que le llegó al puerto, en orden.
   final List<PullRequestRequest> recibidas = [];
 
-  /// Cuántos pull requests existen del otro lado.
-  int get pullRequestsAbiertos => _abiertos.length;
+  /// Cuántos pull requests existen del otro lado, **sumando todos los
+  /// repositorios**: un segundo pull request abierto en otro repositorio es
+  /// exactamente el fallo que hay que poder contar.
+  int get pullRequestsAbiertos =>
+      _abiertosPorRepo.values.fold(0, (n, l) => n + l.length);
+
+  /// En cuántos repositorios distintos quedó algún pull request.
+  int get repositoriosConPullRequest => _abiertosPorRepo.keys
+      .where((k) => _abiertosPorRepo[k]!.isNotEmpty)
+      .length;
 
   /// Si el otro lado RECHAZA la creación. Con esto puesto, la búsqueda sigue
   /// contestando y el `POST` vuelve con un rechazo de la forja: el adapter lo
@@ -87,11 +106,14 @@ class ForjaDeLaPrueba {
 
   ForjaDeLaPrueba._(this._api, this.revision, this.rechazaLaCreacion) {
     _api.listen((pedido) async {
+      // La ruta lleva el dueño y el repositorio: es la que separa un
+      // repositorio de otro, igual que del otro lado de verdad.
+      final abiertos = _abiertosPorRepo.putIfAbsent(pedido.uri.path, () => []);
       if (pedido.method == 'GET') {
         pedido.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write(jsonEncode(_abiertos));
+          ..write(jsonEncode(abiertos));
         await pedido.response.close();
         return;
       }
@@ -106,8 +128,11 @@ class ForjaDeLaPrueba {
         await pedido.response.close();
         return;
       }
-      _abiertos.add({
-        'html_url': 'https://forja.invalida/pr/${_abiertos.length + 1}',
+      abiertos.add({
+        // La URL lleva la ruta del repositorio adentro: dos pull requests
+        // «número 1» de repositorios distintos tienen que poder distinguirse.
+        'html_url':
+            'https://forja.invalida${pedido.uri.path}/pr/${abiertos.length + 1}',
         'state': 'open',
         'merged_at': null,
         // **El cuerpo se guarda tal cual llegó**, con el marcador estable
@@ -120,7 +145,7 @@ class ForjaDeLaPrueba {
       pedido.response
         ..statusCode = HttpStatus.created
         ..headers.contentType = ContentType.json
-        ..write(jsonEncode(_abiertos.last));
+        ..write(jsonEncode(abiertos.last));
       await pedido.response.close();
     });
   }
@@ -320,6 +345,7 @@ class MundoDeReintento {
           base: base,
           verificacion: verificacion,
           rutas: [_archivo, if (rutaExtra != null) rutaExtra],
+          destino: remotoAtendible,
         ),
       );
     }
@@ -365,10 +391,15 @@ class MundoDeReintento {
     required String base,
     required EstadoDeCorrida verificacion,
     required List<String> rutas,
+    required String destino,
   }) {
     final publicable = EstadoPublicable.desde(verificacion)!;
     final preparado = DocumentoDeCorrida.preparado(
       revision: revision,
+      // **El destino se deriva del MISMO remoto que este mundo configuró**,
+      // con la misma función que la composición real: un valor escrito a mano
+      // acá dejaría pasar una comparación que en producción no pasaría.
+      destino: identidadDelDestino(destino)!,
       draft: PullRequestDraft(
         runId: idDeLaCorrida,
         branch: 'trabajo',
@@ -466,6 +497,10 @@ class MundoDeReintento {
       // prueba entre procesos: la segunda invocación no hereda nada de lo que
       // la primera haya podido recordar.
       forjaDelRemoto: (url) => forja.puerto(directorio: raiz.path, url: url),
+      // **La MISMA función de nombre neutro que usa la composición real.** Un
+      // doble acá produciría una identidad que nadie más produce, y lo que
+      // mediría la prueba de la mudanza del remoto sería ese doble.
+      identidadDelDestinoDelRemoto: identidadDelDestino,
       registro: registro,
       cambiosAjenos: (archivos) =>
           cambiosAjenosDelArbol(directorio: raiz.path, deLaRebanada: archivos),
@@ -598,6 +633,21 @@ class MundoDeReintento {
     return _codigo;
   }
 
+  /// Apunta el remoto de este repositorio a [url], como lo haría una persona
+  /// entre la corrida que quedó a medias y el reintento.
+  ///
+  /// **Se cambia con la herramienta, no con un doble.** Lo que el reintento
+  /// relee en cada ejecución es el remoto configurado; fijar ese hecho desde
+  /// afuera del repositorio mediría un montaje y no la configuración.
+  void mudarElRemoto(String url) {
+    Process.runSync('git', [
+      'remote',
+      'set-url',
+      'origin',
+      url,
+    ], workingDirectory: raiz.path);
+  }
+
   /// Vuelve a dejar el documento en [estado], como si el proceso que acaba de
   /// correr hubiera muerto antes de sellarlo.
   ///
@@ -615,6 +665,7 @@ class MundoDeReintento {
         base: viejo.draft.artefacto.candidato.baseRevision,
         verificacion: viejo.draft.artefacto.superficie.estado,
         rutas: viejo.draft.rutas,
+        destino: remotoAtendible,
       ),
     );
   }
@@ -1249,6 +1300,99 @@ void main() {
       );
       expect(d, isA<Publicado>());
       expect((d! as Publicado).pr.url, contains('/pr/1'));
+    });
+
+    test(
+      'con el remoto mudado a OTRO repositorio, el reintento NO publica',
+      () async {
+        // **La reproducción del P1-1 de la revisión humana, y el escenario
+        // que la prueba de arriba NO cubría: aquélla nunca cambia el
+        // remoto.** En cada ejecución se relee el remoto y con él se arma la
+        // salida; el documento no persistía a dónde iba. Con el remoto
+        // apuntando a otro repositorio, la búsqueda idempotente corre CONTRA
+        // ESE OTRO —donde el pull request de la corrida original no está ni
+        // puede estar— y se abre un SEGUNDO pull request, en un repositorio
+        // que nadie eligió. Es el fallo que el plan llama el más costoso del
+        // reintento.
+        final m = await MundoDeReintento.conDocumentoEn(
+          EstadoDelDocumento.committed,
+        );
+        await m.correr(m.runId);
+        expect(m.forja.pullRequestsAbiertos, 1);
+        await m.rebobinarA(EstadoDelDocumento.committed);
+
+        m.mudarElRemoto('https://github.com/otro/repositorio.git');
+        final d = await m.correr(m.runId);
+
+        expect(
+          m.forja.pullRequestsAbiertos,
+          1,
+          reason:
+              'el segundo pull request es exactamente lo que no puede pasar',
+        );
+        expect(
+          m.forja.repositoriosConPullRequest,
+          1,
+          reason: 'y menos todavía en un repositorio que nadie eligió',
+        );
+        expect(
+          m.forja.recibidas,
+          hasLength(1),
+          reason:
+              'se detiene ANTES de pedirle nada a la forja: la comparación '
+              'del destino es una compuerta, no una corrección posterior',
+        );
+        expect(d, isNull, reason: 'no se selló ningún desenlace nuevo');
+        expect(m.codigo(d), Codigo.errorDeConfiguracion);
+        expect(
+          (await m.documento()).estado,
+          EstadoDelDocumento.committed,
+          reason: 'el documento quedó donde estaba',
+        );
+        expect(
+          m.accion,
+          allOf(contains('duenio/repo'), contains('otro/repositorio')),
+          reason:
+              'ninguna prohibición sin su alternativa: el mensaje nombra el '
+              'destino de la corrida y el de ahora, para que quien lo lea '
+              'sepa cuál devolver',
+        );
+      },
+    );
+
+    test('con el remoto BORRADO, el reintento tampoco publica', () async {
+      // Sin remoto no hay destino que nombrar, y nulo nunca es igual al
+      // destino de un documento: entra por la misma puerta.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      Process.runSync('git', [
+        'remote',
+        'remove',
+        'origin',
+      ], workingDirectory: m.raiz.path);
+
+      final d = await m.correr(m.runId);
+      expect(m.forja.pullRequestsAbiertos, 0);
+      expect(m.codigo(d), Codigo.errorDeConfiguracion);
+    });
+
+    test('el MISMO destino escrito distinto no detiene nada', () async {
+      // **El control negativo, y sin él la comparación podría ser una
+      // prohibición de tocar el remoto disfrazada.** El mismo repositorio sin
+      // el sufijo con el que `git` nombra un repositorio desnudo es el mismo
+      // destino: detenerse ahí sería detenerse por algo que no pasó.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      m.mudarElRemoto('https://github.com/duenio/repo');
+      final d = await m.correr(m.runId);
+      expect(
+        d,
+        isA<Publicado>(),
+        reason: 'el destino es el mismo: lo que cambió es cómo se escribe',
+      );
+      expect(m.forja.pullRequestsAbiertos, 1);
     });
 
     test(

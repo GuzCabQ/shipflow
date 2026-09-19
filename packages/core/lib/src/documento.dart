@@ -60,6 +60,13 @@ class DocumentoDeCorrida {
   /// - 2026-09-19 — `PullRequestDraft` ganó el campo `rutas` (4c, tarea 3):
   ///   las rutas que la rebanada declaró, persistidas para que el paso 4 de
   ///   la reconciliación pueda acotar a ellas la comparación del índice.
+  /// - 2026-09-19 — este documento ganó el campo [destino] (4c, revisión
+  ///   humana, P1-1): la identidad saneada del destino remoto de la corrida,
+  ///   persistida para que un reintento pueda comprobar que sigue publicando
+  ///   donde la corrida original publicaba. Sin ella, cambiar el remoto entre
+  ///   la corrida y el reintento hacía que la búsqueda idempotente ocurriera
+  ///   en OTRO repositorio, donde no podía encontrar el pull request, y se
+  ///   abría un segundo.
   ///
   /// **Cuándo deja de serlo.** El día que llegue la pila entera —4a, 4b y
   /// 4c, integradas—, esa garantía desaparece: cualquier corrida de `ship`
@@ -107,6 +114,36 @@ class DocumentoDeCorrida {
   /// El borrador completo, para que la recuperación reconstruya la solicitud
   /// **sin volver a correr la cascada**.
   final PullRequestDraft draft;
+
+  /// **A dónde publica esta corrida**, como una cadena opaca y saneada.
+  ///
+  /// **Opaca de verdad: acá no se sabe leerla.** Quién la produce es el
+  /// paquete que sabe quién atiende cada remoto, por una función de nombre
+  /// neutro; lo único que se hace con ella es compararla con otra por
+  /// igualdad. `core` no la parsea, no le busca un host adentro y no la
+  /// compone: si supiera hacer cualquiera de esas tres cosas, sabría quién es
+  /// la forja.
+  ///
+  /// **Por qué se persiste, y qué se rompía sin ella.** En cada ejecución se
+  /// relee el remoto configurado y con él se arma la salida de pull requests.
+  /// El documento guardaba el commit, la rama, la base y el artefacto — y no
+  /// a dónde iban. Si entre la corrida que quedó indeterminada y el reintento
+  /// alguien apuntaba el remoto a otro repositorio, la búsqueda idempotente
+  /// —que es `contains` del marcador estable sobre los pull requests del
+  /// destino— corría contra el destino NUEVO, donde el pull request de la
+  /// corrida original no está ni puede estar, y el reintento abría un
+  /// SEGUNDO pull request. Es el fallo más costoso que este camino promete no
+  /// cometer, y la prueba que mide la idempotencia no lo veía porque nunca
+  /// cambiaba el remoto.
+  ///
+  /// **Saneada, y esa palabra es una precondición del productor.** La URL de
+  /// un remoto puede traer la credencial en su parte de autoridad, y esta
+  /// cadena se persiste en disco y se imprime en el mensaje que explica por
+  /// qué un reintento no actúa. Quien la produce la emite sin secreto; acá no
+  /// se puede comprobar —comprobarlo pediría saber qué parte de qué forma de
+  /// URL es un secreto, que es justamente lo que este paquete no sabe— y por
+  /// eso queda declarado como lo que es: una obligación del productor.
+  final String destino;
 
   /// El desenlace, cuando ya hay uno. Nulo mientras la corrida sigue.
   ///
@@ -221,6 +258,7 @@ class DocumentoDeCorrida {
     required this.estado,
     required this.revision,
     required this.draft,
+    required this.destino,
     this.desenlace,
   }) {
     final mal = _incoherencia(estado, desenlace);
@@ -232,10 +270,12 @@ class DocumentoDeCorrida {
   factory DocumentoDeCorrida.preparado({
     required String revision,
     required PullRequestDraft draft,
+    required String destino,
   }) => DocumentoDeCorrida._(
     estado: EstadoDelDocumento.prepared,
     revision: revision,
     draft: draft,
+    destino: destino,
   );
 
   /// El grafo de §9, como dato. Lo que no está acá no es un camino.
@@ -343,6 +383,11 @@ class DocumentoDeCorrida {
       estado: destino,
       revision: revision,
       draft: draft,
+      // **No es un parámetro de este método, y no puede serlo.** A dónde
+      // publica una corrida es un hecho de cuando se preparó: dejar que una
+      // transición lo cambie convertiría la comparación que el reintento hace
+      // en algo que el propio reintento puede reescribir antes de mirar.
+      destino: this.destino,
       desenlace:
           desenlace ?? (admiteDesenlace(destino) ? this.desenlace : null),
     );
@@ -353,6 +398,7 @@ class DocumentoDeCorrida {
     'estado': estado.name,
     'revision': revision,
     'draft': draft.toJson(),
+    'destino': destino,
     'desenlace': desenlace?.toJson(),
   };
 
@@ -433,10 +479,28 @@ class DocumentoDeCorrida {
         'forma que este código exige: ${e.message}',
       );
     }
+    // **La ausencia de `destino` nombra el formatVersion, no dice «JSON
+    // roto».** Es la misma decisión que este archivo ya toma con el desenlace
+    // y con las rutas del borrador: el campo es nuevo y no subió el número,
+    // así que un documento sin él es de una forma anterior y no está
+    // corrupto. Y NO se rellena con un valor cómodo: un destino inventado
+    // haría que la comparación del reintento pasara contra cualquier remoto,
+    // que es exactamente el agujero que este campo cierra.
+    final destino = json['destino'];
+    if (destino is! String) {
+      throw FormatException(
+        'El documento (formatVersion $version) no trae «destino», o no es '
+        'una cadena. No subió el formatVersion cuando este campo se agregó, '
+        'así que la ausencia es una forma más vieja y no un JSON corrupto. '
+        'No se completa con nada: sin saber a dónde publicaba esa corrida, un '
+        'reintento no puede comprobar que siga publicando ahí.',
+      );
+    }
     return DocumentoDeCorrida._(
       estado: estado,
       revision: json['revision']! as String,
       draft: draft,
+      destino: destino,
       desenlace: desenlace,
     );
   }
