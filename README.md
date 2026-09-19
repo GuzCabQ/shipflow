@@ -4208,8 +4208,8 @@ compartida, con el mismo código de producción de los dos lados.
 puerto de publicación es el adapter real —el mismo que arma la raíz de
 composición—, envuelto solo para contar qué solicitud le llegó; lo que se
 reemplaza es el servidor HTTP contra el que ese adapter habla. Si el doble
-fuera el puerto, la búsqueda idempotente que la prueba del segundo reintento
-ejercita sería la del doble, y la prueba mediría el doble en vez de medir el
+fuera el puerto, la búsqueda idempotente que la prueba del documento
+rebobinado ejercita sería la del doble, y la prueba mediría el doble en vez de medir el
 mecanismo que hace segura esta rebanada entera.
 
 ### Residuos declarados

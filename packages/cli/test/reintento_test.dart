@@ -14,7 +14,8 @@
 /// composición— y solo registra qué solicitud le pasó por adentro. Lo que se
 /// reemplaza es la API del otro lado, por un servidor local que guarda los
 /// pull requests que le crean y los devuelve cuando se los buscan. La razón
-/// es la prueba del segundo reintento: **la búsqueda idempotente que esa
+/// es la prueba que rebobina el documento a `committed` —la única que llega
+/// hasta la búsqueda—: **la búsqueda idempotente que esa
 /// prueba ejercita tiene que ser la del adapter**, porque si un doble la
 /// simulara, lo que la prueba mediría es el doble. Acá no hay nada que la
 /// simule — el marcador estable se escribe, se busca y se compara con el
@@ -681,19 +682,39 @@ void main() {
     expect(d, isA<Publicado>());
   });
 
-  test('UN SEGUNDO reintento NO abre un segundo pull request', () async {
-    final m = await MundoDeReintento.conDocumentoEn(
-      EstadoDelDocumento.committed,
-    );
-    await m.correr(m.runId);
-    final segundo = await m.correr(m.runId);
-    expect(
-      m.forja.pullRequestsAbiertos,
-      1,
-      reason: 'es el fallo más caro que esta rebanada puede producir',
-    );
-    expect(segundo, isA<Publicado>());
-  });
+  test(
+    'un reintento sobre un documento YA SELLADO ni llega a la forja',
+    () async {
+      // **El nombre dice lo que esta prueba mide, y NO es la idempotencia.**
+      // Se llamaba «un segundo reintento no abre un segundo pull request», con
+      // la razón «es el fallo más caro que esta rebanada puede producir», y no
+      // lo medía: tras el primer reintento el documento queda publicado, la
+      // puerta por estado contesta «ya publicado» y la forja no se toca. La
+      // cuenta se queda en uno **sin que la búsqueda idempotente llegue a
+      // correr**, y el desenlace que se lee abajo es el que dejó la PRIMERA
+      // corrida. Con dos pruebas diciendo cubrir lo mismo y una sin cubrirlo,
+      // el nombre y la razón se corrigen en vez de borrarse: este camino
+      // —entrar dos veces y que la segunda frene antes de la forja— vale por
+      // sí solo.
+      //
+      // Quien sí mide la idempotencia entre procesos es la prueba que rebobina
+      // el documento a `committed`, al final de este archivo.
+      final m = await MundoDeReintento.conDocumentoEn(
+        EstadoDelDocumento.committed,
+      );
+      await m.correr(m.runId);
+      final segundo = await m.correr(m.runId);
+      expect(
+        m.forja.recibidas,
+        hasLength(1),
+        reason:
+            'la segunda invocación no le pidió NADA a la forja: la puerta por '
+            'estado frenó antes de componer ninguna solicitud',
+      );
+      expect(m.forja.pullRequestsAbiertos, 1);
+      expect(segundo, isA<Publicado>());
+    },
+  );
 
   test(
     'una corrida ya publicada NO se reintenta, y sale con éxito diciendo dónde',
@@ -1017,7 +1038,7 @@ void main() {
     test('con el pull request YA abierto por otro proceso, el reintento NO '
         'abre un segundo', () async {
       // **Éste es el escenario que la idempotencia entre procesos existe para
-      // cubrir, y el único que la ejercita.** La prueba del segundo reintento
+      // cubrir, y el único que la ejercita.** La prueba de entrar dos veces
       // —la que pedía el brief— no llega hasta la búsqueda: el filtro por
       // estado ve un documento ya publicado y frena antes, así que la forja
       // no se toca. Acá el documento se rebobina a `committed`, que es
