@@ -14,8 +14,21 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 import 'package:vcs/vcs.dart';
 
-/// Una política que declara todo editable: esta rebanada no ejercita
-/// artefactos, y `RepositorioGit` la exige sin valor por defecto.
+/// Una política que declara editable todo lo que el puerto permite declarar
+/// así: esta rebanada no ejercita artefactos, y `RepositorioGit` la exige sin
+/// valor por defecto.
+///
+/// **La ruta vacía NO es editable, y eso no es celo.** Es la cláusula 2 del
+/// contrato de [ArtifactPolicy], y la honran la implementación real y la
+/// falsa. Este doble devolvía `true` para ella, o sea que contradecía al
+/// puerto que dice implementar.
+///
+/// Hoy no cambia ningún desenlace —esta suite no ejercita artefactos y la
+/// herramienta no emite una ruta vacía— y se cierra igual, por lo que un doble
+/// ES: la vara contra la que se mide lo real. Un doble más permisivo que su
+/// puerto no falla hoy; falla el día que alguien apoye una decisión en él y
+/// descubra que lo real contesta lo contrario. Y esa clase de falso verde es
+/// la que esta rebanada estuvo cazando.
 class _PoliticaQueAceptaTodo implements ArtifactPolicy {
   const _PoliticaQueAceptaTodo();
 
@@ -23,7 +36,7 @@ class _PoliticaQueAceptaTodo implements ArtifactPolicy {
   bool isGenerated(String path) => false;
 
   @override
-  bool isEditable(String path) => true;
+  bool isEditable(String path) => path.trim().isNotEmpty;
 }
 
 void main() {
