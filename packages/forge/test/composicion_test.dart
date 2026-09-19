@@ -92,6 +92,7 @@ void main() {
       branch: 'rama-1',
       base: 'main',
       artefacto: artefacto(),
+      rutas: const ['a.txt'],
     ),
     revision: revisionDePrueba,
     arbolDeLaRevision: 'arbol-1',

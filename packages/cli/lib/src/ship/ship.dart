@@ -320,11 +320,16 @@ Future<ResultadoDeShip> correrShip({
       alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
     );
 
+    // **`entrada.archivos` y no una derivación nueva.** Son las rutas de la
+    // rebanada que el comando ya interpretó —las mismas que arma `rebanada` y
+    // que ve la cascada—, y el borrador las persiste tal cual: D1 de esta
+    // rebanada prohíbe una segunda fuente del mismo hecho.
     final borrador = PullRequestDraft(
       runId: runId,
       branch: aprobado.rama,
       base: aprobado.base,
       artefacto: artefacto,
+      rutas: entrada.archivos,
     );
 
     // 8 · La compuerta por estado. **`--yes` no participa**: autoriza a

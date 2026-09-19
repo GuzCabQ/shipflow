@@ -42,29 +42,42 @@ class DocumentoDeCorrida {
   /// ciclos de vida distintos.
   ///
   /// **Por qué seguir en `1` es seguro, hoy.** Esta clase y su forma son de
-  /// 4a —la rebanada del desenlace y su documento—, y 4a todavía no se
-  /// mergeó: no existe ningún documento escrito por una corrida real con la
-  /// forma vieja de un desenlace —`NoAplicado` sin `causa`, por ejemplo, la
-  /// que tenía antes de que este mismo grupo de arreglos la exigiera—, y por
-  /// lo tanto no hay ningún lector para el que esta versión tenga que seguir
-  /// sirviendo. Corregir la forma en el lugar, sin subir el número, es
+  /// una PILA de TRES rebanadas que llegan juntas, no de una sola: 4a —la del
+  /// desenlace y su documento—, 4b —la que compone `ship`— y 4c —
+  /// `--retry-publication`, la que agrega el campo de la lista de abajo—.
+  /// Ninguna de las tres se mergeó todavía: no existe ningún documento
+  /// escrito por una corrida real con una forma más vieja que la de hoy, y
+  /// por lo tanto no hay ningún lector para el que esta versión tenga que
+  /// seguir sirviendo. Corregir la forma en el lugar, sin subir el número, es
   /// correcto exactamente porque nada publicado depende de la forma anterior.
   ///
-  /// **Cuándo deja de serlo.** El día que 4a se integre, esa garantía
-  /// desaparece: cualquier corrida de `ship` que haya corrido después —en
-  /// cualquier repositorio, de cualquiera— pudo haber escrito un documento
-  /// con la forma de ese día, y ese documento pasa a ser un lector real.
-  /// Desde ese día, el PRÓXIMO cambio de forma —agregar un campo, sacar uno,
-  /// volverlo obligatorio— tiene que subir este número: ya no es «nadie lo
-  /// vio todavía» sino «alguien puede tenerlo en el disco».
+  /// **Los cambios de forma que entraron adentro de esta ventana, con su
+  /// fecha.** Es esta lista, y no la promesa de arriba sola, lo que hace
+  /// auditable la excepción:
+  /// - 2026-09-18 — `NoAplicado` ganó el campo `causa`: antes confundía «la
+  ///   base se movió» con «te cambiaste de rama» debajo de un solo
+  ///   `headObservado`, y las dos se corrigen distinto.
+  /// - 2026-09-19 — `PullRequestDraft` ganó el campo `rutas` (4c, tarea 3):
+  ///   las rutas que la rebanada declaró, persistidas para que el paso 4 de
+  ///   la reconciliación pueda acotar a ellas la comparación del índice.
+  ///
+  /// **Cuándo deja de serlo.** El día que llegue la pila entera —4a, 4b y
+  /// 4c, integradas—, esa garantía desaparece: cualquier corrida de `ship`
+  /// que haya corrido después —en cualquier repositorio, de cualquiera— pudo
+  /// haber escrito un documento con la forma de ese día, y ese documento pasa
+  /// a ser un lector real. Desde ese día, el PRÓXIMO cambio de forma —agregar
+  /// un campo, sacar uno, volverlo obligatorio— tiene que subir este número:
+  /// ya no es «nadie lo vio todavía» sino «alguien puede tenerlo en el
+  /// disco».
   ///
   /// **Por qué no alcanza con acordarse.** Esta nota tiene que vivir acá y no
-  /// en la cabeza de quien integró 4a: dentro de un año, quien le agregue un
-  /// campo a un desenlace no tiene por qué saber que hubo una ventana —antes
-  /// de este merge— donde cambiar su forma no pagaba versión, ni en qué commit
-  /// se cerró esa ventana. El día del merge, lo que tiene que pasar es borrar
-  /// este párrafo y tratar la forma de ese momento como la primera que
-  /// alguien puede tener guardada — y eso solo se puede seguir si queda
+  /// en la cabeza de quien integró la pila: dentro de un año, quien le
+  /// agregue un campo a un desenlace no tiene por qué saber que hubo una
+  /// ventana —antes de ese merge— donde cambiar su forma no pagaba versión,
+  /// ni qué cambios entraron mientras estuvo abierta, ni en qué commit se
+  /// cerró. El día del merge, lo que tiene que pasar es borrar este párrafo
+  /// entero —lista incluida— y tratar la forma de ese momento como la primera
+  /// que alguien puede tener guardada — y eso solo se puede seguir si queda
   /// escrito acá, no si depende de que alguien se acuerde.
   static const versionActual = 1;
 

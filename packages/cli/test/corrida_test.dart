@@ -33,6 +33,7 @@ PullRequestDraft _draftDePrueba({String base = 'base-1'}) => PullRequestDraft(
     sinPlanPorque: 'no hay elementos de trabajo',
     alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
   ),
+  rutas: const ['a.txt'],
 );
 
 DocumentoDeCorrida documentoDePrueba() =>

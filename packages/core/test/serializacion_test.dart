@@ -26,8 +26,16 @@
 /// `CandidateIdentity · hexadecimal en mayúsculas`—; para el resto, la
 /// cobertura de esa partición la sostiene hoy una revisión humana. Medido al
 /// cerrar la ronda 7: el único constructor de `packages/core/lib/src` que
-/// transforma lo que recibe es `PullRequestRequest.revision`, y
+/// transformaba lo que recibía era `PullRequestRequest.revision`, y
 /// `PullRequestRequest` no serializa.
+///
+/// **Actualizado en la rebanada de `--retry-publication`, tarea 3:**
+/// `PullRequestDraft.rutas` se sumó a la lista. También transforma —ordena
+/// lo que recibe— y, a diferencia de `PullRequestRequest.revision`, SÍ
+/// serializa: por eso su instancia canónica no puede apoyarse en la
+/// normalización para demostrar el invariante de orden, y pasa las rutas
+/// fuera de orden a propósito (ver `draft`, más abajo) para ejercitar la
+/// transformación en vez de esconderla.
 ///
 /// **Y el mismo residuo del otro lado:** la precondición de arriba —ningún
 /// valor por defecto— OBLIGA a que todo campo anulable venga con valor en la
@@ -272,11 +280,18 @@ void main() {
     alcanceDeLoAfirmado: 'propiedades de herramienta, nada de comportamiento',
   );
 
+  // **Más de una ruta, a propósito.** Con una sola, un `toJson` que
+  // escribiera la primera y perdiera el resto produciría la misma lista de
+  // un elemento a la ida y a la vuelta: el falso verde que ya costó dos
+  // rondas en otras clases de este archivo. Sin orden alfabético al pasarlas
+  // —el constructor las ordena— para que la instancia también ejercite esa
+  // normalización.
   final draft = PullRequestDraft(
     runId: 'corrida-para-el-documento',
     branch: 'rama-de-la-corrida',
     base: 'develop',
     artefacto: artefacto,
+    rutas: const ['lib/segundo.fuente', 'lib/primero.fuente'],
   );
 
   // **El desenlace tiene que ser el que afirma `publicationComplete`.** Acá

@@ -211,6 +211,7 @@ void main() {
             branch: 'rama-1',
             base: 'main',
             artefacto: artefacto,
+            rutas: const ['a.txt'],
           ),
           returnsNormally,
           reason: 'el generador produjo «$runId», que el dominio rechaza',

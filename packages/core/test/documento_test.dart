@@ -20,6 +20,7 @@ PullRequestDraft draftDePrueba() => PullRequestDraft(
     sinPlanPorque: 'no hay elementos de trabajo',
     alcanceDeLoAfirmado: ArtefactoDeRevision.alcanceSoloPR,
   ),
+  rutas: const ['a.txt'],
 );
 
 void main() {
