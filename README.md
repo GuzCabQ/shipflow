@@ -3548,7 +3548,7 @@ la corrida con una precedencia explícita:
 
 ```
 errorInterno > secretDetected > verificationGate
-             > confirmationMissing > previewOnly
+             > previewOnly > confirmationMissing
 ```
 
 **`errorInterno` es un ESTADO, no una causa**, y entra por
@@ -3560,8 +3560,8 @@ secreto, así que el secreto le gana a la confirmación que falta y a la
 previsualización — y también a la compuerta por estado, con y sin
 `--allow-incomplete`: la bandera autoriza publicar un estado incompleto, no
 autoriza ignorar un secreto. El grupo `ShipOutcome.derivar · la precedencia`
-de `packages/core/test/corrida_test.dart` tiene **12 pruebas —8 de ellas fijan
-el orden de precedencia— y entre todas ejercitan 17 derivaciones**. Este
+de `packages/core/test/corrida_test.dart` tiene **13 pruebas —8 de ellas fijan
+el orden de precedencia— y entre todas ejercitan 18 derivaciones**. Este
 párrafo decía «las nueve combinaciones de la tabla, probadas una por una», y no
 hay lectura del árbol que dé nueve: ni las pruebas del grupo, ni las de
 precedencia, ni las derivaciones. La tabla de códigos fila por fila tampoco
@@ -3867,7 +3867,8 @@ Los dieciséis pasos, en el orden en que `correrShip`
  6  derivar superficie · componer artefacto en memoria
  7  PREVIEW
  8  compuerta por estado
- 9  crear el .gitignore de las corridas · comprobar que runs/ está ignorado
+ 9  crear el .gitignore de las corridas · comprobar que git ignora LAS DOS
+    rutas que el paso 14 escribe
 10  PROMOVER los objetos preparados, sin refiltrar
 11  crear la revisión                        ← NO mueve la rama
 12  persistir `prepared` CON la revisión
@@ -3899,6 +3900,65 @@ corrida que describir.
 Las cuatro las atrapa **el comando**, no la orquestación: decidir el código de
 proceso dos veces es cómo dos sitios terminan contestando distinto sobre la
 misma corrida.
+
+### Lo que solo se vio mirando la rama entera
+
+Las doce tareas cerraron con revisión limpia cada una. La revisión de la rama
+completa encontró lo que ninguna revisión por tarea podía ver: decisiones que
+se contradicen entre tareas, una responsabilidad implementada dos veces, y un
+motivo escrito que no es el que sostiene el código.
+
+**La compuerta por estado estaba escrita dos veces, y solo una obligaba a
+decidir.** La de la previsualización era un `switch` exhaustivo sin comodín:
+un `EstadoDeCorrida` nuevo no compilaba. La de `ShipOutcome.derivar`
+preguntaba `!= verde`: un estado nuevo **sí** compilaba y caía en «compuerta
+cerrada» por omisión. Nada sostenía que las dos contestaran lo mismo, y la
+asimetría era la peligrosa — quien agregara un estado y decidiera, en lo único
+que el compilador le iba a pedir, que publica, se llevaba una corrida que
+promovía, commiteaba, movía la rama y abría el pull request antes de que la
+fábrica dijera «no intentado». Es el mismo patrón que el predicado del canal
+seguro cerró del lado del remoto, y que acá quedó sin cerrar. La compuerta es
+lógica de dominio y ahora vive **una sola vez**, en `core`, al lado de la
+fábrica que la usa; la previsualización la llama. No se duplicó exhaustiva de
+los dos lados: dos exhaustivas siguen siendo dos.
+
+**`NoAplicado` afirmaba un hecho falso en una de sus dos causas.** `vcs`
+distingue «la base se movió» de «la rama cambió», y la orquestación descartaba
+la causa para quedarse con el `HEAD` observado: el mensaje y la acción decían,
+para las dos, «la rama avanzó a …, volvé a correr». Con la segunda **la rama
+no avanzó** —quien corre se cambió de rama durante la cascada, no se intentó
+ningún compare-and-swap, y el `HEAD` observado es el de otra rama—, y el
+consejo era peor que inútil: volver a correr reconstruye el candidato sobre
+esa otra rama y, sin `--branch`, commitea ahí. El desenlace lleva ahora la
+causa, que llega dentro del rechazo medido y no como un campo suelto: un
+desenlace derivado no puede afirmar un hecho que nadie midió.
+
+**El pull request abierto se perdía si fallaba la escritura del sellado.** El
+paso 15 publica y el paso 16 sella, y sellar escribe; un fallo de esa
+escritura no era ninguna de las cuatro excepciones tipadas y salía `70` con el
+pull request ya abierto. El sellado lo tolera y devuelve igual el desenlace —lo
+que se pierde es el registro, recuperable mirando la forja; lo que se perdía
+era el único aviso de que hay un pull request—, y el payload lo dice con
+`documentUnwritten`, igual que ya decía `documentUnreadable`. El cálculo del
+estado queda fuera del `try`: una transición que el documento no admite es un
+error de programación, no una condición del entorno.
+
+**«No se escribió nada» era falso.** El paso 9 llama a `asegurarGitignore`
+**antes** del control que lanza `CorridasNoIgnoradas`, y esa función crea el
+directorio de corridas y escribe su regla antes de devolver: en el primer uso
+quedan un directorio y un archivo. El orden no se puede invertir —la regla que
+se comprueba es justamente la que esa función escribe, y sin ella el primer
+uso no podría pasar nunca—, así que lo que cambió es el texto: se dice qué
+quedó y que es inerte, y el código `4` promete lo que sí es cierto en todos
+sus caminos —ni commit, ni pull request, ni documento—. La prueba mide el
+disco, y su pareja mide que el preflight sí lo deja intacto: sin esa segunda,
+«quedó escrito» sería indistinguible de una suite que nunca mira.
+
+**La clave `causa` del payload llevaba tres enums distintos** —el del
+desenlace, el del preflight y el de la ausencia de forja—, así que un
+consumidor automático no podía ramificar sobre ella. Son hechos distintos de
+detenciones distintas: llevan claves distintas. Que los tres vocabularios
+sigan en idiomas distintos queda como residuo declarado.
 
 ### La tarea que el plan no tenía
 
@@ -3981,8 +4041,9 @@ un mensaje único manda a sospechar de la forja cuando la forja está soportada.
 La distinción vive en `CausaDeAusenciaDeForja`, del paquete de la forja, para
 que la raíz de composición no tenga que comparar contra un host que la regla le
 prohíbe conocer; y viaja también en el payload de máquina, con ese mismo
-vocabulario, para que quien lo lee no tenga que volver a parsear un mensaje
-pensado para una persona.
+vocabulario y bajo su propia clave —`causaDeLaAusenciaDeForja`—, para que
+quien lo lee no tenga que volver a parsear un mensaje pensado para una
+persona.
 
 **Y la URL no se imprime.** Un remoto puede llevar la credencial embebida en su
 parte de autoridad, y ese mensaje sale por la salida estándar **y** por el
@@ -4062,7 +4123,13 @@ ausencias no pueden coincidir, así que no hace falta un tercer caso.
   negación más abajo, o un `core.excludesFile` que declare otro, lo dejarían
   sin efecto, y el fallo sería el documento de la corrida terminando commiteado
   dentro del pull request. Así que la pregunta es si `git` ignora **esa ruta**,
-  con el mismo lanzador saneado que usa el resto.
+  con el mismo lanzador saneado que usa el resto. Y son **dos rutas**, no una:
+  el paso 14 escribe el documento y la proyección de la revisión, el criterio
+  es «ningún archivo de la corrida termina commiteado», y mirar solo el
+  documento era un control decidiendo sobre una representación más pobre que
+  su criterio. La lista la da `RegistroDeCorridas.rutasDe`, que es también de
+  donde sale la ruta que el paso 14 escribe: la próxima proyección entra por
+  ahí o no la mira nadie.
 - **Un remoto por un canal que no protege la credencial se rechaza antes de
   cualquier escritura**, con el mismo predicado que aplica el paso de empuje,
   para que las dos decisiones no puedan divergir. Ver la sección de arriba.
