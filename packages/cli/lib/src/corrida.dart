@@ -242,6 +242,36 @@ final class Ambigua extends Reconciliacion {
   const Ambigua(this.causa, this.detalle);
 }
 
+/// [argumento], citado para que un shell POSIX lo parsee como **un solo
+/// argumento igual a esta misma cadena**, sea cual sea lo que lleve adentro.
+///
+/// **Existe porque envolver entre apóstrofos NO alcanza, y el agujero estaba
+/// abierto.** Adentro de un par de apóstrofos el shell no interpreta nada
+/// —ni el espacio, ni el salto de línea, ni el dólar, ni la comilla doble, ni
+/// la barra invertida— salvo el apóstrofo mismo, que CIERRA la cita. Una ruta
+/// como `it` seguida de apóstrofo y de `s` es un nombre de archivo
+/// perfectamente válido, y envuelta a mano produce un comando con una cita
+/// sin cerrar: quien lo pega en su terminal no repara nada y encima se queda
+/// con el intérprete esperando el resto de la línea. Peor: una ruta armada a
+/// propósito puede cerrar la cita, meter otro comando y volver a abrirla, y
+/// ese comando lo va a pegar una persona porque se lo recomendamos nosotros.
+///
+/// **El escape es el de POSIX y no tiene variantes**: se cierra la cita, se
+/// escapa el apóstrofo con una barra invertida —afuera de toda cita, que es
+/// el único lugar donde esa barra lo escapa— y se reabre la cita. Todo lo
+/// demás viaja literal.
+///
+/// **Una cadena vacía también se cita**, y por eso no hay caso especial: un
+/// par de apóstrofos vacío es un argumento vacío, que es exactamente lo que
+/// hay que producir; dejarla sin citar la haría desaparecer del comando.
+///
+/// **Función propia y probada, nunca una interpolación en el sitio de uso.**
+/// Escrita inline, cada sitio que arma un comando repite la regla y la
+/// primera copia que se olvide del apóstrofo no la delata nadie: acá hay una
+/// sola definición, y su suite la mide contra el parser del shell de verdad.
+String citarParaShell(String argumento) =>
+    "'${argumento.replaceAll("'", r"'\''")}'";
+
 /// La reparación concreta para un índice que no coincide con [revision] en
 /// [rutas], como una frase que se puede pegar entera adentro de un mensaje.
 ///
@@ -258,11 +288,16 @@ final class Ambigua extends Reconciliacion {
 /// con código cero de todos modos, y el índice queda exactamente tan
 /// desincronizado como antes de correrlo: un consejo que no repara es peor
 /// que no darlo.
+///
+/// **Y citar es [citarParaShell], nunca envolver entre apóstrofos acá.** Ver
+/// el doc de esa función: envolver a mano rompe el comando ante una ruta que
+/// lleve un apóstrofo, que es un carácter perfectamente válido en un nombre
+/// de archivo.
 String _reparacionDelIndice({
   required String revision,
   required List<String> rutas,
 }) {
-  final citadas = rutas.map((ruta) => "'$ruta'").join(' ');
+  final citadas = rutas.map(citarParaShell).join(' ');
   return 'corré `git reset $revision -- $citadas`, que reescribe el índice '
       'en esas rutas sin tocar el árbol de trabajo, y reintentá';
 }

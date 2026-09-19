@@ -624,4 +624,133 @@ void main() {
       );
     },
   );
+
+  _pruebasDelCitado();
+}
+
+/// Qué hace un shell POSIX de verdad con [linea]: cuántos argumentos ve, y
+/// cuáles.
+///
+/// **Es el parser del shell y no una reimplementación**, que es el punto: lo
+/// que hay que medir de una cita no es que «parezca bien citada» sino que el
+/// programa que la va a interpretar vea exactamente un argumento y que ese
+/// argumento sea el original. Cualquier comprobación escrita acá adentro
+/// sería una segunda definición de las reglas de citado, y la que decide es
+/// la del intérprete.
+///
+/// `set --` fija los parámetros posicionales con lo que el shell haya
+/// parseado; `$#` dice cuántos quedaron y `$1` es el primero. Si la cita está
+/// rota, el shell falla al parsear y el código de salida no es cero.
+Future<({int codigo, String cuantos, String primero})> _segunElShell(
+  String linea,
+) async {
+  final guion = 'set -- $linea\necho "\$#"\nprintf %s "\$1"';
+  final r = await Process.run('/bin/sh', ['-c', guion]);
+  final salida = r.stdout as String;
+  final corte = salida.indexOf('\n');
+  return (
+    codigo: r.exitCode,
+    cuantos: corte < 0 ? '' : salida.substring(0, corte),
+    primero: corte < 0 ? '' : salida.substring(corte + 1),
+  );
+}
+
+/// Las pruebas del citado para el shell, juntas y llamadas desde `main`.
+///
+/// Viven agrupadas en su propia función porque miden una cosa sola —que lo
+/// que se le recomienda pegar en una terminal se parsee como lo que dice—, y
+/// porque la del comando entero necesita el mismo ayudante que la de los
+/// caracteres sueltos.
+void _pruebasDelCitado() {
+  group('citar para el shell', () {
+    // **Los seis caracteres que la revisión humana pidió medir, uno por
+    // caso.** Van como casos separados y no como una sola cadena con todos
+    // adentro porque, juntos, un solo fallo no dice cuál de los seis lo
+    // causó — y el apóstrofo es el único que ROMPE la cita, así que
+    // esconderlo entre otros cinco es perder la distinción entre «se cita
+    // mal» y «se cita mal justo lo que importa».
+    const casos = {
+      'el apóstrofo, que es el que cierra la cita': "it's.txt",
+      'el espacio': 'ruta con espacio.txt',
+      'el salto de línea': 'ruta\ncon salto.txt',
+      'el dólar': r'$HOME.txt',
+      'la comilla doble': 'ruta"con comilla.txt',
+      'la barra invertida': r'ruta\con barra.txt',
+      'el cierre de cita con un comando pegado detrás':
+          "x'; touch /tmp/shipflow-inyectado; echo '",
+      'la cadena vacía, que sin citar desaparece del comando': '',
+    };
+    casos.forEach((queCaracter, ruta) {
+      test('$queCaracter vuelve como UN argumento igual al original', () async {
+        final visto = await _segunElShell(citarParaShell(ruta));
+        expect(
+          visto.codigo,
+          0,
+          reason:
+              'el shell no pudo ni parsear la línea: con una cita sin cerrar '
+              'quien la pega se queda esperando el resto',
+        );
+        expect(visto.cuantos, '1', reason: 'tiene que ser UN solo argumento');
+        expect(visto.primero, ruta);
+      });
+    });
+  });
+
+  group('la reparación del índice se puede pegar en una terminal', () {
+    /// El comando que la reparación recomienda, sacado de entre las comillas
+    /// invertidas del mensaje. **Se extrae del texto que de verdad se
+    /// imprime**, no se vuelve a armar acá: lo que una persona pega es ese
+    /// texto, y rearmarlo sería medir otra cosa.
+    String comandoDe(String detalle) {
+      final abre = detalle.indexOf('`');
+      final cierra = detalle.indexOf('`', abre + 1);
+      expect(abre, isNonNegative);
+      expect(cierra, isNonNegative);
+      return detalle.substring(abre + 1, cierra);
+    }
+
+    test('una ruta con apóstrofo NO rompe el comando recomendado', () async {
+      // **La reproducción del P1-1 de la revisión humana sobre este punto.**
+      // `it's.txt` es un nombre de archivo válido; con las rutas envueltas a
+      // mano entre apóstrofos, el comando termina con una cita sin cerrar y
+      // el shell ni siquiera lo parsea.
+      final r = comprobarIndice(
+        documento: documentoEn(EstadoDelDocumento.localInconsistent),
+        rutasQueDifieren: const ["it's.txt"],
+      );
+      final comando = comandoDe((r as IndiceNoCoincide).detalle);
+      final visto = await _segunElShell(comando);
+      expect(
+        visto.codigo,
+        0,
+        reason:
+            'el comando que le recomendamos a una persona tiene que poder '
+            'parsearse: una cita sin cerrar deja la terminal esperando',
+      );
+    });
+
+    test('la ruta llega a `git` como UN pathspec, y es la misma', () async {
+      final r = comprobarIndice(
+        documento: documentoEn(EstadoDelDocumento.localInconsistent),
+        rutasQueDifieren: const ["it's.txt", 'con espacio.txt'],
+      );
+      final comando = comandoDe((r as IndiceNoCoincide).detalle);
+      // Lo que el shell ve como argumentos del comando entero: `git`, `reset`,
+      // la revisión, `--` y una entrada por ruta. Si la cita fallara, las
+      // rutas se partirían o se pegarían entre sí.
+      final guion = 'set -- $comando\nfor a in "\$@"; do echo "[\$a]"; done';
+      final visto = await Process.run('/bin/sh', ['-c', guion]);
+      expect(visto.exitCode, 0);
+      final argumentos = (visto.stdout as String).trim().split('\n');
+      expect(argumentos.first, '[git]');
+      expect(
+        argumentos.sublist(argumentos.length - 2),
+        ["[it's.txt]", '[con espacio.txt]'],
+        reason:
+            'las dos rutas tienen que llegar enteras y una por argumento: '
+            'partidas, `git` recibe pathspecs que no existen y sale con cero '
+            'sin reparar nada',
+      );
+    });
+  });
 }
