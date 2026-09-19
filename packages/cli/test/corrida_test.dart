@@ -44,9 +44,18 @@ DocumentoDeCorrida documentoDePrueba() =>
 
 /// Un documento `prepared` con la base y la revisión que pida la prueba —los
 /// dos datos que [decidirRecuperacion] compara contra el `HEAD` observado.
+///
+/// **Los dos parámetros tienen default, y no son obligatorios como antes.**
+/// Las pruebas de la reconciliación de los cinco pasos no necesitan una base
+/// ni una revisión particulares: solo necesitan UN documento `prepared`
+/// coherente, del que leer [ArtefactoDeRevision.candidato] e [intent] para
+/// fabricar hechos sanos o desviados. Pedirles que inventen una base y una
+/// revisión que no van a usar sería ruido; las que sí comparan un valor
+/// concreto contra el `HEAD` —como la de los tres casos— lo siguen pasando
+/// explícito, y ese uso no cambia.
 DocumentoDeCorrida documentoPreparado({
-  required String base,
-  required String revision,
+  String base = 'base-1',
+  String revision = 'revision-1',
 }) => DocumentoDeCorrida.preparado(
   revision: revision,
   draft: _draftDePrueba(base: base),
@@ -296,6 +305,144 @@ void main() {
       reason:
           'estar en otra rama vuelve irrelevante cualquier cosa que el '
           'estado diga: lo que se leyó no es del repositorio que se mira',
+    );
+  });
+
+  HechosDeLaRevision hechosSanos(DocumentoDeCorrida d) => HechosDeLaRevision(
+    padre: d.draft.artefacto.candidato.baseRevision,
+    arbol: d.draft.artefacto.candidato.contentRevision,
+    mensaje: d.draft.artefacto.intent,
+    rutasQueDifieren: const [],
+  );
+
+  test('con los cinco pasos en orden, la reconciliación es inequívoca', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: hechosSanos(d),
+    );
+    expect(r, isA<Inequivoca>());
+    expect((r as Inequivoca).queHacer, QueHacerAlRecuperar.promoverACommitted);
+  });
+
+  test('si el padre NO es la base, falla cerrado', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: 'otro' * 10,
+        arbol: d.draft.artefacto.candidato.contentRevision,
+        mensaje: d.draft.artefacto.intent,
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect((r as Ambigua).causa, CausaDeAmbiguedad.padreDistinto);
+  });
+
+  test('si el ÁRBOL difiere, falla cerrado aunque el padre coincida', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        // Superstring del árbol esperado, no una cadena disjunta: si la
+        // comparación degradara a `contains` en vez de igualdad de
+        // identificador, un árbol que solo CONTIENE al esperado pasaría
+        // como si fuera el mismo, y esta prueba seguiría en verde sin medir
+        // lo que dice medir. Con una cadena disjunta (p. ej. 40 letras
+        // «a»), `contains` y la igualdad coinciden en que difieren, y la
+        // mutación queda sin poder matar.
+        arbol: '${d.draft.artefacto.candidato.contentRevision}-pero-otro',
+        mensaje: d.draft.artefacto.intent,
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect((r as Ambigua).causa, CausaDeAmbiguedad.contenidoDistinto);
+  });
+
+  test('si el MENSAJE difiere, falla cerrado', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        arbol: d.draft.artefacto.candidato.contentRevision,
+        mensaje: 'otra intención',
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect((r as Ambigua).causa, CausaDeAmbiguedad.mensajeDistinto);
+  });
+
+  test('si el índice difiere EN LAS RUTAS, falla cerrado y las nombra', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        arbol: d.draft.artefacto.candidato.contentRevision,
+        mensaje: d.draft.artefacto.intent,
+        rutasQueDifieren: const ['lib/a.dart'],
+      ),
+    );
+    expect((r as Ambigua).causa, CausaDeAmbiguedad.indiceDistinto);
+    expect(
+      r.detalle,
+      contains('lib/a.dart'),
+      reason: 'una acción que no nombra el archivo no dice qué hacer',
+    );
+  });
+
+  test(
+    'con el HEAD en la base, los cinco pasos NO deciden: se reintenta el CAS',
+    () {
+      final d = documentoPreparado();
+      final r = reconciliar(
+        documento: d,
+        headActual: d.draft.artefacto.candidato.baseRevision,
+        hechos: hechosSanos(d),
+      );
+      expect((r as Inequivoca).queHacer, QueHacerAlRecuperar.reintentarElCas);
+    },
+  );
+
+  test(
+    'con un HEAD ajeno, alguien más avanzó y los cinco pasos son ociosos',
+    () {
+      final d = documentoPreparado();
+      final r = reconciliar(
+        documento: d,
+        headActual: 'f' * 40,
+        hechos: hechosSanos(d),
+      );
+      expect((r as Inequivoca).queHacer, QueHacerAlRecuperar.alguienMasAvanzo);
+    },
+  );
+
+  test('la ambigüedad GANA sobre los tres casos: no se promueve lo dudoso', () {
+    final d = documentoPreparado();
+    final r = reconciliar(
+      documento: d,
+      headActual: d.revision,
+      hechos: HechosDeLaRevision(
+        padre: d.draft.artefacto.candidato.baseRevision,
+        arbol: 'a' * 40,
+        mensaje: d.draft.artefacto.intent,
+        rutasQueDifieren: const [],
+      ),
+    );
+    expect(
+      r,
+      isA<Ambigua>(),
+      reason:
+          'el HEAD coincide con la revisión, así que la comparación de '
+          'tres casos diría «promover»; promoverlo publicaría sobre un '
+          'commit que nadie verificó que sea el nuestro',
     );
   });
 }

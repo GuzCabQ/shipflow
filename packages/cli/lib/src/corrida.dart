@@ -145,6 +145,193 @@ QueHacerAlRecuperar decidirRecuperacion({
   return QueHacerAlRecuperar.alguienMasAvanzo;
 }
 
+/// Los cuatro hechos de la revisión candidata que la reconciliación de los
+/// cinco pasos necesita, **ya leídos**.
+///
+/// Nace vacía de lecturas a propósito: quien la construye leyó el repositorio
+/// —el padre, el árbol y el mensaje de la revisión, más la comparación del
+/// índice acotada a las rutas de la rebanada—, y [reconciliar] solo compara
+/// estos cuatro valores contra lo que [DocumentoDeCorrida] ya afirmaba. Es la
+/// misma partición que ya separa a [decidirRecuperacion] de quien le
+/// consigue el `HEAD`: la lectura y la decisión no viven en el mismo lugar
+/// porque la decisión es la que hay que poder probar sin montar un
+/// repositorio, y son cinco pasos con más combinaciones que los tres casos de
+/// esa comparación.
+class HechosDeLaRevision {
+  /// El padre de la revisión candidata, o nulo si no tiene ninguno. Nulo es
+  /// un hecho —la primera revisión de un repositorio no tiene padre—, y por
+  /// eso no se compara con una cadena vacía: una base real nunca es nula, así
+  /// que un padre nulo ya es, por sí solo, un padre distinto.
+  final String? padre;
+
+  /// El identificador del árbol de la revisión candidata. Se compara contra
+  /// [CandidateIdentity.contentRevision] por igualdad de identificador, nunca
+  /// por diferencias: un control que mirara si los dos árboles «se parecen»
+  /// estaría decidiendo sobre una representación más pobre que su propio
+  /// criterio, que es «es el mismo contenido», no «es un contenido parecido».
+  final String arbol;
+
+  /// El mensaje entero de la revisión candidata.
+  final String mensaje;
+
+  /// Las rutas, de entre las que la rebanada declaró, donde el índice de
+  /// quien corre no coincide con el árbol de la revisión candidata. Vacía
+  /// significa que coincide en todas.
+  final List<String> rutasQueDifieren;
+
+  const HechosDeLaRevision({
+    required this.padre,
+    required this.arbol,
+    required this.mensaje,
+    required this.rutasQueDifieren,
+  });
+}
+
+/// Por qué los cinco pasos **no** alcanzan para confirmar que la revisión de
+/// la rama es la del candidato. Cada valor nace con un `detalle` en el sitio
+/// donde se construye [Ambigua] —ver ahí—, por la misma regla que ya sigue
+/// [CausaDeNoReintento]: ninguna prohibición se instala sin decir qué hacer
+/// en cambio.
+enum CausaDeAmbiguedad {
+  /// El padre de la revisión en la rama no es la base que este candidato
+  /// declaró: la revisión no desciende de donde el candidato decía descender,
+  /// y no hay ascendencia que reconstruir desde acá.
+  padreDistinto,
+
+  /// El árbol de la revisión en la rama no es, identificador contra
+  /// identificador, el que este candidato produjo: el contenido no es el
+  /// mismo, aunque el mensaje o el padre coincidan.
+  contenidoDistinto,
+
+  /// El mensaje de la revisión en la rama no es el que este candidato iba a
+  /// commitear.
+  mensajeDistinto,
+
+  /// El índice de quien corre no coincide con el árbol de la revisión, en
+  /// alguna de las rutas que esta rebanada declaró.
+  indiceDistinto,
+}
+
+/// El resultado de la reconciliación de los cinco pasos: o bien no queda
+/// ninguna duda sobre qué hacer, o bien queda alguna y hay que fallar cerrado.
+///
+/// **Sellada y con dos variantes, no un booleano con un mensaje al costado.**
+/// Un booleano «¿es la misma revisión?» más un `String?` de motivo deja
+/// construible el par imposible «no lo es, y no hay motivo»: acá, [Ambigua]
+/// exige su [CausaDeAmbiguedad] y su `detalle` en el propio constructor, y
+/// [Inequivoca] no puede llevar ninguno de los dos.
+sealed class Reconciliacion {
+  const Reconciliacion();
+}
+
+/// No queda ninguna ambigüedad: [queHacer] es la acción, tal cual la habría
+/// dado la comparación de tres casos si nadie hubiera tenido que reconstruir
+/// confianza en el candidato.
+final class Inequivoca extends Reconciliacion {
+  final QueHacerAlRecuperar queHacer;
+  const Inequivoca(this.queHacer);
+}
+
+/// Fallar cerrado: no promover, no publicar. [causa] dice cuál de los cinco
+/// pasos no cerró, y [detalle] nombra la acción precisa —nunca solo que no se
+/// puede—, porque un reintento que adivina publica sobre un commit que nadie
+/// verificó que sea el suyo.
+final class Ambigua extends Reconciliacion {
+  final CausaDeAmbiguedad causa;
+  final String detalle;
+  const Ambigua(this.causa, this.detalle);
+}
+
+/// La reconciliación de los cinco pasos de §9, desde un documento en
+/// `prepared`.
+///
+/// **Los cinco pasos solo se evalúan cuando la comparación de tres casos dice
+/// que hay una revisión propia que promover.** Si [headActual] está en la
+/// base o en otra cosa, no hay ninguna revisión nuestra en la rama sobre la
+/// que reconstruir confianza: por eso esta función empieza delegando en
+/// [decidirRecuperacion], y solo sigue de largo cuando esa respuesta es
+/// [QueHacerAlRecuperar.promoverACommitted]. Evaluarlos antes —o sin mirar esa
+/// respuesta— confundiría «el CAS nunca corrió» con «corrió y hay que
+/// dudar de lo que dejó», que son hechos distintos con acciones distintas.
+///
+/// **Y cuando esa comparación dice promover, la ambigüedad gana.** Los tres
+/// casos no vieron el contenido de la revisión: solo compararon
+/// identificadores contra el documento. Los cinco pasos sí miran ese
+/// contenido, y si encuentran algo que no cierra, esa duda pesa más que el
+/// «promoverACommitted» que los tres casos ya habían adelantado —promoverlo
+/// igual publicaría sobre un commit que nadie verificó que sea el nuestro.
+///
+/// **Pura, sin excepción: no lee el repositorio.** Los cuatro hechos de
+/// [hechos] ya vienen leídos —ver su doc—, y esta función solo los compara
+/// contra lo que [documento] afirma. Es la misma propiedad que ya declara
+/// [decidirRecuperacion], sostenida acá con más motivo: son cinco pasos con
+/// más combinaciones que esos tres casos, así que probarlos sin montar un
+/// repositorio por cada uno vale más, no menos.
+Reconciliacion reconciliar({
+  required DocumentoDeCorrida documento,
+  required String headActual,
+  required HechosDeLaRevision hechos,
+}) {
+  final tresCasos = decidirRecuperacion(
+    documento: documento,
+    headActual: headActual,
+  );
+  if (tresCasos != QueHacerAlRecuperar.promoverACommitted) {
+    return Inequivoca(tresCasos);
+  }
+
+  final candidato = documento.draft.artefacto.candidato;
+
+  // Paso 1: el padre de la revisión candidata es la base.
+  if (hechos.padre != candidato.baseRevision) {
+    return Ambigua(
+      CausaDeAmbiguedad.padreDistinto,
+      'El padre de la revisión en la rama es «${hechos.padre}», y este '
+      'candidato se preparó sobre la base «${candidato.baseRevision}»: no '
+      'desciende de donde decía descender. No se puede confirmar que sea '
+      'nuestra: la acción es volver a correr `ship` desde el principio.',
+    );
+  }
+
+  // Paso 2: el árbol de la revisión es EXACTAMENTE el del candidato —
+  // igualdad de identificador, nunca una comparación de diferencias.
+  if (hechos.arbol != candidato.contentRevision) {
+    return Ambigua(
+      CausaDeAmbiguedad.contenidoDistinto,
+      'El árbol de la revisión en la rama es «${hechos.arbol}», y este '
+      'candidato produjo «${candidato.contentRevision}»: el contenido no es '
+      'el mismo. No se puede confirmar que sea nuestra: la acción es volver '
+      'a correr `ship` desde el principio.',
+    );
+  }
+
+  // Paso 3: el mensaje coincide con el esperado.
+  final intentEsperado = documento.draft.artefacto.intent;
+  if (hechos.mensaje != intentEsperado) {
+    return const Ambigua(
+      CausaDeAmbiguedad.mensajeDistinto,
+      'El mensaje de la revisión en la rama no es el que este candidato iba '
+      'a commitear. No se puede confirmar que sea nuestra: la acción es '
+      'volver a correr `ship` desde el principio.',
+    );
+  }
+
+  // Paso 4: el índice coincide, solo en las rutas de la rebanada.
+  if (hechos.rutasQueDifieren.isNotEmpty) {
+    return Ambigua(
+      CausaDeAmbiguedad.indiceDistinto,
+      'El índice de quien corre no coincide con esta revisión en: '
+      '${hechos.rutasQueDifieren.join(", ")}. No se puede promover con el '
+      'índice desincronizado: la acción es reconciliar a mano esas rutas '
+      'contra «${documento.revision}» antes de reintentar.',
+    );
+  }
+
+  // Paso 5: inequívoco en los cinco pasos → promover. Cualquier otra
+  // combinación ya salió antes por alguna de las cuatro ambigüedades.
+  return const Inequivoca(QueHacerAlRecuperar.promoverACommitted);
+}
+
 /// Por qué el reintento **no** actúa. Cada valor nace con un `detalle` en el
 /// sitio donde se construye [NoSeReintenta] —ver ahí— porque la regla de este
 /// proyecto es que ninguna prohibición se instala sin decir qué hacer en
