@@ -1216,6 +1216,33 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+### Tarea 10b: La forja compuesta, y el payload completo
+
+**Esta tarea se agregó durante la ejecución, y el plan no la tenía.** La tarea 10
+descubrió que `ship` corre punta a punta hasta el paso 14 y que el 15 —la
+publicación— no tiene con qué: la configuración del adapter de la forja exige
+dueño, repositorio, base de API y URL del remoto, y ninguno es derivable hoy.
+
+**La decisión de arquitectura que ejecuta.** El residuo declarado de la regla
+`forja-en-su-adapter` anticipaba este choque y dejaba dos salidas —renombrar los
+símbolos del paquete de la forja, o darle a la regla una excepción acotada a la
+raíz de composición—, diciendo que la elección era de esta rebanada. Se eligió
+una tercera: **una fábrica de nombre neutro dentro del paquete de la forja**, que
+recibe la URL del remoto y arma su propia configuración. La `alternativa` de la
+propia regla ya la contenía —«el resto del árbol recibe un puerto, nunca el
+proveedor»—: lo que faltaba no era una excepción, era el constructor. Así la
+marca no cruza el límite ni una vez y el día que haya un segundo proveedor la
+selección ya vive donde tiene que vivir.
+
+Sus siete pasos están en
+`.superpowers/sdd/PLAN-ship-el-comando/task-10b-brief.md`: la lectura del remoto
+en `vcs`, la fábrica neutra y su parseo de URL, la composición, los cuatro campos
+del payload releídos del documento persistido, la salida por código de
+configuración cuando no hay repositorio, y el registro de la decisión en el
+manifiesto.
+
+---
+
 ### Tarea 11: El cierre — declaraciones, grafo y arnés entero
 
 **Archivos:**
