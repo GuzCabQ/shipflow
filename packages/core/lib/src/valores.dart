@@ -5,8 +5,6 @@
 /// significado de una traza vieja.
 library;
 
-import 'desenlace.dart';
-
 /// Severidad de un control determinista (ADR-013).
 ///
 /// **Se mueve con evidencia**, a diferencia de [SignalType], que es un hecho.
@@ -137,6 +135,48 @@ class QuotedText {
 
   @override
   String toString() => 'QuotedText($source: ${content.length} car.)';
+}
+
+/// Qué NO cubrió un paso, y por qué.
+///
+/// **Vive acá y no con el desenlace**: su único consumidor es [Witness], y
+/// tenerla allá obligaba a este archivo a importar el del desenlace, que a su
+/// vez importa a éste.
+///
+/// **El sujeto es opcional, y la diferencia importa.** Con sujeto, la omisión
+/// salda la obligación de ese par paso-sujeto: el paso dice que no lo miró y
+/// dice por qué. Sin sujeto, es residuo general — el paso cuya herramienta no
+/// informa qué archivos leyó no puede atribuirlo a ninguno.
+class Omission {
+  final String? subject;
+  final String reason;
+
+  /// **No es `const`, y no puede serlo:** valida en el cuerpo. Un `assert` no
+  /// corre en producción, y este invariante tiene que valer siempre.
+  Omission({this.subject, required this.reason}) {
+    if (reason.trim().isEmpty) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'Una omisión sin motivo no dice qué quedó afuera',
+      );
+    }
+    if (subject != null && subject!.trim().isEmpty) {
+      throw ArgumentError.value(
+        subject,
+        'subject',
+        'Un sujeto en blanco no nombra nada. Si la omisión no es de ningún '
+            'sujeto, dejalo nulo: eso significa residuo general',
+      );
+    }
+  }
+
+  Map<String, Object?> toJson() => {'subject': subject, 'reason': reason};
+
+  factory Omission.fromJson(Map<String, Object?> json) => Omission(
+    subject: json['subject'] as String?,
+    reason: json['reason']! as String,
+  );
 }
 
 /// Testigo de que un paso corrió, y sobre qué (ADR-011).
