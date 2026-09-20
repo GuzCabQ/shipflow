@@ -29,31 +29,15 @@ import 'publicacion.dart';
 /// adapters obligaría al otro a llevar su propia copia del número, que es la
 /// forma exacta en que dos «versión 1» dejan de significar lo mismo — y hoy
 /// mismo hay otra «versión 1» viviendo al lado de esta, la de
-/// [DocumentoDeCorrida.versionActual]: son dos contratos distintos, pero las
-/// tres razones que siguen son las mismas de las dos, porque las dos están en
-/// la misma situación por el mismo motivo.
+/// [DocumentoDeCorrida.versionActual]: son dos contratos distintos, y la regla
+/// que sigue vale igual para los dos, porque los dos están en la misma
+/// situación por el mismo motivo.
 ///
-/// **Por qué seguir en `1` es seguro, hoy.** 4b —esta rebanada, la que compone
-/// `ship`— le agregó una clave a este payload y renombró otras dos sin subir
-/// este número. Es seguro porque 4b todavía no se integró: no hay ningún
-/// script ni integración leyendo hoy la forma anterior del payload —la que
-/// tenía antes de este cambio—, así que no hay a quién romperle un contrato
-/// que todavía no existe.
-///
-/// **Cuándo deja de serlo.** El día que 4b se integre, cualquier consumidor
-/// que empiece a leer este payload —el propio `forge`, o algo externo— pasa a
-/// depender de la forma de ese día. Desde ese momento, el PRÓXIMO cambio de
-/// forma —una clave nueva, una que desaparece, una que cambia de nombre— paga
-/// su propia versión: ya no es «nadie lo lee todavía» sino «algo puede estar
-/// leyéndolo ahora mismo».
-///
-/// **Por qué no alcanza con acordarse.** La misma razón que
-/// [DocumentoDeCorrida.versionActual] documenta para sí: dentro de un año,
-/// quien le cambie una clave a este payload no tiene por qué saber que hubo
-/// una ventana, antes de este merge, donde ese cambio no pagaba versión. Que
-/// la garantía dependa del calendario del merge y no de la memoria de quien
-/// escribió esto es precisamente lo que hay que dejar escrito, porque la
-/// memoria no sobrevive al año y este párrafo sí.
+/// **La forma de hoy es la primera publicada.** Hasta que la fase 4 se
+/// integró, este número podía quedarse en `1` mientras la forma cambiaba,
+/// porque nadie leía todavía este payload. Ya no: desde ese merge cualquier
+/// consumidor puede estar leyéndolo, así que un cambio de forma —una clave
+/// nueva, una que desaparece, una que cambia de nombre— sube este número.
 const payloadVersionDeShip = 1;
 
 /// Los estados desde los que **se puede publicar**.

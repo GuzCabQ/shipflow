@@ -42,59 +42,11 @@ class DocumentoDeCorrida {
   /// **Del documento, no del envelope de salida.** Son dos contratos con
   /// ciclos de vida distintos.
   ///
-  /// **Por qué seguir en `1` es seguro, hoy.** Esta clase y su forma son de
-  /// una PILA de TRES rebanadas que llegan juntas, no de una sola: 4a —la del
-  /// desenlace y su documento—, 4b —la que compone `ship`— y 4c —
-  /// `--retry-publication`, la que agrega el campo de la lista de abajo—.
-  /// Ninguna de las tres se mergeó todavía: no existe ningún documento
-  /// escrito por una corrida real con una forma más vieja que la de hoy, y
-  /// por lo tanto no hay ningún lector para el que esta versión tenga que
-  /// seguir sirviendo. Corregir la forma en el lugar, sin subir el número, es
-  /// correcto exactamente porque nada publicado depende de la forma anterior.
-  ///
-  /// **Los cambios de forma que entraron adentro de esta ventana, con su
-  /// fecha.** Es esta lista, y no la promesa de arriba sola, lo que hace
-  /// auditable la excepción:
-  /// - 2026-09-18 — `NoAplicado` ganó el campo `causa`: antes confundía «la
-  ///   base se movió» con «te cambiaste de rama» debajo de un solo
-  ///   `headObservado`, y las dos se corrigen distinto.
-  /// - 2026-09-19 — `PullRequestDraft` ganó el campo `rutas` (4c, tarea 3):
-  ///   las rutas que la rebanada declaró, persistidas para que el paso 4 de
-  ///   la reconciliación pueda acotar a ellas la comparación del índice.
-  /// - 2026-09-19 — este documento ganó el campo [destino] (4c, revisión
-  ///   humana, P1-1): la identidad saneada del destino remoto de la corrida,
-  ///   persistida para que un reintento pueda comprobar que sigue publicando
-  ///   donde la corrida original publicaba. Sin ella, cambiar el remoto entre
-  ///   la corrida y el reintento hacía que la búsqueda idempotente ocurriera
-  ///   en OTRO repositorio, donde no podía encontrar el pull request, y se
-  ///   abría un segundo.
-  /// - 2026-09-19 — [revision] pasó a exigirse como OID completo AL LEER (4c,
-  ///   segunda revisión humana, P2). **No es un campo nuevo: es un
-  ///   estrechamiento de lo que se acepta**, y entra en esta lista por lo
-  ///   mismo que los otros tres —un documento que antes se leía ahora se
-  ///   rechaza, que es un cambio de forma tanto como agregar un campo—. Nada
-  ///   que haya escrito una corrida real cambia de comportamiento: la
-  ///   revisión sale de crear el objeto commit, así que siempre fue un OID
-  ///   completo.
-  ///
-  /// **Cuándo deja de serlo.** El día que llegue la pila entera —4a, 4b y
-  /// 4c, integradas—, esa garantía desaparece: cualquier corrida de `ship`
-  /// que haya corrido después —en cualquier repositorio, de cualquiera— pudo
-  /// haber escrito un documento con la forma de ese día, y ese documento pasa
-  /// a ser un lector real. Desde ese día, el PRÓXIMO cambio de forma —agregar
-  /// un campo, sacar uno, volverlo obligatorio— tiene que subir este número:
-  /// ya no es «nadie lo vio todavía» sino «alguien puede tenerlo en el
-  /// disco».
-  ///
-  /// **Por qué no alcanza con acordarse.** Esta nota tiene que vivir acá y no
-  /// en la cabeza de quien integró la pila: dentro de un año, quien le
-  /// agregue un campo a un desenlace no tiene por qué saber que hubo una
-  /// ventana —antes de ese merge— donde cambiar su forma no pagaba versión,
-  /// ni qué cambios entraron mientras estuvo abierta, ni en qué commit se
-  /// cerró. El día del merge, lo que tiene que pasar es borrar este párrafo
-  /// entero —lista incluida— y tratar la forma de ese momento como la primera
-  /// que alguien puede tener guardada — y eso solo se puede seguir si queda
-  /// escrito acá, no si depende de que alguien se acuerde.
+  /// **La forma de hoy es la primera publicada.** Hasta que la fase 4 se
+  /// integró, este número podía quedarse en `1` mientras la forma cambiaba,
+  /// porque ninguna corrida real había escrito todavía un documento. Ya no:
+  /// desde ese merge cualquier documento en disco puede tener esta forma, así
+  /// que agregar un campo, sacar uno o volverlo obligatorio sube este número.
   static const versionActual = 1;
 
   /// **Campo fijo, no un parámetro del constructor** —el mismo motivo que ya
