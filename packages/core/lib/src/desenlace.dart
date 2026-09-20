@@ -517,10 +517,10 @@ final class LocalInconsistent extends CommitOutcome {
 ///
 /// **Tres desenlaces, y la línea que los separa.** [CandidatoRechazado] es un
 /// hecho sobre el candidato; [DerivacionAbortada] es un hecho sobre el
-/// instrumento, y no dice nada del candidato. La primera versión del diseño los
-/// mezclaba en un solo enum —«el lockfile no satisface» junto a «falta la
-/// toolchain»—, que es la misma confusión que ADR-019 cerró del lado de los
-/// pasos: un instrumento roto no es un veredicto.
+/// instrumento, y no dice nada del candidato. Mezclarlos en un solo enum —«el
+/// lockfile no satisface» junto a «falta la toolchain»— es la misma confusión
+/// que ADR-019 cerró del lado de los pasos: un instrumento roto no es un
+/// veredicto.
 ///
 /// Las dos variantes que no son [EntornoDerivado] hacen la corrida
 /// `noConcluyente`, **nunca roja**.

@@ -346,14 +346,14 @@ bool esOidCompleto(String revision) => _patronDeOidCompleto.hasMatch(revision);
 /// escrituras del mismo objeto, que es lo único que el dominio sabe desde que
 /// existe [esOidCompleto].
 ///
-/// **Y no se aplica a ninguna identidad opaca.** Durante una ronda esta
-/// función se aplicó también a [CandidateIdentity], adivinando por el largo
-/// —40 o 64 caracteres hexadecimales— que la cadena era un OID. Una identidad
-/// opaca con esa forma y con mayúsculas entraba de un modo y salía de otro:
-/// una transformación silenciosa del dato de un puerto, que contradice el ida
-/// y vuelta sin pérdida que exige ADR-002 y la opacidad que ese tipo declara.
-/// Si hace falta una identidad de git con semántica propia, se introduce un
-/// tipo que lo diga; la semántica no se infiere del largo de un `String`.
+/// **Y no se aplica a ninguna identidad opaca.** Aplicarla a
+/// [CandidateIdentity] sería adivinar por el largo —40 o 64 caracteres
+/// hexadecimales— que la cadena es un OID: una identidad opaca con esa forma y
+/// con mayúsculas entraría de un modo y saldría de otro, contra el ida y
+/// vuelta sin pérdida que exige ADR-002 y contra la opacidad que ese tipo
+/// declara. Si hace falta una identidad de git con semántica propia, se
+/// introduce un tipo que lo diga; la semántica no se infiere del largo de un
+/// `String`.
 ///
 /// **Y solo toca lo que ES un OID completo.** Cualquier otra cadena vuelve
 /// intacta: su llamador valida inmediatamente después y reporta en la queja lo
@@ -398,16 +398,13 @@ class CandidateIdentity {
   /// blanco —que no identifica nada— y guarda lo que recibió, carácter por
   /// carácter.
   ///
-  /// **Por qué no canonicaliza.** Durante una ronda sí lo hizo: los dos campos
-  /// pasaban por `canonicalizarOid`, que baja a minúsculas toda cadena de 40 o
-  /// 64 caracteres hexadecimales. Eso adivina por el largo una semántica que
-  /// este tipo declara NO tener —la representación es opaca, y un doble puede
-  /// usar una donde la caja signifique algo—, y rompe dos cosas escritas: el
-  /// ida y vuelta sin pérdida que ADR-002 le exige a todo tipo de puerto
-  /// —`ABCDEF…` entraba y salía `abcdef…`— y la propuesta aceptada, que dice
-  /// que `core` no sabe si el identificador es un árbol, un SHA u otra cosa.
-  /// Si mañana hace falta una identidad de git con semántica propia, se
-  /// introduce un tipo que lo diga.
+  /// **Por qué no canonicaliza.** Pasar los dos campos por `canonicalizarOid`
+  /// adivina por el largo una semántica que este tipo declara NO tener —la
+  /// representación es opaca, y un doble puede usar una donde la caja
+  /// signifique algo—, y rompe dos cosas escritas: el ida y vuelta sin pérdida
+  /// que ADR-002 le exige a todo tipo de puerto —`ABCDEF…` entraría y saldría
+  /// `abcdef…`— y la propuesta aceptada, que dice que `core` no sabe si el
+  /// identificador es un árbol, un SHA u otra cosa.
   CandidateIdentity({
     required this.contentRevision,
     required this.baseRevision,
@@ -559,11 +556,10 @@ enum TipoDeAlteracion {
 /// que cambió, y una ruta nueva que la política de artefactos no declara
 /// artefacto — [TipoDeAlteracion.agregada].
 ///
-/// **La primera versión decía que ningún archivo nuevo contaba**, porque todos
-/// serían generados por la derivación. Es falso y está reproducido: un archivo
-/// de fuente creado entre la derivación y el segundo control dejaba la corrida en
-/// rojo, concluyendo sobre bytes que el candidato no fijó. Quién decide qué es
-/// artefacto no se sabe acá: es `ArtifactPolicy`.
+/// **Decir que ningún archivo nuevo cuenta es falso, y está reproducido**: un
+/// archivo de fuente creado entre la derivación y el segundo control deja la
+/// corrida en rojo, concluyendo sobre bytes que el candidato no fijó. Quién
+/// decide qué es artefacto no se sabe acá: es `ArtifactPolicy`.
 class AlteracionDelCandidato {
   final String ruta;
   final TipoDeAlteracion tipo;
