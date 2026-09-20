@@ -130,52 +130,31 @@ class EntradaDeCriterio {
 
 /// Un sujeto que un control demostró, con el testigo que lo sostiene.
 ///
-/// **No se ensambla a mano.** Un constructor público dejaría armar una
-/// afirmación cubierta con cualquier afirmación y cualquier testigo; hay
-/// **dos** entradas públicas de construcción, y ninguna es ese constructor:
-/// [desde], para construir desde una corrida, que niega la afirmación con
-/// **tres** condiciones —tres `if`, tres ramas de código—: el desenlace no
-/// ejecutó, trae algún diagnóstico, o su testigo no incluye al sujeto pedido;
-/// y [AfirmacionCubierta.fromJson], para reconstruir desde un documento, que
-/// no puede repetir esas tres —un documento no trae el desenlace ni el
-/// control con los que evaluarlas— y en su lugar revalida lo que sí puede
-/// comprobar con los datos a mano: ver el doc de [fromJson].
+/// **No se ensambla a mano.** El constructor es privado, y hay dos entradas:
+/// [desde], que niega la afirmación si el desenlace no ejecutó, si trae algún
+/// diagnóstico o si su testigo no incluye al sujeto; y
+/// [AfirmacionCubierta.fromJson], que no puede repetir esas condiciones —un
+/// documento no trae el desenlace ni el control con los que evaluarlas— y
+/// revalida en su lugar lo que sí alcanza a comprobar: ver su doc.
 ///
-/// **Qué ata la firma, y qué no.** Lo que [desde] garantiza es que la
-/// afirmación y el testigo salen **del objeto que se le pasa**: la afirmación
-/// es `control.afirmacion` y el testigo es `desenlace.witness`, así que quien
-/// llama no puede sustituir ninguno de los dos por el de otro. Lo que **no**
-/// garantiza es que ese control y ese desenlace vayan juntos: son dos
-/// parámetros independientes, y pasarle el control de un paso con el desenlace
-/// de otro construye una afirmación de un control respaldada por la invocación
-/// de otro. Una versión anterior de este párrafo lo presentaba como una
-/// imposibilidad estructural —«no hay forma de construir el caso que lo
-/// rompería»— y una revisión lo rompió en tres líneas.
+/// **Qué ata [desde], y qué no.** Ata que la afirmación y el testigo salgan de
+/// los objetos que se le pasan —`control.afirmacion` y `desenlace.witness`—,
+/// así que quien llama no puede sustituir ninguno por el de otro. **No** ata
+/// que ese control y ese desenlace sean del mismo paso: son dos parámetros
+/// independientes, y cruzarlos construye la afirmación de un control
+/// respaldada por la invocación de otro.
 ///
-/// **No se cierra en la firma a propósito.** Atarlos de verdad pediría que el
-/// desenlace supiera qué control lo produjo, y ADR-019 decidió lo contrario:
-/// el desenlace no lleva el id del paso. Quien empareja control con desenlace
-/// es la derivación de la superficie, y ahí sí se comprueba: lee el desenlace
-/// del registro por id, exige que el mapa de controles tenga ese id y que el
-/// control declare ese mismo id, y lanza si alguna de las dos no se cumple.
-/// La procedencia depende de que el llamador sea correcto, y eso queda
-/// **declarado** acá en vez de prometido como si lo sostuviera el tipo.
+/// **No se cierra en la firma a propósito**: atarlos pediría que el desenlace
+/// supiera qué control lo produjo, y ADR-019 decidió lo contrario. Quien
+/// empareja control con desenlace es la derivación de la superficie, y ahí sí
+/// se comprueba contra el registro de la corrida. La procedencia depende de
+/// que el llamador sea correcto, y queda **declarado** en vez de prometido.
 ///
-/// **Residuo declarado, y sin control que lo sostenga.** Que las únicas
-/// entradas sean [desde] y [AfirmacionCubierta.fromJson] **no lo verifica
-/// nada**: lo sostiene el código fuente, y punto. Desde afuera del paquete no
-/// hay manera de comprobar que no exista un tercer constructor público —solo
-/// de comprobar que los dos que se usan funcionan— porque eso pediría
-/// reflexión, y este paquete no puede importar la biblioteca que la trae. Una
-/// prueba que dijera vigilarlo no podría fallar por lo que dice mirar, así
-/// que no se escribe ninguna: se prefiere el residuo escrito a un guardia que
-/// no puede ponerse rojo.
-///
-/// Una versión anterior de este párrafo decía que lo sostenía una regla de
-/// arquitectura. **Era falso** —esa regla se decidió no instalar, justamente
-/// porque no puede mirar lo que diría mirar— y lo encontró una revisión: una
-/// afirmación sobre un control inexistente, dentro del archivo que existe para
-/// cerrar esa clase de afirmación.
+/// **Residuo declarado:** que las entradas sean solo esas dos **no lo verifica
+/// nada** — comprobarlo desde afuera pediría reflexión, y este paquete no
+/// puede importarla. No se escribe una prueba que no podría fallar por lo que
+/// dice mirar: se prefiere el residuo escrito a un guardia que no puede
+/// ponerse rojo.
 class AfirmacionCubierta {
   final String controlId;
   final String sujeto;
@@ -189,10 +168,7 @@ class AfirmacionCubierta {
   /// nadie certificó, y eso vale igual venga de la fábrica o de un documento.
   ///
   /// Desde [desde] no puede dispararse —ahí la misma condición devuelve nulo
-  /// antes de llegar acá, que es lo que la derivación necesita—; desde
-  /// [AfirmacionCubierta.fromJson] sí, y ahí estaba el agujero: un documento
-  /// con el sujeto cambiado por uno que el testigo no cubre se deserializaba
-  /// sin chistar.
+  /// antes de llegar acá—; desde [AfirmacionCubierta.fromJson] sí.
   AfirmacionCubierta._({
     required this.controlId,
     required this.sujeto,
@@ -231,19 +207,15 @@ class AfirmacionCubierta {
     required String sujeto,
   }) {
     if (desenlace is! Executed) return null;
-    // **Cualquier diagnóstico, no solo el bloqueante.** [Executed.verdict]
-    // solo mira `Severity.bloquea`, así que un paso con un diagnóstico
-    // informativo sale verde: rechazar por veredicto dejaba cubierto un
-    // sujeto de un control que SÍ encontró algo, y la superficie le decía al
-    // revisor que podía no mirarlo. El argumento es el mismo que ya sostenía
-    // la regla del rojo y no depende de la severidad: con un informativo
-    // tampoco se sabe cuál sujeto lo originó.
+    // **Cualquier diagnóstico, no solo el bloqueante.** El veredicto es
+    // global al paso y no se sabe cuál sujeto lo originó, así que con un
+    // informativo tampoco se puede dar ninguno por cubierto — y
+    // [Executed.verdict] solo mira `Severity.bloquea`, o sea que ese paso
+    // sale verde.
     //
     // Y **subsume el chequeo del veredicto**, que por eso ya no está: `rojo`
     // exige un bloqueante, que es un diagnóstico; `noConcluyente` exige
-    // `subjects` vacío, y entonces el `if` de abajo rechaza igual. Dejarlo
-    // sería una condición que no puede decidir nada — un guardia que no se
-    // puede poner rojo, que es justo lo que este archivo se prohíbe.
+    // `subjects` vacío, y entonces el `if` de abajo rechaza igual.
     if (desenlace.diagnostics.isNotEmpty) return null;
     if (!desenlace.witness.subjects.contains(sujeto)) return null;
     return AfirmacionCubierta._(
@@ -265,9 +237,7 @@ class AfirmacionCubierta {
   ///
   /// - **Sí:** que el testigo cubra al sujeto. Los dos datos están en el
   ///   documento, así que la contradicción es visible acá y se rechaza — la
-  ///   comprueba el invariante del constructor. Decía «no se revalida nada»
-  ///   y por eso aceptaba un sujeto cambiado por otro que el testigo no
-  ///   nombra: una afirmación que autoriza a saltear algo que nadie certificó.
+  ///   comprueba el invariante del constructor.
   /// - **No:** que la afirmación y el id sean los que ese control declara. Eso
   ///   sí exigiría el control, que un documento no lleva, y por eso se
   ///   reconstruye tal cual vino de la corrida donde la fábrica sí corrió.

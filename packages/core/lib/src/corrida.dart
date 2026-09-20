@@ -1,12 +1,10 @@
 /// El desenlace de una corrida de `ship`: qué pasó con el trabajo local y con
 /// el efecto remoto, como **un solo tipo cerrado**.
 ///
-/// **Por qué un tipo y no una conjunción de banderas.** La versión anterior del
-/// diseño tenía una tabla que no era función: sus causas se solapaban —una
-/// corrida sin confirmar puede además traer un secreto, y el arnés roto
-/// coincidía con dos códigos a la vez— y admitía combinaciones que no
-/// significan nada, como un pull request abierto sobre una corrida donde el
-/// arnés se rompió.
+/// **Por qué un tipo y no una conjunción de banderas.** Las causas se solapan
+/// —una corrida sin confirmar puede además traer un secreto—, así que una tabla
+/// de banderas no es una función y admite combinaciones que no significan nada,
+/// como un pull request abierto sobre una corrida donde el arnés se rompió.
 library;
 
 import 'desenlace.dart';
@@ -29,31 +27,15 @@ import 'publicacion.dart';
 /// adapters obligaría al otro a llevar su propia copia del número, que es la
 /// forma exacta en que dos «versión 1» dejan de significar lo mismo — y hoy
 /// mismo hay otra «versión 1» viviendo al lado de esta, la de
-/// [DocumentoDeCorrida.versionActual]: son dos contratos distintos, pero las
-/// tres razones que siguen son las mismas de las dos, porque las dos están en
-/// la misma situación por el mismo motivo.
+/// [DocumentoDeCorrida.versionActual]: son dos contratos distintos, y la regla
+/// que sigue vale igual para los dos, porque los dos están en la misma
+/// situación por el mismo motivo.
 ///
-/// **Por qué seguir en `1` es seguro, hoy.** 4b —esta rebanada, la que compone
-/// `ship`— le agregó una clave a este payload y renombró otras dos sin subir
-/// este número. Es seguro porque 4b todavía no se integró: no hay ningún
-/// script ni integración leyendo hoy la forma anterior del payload —la que
-/// tenía antes de este cambio—, así que no hay a quién romperle un contrato
-/// que todavía no existe.
-///
-/// **Cuándo deja de serlo.** El día que 4b se integre, cualquier consumidor
-/// que empiece a leer este payload —el propio `forge`, o algo externo— pasa a
-/// depender de la forma de ese día. Desde ese momento, el PRÓXIMO cambio de
-/// forma —una clave nueva, una que desaparece, una que cambia de nombre— paga
-/// su propia versión: ya no es «nadie lo lee todavía» sino «algo puede estar
-/// leyéndolo ahora mismo».
-///
-/// **Por qué no alcanza con acordarse.** La misma razón que
-/// [DocumentoDeCorrida.versionActual] documenta para sí: dentro de un año,
-/// quien le cambie una clave a este payload no tiene por qué saber que hubo
-/// una ventana, antes de este merge, donde ese cambio no pagaba versión. Que
-/// la garantía dependa del calendario del merge y no de la memoria de quien
-/// escribió esto es precisamente lo que hay que dejar escrito, porque la
-/// memoria no sobrevive al año y este párrafo sí.
+/// **La forma de hoy es la primera publicada.** Hasta que la fase 4 se
+/// integró, este número podía quedarse en `1` mientras la forma cambiaba,
+/// porque nadie leía todavía este payload. Ya no: desde ese merge cualquier
+/// consumidor puede estar leyéndolo, así que un cambio de forma —una clave
+/// nueva, una que desaparece, una que cambia de nombre— sube este número.
 const payloadVersionDeShip = 1;
 
 /// Los estados desde los que **se puede publicar**.
@@ -93,17 +75,12 @@ enum EstadoPublicable {
 /// o no.
 ///
 /// **Es la ÚNICA compuerta, y por eso vive al lado de [ShipOutcome.derivar].**
-/// Estaba escrita dos veces: exhaustiva del lado de la previsualización, y
-/// como un `!= verde` del lado de la fábrica. Nada sostenía que las dos
-/// contestaran lo mismo, y la asimetría era la peligrosa: un estado nuevo NO
-/// compila del lado exhaustivo y SÍ del otro, donde cae en «compuerta
-/// cerrada» por omisión. Quien agregara un estado y decidiera —en lo único
-/// que el compilador le iba a pedir— que publica, se llevaba una corrida que
-/// pasaba la compuerta, creaba el directorio de corridas, promovía,
-/// commiteaba, movía la rama, abría el pull request, y recién ahí recibía de
-/// la fábrica un «no intentado» que no encaja con nada de eso. Es el mismo
-/// defecto que el predicado del canal seguro ya cerró en otro lado: dos
-/// decisiones que no pueden divergir porque son una sola función.
+/// Escribirla dos veces —una exhaustiva, otra como un `!= verde`— es una
+/// asimetría peligrosa: un estado nuevo NO compila del lado exhaustivo y SÍ
+/// del otro. Quien lo agregara y decidiera, en el único lugar donde el
+/// compilador se lo pide, que publica, se lleva una corrida que pasa la
+/// compuerta, commitea, mueve la rama, abre el pull request, y recién ahí
+/// recibe de la fábrica un «no intentado» que no encaja con nada de eso.
 ///
 /// **Dos exhaustivas siguen siendo dos.** Por eso la previsualización no
 /// tiene la suya: llama a esta.
@@ -170,22 +147,18 @@ enum CausaDeNoIntento {
 ///   publicación — [Publicado] y [PublicacionIncompleta] —, porque los
 ///   hechos que producen las otras tres ya no pueden ocurrir en ese punto.
 ///
-/// **Y no son la única forma de ensamblar uno: este archivo lo desmiente
-/// cinco líneas más abajo.** Las entradas `…ParaLaPrueba` —una por variante,
-/// las cinco públicas en esta misma interfaz— existen para que la suite pueda
-/// construir variantes sin pasar por ninguna de las dos derivaciones; es el
-/// mismo precedente que `RepositorioGit.identidadCapturadaParaLaPrueba`. Una
-/// oración absoluta que el propio archivo refuta es peor que ninguna, así que
-/// lo que se escribe es lo que SÍ se garantiza:
+/// **No son la única forma de ensamblar uno.** Las entradas `…ParaLaPrueba`
+/// —una por variante, las cinco públicas en esta misma interfaz— existen para
+/// que la suite construya variantes sin pasar por ninguna de las dos
+/// derivaciones; es el mismo precedente que
+/// `RepositorioGit.identidadCapturadaParaLaPrueba`. Lo que SÍ se garantiza:
 ///
-/// **Qué:** todo desenlace que llegue a un documento persistido o a una
-/// salida del comando sale de una de las dos fábricas. **Dónde:** en
-/// `lib/` y `bin/` de los nueve paquetes del árbol. **Qué lo sostiene:** que
-/// ahí esas cinco entradas no se llaman desde ningún lado — medido buscando
-/// sus nombres sobre esos directorios, donde solo aparecen sus propias
-/// declaraciones, y usadas únicamente por las suites de dos paquetes,
-/// `core` y `cli`. Lo sostiene la revisión y no un check, así que lo que esta
-/// línea promete es dónde mirar, no que sea imposible romperlo.
+/// **Qué:** todo desenlace que llegue a un documento persistido o a una salida
+/// del comando sale de una de las dos fábricas. **Dónde:** en `lib/` y `bin/`
+/// de los nueve paquetes del árbol. **Qué lo sostiene:** que ahí esas cinco
+/// entradas no se llaman desde ningún lado —medido—, y que solo las usan las
+/// suites de `core` y `cli`. Lo sostiene la revisión y no un check, así que lo
+/// que esta línea promete es dónde mirar, no que sea imposible romperlo.
 sealed class ShipOutcome {
   const ShipOutcome();
 
@@ -266,11 +239,9 @@ sealed class ShipOutcome {
   /// **[soloPreview] va antes que la confirmación porque pedir una
   /// previsualización no es no haber confirmado.** Significa que no se pidió
   /// efecto ninguno, y no se puede faltar una autorización que nadie
-  /// necesitaba. Con el orden contrario, `previewOnly` solo era alcanzable si
-  /// el llamador declaraba una confirmación que nunca ocurrió —un hecho falso
-  /// viajando hacia la fábrica cuya razón de existir es derivar de los
-  /// hechos—, y quien pedía un ensayo se llevaba el consejo de volver a
-  /// correrlo con `--yes`.
+  /// necesitaba. Con el orden contrario, `previewOnly` solo sería alcanzable
+  /// declarando una confirmación que nunca ocurrió —un hecho falso viajando
+  /// hacia la fábrica cuya razón de existir es derivar de los hechos—.
   static ShipOutcome derivar({
     required EstadoDeCorrida verificacion,
     required bool huboSecreto,
@@ -280,11 +251,10 @@ sealed class ShipOutcome {
     PublicationOutcome? remoto,
 
     /// El rechazo tal como lo informó quien intentó aplicar, **entero y no
-    /// una mitad**. Antes acá entraba solo el `HEAD` observado, y con eso el
-    /// desenlace perdía la causa —el único dato que distingue «la rama
-    /// avanzó» de «te cambiaste de rama»— antes de que nadie la pudiera
-    /// leer. Pasar el desenlace medido en vez de un campo suelto es también
-    /// lo que hace imposible armar acá una combinación que nadie midió.
+    /// una mitad**: con solo el `HEAD` observado el desenlace pierde la causa,
+    /// que es el único dato que distingue «la rama avanzó» de «te cambiaste de
+    /// rama». Pasar el desenlace medido en vez de un campo suelto es además lo
+    /// que hace imposible armar acá una combinación que nadie midió.
     NotApplied? casRechazado,
     String? revisionConIndiceSucio,
   }) {

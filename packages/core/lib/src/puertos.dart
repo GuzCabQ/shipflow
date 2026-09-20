@@ -81,10 +81,6 @@ abstract interface class ProjectTopology {
 /// Lo que SÍ es del stack son los patrones: qué cuenta como generado. Eso lo
 /// aporta el plugin y no aparece acá — si `core` conociera los sufijos de un
 /// ecosistema, cambiar de ecosistema exigiría cambiar `core`.
-///
-/// Este comentario nombraba uno de esos sufijos como ejemplo, y el check de
-/// cadenas lo rechazó. Tenía razón: la frase decía «si core conociera X» y al
-/// escribirla, core conocía X.
 abstract interface class ArtifactPolicy {
   bool isGenerated(String path);
   bool isEditable(String path);
@@ -112,18 +108,10 @@ abstract interface class ArtifactPolicy {
 ///
 ///    **Lo hace cumplir la forma de [Verifier.run], no la disciplina de
 ///    quien compone**: un paso recibe la [ScopeObservation] ya hecha y no
-///    tiene con qué pedir otra. Antes cada paso guardaba su propio
-///    `ScopeObserver` y volvía a llamar a `observe`, así que una corrida de
-///    dos pasos leía el árbol tres veces. Estuvo instalado doce tareas y no
-///    lo vio nadie, tapado por un comentario que afirmaba lo contrario.
-///
-///    **Y la salvaguarda que lo hacía tolerable no existía.** El paso
-///    comparaba su lectura contra la que la cascada ya había vetado y
-///    abortaba si discrepaban, pero comparaba NOMBRES: mientras el sujeto
-///    siguiera siendo utilizable, un árbol de otro tamaño no divergía. Una
-///    corrida podía reportar diez archivos de alcance con los verificadores
-///    habiendo visto nueve, y salir verde. El comentario decía «falla
-///    cerrada»; el código comparaba otra cosa.
+///    tiene con qué pedir otra. Que cada paso guarde su propio observador y
+///    vuelva a llamar a `observe` no lo caza ningún invariante posterior: una
+///    corrida puede reportar diez archivos de alcance con los verificadores
+///    habiendo visto nueve, y salir verde.
 abstract interface class ScopeObserver {
   Future<ScopeObservation> observe(List<String> requested);
 }
@@ -158,13 +146,10 @@ abstract interface class ScopeObserver {
 ///    distintas del mismo alcance.
 ///
 ///    **Y recibe un [VerificationScope], no la [ScopeObservation] entera.**
-///    La primera versión de esta cláusula entregaba la observación completa,
-///    con sus ajenos y sus no observados adentro. Eso deshizo en silencio una
-///    garantía estructural que el `README` afirmaba —«un verificador ni
-///    siquiera recibe los sujetos ajenos»— y dejó un falso verde a una
-///    palabra de distancia: un paso que escriba `requested` donde quería
-///    `usable()` certifica un ajeno, y el libro de obligaciones, que solo
-///    mira lo que falta, lo daba por bueno. Lo encontró un review.
+///    Con la observación completa a mano —ajenos y no observados adentro— el
+///    falso verde queda a una palabra de distancia: un paso que escriba
+///    `requested` donde quería `usable()` certifica un sujeto ajeno, y el
+///    libro de obligaciones, que solo mira lo que falta, lo da por bueno.
 abstract interface class Verifier {
   String get id;
 
@@ -298,9 +283,8 @@ abstract interface class ContextProjector {
 ///    cubiertos —que por ADR-012 es pedirle a una persona que no los mire.
 ///
 ///    **Ni uno menos**: un archivo declarado que no produce ningún cambio es
-///    un plan que dijo que iba a tocar algo y no lo tocó. La cláusula decía
-///    «exactamente» y solo se comprobaba una dirección; la otra dejaba pasar
-///    en verde una rebanada que no hizo lo que prometía.
+///    un plan que dijo que iba a tocar algo y no lo tocó. Sin esta segunda
+///    dirección pasa en verde una rebanada que no hizo lo que prometía.
 ///
 ///    **Y se comprueba ANTES de commitear.** Comprobarlo después solo puede
 ///    informar: la excepción dice la verdad y el commit indebido ya está en
@@ -334,12 +318,11 @@ abstract interface class ContextProjector {
 abstract interface class ChangeSink {
   /// La rama donde va el trabajo. La crea si no existe.
   ///
-  /// **Enmienda:** el comentario anterior decia que la orquestacion la pide al
-  /// empezar. Eso vale para `start`, que crea o cambia la rama **antes** de
-  /// construir. `ship` no la llama: afirma la rama actual y falla en preflight
-  /// si no coincide. Cambiar de rama despues de verificar invalidaria el
-  /// candidato, porque el contenido expuesto a los controles dejaria de ser el
-  /// que se va a commitear.
+  /// **La pide `start`, no `ship`.** `start` crea o cambia la rama **antes**
+  /// de construir; `ship` no la llama: afirma la rama actual y falla en
+  /// preflight si no coincide. Cambiar de rama después de verificar
+  /// invalidaría el candidato, porque el contenido expuesto a los controles
+  /// dejaría de ser el que se va a commitear.
   Future<void> useBranch(String name);
 
   /// Prepara el **candidato**: fija qué contenido exacto se va a verificar, y
@@ -403,10 +386,10 @@ abstract interface class PreparedCandidate {
   /// declare artefacto.** Derivar el entorno genera archivos, y generarlos es
   /// su trabajo; pero un archivo de fuente nuevo, un manifiesto nuevo o un
   /// efecto lateral de un verificador **no** son eso, y la cascada los lee
-  /// igual que a los demás. La primera versión de esta cláusula decía que
-  /// **ningún** archivo nuevo contaba, y con eso un archivo de fuente creado entre la
-  /// derivación y el segundo control dejaba la corrida en rojo, concluyendo
-  /// sobre bytes que el candidato nunca fijó. Está reproducido.
+  /// igual que a los demás. La regla contraria —que **ningún** archivo nuevo
+  /// cuente— deja en rojo la corrida por un archivo de fuente creado entre la
+  /// derivación y el segundo control, concluyendo sobre bytes que el candidato
+  /// nunca fijó. Está reproducido.
   ///
   /// **Lo declarado en [noMaterializadas] tampoco cuenta**, porque el candidato
   /// lo dejó afuera a sabiendas — pero si alguien escribió algo en esa ruta,

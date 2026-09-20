@@ -42,59 +42,11 @@ class DocumentoDeCorrida {
   /// **Del documento, no del envelope de salida.** Son dos contratos con
   /// ciclos de vida distintos.
   ///
-  /// **Por qué seguir en `1` es seguro, hoy.** Esta clase y su forma son de
-  /// una PILA de TRES rebanadas que llegan juntas, no de una sola: 4a —la del
-  /// desenlace y su documento—, 4b —la que compone `ship`— y 4c —
-  /// `--retry-publication`, la que agrega el campo de la lista de abajo—.
-  /// Ninguna de las tres se mergeó todavía: no existe ningún documento
-  /// escrito por una corrida real con una forma más vieja que la de hoy, y
-  /// por lo tanto no hay ningún lector para el que esta versión tenga que
-  /// seguir sirviendo. Corregir la forma en el lugar, sin subir el número, es
-  /// correcto exactamente porque nada publicado depende de la forma anterior.
-  ///
-  /// **Los cambios de forma que entraron adentro de esta ventana, con su
-  /// fecha.** Es esta lista, y no la promesa de arriba sola, lo que hace
-  /// auditable la excepción:
-  /// - 2026-09-18 — `NoAplicado` ganó el campo `causa`: antes confundía «la
-  ///   base se movió» con «te cambiaste de rama» debajo de un solo
-  ///   `headObservado`, y las dos se corrigen distinto.
-  /// - 2026-09-19 — `PullRequestDraft` ganó el campo `rutas` (4c, tarea 3):
-  ///   las rutas que la rebanada declaró, persistidas para que el paso 4 de
-  ///   la reconciliación pueda acotar a ellas la comparación del índice.
-  /// - 2026-09-19 — este documento ganó el campo [destino] (4c, revisión
-  ///   humana, P1-1): la identidad saneada del destino remoto de la corrida,
-  ///   persistida para que un reintento pueda comprobar que sigue publicando
-  ///   donde la corrida original publicaba. Sin ella, cambiar el remoto entre
-  ///   la corrida y el reintento hacía que la búsqueda idempotente ocurriera
-  ///   en OTRO repositorio, donde no podía encontrar el pull request, y se
-  ///   abría un segundo.
-  /// - 2026-09-19 — [revision] pasó a exigirse como OID completo AL LEER (4c,
-  ///   segunda revisión humana, P2). **No es un campo nuevo: es un
-  ///   estrechamiento de lo que se acepta**, y entra en esta lista por lo
-  ///   mismo que los otros tres —un documento que antes se leía ahora se
-  ///   rechaza, que es un cambio de forma tanto como agregar un campo—. Nada
-  ///   que haya escrito una corrida real cambia de comportamiento: la
-  ///   revisión sale de crear el objeto commit, así que siempre fue un OID
-  ///   completo.
-  ///
-  /// **Cuándo deja de serlo.** El día que llegue la pila entera —4a, 4b y
-  /// 4c, integradas—, esa garantía desaparece: cualquier corrida de `ship`
-  /// que haya corrido después —en cualquier repositorio, de cualquiera— pudo
-  /// haber escrito un documento con la forma de ese día, y ese documento pasa
-  /// a ser un lector real. Desde ese día, el PRÓXIMO cambio de forma —agregar
-  /// un campo, sacar uno, volverlo obligatorio— tiene que subir este número:
-  /// ya no es «nadie lo vio todavía» sino «alguien puede tenerlo en el
-  /// disco».
-  ///
-  /// **Por qué no alcanza con acordarse.** Esta nota tiene que vivir acá y no
-  /// en la cabeza de quien integró la pila: dentro de un año, quien le
-  /// agregue un campo a un desenlace no tiene por qué saber que hubo una
-  /// ventana —antes de ese merge— donde cambiar su forma no pagaba versión,
-  /// ni qué cambios entraron mientras estuvo abierta, ni en qué commit se
-  /// cerró. El día del merge, lo que tiene que pasar es borrar este párrafo
-  /// entero —lista incluida— y tratar la forma de ese momento como la primera
-  /// que alguien puede tener guardada — y eso solo se puede seguir si queda
-  /// escrito acá, no si depende de que alguien se acuerde.
+  /// **La forma de hoy es la primera publicada.** Hasta que la fase 4 se
+  /// integró, este número podía quedarse en `1` mientras la forma cambiaba,
+  /// porque ninguna corrida real había escrito todavía un documento. Ya no:
+  /// desde ese merge cualquier documento en disco puede tener esta forma, así
+  /// que agregar un campo, sacar uno o volverlo obligatorio sube este número.
   static const versionActual = 1;
 
   /// **Campo fijo, no un parámetro del constructor** —el mismo motivo que ya
@@ -112,12 +64,9 @@ class DocumentoDeCorrida {
 
   /// El commit candidato. **Ya existe cuando este documento se escribe.**
   ///
-  /// La versión anterior del diseño persistía `prepared` ANTES de
-  /// `commit-tree`, y dejaba una ventana sin cerrar: había un objeto commit
-  /// cuyo OID no quedaba en ningún lado, y la recuperación hablaba de «la
-  /// revisión candidata» sin tener identidad que consultar. Crear el objeto no
-  /// mueve la rama, así que escribirlo antes de persistir no tiene efecto
-  /// observable.
+  /// Crear el objeto no mueve la rama, así que escribirlo antes de persistir
+  /// no tiene efecto observable — y deja la revisión anotada, sin la cual la
+  /// recuperación no tendría ninguna identidad que consultar.
   final String revision;
 
   /// El borrador completo, para que la recuperación reconstruya la solicitud
@@ -164,12 +113,9 @@ class DocumentoDeCorrida {
   /// desenlace no afirma ninguno.
   ///
   /// `estado` y `desenlace` no son dos hechos: son el mismo hecho dicho dos
-  /// veces, y el segundo determina al primero. Sin esta función los dos eran
-  /// campos independientes, y un documento que dijera «el CAS fue rechazado,
-  /// nada se aplicó» podía llevar adentro «hay un pull request abierto y
-  /// utilizable». Eso se construía, se persistía y se releía: el estado
-  /// contradictorio, un nivel por encima del tipo que se inventó para
-  /// cerrarlo.
+  /// veces, y el segundo determina al primero. Sin esto, un documento podía
+  /// decir «el CAS fue rechazado, nada se aplicó» y llevar adentro «hay un
+  /// pull request abierto y utilizable» — y se persistía y se releía así.
   ///
   /// **[NoIntentado] devuelve nulo, y no es un olvido.** Es el único desenlace
   /// que no afirma ningún estado de este documento: sus cuatro causas se
@@ -201,31 +147,12 @@ class DocumentoDeCorrida {
   /// [EstadoDelDocumento] nuevo no compila hasta que alguien decida acá si
   /// afirma un desenlace o viaja siempre sin ninguno.
   ///
-  /// **De acá sale el arreglo al defecto que [avanzarA] tenía.** Antes, el
-  /// desenlace que no se pasaba se arrastraba siempre, sin mirar el destino:
-  /// avanzar de un estado CON desenlace afirmado —`localInconsistent`— a uno
-  /// que nunca lleva ninguno —`committed`— arrastraba igual el desenlace
-  /// viejo, y el documento resultante afirmaba dos estados a la vez: el
-  /// nuevo por su campo `estado`, el viejo por el desenlace que seguía
-  /// adentro. La arista existía en el mapa de [_transiciones] y no se podía
-  /// tomar nunca, sobre un documento real —el único que un
-  /// `--retry-publication` de verdad encuentra en el disco—: **medido**, y es
-  /// el motivo de este método. Con [avanzarA] preguntando esto antes de
-  /// decidir qué desenlace lleva el documento nuevo, el destino es quien
-  /// decide si el desenlace anterior lo acompaña o se descarta —nunca quien
-  /// llama, que hoy no tiene con qué distinguir «no paso ninguno, arrastrá
-  /// el que había» de «no paso ninguno, quiero que no lleve ninguno»—.
-  ///
-  /// **Es pública por el mismo motivo que [destinosDe].** Son dos despachos
-  /// exhaustivos sobre la misma relación —éste dice qué destino admite
-  /// desenlace, [estadoQueAfirma] dice qué estado afirma cada desenlace— y
-  /// **nada los obliga a coincidir**: el día que un desenlace nuevo afirmara
-  /// un estado que hoy no admite ninguno, los dos `switch` siguen siendo
-  /// exhaustivos, todo compila, y [avanzarA] descarta ese desenlace en
-  /// silencio. Lo único que puede cruzarlos es una prueba que recorra los
-  /// estados y compare las dos respuestas, y para eso tiene que poder
-  /// llamarlas a las dos. Privada, esa prueba no existe y el cruce queda como
-  /// un comentario que nadie ejecuta.
+  /// **Es pública porque hay que poder cruzarla con [estadoQueAfirma].** Son
+  /// dos despachos exhaustivos sobre la misma relación y **nada los obliga a
+  /// coincidir**: si un desenlace nuevo afirmara un estado que hoy no admite
+  /// ninguno, los dos `switch` siguen compilando y [avanzarA] descartaría ese
+  /// desenlace en silencio. Lo único que lo caza es una prueba que llame a las
+  /// dos, y privada esa prueba no existe.
   static bool admiteDesenlace(EstadoDelDocumento estado) => switch (estado) {
     EstadoDelDocumento.prepared => false,
     EstadoDelDocumento.committed => false,
@@ -335,13 +262,8 @@ class DocumentoDeCorrida {
   /// Los destinos declarados desde [estado]. Vacío si [estado] es terminal.
   ///
   /// **Existe para que las pruebas deriven los terminales del mapa, en vez de
-  /// listarlos a mano.** Una lista escrita a mano —«los terminales son
-  /// notApplied, publicationComplete y localInconsistent»— envejece sin
-  /// avisar: el día que este mapa cambia, esa lista queda mintiendo hasta que
-  /// alguien la mira de nuevo. Fue exactamente lo que le pasó a la prueba que
-  /// afirmaba tres terminales cuando [EstadoDelDocumento.localInconsistent]
-  /// dejó de serlo: leer el mapa en vez de copiarlo es lo que hace que
-  /// corregir el mapa alcance para que la prueba siga diciendo la verdad.
+  /// listarlos a mano.** Una lista copiada envejece sin avisar: el día que
+  /// este mapa cambia, queda mintiendo hasta que alguien la mira de nuevo.
   static Set<EstadoDelDocumento> destinosDe(EstadoDelDocumento estado) =>
       _transiciones[estado]!;
 
@@ -354,29 +276,17 @@ class DocumentoDeCorrida {
   /// mismo. Sin la segunda, `avanzarA(notApplied, desenlace: Publicado(…))`
   /// se construía, se persistía y se releía.
   ///
-  /// **El desenlace que decide [destino], no quien llama.** Cuando no se pasa
-  /// uno nuevo, el desenlace del documento resultante sale de
-  /// [admiteDesenlace]: si [destino] afirma alguno, se arrastra el que ya
-  /// había —así avanzar de `publicationIncomplete` a `publicationComplete`
-  /// sin dar el desenlace nuevo sigue dejando adentro el que dice «la
-  /// publicación no se completó», y el chequeo del constructor lo rechaza—;
-  /// si [destino] nunca lleva ninguno, el que había se descarta, sin
-  /// excepción. **Esto no es una opción de diseño entre varias parejas: es lo
-  /// único que deja tomable la arista `localInconsistent → committed`** sobre
-  /// un documento real —el que [ShipOutcome.derivar] efectivamente
-  /// persiste—, que llega con [LocalInconsistente] adentro. Arrastrar ese
-  /// desenlace sin mirar [destino] —la versión anterior de este método— hacía
-  /// que esa arista, aunque estuviera en [_transiciones], no se pudiera tomar
-  /// nunca: el documento resultante afirmaba `committed` por su [estado] y
-  /// `localInconsistent` por el desenlace que seguía adentro, y el
-  /// constructor la rechazaba siempre. Quedaba en quien llama pasar un
-  /// desenlace nulo para limpiarlo, y eso tampoco alcanzaba: un parámetro
-  /// opcional en `null` no distingue «no paso ninguno, arrastrá el que
-  /// había» de «no paso ninguno, quiero que no lleve ninguno». El invariante
-  /// pasa a ser estructural —lo decide [destino], nunca un argumento que
-  /// nadie puede usar para pedir lo segundo— en vez de un deber de quien
-  /// llama, que es el mismo argumento con el que esta clase entera ya
-  /// justifica devolver un documento nuevo en vez de mutar.
+  /// **Es [destino] quien decide el desenlace, no quien llama.** Cuando no se
+  /// pasa uno nuevo, sale de [admiteDesenlace]: si [destino] afirma alguno, se
+  /// arrastra el que ya había —así completar una publicación a medias sin dar
+  /// el desenlace nuevo sigue llevando adentro el que dice que no se completó,
+  /// y el constructor lo rechaza—; si [destino] nunca lleva ninguno, el que
+  /// había se descarta, sin excepción.
+  ///
+  /// **No puede decidirlo quien llama**, y es lo único que deja tomable la
+  /// arista `localInconsistent → committed` sobre un documento real: un
+  /// parámetro opcional en `null` no distingue «no paso ninguno, arrastrá el
+  /// que había» de «no paso ninguno, quiero que no lleve ninguno».
   DocumentoDeCorrida avanzarA(
     EstadoDelDocumento destino, {
     ShipOutcome? desenlace,
