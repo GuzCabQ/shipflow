@@ -29,8 +29,44 @@ sys.path.insert(0, str(Path(__file__).parent))
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
 ARQ = RAIZ / "arquitectura.json"
-REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
+INV = RAIZ / "inventario.json"
 HUELLA = Path(__file__).parent / "arquitectura.huella"
+HUELLA_INV = Path(__file__).parent / "inventario.huella"
+
+# La version de esquema que este arnes sabe leer. Un registro sin `esquema`, o
+# con uno distinto, NO se interpreta a la buena de dios: se reporta y se para.
+ESQUEMA = 1
+
+
+def _leer_registro(ruta: Path) -> tuple[dict | None, str | None]:
+    """Carga FAIL-CLOSED. Nunca lanza: devuelve `(documento, problema)`.
+
+    Un registro que no se puede leer tiene que producir un ROJO CON NOMBRE, no
+    un traceback — y sobre todo no un diccionario vacio, que es lo que hacia
+    `check.dart` con `?? {}` y se lee exactamente igual que «no hay nada que
+    declarar». Cada modo de fallo tiene su mensaje: ausente, ilegible, sin
+    esquema, esquema incompatible. Ninguno se confunde con «vacio legitimo».
+    """
+    if not ruta.exists():
+        return None, (f"falta {ruta.name}, y sin el no hay politica que aplicar. "
+                      f"Un registro ausente no es una politica vacia: es un "
+                      f"verificador sin nada contra que verificar.")
+    try:
+        texto = ruta.read_text(encoding="utf-8")
+    except OSError as e:
+        return None, f"no pude leer {ruta.name}: {e}."
+    try:
+        return json.loads(texto), None
+    except json.JSONDecodeError as e:
+        return None, (f"{ruta.name} no es JSON valido: {e}. Un registro ilegible "
+                      f"deja al verificador sin politica, y eso es rojo — no "
+                      f"«nada que objetar».")
+
+
+_ARQ_DOC, _ARQ_MAL = _leer_registro(ARQ)
+_INV_DOC, _INV_MAL = _leer_registro(INV)
+REGLAS = (_ARQ_DOC or {}).get("reglas") or {}
+INVENTARIO = (_INV_DOC or {}).get("inventario") or {}
 
 # Las reglas que arquitectura.json DEBE seguir declarando, con los campos sin
 # los cuales no se pueden aplicar.
@@ -792,32 +828,83 @@ def _check_delegadas() -> None:
 
 # --- flechas internas · por NOMBRE, solo dentro del workspace -----------
 
-def huella_actual() -> str:
-    """Huella de la política completa. Mismo criterio que el grafo interno:
-    se deriva del contenido y se compara contra lo commiteado."""
-    canon = json.dumps(REGLAS, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+def _huella_de(doc: dict) -> str:
+    canon = json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def huella_actual() -> str:
+    """Huella del DOCUMENTO COMPLETO de arquitectura, `esquema` incluido.
+
+    Antes cubria solo `reglas`, asi que el numero de esquema —que decide como se
+    interpreta todo lo demas— se podia cambiar sin que la huella se enterara. Una
+    huella que no cubre la version del formato protege el contenido y deja
+    abierta la puerta de al lado.
+    """
+    return _huella_de(_ARQ_DOC or {})
+
+
+def huella_inventario() -> str:
+    """Lo mismo para el inventario de simbolos, que tiene la suya."""
+    return _huella_de(_INV_DOC or {})
+
+
+def _check_registros() -> None:
+    """Los dos registros existen, son legibles y declaran un esquema compatible.
+
+    **Va PRIMERO, y es el unico control que puede dejar a los demas sin sujeto.**
+    Si un registro no se puede leer, `REGLAS` o `INVENTARIO` quedan vacios y todo
+    lo que venga despues reportaria «no hay nada que objetar» — que es la forma
+    mas pura del falso verde que este archivo existe para impedir.
+    """
+    for doc, mal, ruta, clave in ((_ARQ_DOC, _ARQ_MAL, ARQ, "reglas"),
+                                  (_INV_DOC, _INV_MAL, INV, "inventario")):
+        if mal:
+            fallos.append(mal)
+            continue
+        if "esquema" not in doc:
+            fallos.append(
+                f"{ruta.name} no declara `esquema`. La version del formato decide "
+                f"como se interpreta todo lo demas: sin ella, el verificador "
+                f"adivina. Agregala con el valor {ESQUEMA}.")
+        elif doc["esquema"] != ESQUEMA:
+            fallos.append(
+                f"{ruta.name} declara `esquema: {doc['esquema']!r}` y este arnes "
+                f"entiende {ESQUEMA}. Interpretar un formato que no se conoce es "
+                f"peor que no interpretarlo: se lee como que se verifico.")
+        if clave not in doc:
+            fallos.append(
+                f"{ruta.name} no tiene la clave «{clave}», que es donde vive su "
+                f"contenido. Un registro sin su clave es un registro vacio con "
+                f"aspecto de completo.")
 
 
 def _check_huella() -> None:
     """Respaldo para todo lo que no está pinneado campo por campo.
 
+    Cubre el DOCUMENTO ENTERO de cada registro, `esquema` incluido. Antes cubria
+    solo `reglas`: el numero de esquema quedaba fuera, y con el la decision de
+    como se interpreta el resto.
+
     LÍMITE DECLARADO: esto vuelve imposible degradar la política en silencio,
-    no vuelve imposible degradarla. Quien edite `arquitectura.json` y esta
-    huella junto cambia la arquitectura de forma visible y revisable — que es
-    exactamente lo que se busca. Contra eso no hay check: hay revisión.
+    no vuelve imposible degradarla. Quien edite un registro y su huella junto
+    cambia la arquitectura de forma visible y revisable — que es exactamente lo
+    que se busca. Contra eso no hay check: hay revisión.
     """
-    if not HUELLA.exists():
-        fallos.append("falta tool/checks/arquitectura.huella. Generala con `capas.py --huella`.")
-        return
-    esperada = HUELLA.read_text(encoding="utf-8").strip()
-    if huella_actual() != esperada:
-        fallos.append(
-            "arquitectura.json cambió y su huella no.\n"
-            f"      commiteada: {esperada}\n"
-            f"      actual:     {huella_actual()}\n"
-            "      Si el cambio es deliberado, regenerala con `capas.py --huella` "
-            "y que se revise en el mismo commit.")
+    for ruta, huella, actual in ((ARQ, HUELLA, huella_actual),
+                                 (INV, HUELLA_INV, huella_inventario)):
+        if not huella.exists():
+            fallos.append(f"falta tool/checks/{huella.name}. Generala con "
+                          f"`capas.py --huella`.")
+            continue
+        esperada = huella.read_text(encoding="utf-8").strip()
+        if actual() != esperada:
+            fallos.append(
+                f"{ruta.name} cambió y su huella no.\n"
+                f"      commiteada: {esperada}\n"
+                f"      actual:     {actual()}\n"
+                "      Si el cambio es deliberado, regenerala con `capas.py --huella` "
+                "y que se revise en el mismo commit.")
 
 
 def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
@@ -1088,7 +1175,9 @@ def _paso(nombre, fn, *args) -> None:
 def main() -> int:
     if "--huella" in sys.argv:
         HUELLA.write_text(huella_actual() + "\n", encoding="utf-8")
-        print(f"huella escrita: {huella_actual()}")
+        HUELLA_INV.write_text(huella_inventario() + "\n", encoding="utf-8")
+        print(f"arquitectura.huella: {huella_actual()}")
+        print(f"inventario.huella:   {huella_inventario()}")
         return 0
     # **Cada control es su propio paso, y ninguno puede apagar a otro.**
     #
@@ -1099,6 +1188,7 @@ def main() -> int:
     # corrida, que es el problema que el aislamiento vino a cerrar y que quedó
     # a mitad de camino. Lo encontró una revisión.
     for nombre, fn in (
+        ("los registros se pueden leer", _check_registros),
         ("registro aplicable", check_registro),
         ("exenciones de token", _check_no_cuenta),
         ("casos ciegos declarados", _check_casos_ciegos),

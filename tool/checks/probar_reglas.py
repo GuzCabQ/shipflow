@@ -86,9 +86,14 @@ ANALISIS = RAIZ / "tool" / "analisis"
 # `--recuperar`. Ver `recuperar()` para por qué no se repara solo.
 DIARIO = RAIZ / "tool" / "checks" / ".sabotaje-en-curso.json"
 ARQ_REL = "arquitectura.json"
+INV_REL = "inventario.json"
 CI_REL = ".github/workflows/checks.yml"
 ARQ = RAIZ / ARQ_REL
 HUELLA_REL = "tool/checks/arquitectura.huella"
+# **Las DOS huellas se anotan para restaurar.** `--huella` regenera ambas, asi
+# que anotar solo la de arquitectura dejaba la del inventario modificada y sin
+# deshacer: un diario que no cubre todo lo que cambia miente sobre su alcance.
+HUELLA_INV_REL = "tool/checks/inventario.huella"
 REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
 
 
@@ -231,6 +236,19 @@ def arq_con(mutar) -> str:
     return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
 
 
+def inv_con(mutar) -> str:
+    """Lo mismo para `inventario.json`, que desde el split lleva los simbolos.
+
+    Tres neutralizaciones y una violacion extra mutaban `opacos` y
+    `sin_implementacion` dentro de `arquitectura.json`. Ahora viven aca, y el
+    sabotaje tiene que escribir el archivo donde viven — si no, muta una clave
+    que ya no existe y el caso «pasa» sin haber saboteado nada.
+    """
+    a = json.loads((RAIZ / INV_REL).read_text(encoding="utf-8"))
+    mutar(a["inventario"])
+    return json.dumps(a, ensure_ascii=False, indent=2) + "\n"
+
+
 # Violaciones canónicas ADICIONALES que el registro TIENE que declarar.
 #
 # `REGLAS[rid].get("violaciones_extra", [])` hace que borrar la entrada del
@@ -297,18 +315,24 @@ def canonica(rid: str) -> dict:
     return {"archivos": {v["donde"]: v["contenido"]}, "pub_get": v.get("requiere_pub_get", False)}
 
 
-def neutralizaciones(rid: str) -> list[tuple[str, object]]:
-    """Formas de dejar la regla sin efecto CONSERVANDO su id."""
+def neutralizaciones(rid: str) -> list[tuple[str, object, str]]:
+    """Formas de dejar la regla sin efecto CONSERVANDO su id.
+
+    Cada entrada dice en QUE REGISTRO se aplica: `"arq"` para las reglas,
+    `"inv"` para el inventario de simbolos. Antes todas asumian
+    `arquitectura.json`, y tres de ellas mutaban claves que el split se llevo.
+    """
     tipo = REGLAS[rid]["tipo"]
-    n: list[tuple[str, object]] = [
-        ("regla borrada", lambda r: r.pop(rid)),
-        ("tipo cambiado", lambda r: r[rid].update(tipo="desactivada")),
+    n: list[tuple[str, object, str]] = [
+        ("regla borrada", lambda r: r.pop(rid), "arq"),
+        ("tipo cambiado", lambda r: r[rid].update(tipo="desactivada"), "arq"),
     ]
     if tipo == "cadenas_acotadas":
         n += [
-            ("extensiones vaciadas", lambda r: r[rid]["alcance"].update(extensiones=[])),
+            ("extensiones vaciadas", lambda r: r[rid]["alcance"].update(extensiones=[]), "arq"),
             ("solo_en ampliado a todos",
-             lambda r: r[rid].update(solo_en=sorted(p.name for p in (RAIZ / "packages").iterdir()))),
+             lambda r: r[rid].update(solo_en=sorted(p.name for p in (RAIZ / "packages").iterdir())),
+             "arq"),
             # `setdefault`: una regla de cadenas puede no excluir NADA —y la
             # que mira solo core no excluye nada—, pero la neutralización tiene
             # que poder aplicarse igual. Asumir que el campo existe dejaba a la
@@ -318,40 +342,43 @@ def neutralizaciones(rid: str) -> list[tuple[str, object]]:
              lambda r: r[rid]["alcance"].setdefault("excluir", {}).__setitem__(
                  "artefactos_de_build",
                  {"que": sorted(p.name for p in (RAIZ / "packages").iterdir()),
-                  "por_que": "x", "quien_lo_cubre": "x"})),
+                  "por_que": "x", "quien_lo_cubre": "x"}), "arq"),
             # `no_cuenta` es el único campo que neutraliza la regla AGRANDANDO
             # el registro: la lista queda más larga y todos los campos llenos.
             # Vaciar se ve en un diff; agregar una exención se lee como trabajo.
             ("exención de token ampliada a todo",
              lambda r: r[rid]["alcance"].update(no_cuenta=[{
                  "que": "x", "donde": ".", "por_que": "x", "quien_lo_cubre": "x",
-                 "token": "(" + "|".join(r[rid]["cadenas"]) + ")"}])),
+                 "token": "(" + "|".join(r[rid]["cadenas"]) + ")"}]), "arq"),
         ]
     elif tipo == "flechas_internas":
         n.append(("permitidas ampliadas",
                   lambda r: r[rid]["permitidas"].update(
-                      orchestration=sorted(p.name for p in (RAIZ / "packages").iterdir()))))
+                      orchestration=sorted(p.name for p in (RAIZ / "packages").iterdir())),
+                  "arq"))
     elif tipo == "origen_de_dependencias":
         n += [
-            ("paquetes vaciados", lambda r: r[rid].update(paquetes=[])),
+            ("paquetes vaciados", lambda r: r[rid].update(paquetes=[]), "arq"),
             ("orígenes ampliados",
-             lambda r: r[rid].update(origenes_permitidos=["root", "hosted", "git", "path", "sdk"])),
+             lambda r: r[rid].update(origenes_permitidos=["root", "hosted", "git", "path", "sdk"]),
+             "arq"),
         ]
     elif tipo == "campos_derivados":
         # Saltear la regla declarando opaca la clase que la violaría. Es una
         # neutralización CRUZADA: no toca esta regla, toca la de al lado.
         n.append(("clase declarada opaca para saltearla",
-                  lambda r: r["opacidad-declarada"]["opacos"].__setitem__(
-                      "CanarioCampo", {"por_que": "x"})))
+                  lambda inv: inv["opacos"].__setitem__(
+                      "CanarioCampo", {"por_que": "x"}), "inv"))
     elif tipo == "opacidad_declarada":
         n.append(("lista de opacos vaciada",
-                  lambda r: r[rid].update(opacos={"_": "x"})))
+                  lambda inv: inv.update(opacos={"_": "x"}), "inv"))
     elif tipo == "huecos_declarados":
         n.append(("lista de huecos vaciada",
-                  lambda r: r[rid].update(sin_implementacion={"_": "x"})))
+                  lambda inv: inv.update(puertos_sin_implementacion={"_": "x"}),
+                  "inv"))
     if REGLAS[rid].get("aplicada_por"):
         n.append(("aplicada_por apuntado a otro lado",
-                  lambda r: r[rid].update(aplicada_por="tool/inexistente")))
+                  lambda r: r[rid].update(aplicada_por="tool/inexistente"), "arq"))
     return n
 
 
@@ -452,18 +479,20 @@ def casos() -> list[dict]:
                 # declarar y el check fallaría por el otro motivo — en rojo,
                 # pero por la razón equivocada, que es un falso detectado.
                 caso["archivos"] = {
-                    ARQ_REL: arq_con(
-                        lambda r, d=declarar, i=rid: r[i]["sin_implementacion"]
+                    INV_REL: inv_con(
+                        lambda inv, d=declarar: inv["puertos_sin_implementacion"]
                         .update({d: "canario del sabotaje"})),
                     **archivos,
                 }
                 caso["regenerar_huella"] = True
             c.append(caso)
 
-        for etiqueta, mutar in neutralizaciones(rid):
+        for etiqueta, mutar, registro in neutralizaciones(rid):
+            _ruta, _escribir = ((ARQ_REL, arq_con) if registro == "arq"
+                                else (INV_REL, inv_con))
             c.append({
                 "nombre": f"{rid} · {etiqueta}",
-                "archivos": {ARQ_REL: arq_con(mutar), **base["archivos"]},
+                "archivos": {_ruta: _escribir(mutar), **base["archivos"]},
                 "pub_get": base["pub_get"],
                 "probar_grafo": del_grafo,
                 # Se regenera la huella a propósito: sin esto la huella cazaría
@@ -796,6 +825,82 @@ def casos() -> list[dict]:
             "El esquema 1 esta vigente. Los puertos se documentan aca.\n"
             "ADR-011 gobierna los puertos.\n")},
         "espera": "pasa",
+    })
+
+    # --- EL SPLIT: LOS CINCO MODOS DE FALLO DE UN REGISTRO --------------------
+    #
+    # `arquitectura.json` mezclaba reglas de FORMA con SIMBOLOS del producto. Se
+    # partio, y el inventario quedo en `inventario.json` con su propio `esquema` y
+    # su propia huella. Eso abre cinco modos de fallo nuevos, y cada uno tiene que
+    # ser DISTINGUIBLE: ausente, ilegible, sin esquema, esquema incompatible,
+    # huella desincronizada.
+    #
+    # **Lo contractual es cubrir cada modo por separado, no llegar a un numero.**
+    # `check.dart` leia el inventario con un `?? {}`: si la clave desaparecia,
+    # verificaba cero simbolos y salia verde. Un registro que no se puede leer no
+    # es una politica vacia.
+    _inv_texto = (RAIZ / INV_REL).read_text(encoding="utf-8")
+    _inv = json.loads(_inv_texto)
+
+    c.append({
+        "nombre": "registros · inventario.json ausente",
+        "archivos": {INV_REL: None},
+        "menciona": "falta inventario.json",
+        "regenerar_huella": True,
+    })
+    c.append({
+        "nombre": "registros · inventario.json ilegible",
+        "archivos": {INV_REL: BASURA},
+        "menciona": "no es JSON valido",
+        "regenerar_huella": True,
+    })
+    # **SIN regenerar la huella, a proposito.** Este caso ES el de la huella.
+    c.append({
+        "nombre": "registros · inventario.huella desincronizada",
+        "archivos": {HUELLA_INV_REL: "0" * 64 + "\n"},
+        "menciona": "su huella no",
+    })
+    # Los cuatro de esquema SI regeneran la huella: sin eso el rojo podria venir
+    # de la huella vieja y no de la validacion de esquema, y un sabotaje que se
+    # pone rojo por otra cosa no prueba nada.
+    for _reg, _ruta, _doc in (("arquitectura", ARQ_REL,
+                               json.loads(ARQ.read_text(encoding="utf-8"))),
+                              ("inventario", INV_REL, _inv)):
+        _sin = {k: v for k, v in _doc.items() if k != "esquema"}
+        c.append({
+            "nombre": f"registros · {_reg} sin `esquema`",
+            "archivos": {_ruta: json.dumps(_sin, ensure_ascii=False, indent=2) + "\n"},
+            "menciona": "no declara `esquema`",
+            "regenerar_huella": True,
+        })
+        _otro = dict(_doc)
+        _otro["esquema"] = 99
+        c.append({
+            "nombre": f"registros · {_reg} con `esquema` incompatible",
+            "archivos": {_ruta: json.dumps(_otro, ensure_ascii=False, indent=2) + "\n"},
+            "menciona": "entiende 1",
+            "regenerar_huella": True,
+        })
+
+    # **UN INVENTARIO VACIO ES VALIDO; UNO VACIO CON SIMBOLOS QUE DECLARAR NO.**
+    #
+    # No alcanza con vaciar el archivo: despues del reinicio el inventario vacio
+    # es el estado CORRECTO, asi que un sabotaje que solo lo vacia deja de
+    # sabotear en cuanto el producto se vacia — el canario se vuelve legitimo,
+    # que es la forma en que estos sabotajes ya se perdieron dos veces.
+    #
+    # Asi que este INYECTA SU PROPIO SIMBOLO: una clase de core que no serializa
+    # y que por lo tanto exige una entrada en `opacos`, con `opacos` vaciado. El
+    # caso se sostiene solo, con el producto presente o vacio.
+    _canario = REGLAS["opacidad-declarada"]["violacion_canonica"]
+    c.append({
+        "nombre": "registros · inventario vaciado con un simbolo que exige declaracion",
+        "archivos": {
+            _canario["donde"]: _canario["contenido"],
+            INV_REL: inv_con(lambda inv: inv.update(opacos={"_": "x"})),
+        },
+        "menciona": _canario["debe_mencionar"],
+        "regenerar_huella": True,
     })
 
     # --- CERO ARCHIVOS QUE MIRAR ES CEGUERA; CERO CLASES NO LO ES -------------
@@ -1245,6 +1350,7 @@ def main() -> int:
         try:
             if caso.get("regenerar_huella"):
                 anotar(previo, HUELLA_REL)
+                anotar(previo, HUELLA_INV_REL)
                 subprocess.run([sys.executable, str(CHECK), "--huella"], capture_output=True)
             if caso.get("pub_get"):
                 pub_get()

@@ -272,6 +272,90 @@ List<Clase> clasesDe(File archivo, String rel) {
   return salida;
 }
 
+/// Carga FAIL-CLOSED de un registro de politica.
+///
+/// Cada modo de fallo tiene su mensaje: ausente, ilegible, sin `esquema`,
+/// esquema incompatible, o sin su clave de contenido. Ninguno devuelve un mapa
+/// vacio, porque un mapa vacio se lee igual que «no hay nada que declarar» —
+/// que es como este archivo leia el inventario antes del split, con un `?? {}`.
+Map<String, Object?> _registro(Directory raiz, String nombre, String clave) {
+  const esquemaEsperado = 1;
+  final f = File('${raiz.path}/$nombre');
+  if (!f.existsSync()) {
+    stderr.writeln(
+      'no encuentro $nombre desde ${raiz.path}. Un registro ausente no es una '
+      'politica vacia: es un verificador sin nada contra que verificar.',
+    );
+    exit(2);
+  }
+  Object? doc;
+  try {
+    doc = jsonDecode(f.readAsStringSync());
+  } on FormatException catch (e) {
+    stderr.writeln('$nombre no es JSON valido: $e');
+    exit(2);
+  }
+  if (doc is! Map<String, Object?>) {
+    stderr.writeln('$nombre no es un objeto JSON.');
+    exit(2);
+  }
+  final esquema = doc['esquema'];
+  if (esquema == null) {
+    stderr.writeln(
+      '$nombre no declara `esquema`. La version del formato decide como se '
+      'interpreta todo lo demas: sin ella, el verificador adivina.',
+    );
+    exit(2);
+  }
+  if (esquema != esquemaEsperado) {
+    stderr.writeln(
+      '$nombre declara `esquema: $esquema` y este verificador entiende '
+      '$esquemaEsperado. Interpretar un formato que no se conoce es peor que no '
+      'interpretarlo: se lee como que se verifico.',
+    );
+    exit(2);
+  }
+  final contenido = doc[clave];
+  if (contenido is! Map<String, Object?>) {
+    stderr.writeln(
+      '$nombre no tiene la clave «$clave», que es donde vive su contenido.',
+    );
+    exit(2);
+  }
+  return contenido;
+}
+
+/// Una entrada del inventario. **Vacia es valida; ausente no.**
+///
+/// Despues del reinicio el inventario vacio es el estado correcto, asi que `{}`
+/// pasa. Lo que no pasa es que la clave no este: eso es un inventario incompleto
+/// con aspecto de completo.
+Map<String, Object?> _delInventario(Map<String, Object?> inv, String clave) {
+  final v = inv[clave];
+  if (v is! Map<String, Object?>) {
+    stderr.writeln(
+      'inventario.json: falta la clave «$clave» o no es un objeto. Un inventario '
+      'VACIO es un estado valido y se escribe `{}`; una clave ausente es un '
+      'inventario incompleto con aspecto de completo.',
+    );
+    exit(2);
+  }
+  return Map<String, Object?>.from(v)..remove('_');
+}
+
+/// Los metodos exceptuados de `subprocesos-con-entorno-saneado`.
+List<Object?> _exceptuadosDelEntorno(Map<String, Object?> inv) {
+  final v = inv['entorno_saneado_exceptuado'];
+  if (v is! List<Object?>) {
+    stderr.writeln(
+      'inventario.json: falta «entorno_saneado_exceptuado» o no es una lista. '
+      'Una lista VACIA es valida; una clave ausente no.',
+    );
+    exit(2);
+  }
+  return v;
+}
+
 List<File> fuentes(Directory d) =>
     d
         .listSync(recursive: true)
@@ -674,15 +758,8 @@ Future<void> main(List<String> args) async {
   final raiz = Directory(
     File.fromUri(Platform.script).parent.parent.parent.parent.path,
   );
-  final registro = File('${raiz.path}/arquitectura.json');
-  if (!registro.existsSync()) {
-    stderr.writeln('no encuentro arquitectura.json desde ${raiz.path}');
-    exit(2);
-  }
-  final reglas =
-      (jsonDecode(registro.readAsStringSync())
-              as Map<String, Object?>)['reglas']
-          as Map<String, Object?>;
+  final reglas = _registro(raiz, 'arquitectura.json', 'reglas');
+  final inventario = _registro(raiz, 'inventario.json', 'inventario');
 
   // --- meta · las reglas que este verificador aplica siguen ahí ---------
   const esperadas = {
@@ -728,17 +805,15 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  final opacos =
-      ((reglas['opacidad-declarada'] as Map<String, Object?>?)?['opacos']
-                as Map<String, Object?>? ??
-            {})
-        ..remove('_');
-  final sinImpl =
-      ((reglas['puertos-sin-implementacion']
-                    as Map<String, Object?>?)?['sin_implementacion']
-                as Map<String, Object?>? ??
-            {})
-        ..remove('_');
+  // **ESTAS TRES SALIAN DE `arquitectura.json` CON UN `?? {}`.**
+  //
+  // Ese `?? {}` era fail-OPEN: si la clave desaparecia, el verificador leia un
+  // mapa vacio y no verificaba nada — y el resultado se lee exactamente igual
+  // que «no hay nada que declarar». Ahora salen de `inventario.json`, que se
+  // carga con `_registro` y falla con nombre si no esta, no parsea, no declara
+  // esquema o lo declara incompatible.
+  final opacos = _delInventario(inventario, 'opacos');
+  final sinImpl = _delInventario(inventario, 'puertos_sin_implementacion');
 
   // --- lo que hay de verdad --------------------------------------------
   final dirCore = Directory('${raiz.path}/packages/core/lib');
@@ -1073,12 +1148,11 @@ Future<void> main(List<String> args) async {
   //
   // Se comprueba SEMÁNTICA, no forma: lo que se exige es la llamada a
   // `entornoSaneado`, no que el parámetro exista. Ver `_Subprocesos`.
-  final reglaDeEntorno =
-      reglas['subprocesos-con-entorno-saneado'] as Map<String, Object?>?;
+  // Las excepciones salen del INVENTARIO, no de la regla: nombran un metodo y un
+  // archivo concretos del producto, que es exactamente lo que el split separo.
   // biblioteca → el único método donde se admite un lanzamiento sin sanear.
   final exceptuadas = <String, String>{
-    for (final e
-        in (reglaDeEntorno?['excepciones'] as List<Object?>? ?? const []))
+    for (final e in _exceptuadosDelEntorno(inventario))
       (e as Map<String, Object?>)['archivo']! as String: e['metodo']! as String,
   };
   final lanzamientos = <_Lanzamiento>[];
