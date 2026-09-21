@@ -1,0 +1,10 @@
+# Autocontenido a propósito. Sin esto hereda el `analysis_options.yaml` de la
+# raíz del repositorio —que incluye `package:lints`— y ese paquete no se puede
+# resolver desde el contexto del fixture: `dart format` emitía dos advertencias
+# de resolución y terminaba en verde igual.
+#
+# Un fixture que depende de la configuración de quien lo contiene no es
+# autónomo, y su resultado deja de significar lo mismo fuera de este árbol.
+analyzer:
+  language:
+    strict-casts: true

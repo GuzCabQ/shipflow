@@ -1,0 +1,12 @@
+name: dominio
+description: "Reglas de negocio del fixture. Dart puro: no depende de la UI."
+publish_to: none
+version: 0.1.0
+
+environment:
+  # Alineado con lo que el lockfile REQUIERE de verdad. Declaraba ^3.6.0 y el
+  # lock ya exigía >=3.11: un piso que nadie podía cumplir y nadie verificaba.
+  sdk: ^3.11.0
+
+dev_dependencies:
+  test: ^1.25.0

@@ -38,6 +38,9 @@ const excluidos = [
   '.dart_tool/',
   'build/',
   '.git/',
+  // El fixture es el SUJETO sobre el que corre el arnés, no parte del arnés:
+  // se verifica solo, con su propia toolchain, en su propio paso de CI.
+  'fixtures/',
   // Andamiaje de quien ejecuta un plan con las skills de `superpowers`
   // —briefs, informes, diffs de revisión—: `.superpowers/sdd/.gitignore`
   // ignora todo el árbol, así que nada de ahí llega nunca a un commit. Sin

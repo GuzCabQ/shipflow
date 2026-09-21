@@ -227,3 +227,52 @@ jobs:
       # admite. El comando es UNO, en los dos lados.
       - name: format
         run: dart format --output=none --set-exit-if-changed packages tool
+
+  # EL FIXTURE, EN SU PROPIO JOB. NO ES PROLIJIDAD.
+  #
+  # `flutter-action` agrega al PATH el Dart que Flutter trae adentro
+  # (`flutter/bin/`), así que TODO paso `dart` posterior deja de usar el SDK de
+  # la matriz y pasa a usar el de Flutter. Las dos patas terminaban corriendo
+  # el mismo Dart, y la matriz —que existe para que el resultado sea
+  # reproducible contra una versión declarada— quedaba anulada en silencio.
+  #
+  # Y con `channel: stable` una versión nueva de Flutter podía romper el
+  # fixture y bloquear el merge sin que nadie hubiera cambiado nada. Un canal
+  # flotante no puede ser una compuerta obligatoria: acá va FIJADO.
+  fixture:
+    name: el fixture se verifica a sí mismo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: 3.44.0
+
+      - name: versiones
+        run: flutter --version && dart --version
+
+      # Un fixture commiteado es una fotografía: sus archivos están ahí porque
+      # alguien los copió, no porque el proyecto siga funcionando. Es F36.
+      - name: fixture · el dominio compila y sus pruebas pasan
+        run: dart pub get && dart analyze && dart test
+        working-directory: fixtures/app-minima/dominio
+
+      - name: fixture · la app compila y sus pruebas pasan
+        run: flutter pub get && flutter analyze && flutter test
+        working-directory: fixtures/app-minima/app
+
+# HUECO DECLARADO: el piso `^3.11.0` que declaran los pubspec no se verifica
+# acá. La matriz cubre la versión con la que se desarrolló y el canal estable,
+# no el mínimo soportado. Se agrega cuando exista un caso real que lo justifique
+# y no por anticipación.
+#
+# El piso decía `^3.6.0` mientras el lock exigía >=3.11: seis versiones menores
+# de soporte prometido que nadie podía cumplir. No era un hueco de verificación
+# sino una afirmación falsa, y el fixture ya se había corregido por esto mismo
+# sin propagarse. Ahora la distancia entre lo declarado y lo verificado es de
+# una versión menor.

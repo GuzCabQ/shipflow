@@ -35,9 +35,11 @@ dart test packages/forge           # si y solo si tiene test/**/*_test.dart
 dart test packages/cli             # si y solo si tiene test/**/*_test.dart
 dart analyze --fatal-infos
 dart format --output=none --set-exit-if-changed packages tool
+(cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
+(cd fixtures/app-minima/app && flutter test)
 ```
 
-**Los 17 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
+**Los 19 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
 por comando: un paso borrado de CI, o neutralizado con un `continue-on-error`,
 pone el check en rojo.
 
@@ -151,7 +153,7 @@ derive. El motivo está pagado tres veces: una cifra en prosa que nadie deriva
 envejece sola, y la anterior lo hizo —«cuatro de los veintitrés» cuando eran
 otras— sin que nada lo viera.
 
-**Lo que sí puede afirmarse:** los 17 pasos obligatorios, porque `capas.py` los
+**Lo que sí puede afirmarse:** los 19 pasos obligatorios, porque `capas.py` los
 deriva de `PASOS_OBLIGATORIOS` y falla si la cifra no coincide.
 
 **Lo que no puede afirmarse:** ninguna otra cantidad asociada a *puertos*,
