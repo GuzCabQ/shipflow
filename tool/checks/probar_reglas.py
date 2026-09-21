@@ -650,27 +650,27 @@ def casos() -> list[dict]:
             "menciona": menciona,
         })
 
-    # Que el README siga describiendo lo que gobierna de verdad. Es lo que
+    # Que GOBIERNO.md siga describiendo lo que gobierna de verdad. Es lo que
     # envejeció en silencio y encontró un review, no un check.
-    readme = (RAIZ / "README.md").read_text(encoding="utf-8")
-    filas = [l for l in readme.splitlines()
+    gobierno = (RAIZ / "GOBIERNO.md").read_text(encoding="utf-8")
+    filas = [l for l in gobierno.splitlines()
              if re.match(r"^\| `grafo-derivado` \|.*\| `[^`]+` \|$", l)]
     assert len(filas) == 1, f"filas de la tabla encontradas: {len(filas)}"
     c.append({
-        "nombre": "readme · una regla que gobierna y no está en la tabla",
-        "archivos": {"README.md": ancla(readme, filas[0] + "\n", "",
+        "nombre": "gobierno · una regla que gobierna y no está en la tabla",
+        "archivos": {"GOBIERNO.md": ancla(gobierno, filas[0] + "\n", "",
                                         que="la fila de `grafo-derivado`")},
         "menciona": "no está en la tabla",
     })
-    # `ancla_multiple`: el README nombra `tool/analisis` cinco veces, y eso es
+    # `ancla_multiple`: GOBIERNO.md nombra `tool/analisis` varias veces, y eso es
     # correcto —es el directorio de los verificadores—. Alcanza con volver
     # muerta UNA, porque el check junta el conjunto de rutas nombradas. Lo
     # descubrió la guardia al instalarla: el `.replace(…, 1)` de antes suponía
     # unicidad sin decirlo, y nadie lo había comprobado.
     c.append({
-        "nombre": "readme · una ruta del repositorio que ya no existe",
-        "archivos": {"README.md": ancla_multiple(
-            readme, "`tool/analisis`", "`tool/serializacion`",
+        "nombre": "gobierno · una ruta del repositorio que ya no existe",
+        "archivos": {"GOBIERNO.md": ancla_multiple(
+            gobierno, "`tool/analisis`", "`tool/serializacion`",
             que="una de las menciones al directorio de verificadores")},
         "menciona": "no existe en el",
     })
@@ -723,135 +723,91 @@ def casos() -> list[dict]:
             que="el job del fixture, al que se le da pinta de canario")},
         "menciona": "no es una versión exacta",
     })
-    # El número se DERIVA del README, no se cablea: cablearlo hacía que este
+    # El número se DERIVA del documento, no se cablea: cablearlo hacía que este
     # caso dejara de sabotear nada en cuanto la cantidad real cambiara — un
     # sabotaje que no sabotea es un caso que pasa por no hacer nada.
-    m_pasos = re.search(r"[Ll]os (\d+) pasos obligatorios", readme)
-    assert m_pasos, "no encontré la cantidad de pasos en el README"
+    m_pasos = re.search(r"[Ll]os (\d+) pasos obligatorios", gobierno)
+    assert m_pasos, "no encontré la cantidad de pasos en GOBIERNO.md"
     c.append({
-        "nombre": "readme · una cantidad en prosa que envejeció",
-        "archivos": {"README.md": readme.replace(
+        "nombre": "gobierno · una cantidad en prosa que envejeció",
+        "archivos": {"GOBIERNO.md": gobierno.replace(
             m_pasos.group(0),
             m_pasos.group(0).replace(m_pasos.group(1),
                                      str(int(m_pasos.group(1)) - 3)), 1)},
         "menciona": "pasos obligatorios",
     })
 
-    # Las tres formas de que la cantidad de puertos deje de significar lo que
-    # dice. El check anterior derivaba UNA frase, así que el README podía
-    # afirmar el inventario con otras palabras y envejecer sin ruido: tenía
-    # tres afirmaciones y la derivación cubría una. Lo encontró un review, que
-    # es la tercera vez que una cantidad en prosa se va sola.
+    # --- LA PROHIBICION DE CARDINALIDADES ------------------------------------
     #
-    # Los anclajes salen del README, no de una constante: cablear el número
-    # hace que el caso deje de sabotear nada el día que la cantidad cambie, y
-    # un sabotaje que no sabotea es un caso que pasa por no hacer nada.
-    m_faltan = re.search(
-        r"(\d+)(\s+de\s+los\s+)(\d+)(\s+puertos\s+siguen\s+sin\s+implementación)",
-        readme)
-    assert m_faltan, "no encontré la cantidad de puertos pendientes en el README"
-    c.append({
-        "nombre": "readme · la cantidad de puertos pendientes envejeció",
-        "archivos": {"README.md": readme.replace(
-            m_faltan.group(0),
-            f"{int(m_faltan.group(1)) - 2}{m_faltan.group(2)}"
-            f"{m_faltan.group(3)}{m_faltan.group(4)}", 1)},
-        "menciona": "el registro declara",
-    })
+    # Reemplazan a los tres casos de puertos que se fueron con su derivacion.
+    # Aquellos probaban que UNA frase derivada siguiera cuadrando; estos prueban
+    # que NINGUNA cardinalidad no derivada pueda entrar.
+    #
+    # **El umbral viejo era `\d{2,}` y las palabras empezaban en `diez`**, con
+    # este motivo escrito: «toda afirmacion sobre el inventario de puertos nombra
+    # el total, que es mayor que diez». Correcto mientras el total fue grande.
+    # Por eso los casos de `0`, `1` y `9` existen: son los que aquel umbral no
+    # veia, y los que un producto vaciado vuelve posibles.
+    for _que, _frase, _espera in (
+        ("cero", "Hay 0 puertos pendientes.", "falla"),
+        ("uno en digito", "Hay 1 puerto pendiente.", "falla"),
+        ("un digito debajo del umbral viejo", "La cascada tiene 9 pasos.", "falla"),
+        ("el umbral viejo, que si veia", "La cascada tiene 10 pasos.", "falla"),
+        ("la forma en palabras", "El presupuesto es de cinco minutos.", "falla"),
+        ("una palabra compuesta", "La cascada tiene veintiun pasos.", "falla"),
+        # Una familia de concepto que el filtro viejo no miraba: solo veia
+        # oraciones con `puertos`, asi que `pasos`, `cascada`, `presupuesto` y
+        # `minutos` pasaban enteras.
+        ("una familia que el filtro viejo no miraba", "El presupuesto por paso es de 7 minutos.", "falla"),
+    ):
+        c.append({
+            "nombre": f"gobierno · una cardinalidad no derivada · {_que}",
+            "archivos": {"GOBIERNO.md": gobierno + "\n" + _frase + "\n"},
+            "menciona": "nada la deriva",
+            "espera": _espera,
+        })
 
-    m_hay = re.search(
-        r"(\d+\s+de\s+los\s+)(\d+)(\s+puertos\s+ya\s+tienen\s+implementación\s+viva)",
-        readme)
-    assert m_hay, "no encontré la cantidad de puertos implementados en el README"
-    # Escrita con letra: la cifra sigue estando y sigue siendo correcta HOY,
-    # pero en una forma que nada deriva. Es exactamente cómo envejeció —
-    # «cuatro de los veintitrés»— y por qué ningún check lo vio.
+    # **EL FRAGMENTO FINAL.** El bucle de oraciones solo miraba lo que habia
+    # ANTES de un corte, asi que la ultima oracion —o un documento que no termina
+    # en puntuacion— quedaba sin inspeccionar. Un punto ciego en el borde es un
+    # punto ciego igual, y este caso es el unico que lo prueba: la frase se
+    # agrega SIN punto final.
     c.append({
-        "nombre": "readme · la cantidad de puertos, en una forma que nada deriva",
-        "archivos": {"README.md": readme.replace(
-            m_hay.group(0),
-            f"{m_hay.group(1)}veinticuatro{m_hay.group(3)}", 1)},
+        "nombre": "gobierno · una cardinalidad en el fragmento final, sin puntuacion",
+        "archivos": {"GOBIERNO.md": gobierno + "\nHay 3 puertos sin implementar"},
         "menciona": "nada la deriva",
     })
-    # Y el caso ciego de la derivación: que la frase derivada desaparezca. Un
-    # patrón que no encuentra nada no comprueba nada, y se lee igual que uno
-    # que comprobó y salió bien.
-    c.append({
-        "nombre": "readme · la frase derivada desaparece y nadie la extraña",
-        "archivos": {"README.md": readme.replace(
-            m_hay.group(0), "algunos puertos ya tienen implementación viva", 1)},
-        "menciona": "ya no afirma",
-    })
 
-    # La cuarta cifra que el README afirma sobre sí mismo. Las tres anteriores
-    # envejecieron solas; esta se deriva de `verify.dart`, y su sabotaje ataca
-    # los DOS lados: que mienta la prosa, y que cambie la fuente sin que la
-    # prosa se entere. Un solo caso probaría medio control.
-    m_min = re.search(r"un default de \*\*(\d+) minutos\*\*", readme)
-    assert m_min, "no encontré el presupuesto por paso en el README"
-    c.append({
-        "nombre": "readme · el presupuesto por paso, dicho de más",
-        "archivos": {"README.md": readme.replace(
-            m_min.group(0),
-            m_min.group(0).replace(m_min.group(1),
-                                   str(int(m_min.group(1)) + 4)), 1)},
-        "menciona": "el presupuesto por paso da",
-    })
-    # La propagación por paso, que el sabotaje del default no cubría: un review
-    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    # **EL CASO QUE DEBE QUEDAR VERDE.**
     #
-    # **El cierre se busca por profundidad de corchetes, no por `]);` literal
-    # — la MISMA técnica que ya usa `capas.py` para este mismo literal, y por
-    # la misma razón.** `Cascada` ganó el parámetro `observador`, así que la
-    # llamada cierra con `], observador: obs);`, no con `]);`. Este caso
-    # buscaba el literal viejo y estuvo reventando con `ValueError: substring
-    # not found` desde el commit que agregó ese parámetro — sin que nadie lo
-    # notara, porque este archivo no corrió ni una vez en esos 24 commits. El
-    # indentado tampoco se cablea (`\s+`, no seis espacios fijos): un
-    # `dart format` que cambia la indentación de `verify.dart` no tiene por
-    # qué avisarle a este patrón, y capas.py aprendió esa lección aparte.
-    # La propagación por paso, que el sabotaje del default no cubría: un review
-    # cambió UN paso a `presupuesto * 2` y el check quedó verde.
+    # Sin un control negativo, un check lexico se «arregla» ensanchandose hasta
+    # que nada pasa — y entonces protege perfectamente un documento que ya nadie
+    # puede escribir. Medido: incluir `un`/`una` como cardinales daba DIEZ falsos
+    # positivos sobre este mismo documento, todos el articulo indefinido.
     #
-    # **Ya no hace falta localizar el literal de la lista.** Se hacía contando
-    # corchetes, y eso admitía un falso verde con un `]` dentro de un
-    # comentario; la derivación se mudó al analizador y el sabotaje puede
-    # atacar el texto directo. `ancla_multiple` porque hay una propagación por
-    # paso y alcanza con romper una.
-    verify_prop = (RAIZ / "packages/cli/lib/src/verify.dart").read_text(
-        encoding="utf-8")
+    # Las tres frases prueban tres cosas distintas:
+    #   1. plural sin cardinal, que es la forma en que la prosa debe escribirse;
+    #   2. el LIMITE DE ORACION: la cifra y el concepto en oraciones separadas;
+    #   3. los LIMITES LEXICOS: `ADR-011` no es una cardinalidad de puertos.
     c.append({
-        "nombre": "cascada · un paso con un presupuesto distinto del resto",
-        "archivos": {"packages/cli/lib/src/verify.dart": ancla_multiple(
-            verify_prop, "presupuesto: presupuesto",
-            "presupuesto: presupuesto * 2",
-            que="la propagación del presupuesto a un paso")},
-        "menciona": "como presupuesto y no el parámetro",
-    })
-
-    verify_rel = "packages/cli/lib/src/verify.dart"
-    verify = (RAIZ / verify_rel).read_text(encoding="utf-8")
-    m_src = re.search(r"const Duration\(minutes: (\d+)\)", verify)
-    assert m_src, "no encontré el presupuesto en verify.dart"
-    c.append({
-        "nombre": "cascada · el presupuesto cambia y la prosa no se entera",
-        "archivos": {verify_rel: verify.replace(
-            m_src.group(0),
-            m_src.group(0).replace(m_src.group(1),
-                                   str(int(m_src.group(1)) + 4)), 1)},
-        "menciona": "el presupuesto por paso da",
+        "nombre": "gobierno · CONTROL NEGATIVO · prosa legitima que NO debe disparar",
+        "archivos": {"GOBIERNO.md": gobierno + (
+            "\nLos puertos representan fronteras del dominio.\n"
+            "El esquema 1 esta vigente. Los puertos se documentan aca.\n"
+            "ADR-011 gobierna los puertos.\n")},
+        "espera": "pasa",
     })
 
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     #
-    # Era frágil y silenciosa: si el árbol de ejemplo del README dejaba de tener
+    # Era frágil y silenciosa: si el árbol de estructura de GOBIERNO.md dejaba de tener
     # una línea `  analisis/` con esa indentación exacta, el `.replace` no
     # aplicaba y el caso no saboteaba nada, sin avisar. Ahora el ancla lo dice.
     c.append({
-        "nombre": "readme · un nombre retirado, sin forma de ruta",
-        "archivos": {"README.md": ancla(readme, "  analisis/", "  serializacion/",
-                                        que="el árbol de estructura del README")},
+        "nombre": "gobierno · un nombre retirado, sin forma de ruta",
+        "archivos": {"GOBIERNO.md": ancla(gobierno, "  analisis/", "  serializacion/",
+                                        que="el árbol de estructura de GOBIERNO.md")},
         "menciona": "nombre retirado",
     })
 
@@ -915,8 +871,8 @@ def casos() -> list[dict]:
     c.append({
         "nombre": "capas · un fallo no puede apagar a los que vienen después",
         "archivos": {
-            "README.md": ancla_multiple(
-                ancla(readme, filas[0] + "\n", "",
+            "GOBIERNO.md": ancla_multiple(
+                ancla(gobierno, filas[0] + "\n", "",
                       que="la fila de la tabla, que rompe la PRIMERA sección"),
                 "  analisis/", "  serializacion/",
                 que="el nombre retirado, que solo ve la ÚLTIMA sección"),
@@ -927,7 +883,7 @@ def casos() -> list[dict]:
     # **Y que un control que revienta se reporte, en vez de llevarse a los
     # demás.** `check_meta` corría diez controles adentro de una sola llamada,
     # así que una excepción en el segundo dejaba sin ejecutar al de CI y al del
-    # README: el resultado quedaba rojo y los defectos aparecían de a uno por
+    # gobierno: el resultado quedaba rojo y los defectos aparecían de a uno por
     # corrida. Lo encontró una revisión, con este mismo sabotaje — un campo del
     # registro con la forma estructural equivocada.
     #
@@ -948,62 +904,13 @@ def casos() -> list[dict]:
             ARQ_REL: arq_con(
                 lambda r: r["lenguaje-en-plugin-dart"]["alcance"].update(
                     no_cuenta="esto no es una lista")),
-            "README.md": ancla_multiple(
-                readme, "  analisis/", "  serializacion/",
+            "GOBIERNO.md": ancla_multiple(
+                gobierno, "  analisis/", "  serializacion/",
                 que="el nombre retirado, que ve un control POSTERIOR"),
         },
         "regenerar_huella": True,
         "menciona": ["la comprobación se rompió", "nombre retirado"],
     })
-
-    # **Las formas de elemento que la derivación no sabe contar.**
-    #
-    # `whereType<Expression>()` descartaba en silencio los `CollectionElement`
-    # que no son expresiones. Una revisión lo reprodujo metiendo los pasos por
-    # un spread: la cascada corría dos, el README declaraba uno, y el
-    # verificador salía con cero. Las tres formas tienen su caso porque las tres
-    # pueden aportar cualquier cantidad de pasos, y ninguna se puede contar sin
-    # resolver — así que la derivación tiene que fallar cerrada, no saltearlas.
-    _abre = "  return Cascada([\n    PasoDeFormato("
-    _paso_extra = ("PasoDeFormato(\n        ejecutor: ejecutor, "
-                   "directorio: directorio, presupuesto: presupuesto)")
-    for _forma, _inyectado in (
-        ("un spread", "    ...const [],\n"),
-        ("un `if`", f"    if (false) {_paso_extra},\n"),
-        ("un `for`", f"    for (final _ in const <int>[]) {_paso_extra},\n"),
-    ):
-        c.append({
-            "nombre": f"cascada · la lista de pasos con {_forma}",
-            "archivos": {verify_rel: ancla(
-                verify, _abre,
-                "  return Cascada([\n" + _inyectado + "    PasoDeFormato(",
-                que=f"la apertura de la lista de pasos, donde entra {_forma}")},
-            "menciona": "no sabe contar",
-        })
-
-    # Y que la cascada que se lee sea **la retornada**, no la primera que
-    # aparezca. Reproducido: una rama condicional antes del `return` construye
-    # una cascada de un paso, la retornada sigue teniendo dos, y todo queda
-    # verde. Una llamada auxiliar o un closure pueden volverse la fuente
-    # documental por accidente.
-    c.append({
-        "nombre": "cascada · una cascada auxiliar antes de la retornada",
-        "archivos": {verify_rel: ancla(
-            verify, "  return Cascada([",
-            "  if (presupuesto.inMinutes == 0) {\n"
-            "    return Cascada([\n"
-            "      " + _paso_extra.replace("\n        ", "\n          ") + ",\n"
-            "    ], observador: obs);\n"
-            "  }\n"
-            "  return Cascada([",
-            que="el `return` de cascadaPorDefecto, antes del cual se inyecta otra")},
-        "menciona": "hace falta uno solo",
-    })
-
-    # **Acá vivía el caso del ancla perdida, y se fue con su sujeto.** Protegía
-    # un `.index("Cascada([")` que ya no existe: la derivación se mudó al árbol
-    # sintáctico, donde un tipo explícito en el literal no cambia nada. Un caso
-    # que no puede sabotear nada es peor que ninguno — se lee como protección.
 
     # Y la mitad que faltaba: a cada verificador se le quita la vista.
     c += casos_ciegos()
@@ -1193,9 +1100,9 @@ def _al_recibir_senal(_num, _frame):
 
 
 def cifra_de_sabotajes(lista: list[dict]) -> str | None:
-    """La cantidad que el README afirma, contra la que hay de verdad.
+    """La cantidad que GOBIERNO.md afirma, contra la que hay de verdad.
 
-    El README lleva la cuenta en prosa y nada la derivaba. Es la misma clase de
+    El documento de gobierno lleva la cuenta en prosa, y esta SI se deriva. Es la misma clase de
     cifra que ya envejeció tres veces del lado de los puertos, y esta encima la
     escribe el arnés al terminar: tenerla escrita a mano al lado de una que se
     calcula es pedir que se separen.
@@ -1208,20 +1115,20 @@ def cifra_de_sabotajes(lista: list[dict]) -> str | None:
     **Este check no está atado al trinquete, y es a propósito.** Ponerlo en
     `capas.py` lo haría sabotéable, pero obligaría a `capas.py` a importar este
     archivo y a construir la lista de casos con el árbol ya mutado: cualquier
-    sabotaje que tocara el README rompería la construcción, y el caso quedaría
+    sabotaje que tocara GOBIERNO.md rompería la construcción, y el caso quedaría
     «detectado» por un motivo que no es el suyo. Un caso que pasa por la razón
     equivocada es peor que uno que falta.
     """
     esperados = sum(1 for c in lista if c.get("espera", "falla") == "falla")
-    texto = (RAIZ / "README.md").read_text(encoding="utf-8")
+    texto = (RAIZ / "GOBIERNO.md").read_text(encoding="utf-8")
     dichos = re.findall(r"\*\*El arnés aplica (\d+) sabotajes\.\*\*", texto)
     if len(dichos) != 1:
-        return (f"el README tiene {len(dichos)} veces la frase que declara "
+        return (f"GOBIERNO.md tiene {len(dichos)} veces la frase que declara "
                 f"cuántos sabotajes aplica el arnés, y tiene que tener una. "
                 f"Cero es una cifra que nadie deriva; más de una son dos "
                 f"cifras que se pueden separar.")
     if int(dichos[0]) != esperados:
-        return (f"el README dice que el arnés aplica {dichos[0]} sabotajes y "
+        return (f"GOBIERNO.md dice que el arnés aplica {dichos[0]} sabotajes y "
                 f"son {esperados}.")
     return None
 

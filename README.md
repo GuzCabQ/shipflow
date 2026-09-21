@@ -67,93 +67,17 @@ es un campo: se calcula.
 
 ---
 
-## Qué corre
+## Qué corre, y qué gobierna
 
-```
-dart pub get                                  # PRECONDICIÓN: el grafo se le pide a pub
-python3 tool/checks/capas.py                  # las reglas que se leen del texto
-(cd tool/analisis && dart pub get \
-   && dart run bin/check.dart      # serialización, opacidad, puertos, colecciones
-   && dart run bin/grafo.dart)     # el grafo: derivado == commiteado
-python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
-python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
-dart test packages/core                       # invariantes del dominio
-dart test packages/orchestration              # el registro de pasos y la cuenta
-dart test packages/vcs                        # la rama y el commit, contra git de verdad
-dart test packages/cli                        # las suites de CONTRATO entre implementaciones
-dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
-dart test packages/forge                      # push aislado, cliente de GitHub, búsqueda idempotente
-dart analyze --fatal-infos
-dart format --set-exit-if-changed packages tool
-(cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
-(cd fixtures/app-minima/app && flutter test)
-```
+**Se mudó a [`GOBIERNO.md`](GOBIERNO.md)**: qué corre, la tabla de las reglas con
+su aplicador, y por qué siete de ellas necesitan otro motor.
 
-**Son 16 pasos y `capas.py` lo verifica contra el workflow**, comando por
-comando: un paso borrado de CI, o neutralizado con un `if:` o un
-`continue-on-error`, pone el check en rojo.
-
-**Las reglas viven en [`arquitectura.json`](arquitectura.json)**, en un solo
-lugar y diffeable, aunque las apliquen dos motores distintos. Tocarlo es cambiar
-la arquitectura y se revisa como tal.
-
-| `id` de la regla | Qué impide | Aplica |
-|---|---|---|
-| `deps-hacia-core` | Que una flecha **interna** apunte a otro lado que no sea `core` | `capas.py` |
-| `nucleo-sin-externas` | Que `core` gane una dependencia **de cualquier origen**, incluidas las de desarrollo | `capas.py` |
-| `nucleo-sin-entrada-salida` | Que `core` toque el mundo directamente en vez de pedirlo por un puerto | `capas.py` |
-| `dependencias-declaradas-se-usan` | Que un pubspec declare una flecha interna que ninguna línea importa | `capas.py` |
-| `subprocesos-con-entorno-saneado` | Que un subproceso **herede** el entorno del padre —el token de la forja, un `GIT_*` del shell— en vez de recibir la lista blanca | `tool/analisis` |
-| `agente-en-agents` | Que `claude`/`codex`/`gemini` salgan de `agents/` | `capas.py` |
-| `lenguaje-en-plugin-dart` | Que `dart`/`flutter`/`pubspec` salgan de `plugin_dart/` | `capas.py` |
-| `sin-api-de-modelo` | Que **cualquier** paquete llame a una API de modelo | `capas.py` |
-| `serializacion-sin-perdida` | Que un campo de `core` no viaje, o vuelva vacío | `tool/analisis` |
-| `opacidad-declarada` | Que «no serializa» sea indistinguible de «se olvidaron» | `tool/analisis` |
-| `puertos-sin-implementacion` | Que una superficie de puertos vacía se lea como un sistema que hace esas cosas | `tool/analisis` |
-| `colecciones-inmutables` | Que un invariante se pueda romper **después** de construir el objeto, mutando la lista que se le pasó | `tool/analisis` |
-| `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
-| `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
-
-Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
-aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
-F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
-primero que hizo cuando se agregaron las tres reglas nuevas.
-
-### Por qué siete de estas reglas necesitan otro motor
-
-**Siete, y no son un bloque contiguo de la tabla:** las seis últimas más
-`subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
-fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
-
-Lo único que las siete comparten es la razón: **ninguna se puede derivar
-leyendo el archivo como texto plano.** Es la misma lección que ya pagó
-`capas.py` con el grafo de dependencias: parsear a mano devuelve cero
-resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
-*"está todo bien"*. Su paquete está **fuera del `workspace:`** a propósito:
-ninguna regla de capas debería tener que hacerle una excepción a su propio
-verificador.
-
-**Lo que mira cada una no es lo mismo, y agruparlas bajo «se derivan del árbol
-sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
-
-- `serializacion-sin-perdida`, `opacidad-declarada` y `colecciones-inmutables`
-  — y solo estas tres — se derivan del árbol sintáctico de `packages/core/lib`.
-- `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
-  implementa lo busca en todos los paquetes**: una implementación que viviera
-  solo en `core` no es la pregunta que responde.
-- `subprocesos-con-entorno-saneado` mira `lib/` y `bin/` de cada paquete, y es
-  la única que además **resuelve** la identidad de `Process` contra el SDK en
-  vez de conformarse con el nombre.
-- `forja-en-su-adapter` mira `lib/` y `bin/` de cada paquete **menos `forge`**,
-  y de sus dos criterios solo el primero sale del árbol: el segundo es
-  **textual** sobre el contenido del archivo, y lo único que le pide al parser
-  es el stream de tokens con el que descarta los comentarios.
-- `grafo-derivado` mira el repositorio entero, `.dart` **y `.md`**: los `.dart`
-  por sus directivas en el árbol, pero las aristas de cita de los `.md` salen
-  de la **prosa**, no de ningún árbol.
-
-Los residuos de cada criterio están en
-[`arquitectura.json`](arquitectura.json), no acá.
+No fue una mudanza de comodidad. `capas.py` verifica ese documento contra
+`arquitectura.json` y contra el workflow, y mientras el sujeto de esa
+verificación fue **este** archivo, el README tuvo que ser dos documentos a la vez
+—el de quien llega y el de quien mantiene—. El que empujaba era el verificador:
+de 93 líneas en la fase 0 a lo que hay hoy. La invariante no cambió; cambió el
+archivo que la lleva.
 
 ---
 
@@ -1358,7 +1282,7 @@ abrir archivos sin declarar nada.
 
 No se podía habilitar una sin perder la otra, así que se separaron.
 **`nucleo-sin-entrada-salida`** es la undécima regla, con su violación canónica
-y su caso ciego. **El arnés aplica 142 sabotajes.**
+y su caso ciego.
 
 ---
 

@@ -115,12 +115,39 @@ VALORES_FIJOS_ALCANCE["nucleo-sin-entrada-salida"] = {
 # diez; «5 de los 24» y «cuatro de los veintitrés» las dos traen su número
 # grande, y en cambio «dos puertos y no uno», que habla de un corte y no de un
 # inventario, no trae ninguno.
-PALABRAS_NUMERO = (
+# **DESDE `cero`, no desde `diez`.** El corte en diez se justificaba así: «toda
+# afirmación sobre el inventario de puertos nombra el total, que es mayor que
+# diez». Era una optimización correcta mientras el total era grande, y deja de
+# serlo en cuanto el total puede ser cero o uno: `«un puerto»` y `«9 pasos»`
+# pasaban. Un umbral calibrado contra el tamaño del producto no sobrevive a un
+# cambio de tamaño del producto.
+#
+# Se ordena por longitud descendente para que la alternancia pruebe primero la
+# forma larga: `veintiuno` antes que `uno`.
+# **`un` y `una` NO entran.** Se intentó incluirlos —el contrato decia rechazar
+# tambien el articulo cardinal ambiguo, «un puerto»— y se midio sobre GOBIERNO.md:
+# **10 falsos positivos, todos el articulo indefinido**: «una superficie de puertos
+# vacia», «comando por comando», «uno por regla». Sin ellos: 1. En español `un` y
+# `una` son abrumadoramente el ARTICULO, no un cardinal, y exigir que la prosa los
+# evite no endurece el control: vuelve el documento inescribible y convierte cada
+# edicion futura en una pelea con el guardia. `uno` si es la forma cardinal y queda.
+#
+# Es la razon por la que este check necesita un caso que deba quedar VERDE: sin el,
+# un control lexico se «arregla» ensanchandose hasta que nada pasa, y entonces
+# protege perfectamente un documento que ya nadie puede escribir.
+PALABRAS_NUMERO = sorted((
+    "cero uno dos tres cuatro cinco seis siete ocho nueve "
     "diez once doce trece catorce quince dieciseis dieciséis diecisiete "
     "dieciocho diecinueve veinte veintiuno veintiun veintiún veintidos "
     "veintidós veintitres veintitrés veinticuatro veinticinco veintiseis "
     "veintiséis veintisiete veintiocho veintinueve treinta cuarenta cincuenta"
-).split()
+).split(), key=len, reverse=True)
+
+# Los conceptos cuya CARDINALIDAD gobierna este check. Enumerados, no inferidos:
+# el contrato es «dígitos y formas cardinales enumeradas, en la misma oración que
+# uno de estos conceptos». Todo lo demás es riesgo residual declarado y va escrito
+# en GOBIERNO.md — un control léxico no puede prometer cobertura semántica.
+CONCEPTOS_CON_CARDINALIDAD = r"\b(?:puertos?|pasos?|cascadas?|presupuestos?|minutos?)\b"
 
 PASOS_OBLIGATORIOS = {
     # etiqueta: (comando EXACTO, working-directory esperado)
@@ -412,18 +439,18 @@ def _check_readme() -> None:
     Un control que deja de mirar porque OTRO control falló es exactamente la
     ceguera que ADR-011 persigue, reaparecida adentro del verificador.
     """
-    doc = RAIZ / "README.md"
+    doc = RAIZ / "GOBIERNO.md"
     if not doc.exists():
-        fallos.append("falta README.md, que es donde se declara qué gobierna "
+        fallos.append("falta GOBIERNO.md, que es donde se declara qué gobierna "
                       "este repositorio.")
         return
     texto = doc.read_text(encoding="utf-8")
     for que, seccion in (
-        ("README · la tabla de reglas", _readme_tabla),
-        ("README · las rutas que nombra", _readme_rutas),
-        ("README · los pasos obligatorios", _readme_pasos),
-        ("README · el inventario de puertos", _readme_puertos),
-        ("README · los nombres retirados", _readme_nombres),
+        ("GOBIERNO · la tabla de reglas", _readme_tabla),
+        ("GOBIERNO · las rutas que nombra", _readme_rutas),
+        ("GOBIERNO · los pasos obligatorios", _readme_pasos),
+        ("GOBIERNO · las cardinalidades", _doc_cardinalidades),
+        ("GOBIERNO · los nombres retirados", _readme_nombres),
     ):
         _aislado(que, seccion, texto)
 
@@ -432,21 +459,21 @@ def _readme_tabla(texto: str) -> None:
     filas = dict(re.findall(r"^\| `([a-z][a-z-]+)` \|.*\| `([^`]+)` \|$",
                             texto, re.M))
     if not filas:
-        fallos.append("no encontré la tabla de reglas en README.md. Cero filas "
+        fallos.append("no encontré la tabla de reglas en GOBIERNO.md. Cero filas "
                       "se lee igual que una tabla al día.")
         return
     for rid in sorted(set(REGLAS) - set(filas)):
-        fallos.append(f"README.md: la regla «{rid}» gobierna este repositorio y "
+        fallos.append(f"GOBIERNO.md: la regla «{rid}» gobierna este repositorio y "
                       f"no está en la tabla. Quien lea el README no se entera "
                       f"de que existe.")
     for rid in sorted(set(filas) - set(REGLAS)):
-        fallos.append(f"README.md: la tabla declara «{rid}», que ya no está en "
+        fallos.append(f"GOBIERNO.md: la tabla declara «{rid}», que ya no está en "
                       f"arquitectura.json. Una fila vieja describe un control "
                       f"que no corre.")
     for rid, aplicador in sorted(filas.items()):
         esperado = REGLAS.get(rid, {}).get("aplicada_por", "capas.py")
         if aplicador != esperado:
-            fallos.append(f"README.md: dice que «{rid}» la aplica «{aplicador}»; "
+            fallos.append(f"GOBIERNO.md: dice que «{rid}» la aplica «{aplicador}»; "
                           f"el registro dice «{esperado}».")
 
 
@@ -470,7 +497,7 @@ def _readme_rutas(texto: str) -> None:
         if ruta in transitorias:
             continue
         if not (RAIZ / ruta.rstrip("/.")).exists():
-            fallos.append(f"README.md nombra «{ruta}», que no existe en el "
+            fallos.append(f"GOBIERNO.md nombra «{ruta}», que no existe en el "
                           f"árbol. Una ruta muerta en la documentación manda a "
                           f"quien la siga a un lugar que no está.")
 
@@ -481,7 +508,7 @@ def _readme_pasos(texto: str) -> None:
     un review. Es el mismo criterio que `cifras.py` aplica al corpus."""
     for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
         if int(m.group(1)) != len(PASOS_OBLIGATORIOS):
-            fallos.append(f"README.md dice «{m.group(1)} pasos obligatorios» y "
+            fallos.append(f"GOBIERNO.md dice «{m.group(1)} pasos obligatorios» y "
                           f"`capas.py` verifica {len(PASOS_OBLIGATORIOS)}. Una "
                           f"cantidad en prosa que nada deriva envejece sola.")
 
@@ -500,87 +527,80 @@ def _readme_pasos(texto: str) -> None:
 # en `tool/analisis/bin/check.dart`.
 
 
-def _readme_puertos(texto: str) -> None:
-    """Cuántos puertos faltan y cuántos ya están — y ninguna otra forma de decirlo.
+def _doc_cardinalidades(texto: str) -> None:
+    """Ninguna cardinalidad que nada derive.
 
-    El README decía 21 cuando eran 20, y lo encontró un review. `puertos.dart`
-    tiene escrito, sobre sí mismo, que «un número en prosa que nada deriva
-    envejece solo, y este archivo ya lo hizo una vez». Lo hizo dos.
+    **Las dos derivaciones de puertos se retiraron, y con ellas su validación.**
+    Fijaban dos ORACIONES en español por regex —«N de los M puertos siguen sin
+    implementación»— y después leían `packages/core/lib/src/puertos.dart` para
+    comparar. Tres representaciones de la misma cifra: el código, el inventario y
+    la prosa. La prosa era la única que había que mantener a mano, y ya envejeció
+    tres veces.
 
-    **Las dos mitades son independientes**: dónde están escritas las frases
-    derivadas se calcula siempre, aunque no se pueda contar el total. Así la
-    prohibición de cifras sueltas sigue valiendo cuando la fuente no se puede
-    leer — antes ese caso apagaba las dos.
+    Al irse la prosa se fue su validación, y con ella el `n_total == 0` que no
+    sabía distinguir «leí y hay cero puertos» de «no pude leer el archivo». Esa
+    conflación era correcta mientras el producto siempre estuvo; el reinicio la
+    vuelve falsa, y acá deja de existir en vez de arreglarse.
+
+    **Lo que NO se retira es la prohibición.** Borrar el guardia dejaría el hueco
+    fail-open: dentro de seis meses alguien escribe una cantidad a mano, envejece,
+    y nada avisa. La prohibición lo deja fail-closed — el día que haya algo que
+    contar, obliga a construir la derivación primero, cuando ya tiene sujeto.
     """
-    derivadas = [
-        r"(\d+)\s+de\s+los\s+(\d+)\s+puertos\s+siguen\s+sin\s+implementación",
-        r"(\d+)\s+de\s+los\s+(\d+)\s+puertos\s+ya\s+tienen\s+implementación\s+viva",
-    ]
+    # La UNICA derivacion que sobrevive es la de los pasos obligatorios, que
+    # `_readme_pasos` valida contra PASOS_OBLIGATORIOS. Sus ocurrencias quedan
+    # CUBIERTAS: una cifra derivada es legitima; una escrita a mano, no.
     cubierto: set[int] = set()
-    halladas: list[list[re.Match]] = []
-    for patron in derivadas:
-        ms = list(re.finditer(patron, texto))
-        halladas.append(ms)
-        for m in ms:
-            cubierto.update(range(m.start(), m.end()))
-        if not ms:
-            fallos.append(f"README.md ya no afirma «{patron}». La derivación "
-                          f"quedó apuntando a una frase que no está: no "
-                          f"comprueba nada y se lee como que sí.")
+    for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
+        cubierto.update(range(m.start(), m.end()))
 
     _readme_numerales_sueltos(texto, cubierto)
-
-    pendientes = REGLAS["puertos-sin-implementacion"]["sin_implementacion"]
-    n_pendientes = len([k for k in pendientes if k != "_"])
-    fuente = RAIZ / "packages" / "core" / "lib" / "src" / "puertos.dart"
-    if not fuente.exists():
-        fallos.append("no encontré packages/core/lib/src/puertos.dart, así que "
-                      "no puedo derivar cuántos puertos hay. No mirar no es lo "
-                      "mismo que no encontrar nada.")
-        return
-    n_total = len(re.findall(r"^abstract interface class ",
-                             fuente.read_text(encoding="utf-8"), re.M))
-    if n_total == 0:
-        fallos.append("conté cero puertos en puertos.dart. Cero se lee igual "
-                      "que «no miré».")
-        return
-    for ms, esperado in zip(halladas, [(n_pendientes, n_total),
-                                       (n_total - n_pendientes, n_total)]):
-        for m in ms:
-            if (int(m.group(1)), int(m.group(2))) != esperado:
-                fallos.append(f"README.md dice «{m.group(0)}»; el registro "
-                              f"declara {esperado[0]} sobre {esperado[1]}.")
-    # NO se deriva cuántos fakes hay. Se intentó, restando pendientes del total,
-    # y estaba mal: eso da los puertos con implementación VIVA, que no es lo
-    # mismo — `Verifier` tiene dos reales y ningún fake. Un control que deriva
-    # la cantidad equivocada es peor que ninguno, porque se lo cree.
 
 
 def _readme_numerales_sueltos(texto: str, cubierto: set[int]) -> None:
     """**Cualquier OTRA forma de decir la misma cifra.**
 
     Este check ya falló dos veces por lo mismo, y la tercera la encontró un
-    review: derivaba la frase que tenía delante, así que el README podía
+    review: derivaba la frase que tenía delante, así que el documento podía
     afirmar el inventario con otras palabras y envejecer sin ruido.
 
     No se deriva la frase: se prohíbe la cifra suelta. Toda oración que hable de
-    puertos y traiga un numeral de diez para arriba tiene que ser una de las
-    derivadas.
+    uno de los CONCEPTOS_CON_CARDINALIDAD y traiga un numeral tiene que ser una
+    de las derivadas.
+
+    **Alcance ampliado, y su contrato acotado.** Antes miraba solo oraciones con
+    `puertos` y solo dígitos de dos cifras o más. Pasaban `«3 puertos»`, `«un
+    puerto»`, `«9 pasos»` y `«el presupuesto es de 5 minutos»`. Ahora cubre los
+    cinco conceptos, dígitos desde `0` y formas cardinales desde `cero`.
+
+    Lo que NO cubre —cuantificadores no cardinales como `ambos`, `sendos`,
+    `media docena`, `varios`— es **riesgo residual declarado**, escrito en
+    GOBIERNO.md. Un control léxico no puede demostrar una garantía semántica, y
+    prometerlo sería la misma clase de falso verde que este arnés persigue.
     """
-    numeral = (r"(?<![\w./-])(\d{2,}|" + "|".join(PALABRAS_NUMERO) + r")(?![\w.-])")
+    numeral = (r"(?<![\w./-])(\d+|" + "|".join(PALABRAS_NUMERO) + r")(?![\w.-])")
+
+    def _mirar(oracion: str, desplazamiento: int) -> None:
+        if not re.search(CONCEPTOS_CON_CARDINALIDAD, oracion, re.I):
+            return
+        for m in re.finditer(numeral, oracion, re.I):
+            if desplazamiento + m.start() in cubierto:
+                continue
+            fallos.append(
+                f"GOBIERNO.md: «{m.group(0)}» en una oración sobre "
+                f"puertos/pasos/cascada/presupuesto/minutos, y nada la deriva. "
+                f"Una cantidad en prosa que nadie deriva envejece sola, y esta "
+                f"ya envejeció tres veces. Escribila en la forma derivada, o "
+                f"sacá el número: «{oracion.strip()[:90]}»")
+
     inicio = 0
     for corte in re.finditer(r"(?<=[.!?])\s+|\n\s*\n|\n(?=[|#])", texto):
-        oracion = texto[inicio:corte.start()]
-        if re.search(r"\bpuertos?\b", oracion, re.I):
-            for m in re.finditer(numeral, oracion, re.I):
-                if inicio + m.start() in cubierto:
-                    continue
-                fallos.append(
-                    f"README.md: «{m.group(0)}» en una oración sobre puertos, y "
-                    f"nada la deriva. Una cantidad en prosa que nadie deriva "
-                    f"envejece sola, y esta ya envejeció tres veces. Escribila "
-                    f"en la forma derivada, o sacá el número: «{oracion.strip()[:90]}»")
+        _mirar(texto[inicio:corte.start()], inicio)
         inicio = corte.end()
+    # **EL FRAGMENTO FINAL.** El bucle solo mira lo que hay ANTES de un corte, así
+    # que la última oración —o un documento que no termina en puntuación— quedaba
+    # sin mirar. Un punto ciego en el borde es un punto ciego igual.
+    _mirar(texto[inicio:], inicio)
 
 
 def _readme_nombres(texto: str) -> None:
@@ -589,7 +609,7 @@ def _readme_nombres(texto: str) -> None:
     `tool/`: ninguna ruta que verificar, y el nombre viejo igual de vivo."""
     for patron, motivo in NOMBRES_RETIRADOS.items():
         for m in re.finditer(patron, texto):
-            fallos.append(f"README.md: «{m.group(0)}» es un nombre retirado. "
+            fallos.append(f"GOBIERNO.md: «{m.group(0)}» es un nombre retirado. "
                           f"{motivo}")
 
 
@@ -1085,7 +1105,7 @@ def main() -> int:
         ("exclusiones que no eximen paquetes", _check_exclusiones),
         ("paquetes que las reglas nombran", _check_paquetes_nombrados),
         ("CI ejecuta lo que dice", _check_ci_ejecuta),
-        ("el README describe lo que gobierna", _check_readme),
+        ("el gobierno describe lo que gobierna", _check_readme),
         ("nada fuera del alcance del formateo", _check_nada_fuera_de_alcance),
         ("la huella de la política", _check_huella),
         ("reglas delegadas a otro motor", _check_delegadas),
