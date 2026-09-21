@@ -933,18 +933,41 @@ Future<void> main(List<String> args) async {
   // pero solo sobre las clases que alguien se acordó de poner en ella. Una
   // entidad nueva sin su caso pasaba en verde por las dos: cada uno cubría lo
   // que el otro no, y el hueco quedaba entre los dos.
+  // **ES UN BICONDICIONAL, Y ANTES ERA UNA IMPLICACION.**
+  //
+  // La prueba existe SI Y SOLO SI hay al menos una clase serializable en core.
+  //
+  // Antes se exigia siempre, y eso obligaba a mantener una prueba de producto
+  // aunque no hubiera producto: con `core` vacio el check quedaba rojo, y la
+  // unica salida era inventar una clase o inventar la prueba.
+  //
+  // La direccion inversa importa igual y no estaba: con CERO clases
+  // serializables, una prueba que sigue ahi es una prueba OBSOLETA, y aceptarla
+  // indefinidamente convierte el «si y solo si» en un «si» — se declara una
+  // equivalencia y se verifica media.
+  final serializablesDeCore = clasesCore
+      .where((c) => !c.esAbstracta && c.clavesToJson != null)
+      .toList();
   final prueba = File(
     '${raiz.path}/packages/core/test/serializacion_test.dart',
   );
-  if (!prueba.existsSync()) {
+  if (serializablesDeCore.isEmpty) {
+    if (prueba.existsSync()) {
+      fallos.add(
+        'packages/core/test/serializacion_test.dart existe y core no tiene ni '
+        'una clase serializable. Una prueba sin sujeto no verifica nada y se '
+        'lee como que si: o vuelve el sujeto, o se va la prueba.',
+      );
+    }
+  } else if (!prueba.existsSync()) {
     fallos.add(
-      'falta packages/core/test/serializacion_test.dart. Es lo único '
+      'falta packages/core/test/serializacion_test.dart, y core tiene '
+      '${serializablesDeCore.length} clases serializables. Es lo único '
       'que verifica que los VALORES sobrevivan el viaje.',
     );
   } else {
     final texto = prueba.readAsStringSync();
-    for (final c in clasesCore) {
-      if (c.esAbstracta || c.clavesToJson == null) continue;
+    for (final c in serializablesDeCore) {
       if (!texto.contains("'${c.nombre}'")) {
         fallos.add(
           'packages/core/test/serializacion_test.dart: «${c.nombre}» '

@@ -24,21 +24,36 @@ python3 tool/checks/capas.py                  # las reglas que se leen del texto
    && dart run bin/grafo.dart)     # el grafo: derivado == commiteado
 python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
 python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
-dart test packages/core                       # invariantes del dominio
-dart test packages/orchestration              # el registro de pasos y la cuenta
-dart test packages/vcs                        # la rama y el commit, contra git de verdad
-dart test packages/cli                        # las suites de CONTRATO entre implementaciones
-dart test packages/plugin_dart                # unitarias, y las que corren la toolchain de verdad
-dart test packages/forge                      # push aislado, cliente de GitHub, búsqueda idempotente
+dart test packages/core            # si y solo si tiene test/**/*_test.dart
+dart test packages/orchestration   # si y solo si tiene test/**/*_test.dart
+dart test packages/vcs             # si y solo si tiene test/**/*_test.dart
+dart test packages/rules           # si y solo si tiene test/**/*_test.dart
+dart test packages/agents          # si y solo si tiene test/**/*_test.dart
+dart test packages/plugin_dart     # si y solo si tiene test/**/*_test.dart
+dart test packages/plugin_fake     # si y solo si tiene test/**/*_test.dart
+dart test packages/forge           # si y solo si tiene test/**/*_test.dart
+dart test packages/cli             # si y solo si tiene test/**/*_test.dart
 dart analyze --fatal-infos
 dart format --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
 
-**Los 16 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
-por comando: un paso borrado de CI, o neutralizado con un `if:` o un
-`continue-on-error`, pone el check en rojo.
+**Los 19 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
+por comando: un paso borrado de CI, o neutralizado con un `continue-on-error`,
+pone el check en rojo.
+
+**Diez son fijos; los otros nueve se DERIVAN del `workspace:`** —uno por miembro—
+y son CONDICIONALES: cada uno corre si y solo si su paquete tiene al menos un
+`test/**/*_test.dart`. Sin la condición, un paquete sin pruebas hace salir a
+`dart test` con 79 —«No tests ran»— y el job queda rojo por no haber nada que
+correr.
+
+La lista se deriva y no se escribe porque escrita a mano ya se había separado:
+`rules`, `agents` y `plugin_fake` no tenían el suyo, así que una prueba agregada
+en esos paquetes no habría corrido nunca y nada lo habría dicho. Y para esos nueve el meta-check no prohíbe la condición: exige **la
+condición exacta prevista para ese paquete**, carácter por carácter. Un pin, no
+un permiso.
 
 **Las reglas viven en [`arquitectura.json`](arquitectura.json)**, en un solo
 lugar y diffeable, aunque las apliquen dos motores distintos. Tocarlo es cambiar
@@ -111,7 +126,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 149 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 153 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.
@@ -138,7 +153,7 @@ derive. El motivo está pagado tres veces: una cifra en prosa que nadie deriva
 envejece sola, y la anterior lo hizo —«cuatro de los veintitrés» cuando eran
 otras— sin que nada lo viera.
 
-**Lo que sí puede afirmarse:** los 16 pasos obligatorios, porque `capas.py` los
+**Lo que sí puede afirmarse:** los 19 pasos obligatorios, porque `capas.py` los
 deriva de `PASOS_OBLIGATORIOS` y falla si la cifra no coincide.
 
 **Lo que no puede afirmarse:** ninguna otra cantidad asociada a *puertos*,

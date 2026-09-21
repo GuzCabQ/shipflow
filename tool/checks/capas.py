@@ -194,12 +194,6 @@ PASOS_OBLIGATORIOS = {
         "python3 tool/checks/probar_recuperacion.py", None),
     "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
-    "las pruebas de core": ("dart test packages/core", None),
-    "las pruebas de la orquestación": ("dart test packages/orchestration", None),
-    "las pruebas de vcs": ("dart test packages/vcs", None),
-    "las suites de contrato": ("dart test packages/cli", None),
-    "las pruebas del plugin de stack": ("dart test packages/plugin_dart", None),
-    "las pruebas de la forja": ("dart test packages/forge", None),
     "el analizador estático": ("dart analyze --fatal-infos", None),
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
     # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
@@ -236,6 +230,60 @@ VERSION_EXACTA = re.compile(r"\d+\.\d+\.\d+")
 # Nombres que se retiraron y no pueden volver a la documentación. Es la misma
 # familia que `coherencia.py` mantiene para el corpus: un renombre deja vivo el
 # nombre viejo en los lugares donde nadie mira.
+# **LOS PASOS DE PRUEBA NO SE ENUMERAN A MANO: SE DERIVAN DEL `workspace:`.**
+#
+# Estaban fijados de a seis, y `agents`, `rules` y `plugin_fake` no tenian paso:
+# una prueba agregada ahi no corria nunca, y nada lo decia. Enumerar a mano una
+# lista que el `workspace:` ya declara es pedir que se separen — y se habian
+# separado.
+_MIEMBROS: list[str] | None = None
+_MIEMBROS_MAL: str | None = None
+
+
+def miembros_del_workspace() -> tuple[list[str], str | None]:
+    """Los miembros del `workspace:` de la raiz, con un PARSER de YAML.
+
+    No se parsea a mano, por el mismo motivo que el workflow: un parser casero
+    devuelve cero miembros ante una sintaxis que no reconoce, y cero miembros se
+    lee igual que «no hay paquetes que probar».
+    """
+    global _MIEMBROS, _MIEMBROS_MAL
+    if _MIEMBROS is not None or _MIEMBROS_MAL is not None:
+        return _MIEMBROS or [], _MIEMBROS_MAL
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        _MIEMBROS_MAL = ("no pude importar `yaml` para leer el `workspace:` de la "
+                         "raiz. Sin parser no se sabe que paquetes hay que probar, "
+                         "y adivinar es peor que no mirar. Instalalo: "
+                         "`pip install pyyaml`.")
+        return [], _MIEMBROS_MAL
+    doc = yaml.safe_load((RAIZ / "pubspec.yaml").read_text(encoding="utf-8"))
+    ws = (doc or {}).get("workspace")
+    if not isinstance(ws, list) or not ws:
+        _MIEMBROS_MAL = ("pubspec.yaml no declara un `workspace:` con miembros. "
+                         "De ahi sale que paquetes tienen que tener su paso de "
+                         "pruebas en CI.")
+        return [], _MIEMBROS_MAL
+    _MIEMBROS = [str(x).rstrip("/").split("/")[-1] for x in ws]
+    return _MIEMBROS, None
+
+
+def condicion_de_pruebas(paquete: str) -> str:
+    """La condicion EXACTA que habilita el paso de pruebas de un paquete.
+
+    `hashFiles` se puede usar en un `if:` y devuelve cadena vacia cuando no
+    encuentra archivos, asi que `!= ''` es exactamente «existe >=1 archivo que
+    coincide». El glob cubre subdirectorios.
+
+    Se fija el TEXTO, no la forma: el meta-check compara contra esto caracter por
+    caracter. Una expresion ensanchada, un glob distinto o un `if: false` no son
+    «otra manera de escribir lo mismo» — son otro control.
+    """
+    return ("${{ hashFiles('packages/" + paquete
+            + "/test/**/*_test.dart') != '' }}")
+
+
 NOMBRES_RETIRADOS = {
     r"\bserializacion/": "el directorio es `tool/analisis/` desde que también "
                          "genera el grafo. Solo sobrevive el nombre de la regla "
@@ -542,11 +590,17 @@ def _readme_pasos(texto: str) -> None:
     """Una cantidad afirmada en prosa que nada deriva envejece sin ruido: el
     README decía «siete pasos obligatorios» cuando ya eran diez, y lo encontró
     un review. Es el mismo criterio que `cifras.py` aplica al corpus."""
+    miembros, _ = miembros_del_workspace()
+    # Los fijos MÁS uno por miembro del `workspace:`. La cuenta dejó de ser una
+    # constante el día que los pasos de prueba se derivaron.
+    total = len(PASOS_OBLIGATORIOS) + len(miembros)
     for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
-        if int(m.group(1)) != len(PASOS_OBLIGATORIOS):
+        if int(m.group(1)) != total:
             fallos.append(f"GOBIERNO.md dice «{m.group(1)} pasos obligatorios» y "
-                          f"`capas.py` verifica {len(PASOS_OBLIGATORIOS)}. Una "
-                          f"cantidad en prosa que nada deriva envejece sola.")
+                          f"`capas.py` verifica {total} —{len(PASOS_OBLIGATORIOS)} "
+                          f"fijos más uno por cada uno de los {len(miembros)} "
+                          f"miembros del workspace—. Una cantidad en prosa que "
+                          f"nada deriva envejece sola.")
 
 
 # **La derivación del presupuesto de la cascada se fue a `tool/analisis`.**
@@ -743,6 +797,71 @@ def _check_ci_ejecuta() -> None:
                     f"Un paso obligatorio no es condicional: si la condición da "
                     f"falso, el comando sigue escrito en el archivo y no corre "
                     f"nunca. Lo que varía por plataforma va en la matriz.")
+
+    # --- LOS PASOS DE PRUEBA · UNO POR MIEMBRO DEL `workspace:` --------------
+    #
+    # **Acá el meta-check CAMBIA DE FORMA, no de rigor.** Arriba un `if:` sobre
+    # un paso obligatorio es un fallo, y por buenos motivos: `if: false` omite el
+    # paso entero sin borrarlo, así que el comando sigue escrito, el meta-check lo
+    # encuentra, y nunca corre.
+    #
+    # Pero un paquete sin pruebas no puede tener un paso incondicional: `dart test`
+    # sobre un paquete sin `test/**/*_test.dart` sale con 79 —«No tests ran»— y el
+    # job queda rojo por no haber nada que correr. Y con el producto vacío eso
+    # valdría para los nueve.
+    #
+    # Así que la regla pasa de «ninguna condición permitida» a **«SOLO la condición
+    # exacta prevista para ESE paquete»**, que es el mismo estilo con que
+    # `PASOS_OBLIGATORIOS` fija el comando exacto en lugar de prohibir comandos.
+    # Un pin, no un permiso: `if: false`, otro paquete, otro glob o una expresión
+    # ensanchada son otro control, y se reportan.
+    miembros, mal = miembros_del_workspace()
+    if mal:
+        fallos.append(mal)
+        return
+    for paquete in miembros:
+        comando = f"dart test packages/{paquete}"
+        esperada = condicion_de_pruebas(paquete)
+        encontrados = [p for p in pasos
+                       if str(p.get("run", "")).strip() == comando
+                       and p.get("working-directory") is None]
+        if not encontrados:
+            fallos.append(
+                f"«{paquete}» es miembro del `workspace:` y CI no ejecuta sus "
+                f"pruebas como «{comando}». Un paquete sin su paso es un paquete "
+                f"donde una prueba futura no correría nunca, y nada lo diría.")
+            continue
+        for p in encontrados:
+            coe = p.get("continue-on-error")
+            if coe not in (None, False):
+                fallos.append(
+                    f"CI ejecuta las pruebas de «{paquete}» con "
+                    f"`continue-on-error: {coe!r}`: corre, se ve en rojo y no "
+                    f"detiene nada.")
+            real = p.get("if")
+            if real is None:
+                fallos.append(
+                    f"las pruebas de «{paquete}» corren SIN condición. Un paquete "
+                    f"sin pruebas hace salir a `dart test` con 79 y el job queda "
+                    f"rojo por no haber nada que correr. La condición va y es "
+                    f"exactamente:\n      {esperada}")
+            elif str(real).strip() != esperada:
+                fallos.append(
+                    f"las pruebas de «{paquete}» corren bajo una condición que no "
+                    f"es la prevista. Una condición ensanchada, apuntada a otro "
+                    f"paquete o puesta en `false` es otro control.\n"
+                    f"      esperada: {esperada}\n"
+                    f"      real:     {str(real).strip()}")
+
+    # Y al revés: un paso que prueba un paquete que el `workspace:` no declara.
+    for p in pasos:
+        m = re.fullmatch(r"dart test packages/([A-Za-z0-9_]+)",
+                         str(p.get("run", "")).strip())
+        if m and m.group(1) not in miembros:
+            fallos.append(
+                f"CI ejecuta «{m.group(0)}» y «{m.group(1)}» no es miembro del "
+                f"`workspace:`. Un paso que prueba lo que no existe se lee como "
+                f"cobertura y no la da.")
 
 
 def _check_casos_ciegos() -> None:
@@ -1229,7 +1348,7 @@ def main() -> int:
     detalle = ", ".join(f"{k}: {v}" for k, v in sorted(MIRADOS.items()))
     print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.\n"
           f"       archivos inspeccionados por regla de cadenas → {detalle}\n"
-          f"       pasos obligatorios verificados en CI → {len(PASOS_OBLIGATORIOS)}")
+          f"       pasos obligatorios verificados en CI → {len(PASOS_OBLIGATORIOS) + len(miembros_del_workspace()[0])}")
     return 0
 
 

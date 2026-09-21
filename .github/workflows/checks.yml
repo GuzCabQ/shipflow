@@ -110,35 +110,74 @@ jobs:
       - name: la recuperación sabe hacer su trabajo
         run: python3 tool/checks/probar_recuperacion.py
 
+      # --- LAS PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` ---------------
+      #
+      # **Cada paso es CONDICIONAL, y la condición es exactamente una.**
+      # `dart test packages/X` sobre un paquete sin `test/**/*_test.dart` sale
+      # con 79 —«No tests ran»— y el job queda rojo por no haber nada que
+      # correr. `hashFiles` devuelve cadena vacía cuando no encuentra archivos,
+      # así que `!= ''` es exactamente «existe al menos una prueba».
+      #
+      # `capas.py` deriva esta lista del `workspace:` de la raíz y compara la
+      # condición CARÁCTER POR CARÁCTER. Faltaban tres pasos —`rules`, `agents`
+      # y `plugin_fake`—: una prueba agregada ahí no habría corrido nunca, y
+      # nada lo decía. Por eso la lista se deriva y no se escribe.
+      #
+      # Un `if:` sobre un paso obligatorio sigue siendo un fallo en todos los
+      # demás pasos. Acá la regla no se relajó: pasó de «ninguna condición» a
+      # «solo la condición prevista para ESE paquete». Un pin, no un permiso.
+
+      # Invariantes del dominio.
       - name: pruebas de core
+        if: ${{ hashFiles('packages/core/test/**/*_test.dart') != '' }}
         run: dart test packages/core
 
-      # La cascada: el registro de pasos, la cuenta de registrados contra
-      # ejecutados (ADR-011 corolario 2) y la precedencia de estados.
-      - name: pruebas de la orquestación
+      # La cascada: el registro de pasos, la cuenta de registrados
+      # contra ejecutados (ADR-011 corolario 2) y la precedencia de estados.
+      - name: pruebas de orchestration
+        if: ${{ hashFiles('packages/orchestration/test/**/*_test.dart') != '' }}
         run: dart test packages/orchestration
 
       # `vcs` contra `git` de verdad: la rama, los commits y que un commit se
       # quede EXACTAMENTE con los archivos de su rebanada.
       - name: pruebas de vcs
+        if: ${{ hashFiles('packages/vcs/test/**/*_test.dart') != '' }}
         run: dart test packages/vcs
 
-      # Las suites de CONTRATO, que corren cada puerto contra su implementación
-      # real y su fake. Sin ellas, todo lo que se pruebe con el fake queda
-      # verde por construcción (docs/08 §2).
-      - name: suites de contrato
-        run: dart test packages/cli
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de rules
+        if: ${{ hashFiles('packages/rules/test/**/*_test.dart') != '' }}
+        run: dart test packages/rules
 
-      # Pruebas unitarias de la implementación real: lo que solo ella puede
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de agents
+        if: ${{ hashFiles('packages/agents/test/**/*_test.dart') != '' }}
+        run: dart test packages/agents
+
+      # Unitarias de la implementación real: lo que solo ella puede
       # ejercer y que por eso no pertenece a la suite de contrato.
-      - name: pruebas del plugin de stack
+      - name: pruebas de plugin_dart
+        if: ${{ hashFiles('packages/plugin_dart/test/**/*_test.dart') != '' }}
         run: dart test packages/plugin_dart
+
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de plugin_fake
+        if: ${{ hashFiles('packages/plugin_fake/test/**/*_test.dart') != '' }}
+        run: dart test packages/plugin_fake
 
       # El adapter de la forja contra un servidor local: que el push no le
       # entregue la credencial a los ganchos ni al credential helper del
       # usuario, y que `open` repetido no cree un segundo PR.
-      - name: pruebas de la forja
+      - name: pruebas de forge
+        if: ${{ hashFiles('packages/forge/test/**/*_test.dart') != '' }}
         run: dart test packages/forge
+
+      # Las suites de CONTRATO, que corren cada puerto contra su
+      # implementación real y su fake. Sin ellas, todo lo que se pruebe con el
+      # fake queda verde por construcción (docs/08 §2).
+      - name: pruebas de cli
+        if: ${{ hashFiles('packages/cli/test/**/*_test.dart') != '' }}
+        run: dart test packages/cli
 
       - name: analyze
         run: dart analyze --fatal-infos

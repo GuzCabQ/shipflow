@@ -96,6 +96,12 @@ HUELLA_REL = "tool/checks/arquitectura.huella"
 HUELLA_INV_REL = "tool/checks/inventario.huella"
 REGLAS = json.loads(ARQ.read_text(encoding="utf-8"))["reglas"]
 
+# **La condicion de los pasos de prueba se IMPORTA, no se copia.** El sabotaje
+# tiene que construir la condicion exacta que el meta-check exige; escribirla dos
+# veces crea dos representaciones que se pueden separar, y entonces el sabotaje
+# probaria una condicion que capas.py no pide.
+from capas import condicion_de_pruebas  # noqa: E402
+
 
 def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
     """Huella del contenido de un árbol. **Bytes, no `git status`.**
@@ -648,10 +654,17 @@ def casos() -> list[dict]:
          "        run: python3 tool/checks/probar_reglas.py",
          '        run: echo "python3 tool/checks/probar_reglas.py"',
          "exactamente"),
+        # **Este ataca un paso DERIVADO, no uno fijo, y por eso su oraculo es
+        # otro.** `dart test packages/core` salio de `PASOS_OBLIGATORIOS` cuando
+        # los pasos de prueba se derivaron del `workspace:`, asi que el rojo ya no
+        # dice «exactamente» sino que ese miembro no tiene su paso. Se conserva el
+        # caso —el truco del `|| true` vale igual sobre un paso derivado— y se le
+        # corrige el oraculo. Un sabotaje con el oraculo viejo pasa a estar rojo
+        # por la razon equivocada, que es un falso detectado.
         ("con «|| true» al final",
          "        run: dart test packages/core",
          "        run: dart test packages/core || true",
-         "exactamente"),
+         "no ejecuta sus pruebas"),
         ("el job entero con continue-on-error",
          "    continue-on-error: ${{ matrix.canario }}",
          "    continue-on-error: true",
@@ -825,6 +838,77 @@ def casos() -> list[dict]:
             "El esquema 1 esta vigente. Los puertos se documentan aca.\n"
             "ADR-011 gobierna los puertos.\n")},
         "espera": "pasa",
+    })
+
+    # --- LA POLITICA DE PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` --------
+    #
+    # Los pasos de prueba dejaron de estar enumerados a mano y se derivan del
+    # `workspace:`. Eso cierra un hueco que estaba vigente —`rules`, `agents` y
+    # `plugin_fake` no tenian paso, asi que una prueba agregada ahi no corria
+    # nunca— y abre tres modos de fallo que hay que cubrir por separado.
+    #
+    # **Los cuatro casos que necesitan un runner de GitHub no estan aca.** Que
+    # una prueba agregada ACTIVE el paso, que un `.dart` que no es `_test.dart`
+    # NO lo active, que cero pruebas quede verde y que una prueba roja siga
+    # roja: nada en este repositorio evalua expresiones de Actions, asi que se
+    # verifican como sondas remotas de una sola vez y su evidencia queda
+    # archivada. Un control que no puede correr en cada corrida se declara, no
+    # se disfraza de sabotaje.
+    _yml = (RAIZ / CI_REL).read_text(encoding="utf-8")
+    _paso_core = (f"      - name: pruebas de core\n"
+                  f"        if: {condicion_de_pruebas('core')}\n"
+                  f"        run: dart test packages/core\n")
+    assert _paso_core in _yml, "no encontre el paso de pruebas de core en el workflow"
+
+    c.append({
+        "nombre": "pruebas · la condicion apunta a otro paquete",
+        "archivos": {CI_REL: _yml.replace(
+            _paso_core,
+            _paso_core.replace(condicion_de_pruebas("core"),
+                               condicion_de_pruebas("vcs")), 1)},
+        "menciona": "una condición que no es la prevista",
+    })
+    c.append({
+        "nombre": "pruebas · un paso contra un paquete que el workspace no declara",
+        "archivos": {CI_REL: _yml.replace(
+            _paso_core,
+            _paso_core + "      - name: pruebas de fantasma\n"
+            "        run: dart test packages/fantasma\n", 1)},
+        "menciona": "no es miembro del",
+    })
+    c.append({
+        "nombre": "pruebas · un miembro del workspace sin su paso",
+        "archivos": {CI_REL: _yml.replace(_paso_core, "", 1)},
+        "menciona": "y CI no ejecuta sus pruebas",
+    })
+
+    # **LA DIRECCION INVERSA DEL BICONDICIONAL.**
+    #
+    # `serializacion_test.dart` existe SI Y SOLO SI hay una clase serializable en
+    # core. La direccion «hay clase y falta la prueba» ya la cubre el caso de
+    # abajo; esta es la otra: CERO clases y la prueba todavia ahi. Sin ella la
+    # implementacion cumple «no la exijo si no hay clases» y acepta
+    # indefinidamente una prueba obsoleta — se declara una equivalencia y se
+    # verifica media.
+    #
+    # La mutacion vacia los barriles de core y las dos listas del inventario que
+    # quedarian viejas. Sin vaciar el inventario el caso se pondria rojo por 34
+    # declaraciones huerfanas, que es OTRO control: un sabotaje que se pone rojo
+    # por otra cosa no prueba nada.
+    _core_fuentes = sorted(
+        str(q.relative_to(RAIZ))
+        for q in (RAIZ / "packages/core/lib").rglob("*.dart")
+        if ".dart_tool" not in str(q))
+    assert _core_fuentes, "no encontre fuentes en core/lib"
+    c.append({
+        "nombre": "pruebas · cero clases serializables y la prueba todavia ahi",
+        "archivos": {
+            **{r: "library;\n" for r in _core_fuentes},
+            INV_REL: inv_con(lambda inv: inv.update(
+                opacos={"_": "x"}, puertos_sin_implementacion={"_": "x"})),
+        },
+        "menciona": "no tiene ni una clase serializable",
+        "regenerar_huella": True,
     })
 
     # --- EL SPLIT: LOS CINCO MODOS DE FALLO DE UN REGISTRO --------------------
