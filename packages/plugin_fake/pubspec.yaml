@@ -1,22 +1,9 @@
 name: plugin_fake
-description: >-
-  Los puertos que ya tienen contrato, para pruebas. Cuales son y cuales
-  faltan lo declara arquitectura.json, no este texto.
+description: "Paquete reservado. Sin API todavia."
 publish_to: none
 version: 0.1.0
 
 environment:
-  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
-  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
-  # fixture se corrigió por esto mismo y no se propagó acá.
   sdk: ^3.11.0
 
 resolution: workspace
-
-dependencies:
-  core:
-    path: ../core
-  # Para normalizar rutas igual que la implementación real. Normalizar NO es
-  # conocimiento del stack —es semántica de rutas— así que honrarlo no
-  # convierte a este fake en una copia del real.
-  path: ^1.9.0

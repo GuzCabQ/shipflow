@@ -1,55 +1,9 @@
 name: cli
-description: "Comandos, instalacion, CredentialStore. Composition root."
+description: "Paquete reservado. Sin API todavia."
 publish_to: none
 version: 0.1.0
 
 environment:
-  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
-  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
-  # fixture se corrigió por esto mismo y no se propagó acá.
   sdk: ^3.11.0
 
 resolution: workspace
-
-# **Lo que se declara acá es lo que se USA, no lo que está permitido.**
-#
-# `arquitectura.json` permite que `cli` vea también `vcs`, `rules` y `agents`:
-# eso es la arquitectura, y no cambia. Pero ningún archivo de `lib/` ni `bin/`
-# importa a `rules` ni a `agents` —son stubs de dos líneas—, así que
-# declararlos acá afirmaría un uso que no hay. `vcs` sí se declara: la flecha
-# vuelve en este mismo commit, que es el que la usa —`ship/gitignore.dart`
-# pregunta con `RepositorioGit` si `git` ignora la ruta de una corrida—.
-dependencies:
-  core:
-    path: ../core
-  orchestration:
-    path: ../orchestration
-  # **De producción desde esta rebanada.** La ronda anterior la dejó de
-  # desarrollo con una justificación que decía que la composición real no
-  # arma ninguna forja «porque no hay superficie para decir de qué remoto se
-  # trata». Ya la hay: el remoto lo lee `vcs` y quién lo atiende lo decide la
-  # fábrica de nombre neutro que vive adentro de `forge` —el paquete que se
-  # declara acá, no este—, a la que llama la raíz de composición de `ship`.
-  forge:
-    path: ../forge
-  # El temporal se arma al lado del destino con el mismo nombre de archivo
-  # más un sufijo, y esa unión de rutas se le pide a la biblioteca oficial,
-  # no a mano — la misma razón que ya la trae `plugin_dart`.
-  path: ^1.9.0
-  plugin_dart:
-    path: ../plugin_dart
-  vcs:
-    path: ../vcs
-
-# Las suites de contrato viven acá, así que la dependencia es real y se declara.
-# `core` no puede hacer lo mismo —`nucleo-sin-externas` le prohíbe TODA
-# dependencia directa, incluidas las de desarrollo— y por eso sus pruebas usan
-# la del workspace. Acá no hace falta esa excepción.
-dev_dependencies:
-  test: ^1.25.0
-  # **De desarrollo, no de producción.** Sus siete imports viven en `test/`, y
-  # el paquete se describe a sí mismo como implementaciones falsas «para
-  # pruebas». Estaba declarado como dependencia de producción, que decía otra
-  # cosa; `plugin_dart` ya usaba el patrón correcto.
-  plugin_fake:
-    path: ../plugin_fake

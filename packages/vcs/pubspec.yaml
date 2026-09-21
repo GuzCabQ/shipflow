@@ -1,20 +1,9 @@
 name: vcs
-description: "Rama y commits LOCALES. No conoce la forja ni empuja nada. Agnostico del lenguaje y del agente."
+description: "Paquete reservado. Sin API todavia."
 publish_to: none
 version: 0.1.0
 
 environment:
-  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
-  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
-  # fixture se corrigió por esto mismo y no se propagó acá.
   sdk: ^3.11.0
 
 resolution: workspace
-
-dependencies:
-  core:
-    path: ../core
-
-# `vcs` no es `core`: puede declarar sus dependencias de desarrollo.
-dev_dependencies:
-  test: ^1.25.0

@@ -1,22 +1,9 @@
 name: orchestration
-description: "Compositor de etapas, AutonomyPolicy, cascada, presupuestos."
+description: "Paquete reservado. Sin API todavia."
 publish_to: none
 version: 0.1.0
 
 environment:
-  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
-  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
-  # fixture se corrigió por esto mismo y no se propagó acá.
   sdk: ^3.11.0
 
 resolution: workspace
-
-dependencies:
-  core:
-    path: ../core
-
-# `orchestration` NO es `core`: puede declarar sus dependencias de desarrollo.
-# `nucleo-sin-externas` gobierna solo a core, y `deps-hacia-core` mira los
-# miembros del workspace, no las externas.
-dev_dependencies:
-  test: ^1.25.0

@@ -148,6 +148,44 @@ def huella_del_arbol(raiz: Path, *, con_generados: bool) -> str:
     return h.hexdigest()
 
 
+def mapa_del_arbol(raiz: Path, *, con_generados: bool) -> dict[str, str]:
+    """Lo mismo que `huella_del_arbol`, pero entrada por entrada.
+
+    **Existe para que «dejaron residuo» diga DONDE.** El mensaje solo afirmaba
+    que el arbol no habia vuelto a ser el de antes, y dejaba a quien lo lea
+    buscando a mano entre cientos de archivos — que es pedirle al lector el
+    trabajo que el arnes ya hizo. Un diagnostico que no nombra su sujeto obliga a
+    reproducir la corrida para saber que paso.
+    """
+    ignorados = {".git", "build"} | (set() if con_generados else {".dart_tool"})
+    mapa: dict[str, str] = {}
+    for ruta in sorted(raiz.rglob("*")):
+        rel = ruta.relative_to(raiz)
+        if set(rel.parts) & ignorados or rel.suffix == ".dill":
+            continue
+        if ruta.is_symlink():
+            mapa[str(rel)] = "L:" + os.readlink(ruta)
+        elif ruta.is_dir():
+            mapa[str(rel)] = "D"
+        else:
+            modo = ruta.stat().st_mode & 0o777
+            mapa[str(rel)] = f"F:{modo:o}:" + hashlib.sha256(ruta.read_bytes()).hexdigest()[:16]
+    return mapa
+
+
+def residuo(antes: dict[str, str], despues: dict[str, str]) -> list[str]:
+    """Las entradas que no volvieron a ser lo que eran, nombradas."""
+    salida = []
+    for k in sorted(set(despues) - set(antes)):
+        salida.append(f"quedo de mas: {k} ({despues[k]})")
+    for k in sorted(set(antes) - set(despues)):
+        salida.append(f"falta: {k} ({antes[k]})")
+    for k in sorted(set(antes) & set(despues)):
+        if antes[k] != despues[k]:
+            salida.append(f"cambio: {k} ({antes[k]} -> {despues[k]})")
+    return salida
+
+
 def huella_ambigua() -> list[str]:
     """Que la huella distinga lo que dice distinguir. **Se comprueba siempre.**
 
@@ -503,6 +541,18 @@ def casos() -> list[dict]:
             if "pubspec_derivado" in extra:
                 pd = extra["pubspec_derivado"]
                 archivos[pd["donde"]] = pubspec_con(pd["donde"], pd)
+            # **Y una extra puede necesitar una entrada del INVENTARIO.**
+            #
+            # Es el caso de las excepciones de entorno: la regla dice que una
+            # excepcion declarada tiene que corresponder a un lanzamiento real, y
+            # para sabotearla hace falta que exista una excepcion. Con el producto
+            # vaciado el inventario esta vacio, asi que el canario TRAE LA SUYA
+            # junto con el archivo que la justifica. Se sostiene solo.
+            inv_extra = extra.get("inventario_derivado")
+            if inv_extra:
+                archivos[INV_REL] = inv_con(
+                    lambda inv, e=inv_extra: inv.__setitem__(
+                        e["clave"], inv.get(e["clave"], []) + e["agregar"]))
             declarar = extra.get("declarar_sin_implementacion")
             # **`espera` es la excepción, no la regla.** Por defecto una extra
             # ESPERA FALLA y `debe_mencionar` es obligatorio —sigue siendo
@@ -784,39 +834,48 @@ def casos() -> list[dict]:
             que="el step de analyze, antes del cual se inyecta Flutter")},
         "menciona": "instala Dart Y Flutter",
     })
-    # Antes esta ancla estaba protegida DE REBOTE, porque `flutter_paso` la
-    # contiene como substring. Era indirecto y no obvio releyendo el caso: si
-    # `flutter_paso` cambiaba de formato sin cambiar la versión, la protección
-    # se perdía sin que nada lo anunciara. Ahora tiene la suya.
-    _version = "          flutter-version: 3.44.0"
+    # **ESTOS DOS SE REFORMULARON CUANDO SE RETIRO EL MATERIAL DE PRUEBA.**
+    #
+    # Anclaban en una version fijada de Flutter y en el nombre del job que lo
+    # verificaba, que eran lo unico que instalaba Flutter en este repositorio. Con
+    # ese job afuera perdian su sujeto — y un caso que no puede sabotear nada es
+    # peor que ninguno: se lee como proteccion.
+    #
+    # La REGLA sigue viva: si un job instala Flutter, su version va fijada. Asi que
+    # los casos ahora traen su propio paso, REEMPLAZANDO el de Dart en vez de
+    # sumarse a el. Reemplazar y no sumar es deliberado: sumar disparararia tambien
+    # «instala Dart Y Flutter», que es OTRO control, y un sabotaje rojo por dos
+    # razones prueba menos de lo que parece.
+    _dart_formato = ("      - name: dart\n"
+                     "        uses: dart-lang/setup-dart@"
+                     "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
+                     "        with:\n          sdk: \"3.12.0\"")
+    _dart_capas = ("      - name: dart\n"
+                   "        uses: dart-lang/setup-dart@"
+                   "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
+                   "        with:\n          sdk: ${{ matrix.sdk }}")
+    _flutter_flotante = ("      - name: flutter\n"
+                         "        uses: subosito/flutter-action@"
+                         "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
+                         "        with:\n          flutter-version: stable")
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
-        "archivos": {CI_REL: ancla(ci, _version, "          channel: stable",
-                                   que="la versión fijada de Flutter")},
+        "archivos": {CI_REL: ancla(
+            ci, _dart_formato, _flutter_flotante,
+            que="el paso de Dart del job de formato, reemplazado por Flutter flotante")},
         "menciona": "no es una versión exacta",
     })
-    # El control negativo de la exención de canario se retiró CON la exención.
-    # Existía para probar que «flotante prohibido salvo en canario» no era
-    # «prohibido siempre» — y hoy es prohibido siempre, a propósito: no existe
-    # ningún canario de Flutter, y la exención estaba escrita para un caso
-    # hipotético. Un control negativo que defiende una exención que ya no está
-    # es peor que no tenerlo: la haría parecer viva.
-    #
-    # El segundo anclaje de este caso —el job del fixture— no tenía ninguna
-    # guardia, ni directa ni indirecta: si ese nombre de job o esa línea de
-    # `runs-on` cambiaban, el `.replace` no aplicaba y el caso quedaba probando
-    # el archivo sin tocar. Silencioso, no un crash, que es el modo de fallo
-    # peor de los dos.
-    _job_fixture = ("    name: el fixture se verifica a sí mismo\n"
-                    "    runs-on: ubuntu-latest")
+    # Y que la version flotante no se salve con pinta de canario. **NO HAY EXENCION
+    # DE CANARIO, y se decidio dos veces** —la primera version la tenia y tenia un
+    # agujero medido: no verificaba el VALOR de la matriz, asi que un job con
+    # `canario: [false]` pasaba como canario y bloqueaba igual—. El job `capas` ya
+    # declara `continue-on-error: ${{ matrix.canario }}`, asi que reemplazar su paso
+    # de Dart alcanza: la pinta de canario viene incluida.
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ancla(
-            ancla(ci, _version, "          flutter-version: stable",
-                  que="la versión de Flutter, vuelta flotante"),
-            _job_fixture,
-            _job_fixture + "\n    continue-on-error: ${{ matrix.canario }}",
-            que="el job del fixture, al que se le da pinta de canario")},
+            ci, _dart_capas, _flutter_flotante,
+            que="el paso de Dart del job con pinta de canario")},
         "menciona": "no es una versión exacta",
     })
     # El número se DERIVA del documento, no se cablea: cablearlo hacía que este
@@ -956,16 +1015,17 @@ def casos() -> list[dict]:
     # **LA DIRECCION INVERSA DEL BICONDICIONAL.**
     #
     # `serializacion_test.dart` existe SI Y SOLO SI hay una clase serializable en
-    # core. La direccion «hay clase y falta la prueba» ya la cubre el caso de
-    # abajo; esta es la otra: CERO clases y la prueba todavia ahi. Sin ella la
-    # implementacion cumple «no la exijo si no hay clases» y acepta
-    # indefinidamente una prueba obsoleta — se declara una equivalencia y se
-    # verifica media.
+    # core. La direccion «hay clase y falta la prueba» la cubre el caso de al lado;
+    # esta es la otra: CERO clases y la prueba todavia ahi. Sin ella la
+    # implementacion cumple «no la exijo si no hay clases» y acepta indefinidamente
+    # una prueba obsoleta — se declara una equivalencia y se verifica media.
     #
-    # La mutacion vacia los barriles de core y las dos listas del inventario que
-    # quedarian viejas. Sin vaciar el inventario el caso se pondria rojo por 34
-    # declaraciones huerfanas, que es OTRO control: un sabotaje que se pone rojo
-    # por otra cosa no prueba nada.
+    # **EL CASO TRAE SU PROPIA PRUEBA.** La primera version vaciaba los barriles de
+    # core y esperaba encontrar la prueba ya presente. Con el producto vaciado no
+    # hay ninguna, asi que el sabotaje dejaba de sabotear y pasaba en VERDE — el
+    # canario se volvio legitimo, que es como este repositorio ya perdio sabotajes
+    # dos veces. Ahora la crea el, y el caso se sostiene con el producto presente
+    # o ausente.
     _core_fuentes = sorted(
         str(q.relative_to(RAIZ))
         for q in (RAIZ / "packages/core/lib").rglob("*.dart")
@@ -975,6 +1035,11 @@ def casos() -> list[dict]:
         "nombre": "pruebas · cero clases serializables y la prueba todavia ahi",
         "archivos": {
             **{r: "library;\n" for r in _core_fuentes},
+            "packages/core/test/serializacion_test.dart":
+                "// CANARIO SINTETICO: una prueba de ida y vuelta sin sujeto.\n"
+                "// core no declara ninguna clase serializable, asi que esta prueba\n"
+                "// no verifica nada y se lee como que si.\n"
+                "void main() {}\n",
             INV_REL: inv_con(lambda inv: inv.update(
                 opacos={"_": "x"}, puertos_sin_implementacion={"_": "x"})),
         },
@@ -1492,6 +1557,7 @@ def main() -> int:
     # y además preguntarle a git solo veía lo versionado: un canario sintético
     # en un directorio ignorado no aparecía.
     huella_antes = huella_del_arbol(RAIZ, con_generados=False)
+    mapa_antes = mapa_del_arbol(RAIZ, con_generados=False)
     print("  árbol limpio\n")
 
     problemas: list[str] = []
@@ -1539,10 +1605,12 @@ def main() -> int:
     if codigo != 0:
         problemas.append("el árbol quedó en rojo tras restaurar")
     if huella_del_arbol(RAIZ, con_generados=False) != huella_antes:
+        detalle = residuo(mapa_antes, mapa_del_arbol(RAIZ, con_generados=False))
         problemas.append(
             "los sabotajes dejaron residuo: el contenido del árbol no volvió a "
             "ser el de antes.\n      Alguno no restauró lo que tocó, y el "
-            "siguiente corrió sobre un árbol que no era el que dice.")
+            "siguiente corrió sobre un árbol que no era el que dice.\n      "
+            + "\n      ".join(detalle[:12]))
 
     if problemas:
         print("\nprobar_reglas: FALLA\n")

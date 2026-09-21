@@ -22,85 +22,8 @@
   ],
   "esquema": 1,
   "inventario": {
-    "puertos_sin_implementacion": {
-      "_": "puerto: en que fase aparece su primera implementacion viva. ProjectTopology, ArtifactPolicy y DiagnosticNormalizer salieron de esta lista en la fase 2, cada uno con implementacion real en plugin_dart, fake en plugin_fake, y suite de contrato corriendo contra TODAS las que tenga. DiagnosticNormalizer tiene tres —dos reales, una por herramienta, y la falsa—: el puerto es uno y los formatos que tiene que leer son varios. Verifier salio con DOS reales y NINGUNA falsa, y eso queda escrito y no disimulado: sus dos pasos difieren en lo que importa —uno puede comprobar su cobertura y el otro no—, asi que el motivo por el que un puerto pide dos implementaciones ya esta cubierto. Falta un Verifier falso para que orchestration pueda probar la cascada sin toolchain; llega con la fase que lo necesite. ChangeSink salio en la rebanada de vcs con UNA implementacion real y ningun fake, y eso tambien va escrito y no disimulado. El motivo que se declaro entonces era que no habia etapa que lo consumiera —no existia `ship`—; LA REBANADA DE `ship` LO CONSUME y ese motivo caduco: `correrShip` prepara el candidato, lo materializa, lo commitea y lo limpia, y la raiz de composicion arma el `RepositorioGit` real. Con una salvedad que se dice para no afirmar de mas: `correrShip` recibe la CLASE CONCRETA y no el puerto, a proposito y declarado en su doc —lo que sus pruebas fijan es que el commit NO ocurre en ciertos caminos, y eso contra un doble no prueba nada—, asi que el consumidor existe pero todavia no esta tipado contra el puerto. LO QUE SIGUE FALTANDO es el fake: sin una segunda implementacion, una suite de contrato correria la misma logica dos veces. O sea que el hueco ya no es «nadie lo usa» sino «hay una sola implementacion», que es un hueco distinto y mas chico. Que un puerto salga de esta lista sin decir con cuantas implementaciones salio es el hueco que encontro un review: la lista dice quien FALTA, y hacia falta que tambien dijera con que salio el que ya no esta. VerificationEnvironment salio en la rebanada del entorno con UNA implementacion real en plugin_dart y NINGUNA falsa, y eso va escrito. El motivo declarado entonces era que no habia etapa que lo consumiera —la composicion vivia en una prueba de cli—; LA REBANADA DE `ship` LO CONSUME y ese motivo caduco: `correrShip` recibe ESTE PUERTO —el puerto, no una clase concreta— y lo usa para derivar el entorno sobre la raiz del candidato antes de correr la cascada, y la raiz de composicion le pasa el `EntornoDart` real. LO QUE SIGUE FALTANDO es el fake, por el mismo motivo de siempre: una suite de contrato con una sola implementacion correria la misma logica dos veces. PullRequestSink salio en la rebanada de la forja con UNA implementacion real —`SalidaDePrDeGitHub` en `forge`— y UNA falsa —`SalidaDePrFalsa` en plugin_fake—, con la suite de contrato de esta misma rebanada corriendo contra las dos: es el primer puerto de esta lista que sale con las dos puntas del contrato ya puestas, no con la promesa de que van a llegar despues. Cuando esa rebanada cerro seguia, igual que `ChangeSink` y que `VerificationEnvironment`, sin una etapa productiva que lo invocara —`ship` todavia no existia—, asi que lo que dejaba era la garantia del contrato en si y no la de un consumidor real ejercitandolo. ESO YA NO ES ASI: el paso 15 de `correrShip` llama a `open` con la salida que devuelve la fabrica neutra de `forge`, que es el unico lugar del arbol que decide quien atiende un remoto. De los tres puertos que salieron de esta lista sin consumidor, este es el unico que hoy sale con las dos puntas —contrato y consumidor productivo— puestas. LO QUE SIGUE SIN MEDIRSE es el paso 15 de una corrida NUEVA contra el adapter REAL de punta a punta: `comando_test.dart` sigue usando `SalidaDePrFalsa`, un doble del puerto entero; lo que NO es doble es la decision de quien atiende el remoto, que la toma la fabrica real. ESTO DEJO DE SER CIERTO PARA EL REINTENTO, que es 4c: `packages/cli/test/reintento_test.dart` SI llega al `open` equivalente —adentro de `_publicar`, en `packages/cli/lib/src/ship/reintento.dart`— con el adapter real, el mismo `salidaDePrDelRemoto` que arma la raiz de composicion, reemplazando solo el servidor HTTP del otro lado por uno local. Es lo que vuelve medible que un reintento sobre una corrida cuyo pull request ya se abrio no abre un segundo: la busqueda idempotente que se ejercita es la del adapter de produccion, no la de un doble que la simule.",
-      "WorkItemSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "WorkItemFeedback": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "ContextSource": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "CodegenTrigger": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "DependencyResolver": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "ChangeClassCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "AgentRunner": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "HookInstaller": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "ContextProjector": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "Workspace": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "TraceSink": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "CredentialStore": "fase de `init` · el puerto se partio en la rebanada de la forja: `CredentialSource`, que solo lee, salio de esta lista con UNA implementacion real —`FuenteDeEntorno` en cli— y, desde la tarea de los fakes de la forja, UNA falsa —`FuenteDeCredencialFalsa` en plugin_fake—. No hay suite de contrato que las corra a las dos contra las mismas preguntas, y eso queda escrito y no disimulado: hoy la falsa solo se usa como colaborador de la suite de `PullRequestSink` —para construir `SalidaDePrDeGitHub` sin credenciales reales—, no como sujeto comparado contra la real. Escribir esa suite tendria que decidir primero algo que hoy no esta decidido: `FuenteDeEntorno` rechaza con `ArgumentError` una clave que `clavesDeCredencial` no declaro —esa validacion vive en `EntornoDelProceso`, no en el puerto— y `FuenteDeCredencialFalsa`, configurada con un mapa directo, no tiene ningun equivalente; sirve cualquier clave que se le dio. Si esa clausula es del contrato de `CredentialSource` o es propia de leer de un entorno de proceso es la pregunta que falta responder antes de poder escribir la suite, asi que el hueco es de esa decision, no solo de tiempo. `CredentialStore` agrega escritura y borrado, y sigue sin implementacion porque no hay almacenamiento real: una clase que leyera y lanzara en `write`/`delete` seria una capacidad declarada que no existe",
-      "ReviewSensor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "TraceAuditor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "RuleContributor": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "ReviewCriteria": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "EvasionCatalog": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete",
-      "AssertionForms": "fase 2 en adelante · plugin_fake los implementa todos; los reales, su paquete"
-    },
-    "opacos": {
-      "_": "Clases que NO serializan a proposito. Cada una con su motivo y la mascara exacta que devuelve su toString.",
-      "Credential": {
-        "por_que": "INV-5: un secreto nunca se serializa ni aparece en traza, log o mensaje de error. Que no tenga toJson es el invariante, no una omision.",
-        "mascara": "***"
-      },
-      "RuleNotInstallable": {
-        "por_que": "Es una excepcion, no dato del dominio. Nunca cruza un limite de proceso: se lanza y se atrapa en el mismo. Sin esta declaracion, «no tiene toJson» seria indistinguible de un olvido."
-      },
-      "UnreadableToolOutput": {
-        "por_que": "Misma razon que RuleNotInstallable: es una excepcion y no dato del dominio. Se lanza cuando un normalizador no puede interpretar lo que le dieron, y la atrapa el paso de cascada del mismo proceso para convertirla en un veredicto no concluyente."
-      },
-      "StepOutcome": {
-        "por_que": "Es la base de una jerarquia sellada, sin campo propio: cada variante concreta (Executed, Aborted, Skipped, Unobservable, Broken) trae su propio toJson/fromJson, discriminados por kind. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear-, y dejarlo sin declarar seria la tercera opcion silenciosa que esta misma regla prohibe. DIFERIDO CON MOTIVO: la etiqueta esta mal y se sabe. El encabezado de esta lista dice «clases que NO serializan a proposito» y estas SI serializan, por sus variantes; un review lo llamo imprecision taxonomica y la categoria correcta seria «jerarquia sellada serializable», con despachador valido, discriminador cerrado y round-trip de todas las variantes. No se construye ahora porque el hueco real es chico: las cinco variantes concretas ya estan entre las clases verificadas campo por campo -tienen toJson, viven en core y no estan en esta lista, asi que la regla las clasifico como serializables y pasaron-, y lo unico sin comprobar es que el despachador de la base enrute cada kind. Es trabajo de arnes, no de dominio, y no lo toca ninguna etapa por construir. Se reabre cuando una variante nueva entre a la jerarquia, que es cuando el despachador puede quedarse corto en silencio."
-      },
-      "CommitOutcome": {
-        "por_que": "Es el desenlace IN-PROCESS de aplicar un candidato: lo devuelve `ChangeSink` y lo consume quien coordina la corrida, en el mismo proceso. Lo que se persiste no es este tipo sino el ESTADO de la corrida —`committed`, `notApplied`, `localInconsistent`— que `cli` compone junto con la rebanada, la rama y la base; serializar ademas el desenlace crearia dos fuentes del mismo hecho, que es justamente lo que el documento autoritativo de la corrida existe para evitar. Se reabre el dia que el desenlace tenga que cruzar un limite de proceso —un `--retry-publication` que lo lea de disco en vez de recomponerlo— porque ahi la eleccion vuelve a estar abierta y este motivo deja de valer."
-      },
-      "Committed": {
-        "por_que": "Variante de CommitOutcome: mismo motivo. Su unico campo, la revision, viaja en el estado de la corrida que compone cli."
-      },
-      "NotApplied": {
-        "por_que": "Variante de CommitOutcome: mismo motivo. Sus campos —la revision inalcanzable, la base esperada y el HEAD observado— se reportan en el canal local de la corrida, no se serializan como este tipo."
-      },
-      "LocalInconsistent": {
-        "por_que": "Variante de CommitOutcome: mismo motivo. Nombra un estado local a medias —commit hecho, indice sin sincronizar— que cli traduce al estado `localInconsistent` de la corrida."
-      },
-      "VerificationOutcome": {
-        "por_que": "Misma razon que StepOutcome: es un refinamiento sellado sin campo propio -el subconjunto que un Verifier puede devolver-, y sus dos variantes (Executed, Aborted) serializan cada una por su lado."
-      },
-      "ResultadoDeEntorno": {
-        "por_que": "Misma situacion que StepOutcome y CommitOutcome: es la base de una jerarquia sellada cuyas variantes -EntornoDerivado, CandidatoRechazado, DerivacionAbortada- serializan cada una con su kind, y la base solo despacha fromJson. Declarar un toJson aca arriba con cuerpo no se puede -no hay datos propios que mapear- y dejarlo sin declarar seria la tercera opcion silenciosa que esta regla prohibe."
-      },
-      "PublicationOutcome": {
-        "por_que": "Es la base de la jerarquia sellada del desenlace de la publicacion: sin campo propio, despacha fromJson por kind hacia las siete variantes concretas -PullRequestOpen, PullRequestMerged, PullRequestClosed, PushFailed, PushUnknown, PullRequestFailed, PullRequestUnknown-, que serializan cada una por su lado. Misma situacion que StepOutcome y ResultadoDeEntorno."
-      },
-      "PublicacionUtilizable": {
-        "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio: agrupa PullRequestOpen y PullRequestMerged, que comparten la validacion de que la URL no puede venir en blanco pero declaran su propio campo url -un getter abstracto en la base, no un campo, para que el verificador de serializacion derive los campos de cada variante concreta y no de lo que hereda- y su propio toJson/fromJson discriminados por kind."
-      },
-      "PublicacionNoUtilizable": {
-        "por_que": "Refinamiento sellado de PublicationOutcome sin campo propio, para lo que no dejo un PR utilizable confirmado: PullRequestClosed y las cuatro variantes de PublicacionConCausa serializan cada una por su lado."
-      },
-      "PublicacionConCausa": {
-        "por_que": "Refinamiento sellado de PublicacionNoUtilizable sin campo propio: agrupa PushFailed, PushUnknown, PullRequestFailed y PullRequestUnknown, que comparten causa y safeReason -causa es un getter abstracto en la base, no un campo, por el mismo motivo que PublicacionUtilizable.url- y cada una declara su propio campo causa y su propio toJson/fromJson discriminados por kind."
-      },
-      "ShipOutcome": {
-        "por_que": "Es la base de la jerarquia sellada del desenlace de una corrida de ship: sin campo propio -kind es un getter abstracto en la base, no un campo, por el mismo motivo que PublicacionUtilizable.url-, despacha fromJson por kind hacia las cinco variantes concretas -NoIntentado, NoAplicado, LocalInconsistente, Publicado, PublicacionIncompleta-, que serializan cada una por su lado. Misma situacion que StepOutcome, ResultadoDeEntorno y PublicationOutcome."
-      },
-      "PullRequestRequest": {
-        "por_que": "Es la composicion IN-PROCESS de despues del commit, consumida por el adapter de la forja en la misma corrida que la construye. Lo que se persiste es el PublicationOutcome que resulta de publicarla, no la solicitud: serializarla ademas duplicaria por una segunda ruta la relacion entre revision y arbolDeLaRevision que su constructor ya exige una sola vez, y que es la razon de ser del tipo -si esa relacion viajara como dos campos independientes en vez de validarse una vez en memoria, un documento reconstruido podria discrepar sin que nada lo note."
-      }
-    },
-    "entorno_saneado_exceptuado": [
-      {
-        "archivo": "packages/vcs/lib/src/repositorio.dart",
-        "metodo": "_identidadComoEntorno",
-        "por_que": "La identidad de git se captura UNA vez con el entorno del padre, antes de sanear. `git config --get` tiene que ver XDG_CONFIG_HOME y GIT_CONFIG_GLOBAL, que la lista blanca no lleva a proposito, y enumerar por donde git puede leer su configuracion es la misma carrera que una lista negra. Medido: con PATH y HOME solos, una identidad que vive en XDG se pierde y git FABRICA el autor. Es un `git config --get` de solo lectura: no corre ganchos ni filtros y no escribe nada. El check admite EXACTAMENTE UN lanzamiento sin sanear en esta biblioteca, dentro de este metodo, y cuenta: un segundo es rojo. CONDICIONADA desde la rebanada de la forja: el tipo de la costura es `EntornoDelProceso`, y lo que entrega hacia abajo ya paso por `paraHijos`, que quita `clavesDeCredencial`. Antes de esa rebanada la justificacion argumentaba que `git config --get` no corre ganchos ni escribe nada, y nunca argumento QUE VE el hijo; no hacia falta, porque no habia nada secreto en el entorno. La rebanada de la forja lo puso ahi. Que el entero que recibe este lanzamiento ya no pueda traer la credencial no se resuelve en cada llamada —eso seria la lista negra otra vez— sino en el tipo."
-      }
-    ]
+    "puertos_sin_implementacion": {},
+    "opacos": {},
+    "entorno_saneado_exceptuado": []
   }
 }

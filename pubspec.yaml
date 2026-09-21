@@ -7,8 +7,8 @@ environment:
   # El arnés soporta el canal estable vigente, no el último SDK publicado
   # (D-068). Los workspaces de pub necesitan 3.6.
   # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
-  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir. El
-  # fixture se corrigió por esto mismo y no se propagó acá.
+  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir — soporte
+  # prometido que nada podía honrar, que es una afirmación falsa y no un hueco.
   sdk: ^3.11.0
 
 # Solo para el análisis estático y las pruebas. Van en la RAÍZ del workspace,
