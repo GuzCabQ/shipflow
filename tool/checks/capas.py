@@ -196,7 +196,11 @@ PASOS_OBLIGATORIOS = {
     "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
     "el analizador estático": ("dart analyze --fatal-infos", None),
     # Por ruta explícita: `dart format` NO respeta las exclusiones del
-    # analizador, así que un `.` entraría al fixture, que tiene otra toolchain.
+    # analizador, así que un `.` alcanzaría cualquier `.dart` del árbol, incluido
+    # el que viva fuera de `packages/` y `tool/`. Eso hoy es rojo por
+    # `nada fuera del alcance del formateo`, y las rutas explícitas son lo que
+    # hace que ese control tenga algo que afirmar: se formatea EXACTAMENTE el
+    # alcance gobernado, no «todo lo que haya».
     #
     # **Y el estilo lo decide UN SOLO SDK.** El formateador cambia de estilo
     # entre versiones menores, así que con el árbol formateado por 3.12 la pata
@@ -210,12 +214,12 @@ PASOS_OBLIGATORIOS = {
     # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
     # `stable` no decide el estilo. El comando es el real, sin banderas.
     "el formato": ("dart format --output=none --set-exit-if-changed packages tool", None),
-    # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
-    # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
-    "el fixture · dominio": ("dart pub get && dart analyze && dart test",
-                             "fixtures/app-minima/dominio"),
-    "el fixture · app": ("flutter pub get && flutter analyze && flutter test",
-                         "fixtures/app-minima/app"),
+    # **ACA VIVIAN LOS DOS PASOS DEL FIXTURE, Y SE FUERON CON SU SUJETO.**
+    # Decian: «sin estos dos, "funciona sobre un fixture real" seria cierto de una
+    # fotografia». Seguia siendo verdad, y por eso el fixture no se retiro solo:
+    # se retiro junto con su job, su exclusion del grafo y su exencion del
+    # formateo. Una exclusion cuyo `quien_lo_cubre` ya no existe es un hueco con
+    # aspecto de decision.
 }
 
 # El job puede declararse `continue-on-error` SOLO con esta expresión, que es
@@ -411,7 +415,11 @@ def _check_nada_fuera_de_alcance() -> None:
     las exclusiones del analizador. Eso deja un borde: un `.dart` en cualquier
     otro lado quedaría sin formatear y sin analizar, y nadie lo notaría.
     """
-    permitidos = ("packages/", "tool/", "fixtures/")
+    # **`fixtures/` salio de la lista con el fixture.** Mientras existio, un `.dart`
+    # ahi adentro quedaba fuera del formateo y del analisis, y lo cubria su propio
+    # job de CI. Sin ese job la exencion no tendria dueño: cualquier `.dart` bajo
+    # `fixtures/` volveria a ser codigo sin verificar. Ahora aparecer ahi es rojo.
+    permitidos = ("packages/", "tool/")
     for archivo in sorted(RAIZ.rglob("*.dart")):
         rel = str(archivo.relative_to(RAIZ))
         if any(p in rel for p in (".dart_tool", "build/")):

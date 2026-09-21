@@ -784,39 +784,48 @@ def casos() -> list[dict]:
             que="el step de analyze, antes del cual se inyecta Flutter")},
         "menciona": "instala Dart Y Flutter",
     })
-    # Antes esta ancla estaba protegida DE REBOTE, porque `flutter_paso` la
-    # contiene como substring. Era indirecto y no obvio releyendo el caso: si
-    # `flutter_paso` cambiaba de formato sin cambiar la versión, la protección
-    # se perdía sin que nada lo anunciara. Ahora tiene la suya.
-    _version = "          flutter-version: 3.44.0"
+    # **ESTOS DOS SE REFORMULARON CUANDO SE RETIRO EL FIXTURE.**
+    #
+    # Anclaban en `flutter-version: 3.44.0` y en el nombre del job del fixture,
+    # que eran lo unico que instalaba Flutter en este repositorio. Con el fixture
+    # afuera perdian su sujeto — y un caso que no puede sabotear nada es peor que
+    # ninguno: se lee como proteccion.
+    #
+    # La REGLA sigue viva: si un job instala Flutter, su version va fijada. Asi que
+    # los casos ahora traen su propio paso de Flutter, REEMPLAZANDO el de Dart en
+    # vez de sumarse a el. Reemplazar y no sumar es deliberado: sumar tambien
+    # dispararia «instala Dart Y Flutter», que es OTRO control, y un sabotaje rojo
+    # por dos razones prueba menos de lo que parece.
+    _dart_formato = ("      - name: dart\n"
+                     "        uses: dart-lang/setup-dart@"
+                     "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
+                     "        with:\n          sdk: \"3.12.0\"")
+    _dart_capas = ("      - name: dart\n"
+                   "        uses: dart-lang/setup-dart@"
+                   "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
+                   "        with:\n          sdk: ${{ matrix.sdk }}")
+    _flutter_flotante = ("      - name: flutter\n"
+                         "        uses: subosito/flutter-action@"
+                         "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
+                         "        with:\n          flutter-version: stable")
     c.append({
         "nombre": "ci · Flutter en un canal flotante como compuerta",
-        "archivos": {CI_REL: ancla(ci, _version, "          channel: stable",
-                                   que="la versión fijada de Flutter")},
+        "archivos": {CI_REL: ancla(
+            ci, _dart_formato, _flutter_flotante,
+            que="el paso de Dart del job de formato, reemplazado por Flutter flotante")},
         "menciona": "no es una versión exacta",
     })
-    # El control negativo de la exención de canario se retiró CON la exención.
-    # Existía para probar que «flotante prohibido salvo en canario» no era
-    # «prohibido siempre» — y hoy es prohibido siempre, a propósito: no existe
-    # ningún canario de Flutter, y la exención estaba escrita para un caso
-    # hipotético. Un control negativo que defiende una exención que ya no está
-    # es peor que no tenerlo: la haría parecer viva.
-    #
-    # El segundo anclaje de este caso —el job del fixture— no tenía ninguna
-    # guardia, ni directa ni indirecta: si ese nombre de job o esa línea de
-    # `runs-on` cambiaban, el `.replace` no aplicaba y el caso quedaba probando
-    # el archivo sin tocar. Silencioso, no un crash, que es el modo de fallo
-    # peor de los dos.
-    _job_fixture = ("    name: el fixture se verifica a sí mismo\n"
-                    "    runs-on: ubuntu-latest")
+    # Y que la version flotante no se salve con pinta de canario. **NO HAY
+    # EXENCION DE CANARIO, y se decidio dos veces** —la primera version la tenia y
+    # tenia un agujero medido: no verificaba el VALOR de la matriz, asi que un job
+    # con `canario: [false]` pasaba como canario y bloqueaba igual—. El job `capas`
+    # ya declara `continue-on-error: ${{ matrix.canario }}`, asi que reemplazar su
+    # paso de Dart alcanza: la pinta de canario viene incluida.
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ancla(
-            ancla(ci, _version, "          flutter-version: stable",
-                  que="la versión de Flutter, vuelta flotante"),
-            _job_fixture,
-            _job_fixture + "\n    continue-on-error: ${{ matrix.canario }}",
-            que="el job del fixture, al que se le da pinta de canario")},
+            ci, _dart_capas, _flutter_flotante,
+            que="el paso de Dart del job con pinta de canario")},
         "menciona": "no es una versión exacta",
     })
     # El número se DERIVA del documento, no se cablea: cablearlo hacía que este
