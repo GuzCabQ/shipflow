@@ -894,6 +894,23 @@ def casos() -> list[dict]:
         "espera": "pasa",
     })
 
+    # **QUE LA COMPUERTA DE FORMATO NO MUTE.**
+    #
+    # `--output=none` es lo que hace que `dart format` VERIFIQUE en vez de
+    # reescribir. Sin el, el mismo comando que corre como compuerta reformatea los
+    # archivos mientras comprueba — y un paso que dice «verificar» y muta es la
+    # clase de efecto que este arnes no admite. Se fija en dos lugares, el workflow
+    # y `PASOS_OBLIGATORIOS`, y este caso prueba que retirarlo se ve.
+    c.append({
+        "nombre": "ci · la compuerta de formato, vuelta mutante",
+        "archivos": {CI_REL: ancla(
+            (RAIZ / CI_REL).read_text(encoding="utf-8"),
+            "dart format --output=none --set-exit-if-changed packages tool",
+            "dart format --set-exit-if-changed packages tool",
+            que="el `--output=none` de la compuerta de formato")},
+        "menciona": "exactamente",
+    })
+
     # --- LA POLITICA DE PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` --------
     #
     # Los pasos de prueba dejaron de estar enumerados a mano y se derivan del

@@ -34,7 +34,7 @@ dart test packages/plugin_fake     # si y solo si tiene test/**/*_test.dart
 dart test packages/forge           # si y solo si tiene test/**/*_test.dart
 dart test packages/cli             # si y solo si tiene test/**/*_test.dart
 dart analyze --fatal-infos
-dart format --set-exit-if-changed packages tool
+dart format --output=none --set-exit-if-changed packages tool
 (cd fixtures/app-minima/dominio && dart test)  # el fixture se verifica solo
 (cd fixtures/app-minima/app && flutter test)
 ```
@@ -126,7 +126,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 153 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 154 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.

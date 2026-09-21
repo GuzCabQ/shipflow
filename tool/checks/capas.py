@@ -209,7 +209,7 @@ PASOS_OBLIGATORIOS = {
     #
     # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
     # `stable` no decide el estilo. El comando es el real, sin banderas.
-    "el formato": ("dart format --set-exit-if-changed packages tool", None),
+    "el formato": ("dart format --output=none --set-exit-if-changed packages tool", None),
     # Sin estos dos, «funciona sobre un fixture real» sería cierto de una
     # fotografía. El fixture tiene que demostrar que sigue siendo un proyecto.
     "el fixture · dominio": ("dart pub get && dart analyze && dart test",

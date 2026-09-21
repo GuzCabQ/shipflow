@@ -219,8 +219,14 @@ jobs:
         with:
           sdk: "3.12.0"
 
+      # `--output=none` porque una COMPUERTA verifica y no muta. Sin el,
+      # `dart format` reescribe los archivos mientras comprueba: en CI da igual
+      # —el checkout se descarta— pero el mismo comando corre en local como
+      # compuerta de cada bloque, y ahi reformatear en silencio dentro de un paso
+      # que dice «verificar» es exactamente la clase de efecto que este arnes no
+      # admite. El comando es UNO, en los dos lados.
       - name: format
-        run: dart format --set-exit-if-changed packages tool
+        run: dart format --output=none --set-exit-if-changed packages tool
 
   # EL FIXTURE, EN SU PROPIO JOB. NO ES PROLIJIDAD.
   #
