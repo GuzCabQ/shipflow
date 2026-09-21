@@ -316,9 +316,58 @@ def inventario_incompleto() -> list[str]:
     return faltantes
 
 
+def pubspec_con(ruta_rel: str, mutaciones: dict) -> str:
+    """El pubspec REAL con el defecto agregado. **DERIVADO, no copiado.**
+
+    Los canarios que atacan un `pubspec.yaml` escribian una COPIA completa del
+    real con la variante adentro. Eso ya habia divergido: las copias declaraban
+    `sdk: ^3.6.0` cuando el real declara `^3.11.0`, y los extras de `cli` se
+    habian quedado sin `forge`, `path` ni `vcs`. Funcionaba por casualidad —el
+    check solo mira dependencias— y el `_` de la canonica de
+    `dependencias-declaradas-se-usan` ya habia dejado escrita la leccion: «el
+    pubspec del sabotaje tiene que seguir al real, o el rojo lo produce otra
+    cosa».
+
+    Derivarlo lo hace seguir al real SOLO. Y sobre todo: **sobrevive al vaciado
+    del producto**, que es donde una copia se rompe entera. Un canario apoyado en
+    el contenido actual del producto no es un invariante permanente.
+    """
+    import yaml
+    doc = yaml.safe_load((RAIZ / ruta_rel).read_text(encoding="utf-8")) or {}
+    deps = dict(doc.get("dependencies") or {})
+    dev = dict(doc.get("dev_dependencies") or {})
+    for nombre in mutaciones.get("mover_a_dependencias", []):
+        assert nombre in dev, (
+            f"{ruta_rel}: «{nombre}» tendria que estar en dev_dependencies para "
+            f"moverlo a produccion, y no esta. El canario perdio su sujeto.")
+        deps[nombre] = dev.pop(nombre)
+    # Tolerante a la ausencia A PROPOSITO: existe para que agregar en produccion
+    # lo que ya estaba en desarrollo no deje al paquete declarado dos veces —pub
+    # lo rechaza—. Con el producto vaciado no hay nada que quitar, y eso no es un
+    # fallo del canario: es el estado que tiene que soportar.
+    for nombre in mutaciones.get("quitar_dev_dependencies", []):
+        dev.pop(nombre, None)
+    deps.update(mutaciones.get("agregar_dependencias", {}))
+    dev.update(mutaciones.get("agregar_dev_dependencies", {}))
+    for clave, valor in (("dependencies", deps), ("dev_dependencies", dev)):
+        if valor:
+            doc[clave] = valor
+        else:
+            doc.pop(clave, None)
+    return yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
+
+
+def _contenido_del_canario(v: dict) -> str:
+    """El contenido de un canario sobre un archivo: derivado si se declara asi."""
+    if "pubspec_derivado" in v:
+        return pubspec_con(v["donde"], v["pubspec_derivado"])
+    return v["contenido"]
+
+
 def canonica(rid: str) -> dict:
     v = REGLAS[rid]["violacion_canonica"]
-    return {"archivos": {v["donde"]: v["contenido"]}, "pub_get": v.get("requiere_pub_get", False)}
+    return {"archivos": {v["donde"]: _contenido_del_canario(v)},
+            "pub_get": v.get("requiere_pub_get", False)}
 
 
 def neutralizaciones(rid: str) -> list[tuple[str, object, str]]:
@@ -448,7 +497,12 @@ def casos() -> list[dict]:
         # arreglo se puede deshacer sin que nada lo note: el arreglo tampoco es
         # un invariante hasta que algo lo sostiene.
         for extra in REGLAS[rid].get("violaciones_extra", []):
-            archivos = dict(extra["archivos"])
+            archivos = dict(extra.get("archivos") or {})
+            # Una extra que ataca un pubspec lo DERIVA del real, igual que la
+            # canonica. Ver `pubspec_con`.
+            if "pubspec_derivado" in extra:
+                pd = extra["pubspec_derivado"]
+                archivos[pd["donde"]] = pubspec_con(pd["donde"], pd)
             declarar = extra.get("declarar_sin_implementacion")
             # **`espera` es la excepción, no la regla.** Por defecto una extra
             # ESPERA FALLA y `debe_mencionar` es obligatorio —sigue siendo
@@ -980,7 +1034,7 @@ def casos() -> list[dict]:
     c.append({
         "nombre": "registros · inventario vaciado con un simbolo que exige declaracion",
         "archivos": {
-            _canario["donde"]: _canario["contenido"],
+            _canario["donde"]: _contenido_del_canario(_canario),
             INV_REL: inv_con(lambda inv: inv.update(opacos={"_": "x"})),
         },
         "menciona": _canario["debe_mencionar"],

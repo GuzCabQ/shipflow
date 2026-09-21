@@ -75,9 +75,16 @@
       },
       "violacion_canonica": {
         "donde": "packages/orchestration/pubspec.yaml",
-        "contenido": "name: orchestration\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  vcs:\n    path: ../vcs\n",
         "debe_mencionar": "vcs",
-        "requiere_pub_get": true
+        "requiere_pub_get": true,
+        "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+        "pubspec_derivado": {
+          "agregar_dependencias": {
+            "vcs": {
+              "path": "../vcs"
+            }
+          }
+        }
       },
       "caso_ciego": {
         "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
@@ -100,9 +107,14 @@
       ],
       "violacion_canonica": {
         "donde": "packages/core/pubspec.yaml",
-        "contenido": "name: core\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  lints: ^5.0.0\n",
         "debe_mencionar": "origen",
-        "requiere_pub_get": true
+        "requiere_pub_get": true,
+        "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+        "pubspec_derivado": {
+          "agregar_dependencias": {
+            "lints": "^5.0.0"
+          }
+        }
       },
       "caso_ciego": {
         "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR. Es el invariante ejecutable de ADR-011 y su corolario 5: cada control declara si puede detectar una OMISION, no solo un exceso.",
@@ -581,9 +593,16 @@
       "violacion_canonica": {
         "_": "`cli` declarando una flecha interna que ninguna linea importa. Es PERMITIDA por `deps-hacia-core`, asi que ninguna otra regla la ve — es exactamente el hueco que esta regla cierra. EL CANARIO ERA `vcs` Y DEJO DE SERVIR EN LA REBANADA DE `ship`: `ship/gitignore` importa `RepositorioGit` desde `cli/lib` para preguntarle a git si la ruta de una corrida esta ignorada, asi que la flecha se volvio legitima y el sabotaje dejo de sabotear. Y el rojo que produjo no decia eso: el pubspec del canario habia quedado ademas sin `forge` ni `path` y con `plugin_fake` en produccion, asi que el check fallaba por `plugin_fake` y no por la flecha sin uso — un sabotaje que se pone rojo por otra cosa no prueba nada. Es la SEGUNDA vez que este canario se vuelve legitimo —la primera fue `vcs` ganando un import de prueba, ver `violaciones_extra`— y la leccion se repite con un agregado: un canario que se vuelve legitimo es un sabotaje perdido, Y el pubspec del sabotaje tiene que seguir al real, o el rojo lo produce otra cosa. Ahora el canario es `agents`, que es un stub de dos lineas y no lo importa ningun archivo de `cli`, y el resto del pubspec copia al real.",
         "donde": "packages/cli/pubspec.yaml",
-        "contenido": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  agents:\n    path: ../agents\n  core:\n    path: ../core\n  forge:\n    path: ../forge\n  orchestration:\n    path: ../orchestration\n  path: ^1.9.0\n  plugin_dart:\n    path: ../plugin_dart\n  vcs:\n    path: ../vcs\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
         "debe_mencionar": "agents",
-        "requiere_pub_get": true
+        "requiere_pub_get": true,
+        "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+        "pubspec_derivado": {
+          "agregar_dependencias": {
+            "agents": {
+              "path": "../agents"
+            }
+          }
+        }
       },
       "caso_ciego": {
         "_": "Simetrico de `violacion_canonica`: aquella prueba que el check se pone rojo cuando HAY algo mal; este prueba que se pone rojo cuando NO PUEDE MIRAR.",
@@ -596,41 +615,76 @@
         {
           "nombre": "una dependencia de desarrollo sin usar",
           "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note. El canario era `vcs` y dejo de servir cuando la rebanada del entorno de verificacion le dio a `cli` una prueba que SI lo importa: el sabotaje dejo de sabotear y el arnes lo dijo en la primera corrida. Ahora usa `rules`, que ninguna linea de `cli` importa. Un canario que se vuelve legitimo es un sabotaje perdido, y esta es la clase de deriva que el arnes existe para encontrar.",
-          "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n  rules:\n    path: ../rules\n"
-          },
           "debe_mencionar": "desarrollo",
-          "requiere_pub_get": true
+          "requiere_pub_get": true,
+          "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+          "pubspec_derivado": {
+            "donde": "packages/cli/pubspec.yaml",
+            "agregar_dev_dependencies": {
+              "rules": {
+                "path": "../rules"
+              }
+            }
+          }
         },
         {
           "nombre": "una dependencia de produccion que solo se usa en pruebas",
           "por_que": "`plugin_fake` estaba declarado como dependencia de produccion de `cli` y sus siete imports vivian en `test/`. Sin este caso, la regla contesta «se importa en algun lado» y no «esta en la seccion correcta», que son dos preguntas distintas.",
-          "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.6.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  plugin_fake:\n    path: ../plugin_fake\n\ndev_dependencies:\n  test: ^1.25.0\n"
-          },
           "debe_mencionar": "solo la importa desde",
-          "requiere_pub_get": true
+          "requiere_pub_get": true,
+          "_derivado": "AUTOSUFICIENTE. Antes movia `plugin_fake` de dev_dependencies a produccion, y eso necesitaba que el producto YA tuviera esa dependencia de desarrollo: medido sobre el esqueleto, el canario perdia su sujeto y la construccion fallaba. Ahora declara la dependencia en produccion y TRAE SU PROPIO import desde `test/`, asi que el defecto —declarada de produccion, importada solo desde pruebas— existe con el producto presente o vacio.",
+          "pubspec_derivado": {
+            "donde": "packages/cli/pubspec.yaml",
+            "agregar_dependencias": {
+              "plugin_fake": {
+                "path": "../plugin_fake"
+              }
+            },
+            "quitar_dev_dependencies": [
+              "plugin_fake"
+            ]
+          },
+          "archivos": {
+            "packages/cli/test/_canario_solo_en_pruebas_test.dart": "// Canario: importa desde `test/` una dependencia que el pubspec declara de\n// PRODUCCION. El sabotaje trae su propio import para no depender de que el\n// producto tenga uno — asi sobrevive al vaciado.\nimport 'package:plugin_fake/plugin_fake.dart';\n\nvoid main() {}\n"
+          },
+          "regenerar_grafo": true
         },
         {
           "nombre": "una dependencia de produccion usada solo desde integration_test",
           "por_que": "`_ambito_de` preguntaba «es test/?» y el `else` volvia produccion a cualquier otro directorio. Un review lo reprodujo con `integration_test/`: la dependencia quedaba declarada como de produccion y ningun control lo veia. Enumerar que directorios son de prueba es la carrera de una lista negra; ahora produccion es un conjunto cerrado —`lib` y `bin`— y este caso fija que lo siga siendo.",
           "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  rules:\n    path: ../rules\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
             "packages/cli/integration_test/canario_test.dart": "import 'package:rules/rules.dart';\n\nvoid canario() {}\n"
           },
           "debe_mencionar": "solo la importa desde",
           "requiere_pub_get": true,
-          "regenerar_grafo": true
+          "regenerar_grafo": true,
+          "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+          "pubspec_derivado": {
+            "donde": "packages/cli/pubspec.yaml",
+            "agregar_dependencias": {
+              "rules": {
+                "path": "../rules"
+              }
+            }
+          }
         },
         {
           "nombre": "un comentario que nombra el paquete no es evidencia de uso",
           "por_que": "La primera version buscaba `package:<nombre>/` sobre el texto, asi que un comentario contaba como import. Se corrigio derivando del arbol sintactico, y ningun sabotaje lo fijaba: un review volvio a sumar coincidencias textuales y los 117 siguieron verdes. Este caso deja esa puerta cerrada.",
           "archivos": {
-            "packages/cli/pubspec.yaml": "name: cli\ndescription: \"canario\"\npublish_to: none\nversion: 0.1.0\n\nenvironment:\n  sdk: ^3.11.0\n\nresolution: workspace\n\ndependencies:\n  core:\n    path: ../core\n  orchestration:\n    path: ../orchestration\n  plugin_dart:\n    path: ../plugin_dart\n  rules:\n    path: ../rules\n\ndev_dependencies:\n  test: ^1.25.0\n  plugin_fake:\n    path: ../plugin_fake\n",
             "packages/cli/lib/_canario_comentario.dart": "// package:rules/rules.dart\n// export 'package:rules/rules.dart';\nlibrary;\n"
           },
           "debe_mencionar": "no la importa en ninguna directiva",
-          "requiere_pub_get": true
+          "requiere_pub_get": true,
+          "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
+          "pubspec_derivado": {
+            "donde": "packages/cli/pubspec.yaml",
+            "agregar_dependencias": {
+              "rules": {
+                "path": "../rules"
+              }
+            }
+          }
         }
       ]
     },
