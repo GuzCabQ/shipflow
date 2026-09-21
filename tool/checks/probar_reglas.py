@@ -798,6 +798,30 @@ def casos() -> list[dict]:
         "espera": "pasa",
     })
 
+    # --- CERO ARCHIVOS QUE MIRAR ES CEGUERA; CERO CLASES NO LO ES -------------
+    #
+    # `check.dart` fallaba con `clasesCore.isEmpty` y su mensaje declaraba la
+    # conflación: «o el paquete está vacío, o no supe leerlo: las dos cosas son
+    # rojas». Ahora mira cuántos ARCHIVOS se inspeccionaron, que es la señal que
+    # de verdad distingue una cosa de la otra.
+    #
+    # La otra mitad —un archivo que no parsea— ya la cubre el caso ciego
+    # `archivo_ilegible` de `serializacion-sin-perdida`, que corre aparte.
+    #
+    # **Este caso solo es montable porque `aplicar` aprendió a borrar.** Antes el
+    # arnés podía corromper contenido y nada más, así que un control que mira si
+    # hay algo que mirar no se podía sabotear.
+    _fuentes_core = sorted(
+        str(q.relative_to(RAIZ))
+        for q in (RAIZ / "packages/core/lib").rglob("*.dart")
+        if ".dart_tool" not in str(q))
+    assert _fuentes_core, "no encontré fuentes en packages/core/lib"
+    c.append({
+        "nombre": "check · core/lib sin un solo archivo que inspeccionar",
+        "archivos": {r: None for r in _fuentes_core},
+        "menciona": "no miré",
+    })
+
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de
     # `tool/` y sin ser una ruta completa: no había ruta que verificar.
     #
@@ -976,7 +1000,14 @@ def pub_get() -> None:
 # `.git`, que la copia privada no tiene. `huella_del_arbol` compara contenido.
 
 
-def aplicar(archivos: dict[str, str]) -> dict[str, str | None]:
+def aplicar(archivos: dict[str, str | None]) -> dict[str, str | None]:
+    """Aplica un sabotaje. **Un contenido `None` BORRA el archivo.**
+
+    `_restaurar` ya sabía borrar —un `previo` en `None` significa «no existía»—,
+    pero `aplicar` solo sabía escribir, así que no había forma de sabotear la
+    AUSENCIA de un archivo. Un arnés que solo puede corromper contenido no puede
+    probar los controles que miran si hay algo que mirar.
+    """
     previo: dict[str, str | None] = {}
     for ruta, contenido in archivos.items():
         p = RAIZ / ruta
@@ -987,6 +1018,9 @@ def aplicar(archivos: dict[str, str]) -> dict[str, str | None]:
     DIARIO.write_text(json.dumps(previo, ensure_ascii=False), encoding="utf-8")
     for ruta, contenido in archivos.items():
         p = RAIZ / ruta
+        if contenido is None:
+            p.unlink(missing_ok=True)
+            continue
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(contenido, encoding="utf-8")
     return previo

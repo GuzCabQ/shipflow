@@ -747,18 +747,36 @@ Future<void> main(List<String> args) async {
     stderr.writeln('no encuentro packages/core/lib');
     exit(2);
   }
+  final fuentesCore = fuentes(dirCore);
   final clasesCore = <Clase>[];
-  for (final f in fuentes(dirCore)) {
+  for (final f in fuentesCore) {
     clasesCore.addAll(clasesDe(f, f.path.substring(raiz.path.length + 1)));
   }
   final todasLasClases = <Clase>[];
   for (final f in fuentes(dirPaquetes)) {
     todasLasClases.addAll(clasesDe(f, f.path.substring(raiz.path.length + 1)));
   }
-  if (clasesCore.isEmpty) {
+  // **«CERO CLASES» Y «NO PUDE LEER» ERAN EL MISMO ROJO, Y SON DOS COSAS.**
+  //
+  // Acá decía: «no encontré ninguna clase en packages/core/lib. O el paquete
+  // está vacío, o no supe leerlo: las dos cosas son rojas.» El mensaje declaraba
+  // la conflación como intención, y era CORRECTA mientras el producto siempre
+  // estuvo: si `core` no tenía clases, algo se había roto.
+  //
+  // Deja de serlo en cuanto `core` puede estar legítimamente vacío. Entonces el
+  // check obliga a elegir entre dejarlo rojo para siempre o INVENTAR una clase
+  // para que se calle — producto fabricado para complacer al arnés, que es el
+  // falso verde exacto que este repositorio existe para prevenir.
+  //
+  // **La señal que importa no es cuántas clases hay: es cuántos archivos se
+  // miraron.** Un archivo que no parsea ya lo reporta `clasesDe` por su propio
+  // canal, con su propio mensaje, y tiene su caso ciego `archivo_ilegible`. Lo
+  // que faltaba era distinguir «leí y no hay clases» —estado válido— de «no
+  // había nada que leer», que sí es ceguera.
+  if (fuentesCore.isEmpty) {
     fallos.add(
-      'no encontré ninguna clase en packages/core/lib. O el paquete '
-      'está vacío, o no supe leerlo: las dos cosas son rojas.',
+      'packages/core/lib no tiene ni un archivo `.dart` que inspeccionar. '
+      'Cero archivos mirados no es «no hay clases»: es «no miré».',
     );
   }
 
@@ -1248,7 +1266,8 @@ Future<void> main(List<String> args) async {
       .length;
   stdout.writeln(
     'serializacion: ok — $serializables clases serializables '
-    'verificadas campo por campo, ${opacos.length} opacas declaradas, '
+    'verificadas campo por campo sobre ${fuentesCore.length} archivos '
+    'de core, ${opacos.length} opacas declaradas, '
     '${huerfanos.length} puertos sin implementación declarados, '
     '${lanzamientos.length} lanzamientos de proceso con entorno saneado '
     '(${sinSanear.length} exceptuado). '
