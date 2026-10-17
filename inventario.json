@@ -1,0 +1,29 @@
+{
+  "_": [
+    "El INVENTARIO DE SIMBOLOS del producto. Vive aparte de `arquitectura.json` a",
+    "proposito, y la separacion no es de comodidad: los dos archivos cambian por",
+    "motivos distintos y con cadencias distintas.",
+    "",
+    "`arquitectura.json` declara reglas de FORMA —«las flechas apuntan a core»— y",
+    "cambia cuando cambia la arquitectura, que es rarisimo y se revisa como tal.",
+    "Este archivo declara SIMBOLOS CONCRETOS —que `Credential` es opaca, que",
+    "`AgentRunner` es un puerto sin implementacion— y cambia en cada rebanada.",
+    "",
+    "Mientras compartieron archivo, agregar una clase sellada obligaba a «tocar la",
+    "arquitectura», y vaciar el producto obligaba a lo mismo. Separarlos hace que",
+    "una rebanada toque este archivo y ninguna toque el otro.",
+    "",
+    "CARGA FAIL-CLOSED. Cada modo de fallo tiene su mensaje propio y ninguno se",
+    "confunde con «vacio legitimo»: ausente, ilegible, sin `esquema`, con `esquema`",
+    "incompatible, y huella desincronizada son cinco rojos distinguibles. Un",
+    "inventario VACIO es un estado valido —despues del reinicio es el estado",
+    "correcto— y por eso el sabotaje de «vacio» inyecta un simbolo sintetico que",
+    "exige declaracion, en vez de vaciar el archivo."
+  ],
+  "esquema": 1,
+  "inventario": {
+    "puertos_sin_implementacion": {},
+    "opacos": {},
+    "entorno_saneado_exceptuado": []
+  }
+}

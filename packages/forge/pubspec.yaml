@@ -1,0 +1,9 @@
+name: forge
+description: "Paquete reservado. Sin API todavia."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.0
+
+resolution: workspace

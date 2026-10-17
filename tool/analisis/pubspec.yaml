@@ -1,0 +1,25 @@
+name: shipflow_analisis
+description: >-
+  Las herramientas que necesitan el árbol sintáctico: verificación de reglas y
+  generación del grafo interno.
+publish_to: none
+version: 0.1.0
+
+environment:
+  # Alineado por UNIFORMIDAD con el workspace, no por necesidad propia: este
+  # lockfile exigía >=3.9.0, no >=3.11. El del workspace raíz sí exigía >=3.11
+  # contra un `^3.6.0` declarado, y ese era el piso falso. Acá se sube para que
+  # el repositorio tenga un solo piso, y queda dicho cuál es la razón — el
+  # comentario anterior afirmaba que el lock ya lo exigía, y no era cierto.
+  sdk: ^3.11.0
+
+# Deliberadamente FUERA del `workspace:` de la raíz. Es herramienta, no
+# producto: no debe aparecer en el grafo que gobierna las capas, y no debe
+# poder ser importada por ningún paquete de packages/.
+dependencies:
+  analyzer: ">=7.0.0 <10.0.0"
+
+# Las mismas reglas de análisis que el resto del repo. Sin esto el analizador
+# no puede resolver el `include` y las descarta con una advertencia.
+dev_dependencies:
+  lints: ^5.0.0

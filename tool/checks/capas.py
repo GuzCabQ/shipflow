@@ -1,0 +1,1356 @@
+#!/usr/bin/env python3
+"""La regla de capas, convertida en check.
+
+Corre desde el commit 0 sobre paquetes vacíos, que es el único momento en que
+instalar reglas de frontera cuesta cero: sobre veinte mil líneas producirían
+miles de violaciones y terminarían desactivadas.
+
+    python3 tool/checks/capas.py
+
+Sale 1 si algo falla. No modifica archivos. Las reglas viven en
+arquitectura.json, cada una con su `id`, su `alcance` y su violación canónica.
+
+PRECONDICIÓN: `dart pub get` tiene que haber corrido. El grafo de dependencias
+no se parsea a mano — se le pide a pub, que es quien lo resuelve. Si no está
+disponible, este check FALLA: no mirar no es lo mismo que no encontrar nada.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import traceback
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+RAIZ = Path(__file__).resolve().parents[2]
+PAQUETES = RAIZ / "packages"
+ARQ = RAIZ / "arquitectura.json"
+INV = RAIZ / "inventario.json"
+HUELLA = Path(__file__).parent / "arquitectura.huella"
+HUELLA_INV = Path(__file__).parent / "inventario.huella"
+
+# La version de esquema que este arnes sabe leer. Un registro sin `esquema`, o
+# con uno distinto, NO se interpreta a la buena de dios: se reporta y se para.
+ESQUEMA = 1
+
+
+def _leer_registro(ruta: Path) -> tuple[dict | None, str | None]:
+    """Carga FAIL-CLOSED. Nunca lanza: devuelve `(documento, problema)`.
+
+    Un registro que no se puede leer tiene que producir un ROJO CON NOMBRE, no
+    un traceback — y sobre todo no un diccionario vacio, que es lo que hacia
+    `check.dart` con `?? {}` y se lee exactamente igual que «no hay nada que
+    declarar». Cada modo de fallo tiene su mensaje: ausente, ilegible, sin
+    esquema, esquema incompatible. Ninguno se confunde con «vacio legitimo».
+    """
+    if not ruta.exists():
+        return None, (f"falta {ruta.name}, y sin el no hay politica que aplicar. "
+                      f"Un registro ausente no es una politica vacia: es un "
+                      f"verificador sin nada contra que verificar.")
+    try:
+        texto = ruta.read_text(encoding="utf-8")
+    except OSError as e:
+        return None, f"no pude leer {ruta.name}: {e}."
+    try:
+        return json.loads(texto), None
+    except json.JSONDecodeError as e:
+        return None, (f"{ruta.name} no es JSON valido: {e}. Un registro ilegible "
+                      f"deja al verificador sin politica, y eso es rojo — no "
+                      f"«nada que objetar».")
+
+
+_ARQ_DOC, _ARQ_MAL = _leer_registro(ARQ)
+_INV_DOC, _INV_MAL = _leer_registro(INV)
+REGLAS = (_ARQ_DOC or {}).get("reglas") or {}
+INVENTARIO = (_INV_DOC or {}).get("inventario") or {}
+
+# Las reglas que arquitectura.json DEBE seguir declarando, con los campos sin
+# los cuales no se pueden aplicar.
+OBLIGATORIAS = {
+    "deps-hacia-core": ("enunciado", "origen", "tipo", "alcance", "permitidas"),
+    "nucleo-sin-externas": ("enunciado", "origen", "tipo", "alcance", "paquetes",
+                            "origenes_permitidos"),
+    "agente-en-agents": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                         "cadenas", "solo_en"),
+    "lenguaje-en-plugin-dart": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                                "cadenas", "solo_en"),
+    "sin-api-de-modelo": ("enunciado", "origen", "tipo", "alternativa", "alcance",
+                          "cadenas"),
+    "nucleo-sin-entrada-salida": ("enunciado", "origen", "tipo", "alternativa",
+                                  "alcance", "cadenas", "solo_en"),
+    "dependencias-declaradas-se-usan": ("enunciado", "origen", "tipo",
+                                        "alternativa", "alcance"),
+}
+
+# El `tipo` decide qué función aplica la regla. Cambiarlo la saltea sin borrarla.
+TIPOS = {
+    "deps-hacia-core": "flechas_internas",
+    "nucleo-sin-externas": "origen_de_dependencias",
+    "agente-en-agents": "cadenas_acotadas",
+    "lenguaje-en-plugin-dart": "cadenas_acotadas",
+    "sin-api-de-modelo": "cadenas_acotadas",
+    "nucleo-sin-entrada-salida": "cadenas_acotadas",
+    "dependencias-declaradas-se-usan": "flechas_usadas",
+}
+
+# Valores que NO derivan: vienen de un ADR o de docs/03 y cambiarlos es cambiar
+# la arquitectura. La violación canónica prueba que el instrumento dispara; esto
+# prueba que la política no se reescribió. Son modos de fallo distintos: ensanchar
+# `solo_en` deja el canario disparando y desprotege todo lo demás.
+EXT = [".dart", ".yaml", ".yml", ".json", ".sh", ".bash", ".md"]
+VALORES_FIJOS = {
+    "agente-en-agents": {"solo_en": ["agents", "cli"]},          # ADR-009
+    "lenguaje-en-plugin-dart": {"solo_en": ["plugin_dart", "cli"]},  # docs/03 §2
+    "sin-api-de-modelo": {"solo_en": []},                        # ADR-009: ninguno
+    # docs/03 §2: lo que core necesita del mundo lo pide por un puerto.
+    "nucleo-sin-entrada-salida": {"solo_en": []},
+    "nucleo-sin-externas": {"paquetes": ["core"], "origenes_permitidos": ["root"]},
+    # El mapa de flechas ES la arquitectura de docs/03 §1.
+    "deps-hacia-core": {"permitidas": {
+        "core": [], "orchestration": ["core"], "vcs": ["core"], "rules": ["core"],
+        "agents": ["core"], "plugin_dart": ["core"], "plugin_fake": ["core"],
+        "forge": ["core"],
+        "cli": ["core", "orchestration", "vcs", "rules", "agents", "plugin_dart",
+                "plugin_fake", "forge"]}},
+}
+# El alcance de las reglas de cadenas no deriva: vaciarlo las neutraliza sin
+# tocar ningun otro campo.
+VALORES_FIJOS_ALCANCE = {rid: {"extensiones": EXT}
+                         for rid in ("agente-en-agents", "lenguaje-en-plugin-dart",
+                                     "sin-api-de-modelo")}
+# Esta mira SOLO core, y solo su fuente: una importacion vive en un `.dart`.
+VALORES_FIJOS_ALCANCE["nucleo-sin-entrada-salida"] = {
+    "raiz": "packages/core/lib", "extensiones": [".dart"]}
+
+# `no_cuenta` exime un TOKEN dentro de un contexto, y es el campo más peligroso
+# del registro: una entrada de más neutraliza la regla sin vaciar nada. Por eso
+# está fijado en dos sentidos — qué regla puede tenerlo, y con qué regexes
+# exactos. Una regla que no figure acá y lo declare, falla.
+# El MECANISMO de ceguera de cada regla, fijado. Es el campo que más
+# fácilmente se vuelve inofensivo: basta cambiar `como` por algo que no ciegue
+# nada para que el caso pase siempre y no pruebe nada. Igual que `tipo`.
+# Los COMANDOS que CI tiene que ejecutar. Es política pura: no deriva de nada,
+# y por eso está acá y no en el workflow, que es justamente lo que se vigila.
+#
+# Nada verificaba esto. `_check_delegadas` comprueba que CI invoque a los
+# APLICADORES DELEGADOS —porque una regla lo declara—, pero `capas.py`,
+# `probar_reglas.py`, los tests, el analizador y el formateo no los declaraba
+# nadie: borrar cualquiera de esos pasos del workflow no lo notaba nada, y
+# desde que CI bloquea merges eso es la compuerta abriéndose sola.
+#
+# Es F33 aplicado al ejecutor: registrado en ningún lado y ejecutado igual, o
+# —peor— dejado de ejecutar sin que nadie se entere.
+# Numerales escritos con letra, de diez para arriba. Van acá porque el README
+# afirmó «cuatro de los veintitrés» y ningún check lo vio: derivaba una FRASE,
+# no una cantidad, y una frase nueva escapa. De diez para arriba alcanza — toda
+# afirmación sobre el inventario de puertos nombra el total, que es mayor que
+# diez; «5 de los 24» y «cuatro de los veintitrés» las dos traen su número
+# grande, y en cambio «dos puertos y no uno», que habla de un corte y no de un
+# inventario, no trae ninguno.
+# **DESDE `cero`, no desde `diez`.** El corte en diez se justificaba así: «toda
+# afirmación sobre el inventario de puertos nombra el total, que es mayor que
+# diez». Era una optimización correcta mientras el total era grande, y deja de
+# serlo en cuanto el total puede ser cero o uno: `«un puerto»` y `«9 pasos»`
+# pasaban. Un umbral calibrado contra el tamaño del producto no sobrevive a un
+# cambio de tamaño del producto.
+#
+# Se ordena por longitud descendente para que la alternancia pruebe primero la
+# forma larga: `veintiuno` antes que `uno`.
+# **`un` y `una` NO entran.** Se intentó incluirlos —el contrato decia rechazar
+# tambien el articulo cardinal ambiguo, «un puerto»— y se midio sobre GOBIERNO.md:
+# **10 falsos positivos, todos el articulo indefinido**: «una superficie de puertos
+# vacia», «comando por comando», «uno por regla». Sin ellos: 1. En español `un` y
+# `una` son abrumadoramente el ARTICULO, no un cardinal, y exigir que la prosa los
+# evite no endurece el control: vuelve el documento inescribible y convierte cada
+# edicion futura en una pelea con el guardia. `uno` si es la forma cardinal y queda.
+#
+# Es la razon por la que este check necesita un caso que deba quedar VERDE: sin el,
+# un control lexico se «arregla» ensanchandose hasta que nada pasa, y entonces
+# protege perfectamente un documento que ya nadie puede escribir.
+PALABRAS_NUMERO = sorted((
+    "cero uno dos tres cuatro cinco seis siete ocho nueve "
+    "diez once doce trece catorce quince dieciseis dieciséis diecisiete "
+    "dieciocho diecinueve veinte veintiuno veintiun veintiún veintidos "
+    "veintidós veintitres veintitrés veinticuatro veinticinco veintiseis "
+    "veintiséis veintisiete veintiocho veintinueve treinta cuarenta cincuenta"
+).split(), key=len, reverse=True)
+
+# Los conceptos cuya CARDINALIDAD gobierna este check. Enumerados, no inferidos:
+# el contrato es «dígitos y formas cardinales enumeradas, en la misma oración que
+# uno de estos conceptos». Todo lo demás es riesgo residual declarado y va escrito
+# en GOBIERNO.md — un control léxico no puede prometer cobertura semántica.
+CONCEPTOS_CON_CARDINALIDAD = r"\b(?:puertos?|pasos?|cascadas?|presupuestos?|minutos?)\b"
+
+PASOS_OBLIGATORIOS = {
+    # etiqueta: (comando EXACTO, working-directory esperado)
+    "el parser de yaml": ('python3 -m pip install --quiet "pyyaml==6.0.3"', None),
+    "la regla de capas": ("python3 tool/checks/capas.py", None),
+    "que los checks sepan fallar": ("python3 tool/checks/probar_reglas.py", None),
+    "que la recuperación sepa recuperar": (
+        "python3 tool/checks/probar_recuperacion.py", None),
+    "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
+    "el grafo interno": ("dart run bin/grafo.dart", "tool/analisis"),
+    "el analizador estático": ("dart analyze --fatal-infos", None),
+    # Por ruta explícita: `dart format` NO respeta las exclusiones del
+    # analizador, así que un `.` alcanzaría cualquier `.dart` del árbol. Las rutas
+    # explícitas son lo que le da algo que afirmar al control «nada fuera del
+    # alcance del formateo»: se formatea EXACTAMENTE el alcance gobernado.
+    #
+    # **Y el estilo lo decide UN SOLO SDK.** El formateador cambia de estilo
+    # entre versiones menores, así que con el árbol formateado por 3.12 la pata
+    # `stable` reformateaba cinco archivos y el canario quedaba rojo por
+    # construcción. El primer arreglo fue fijar el estilo con
+    # `--language-version=3.6`, y estaba mal: esa opción fija también la
+    # GRAMÁTICA, así que sintaxis válida en 3.11 fallaba al formatear mientras
+    # `dart analyze` la aceptaba. Un techo sintáctico en silencio es peor que un
+    # canario rojo.
+    #
+    # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
+    # `stable` no decide el estilo. El comando es el real, sin banderas.
+    "el formato": ("dart format --output=none --set-exit-if-changed packages tool", None),
+}
+
+# El job puede declararse `continue-on-error` SOLO con esta expresión, que es
+# el canario de la matriz: la pata `stable` avisa y no bloquea, por ADR-013.
+# Un `true` pelado convertiría el job entero en decorativo.
+CANARIO_DECLARADO = "${{ matrix.canario }}"
+
+# Una versión de Flutter fijada es `X.Y.Z` y nada más. No un canal (`stable`),
+# no una rama (`main`), no una expresión (`${{ ... }}`), no un prefijo (`3.44`).
+VERSION_EXACTA = re.compile(r"\d+\.\d+\.\d+")
+
+# Nombres que se retiraron y no pueden volver a la documentación. Es la misma
+# familia que `coherencia.py` mantiene para el corpus: un renombre deja vivo el
+# nombre viejo en los lugares donde nadie mira.
+# **LOS PASOS DE PRUEBA NO SE ENUMERAN A MANO: SE DERIVAN DEL `workspace:`.**
+#
+# Estaban fijados de a seis, y `agents`, `rules` y `plugin_fake` no tenian paso:
+# una prueba agregada ahi no corria nunca, y nada lo decia. Enumerar a mano una
+# lista que el `workspace:` ya declara es pedir que se separen — y se habian
+# separado.
+_MIEMBROS: list[str] | None = None
+_MIEMBROS_MAL: str | None = None
+
+
+def miembros_del_workspace() -> tuple[list[str], str | None]:
+    """Los miembros del `workspace:` de la raiz, con un PARSER de YAML.
+
+    No se parsea a mano, por el mismo motivo que el workflow: un parser casero
+    devuelve cero miembros ante una sintaxis que no reconoce, y cero miembros se
+    lee igual que «no hay paquetes que probar».
+    """
+    global _MIEMBROS, _MIEMBROS_MAL
+    if _MIEMBROS is not None or _MIEMBROS_MAL is not None:
+        return _MIEMBROS or [], _MIEMBROS_MAL
+    try:
+        import yaml
+    except ModuleNotFoundError:
+        _MIEMBROS_MAL = ("no pude importar `yaml` para leer el `workspace:` de la "
+                         "raiz. Sin parser no se sabe que paquetes hay que probar, "
+                         "y adivinar es peor que no mirar. Instalalo: "
+                         "`pip install pyyaml`.")
+        return [], _MIEMBROS_MAL
+    doc = yaml.safe_load((RAIZ / "pubspec.yaml").read_text(encoding="utf-8"))
+    ws = (doc or {}).get("workspace")
+    if not isinstance(ws, list) or not ws:
+        _MIEMBROS_MAL = ("pubspec.yaml no declara un `workspace:` con miembros. "
+                         "De ahi sale que paquetes tienen que tener su paso de "
+                         "pruebas en CI.")
+        return [], _MIEMBROS_MAL
+    _MIEMBROS = [str(x).rstrip("/").split("/")[-1] for x in ws]
+    return _MIEMBROS, None
+
+
+def condicion_de_pruebas(paquete: str) -> str:
+    """La condicion EXACTA que habilita el paso de pruebas de un paquete.
+
+    `hashFiles` se puede usar en un `if:` y devuelve cadena vacia cuando no
+    encuentra archivos, asi que `!= ''` es exactamente «existe >=1 archivo que
+    coincide». El glob cubre subdirectorios.
+
+    Se fija el TEXTO, no la forma: el meta-check compara contra esto caracter por
+    caracter. Una expresion ensanchada, un glob distinto o un `if: false` no son
+    «otra manera de escribir lo mismo» — son otro control.
+    """
+    return ("${{ hashFiles('packages/" + paquete
+            + "/test/**/*_test.dart') != '' }}")
+
+
+NOMBRES_RETIRADOS = {
+    r"\bserializacion/": "el directorio es `tool/analisis/` desde que también "
+                         "genera el grafo. Solo sobrevive el nombre de la regla "
+                         "`serializacion-sin-perdida`, que no cambió.",
+}
+
+CIEGO_FIJO = {
+    "deps-hacia-core": "grafo_indisponible",
+    "nucleo-sin-externas": "grafo_indisponible",
+    "agente-en-agents": "alcance_inexistente",
+    "lenguaje-en-plugin-dart": "alcance_inexistente",
+    "sin-api-de-modelo": "alcance_inexistente",
+    "nucleo-sin-entrada-salida": "alcance_inexistente",
+    "serializacion-sin-perdida": "archivo_ilegible",
+    "opacidad-declarada": "archivo_ilegible",
+    "puertos-sin-implementacion": "archivo_ilegible",
+    "grafo-derivado": "archivo_ilegible",
+    "colecciones-inmutables": "archivo_ilegible",
+    "dependencias-declaradas-se-usan": "grafo_indisponible",
+    "subprocesos-con-entorno-saneado": "archivo_ilegible",
+    "forja-en-su-adapter": "archivo_ilegible",
+}
+
+NO_CUENTA_FIJO = {
+    "lenguaje-en-plugin-dart": [
+        (r"^\s*(?:import|export|part)\b", r"""\.dart(?=['"])"""),
+        (r"^\s*(?:import|export|part)\b",
+         r"""(?<=['"])dart(?=:(?:async|collection|convert|core|math|typed_data|io)\b)"""),
+    ],
+}
+
+fallos: list[str] = []
+
+
+def paquetes() -> list[str]:
+    return sorted(p.name for p in PAQUETES.iterdir() if (p / "pubspec.yaml").exists())
+
+
+def grafo() -> tuple[dict[str, dict], str]:
+    """El grafo resuelto, tal como lo reporta pub. Se deriva, no se mantiene."""
+    try:
+        r = subprocess.run(["dart", "pub", "deps", "--json"],
+                           cwd=RAIZ, capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        fallos.append(f"no se pudo ejecutar `dart pub deps --json`: {e}")
+        return {}, ""
+    if r.returncode != 0:
+        detalle = (r.stderr or r.stdout).strip().splitlines()
+        fallos.append("`dart pub deps --json` falló. Corré `dart pub get` primero.\n      "
+                      + (detalle[-1] if detalle else "sin detalle"))
+        return {}, ""
+    try:
+        d = json.loads(r.stdout)
+        return {p["name"]: p for p in d.get("packages", [])}, d.get("root", "")
+    except json.JSONDecodeError as e:
+        fallos.append(f"`dart pub deps --json` no devolvió JSON válido: {e}")
+        return {}, ""
+
+
+# --- meta · el registro sigue siendo aplicable --------------------------
+
+def check_registro() -> None:
+    """Las reglas obligatorias siguen declaradas, con los campos que las aplican."""
+    for rid, campos in OBLIGATORIAS.items():
+        regla = REGLAS.get(rid)
+        if regla is None:
+            fallos.append(f"arquitectura.json: falta la regla «{rid}». "
+                          f"Un control que desaparece sin ruido es F33.")
+            continue
+        for campo in campos:
+            if campo not in regla:
+                fallos.append(f"arquitectura.json: «{rid}» no declara «{campo}»")
+            elif not regla[campo] and campo not in ("solo_en",):
+                fallos.append(f"arquitectura.json: «{rid}» tiene «{campo}» vacío")
+        if regla.get("tipo") != TIPOS[rid]:
+            fallos.append(f"arquitectura.json: «{rid}» tiene tipo «{regla.get('tipo')}»; "
+                          f"se esperaba «{TIPOS[rid]}». Cambiarlo la saltea sin borrarla.")
+        if not regla.get("violacion_canonica"):
+            fallos.append(f"arquitectura.json: «{rid}» no declara violación canónica. "
+                          f"Una regla que no puede ponerse roja no está probada.")
+    for rid, fijos in VALORES_FIJOS.items():
+        for campo, esperado in fijos.items():
+            actual = REGLAS.get(rid, {}).get(campo)
+            if actual != esperado:
+                fallos.append(f"arquitectura.json: «{rid}.{campo}» = {actual}; "
+                              f"el valor fijado es {esperado}. Viene de {REGLAS.get(rid, {}).get('origen', '?')}.")
+    for rid, fijos in VALORES_FIJOS_ALCANCE.items():
+        for campo, esperado in fijos.items():
+            actual = REGLAS.get(rid, {}).get("alcance", {}).get(campo)
+            if actual != esperado:
+                fallos.append(f"arquitectura.json: «{rid}.alcance.{campo}» = {actual}; "
+                              f"el valor fijado es {esperado}. Vaciarlo neutraliza la regla.")
+
+
+def _check_exclusiones() -> None:
+    """Una exclusión acota QUÉ ARCHIVOS se miran; no exime paquetes enteros."""
+    existentes = paquetes()
+    for rid, regla in REGLAS.items():
+        alcance = regla.get("alcance")
+        if not isinstance(alcance, dict):
+            continue
+        for nombre, grupo in alcance.get("excluir", {}).items():
+            if not isinstance(grupo, dict):
+                continue
+            invasores = sorted(set(grupo["que"]).intersection(existentes))
+            if invasores:
+                fallos.append(f"arquitectura.json: la exclusión «{rid}.{nombre}» nombra "
+                              f"paquetes enteros {invasores}. Una exclusión acota QUÉ ARCHIVOS "
+                              f"se miran, no exime paquetes: para eso está `solo_en`.")
+
+
+def _check_paquetes_nombrados() -> None:
+    """Ninguna regla nombra un paquete que no existe."""
+    existentes = paquetes()
+    for rid, regla in REGLAS.items():
+        for pkg in list(regla.get("solo_en", [])) + list(regla.get("paquetes", [])):
+            if pkg not in existentes:
+                fallos.append(f"arquitectura.json: «{rid}» nombra «{pkg}», que no existe")
+
+
+def _check_nada_fuera_de_alcance() -> None:
+    """No hay código nuestro fuera de lo que el formateo y el análisis miran.
+
+    `dart format` recibe rutas explícitas —`packages tool`— porque no respeta
+    las exclusiones del analizador. Eso deja un borde: un `.dart` en cualquier
+    otro lado quedaría sin formatear y sin analizar, y nadie lo notaría.
+    """
+    # **`fixtures/` salio de la lista con el material de prueba.** Mientras existio,
+    # un `.dart` ahi adentro quedaba fuera del formateo y del analisis, y lo cubria
+    # su propio job. Sin ese job la exencion no tendria dueño: cualquier `.dart`
+    # ahi volveria a ser codigo sin verificar. Ahora aparecer ahi es rojo.
+    permitidos = ("packages/", "tool/")
+    for archivo in sorted(RAIZ.rglob("*.dart")):
+        rel = str(archivo.relative_to(RAIZ))
+        if any(p in rel for p in (".dart_tool", "build/")):
+            continue
+        if not rel.startswith(permitidos):
+            fallos.append(
+                f"{rel}: hay código Dart fuera de {list(permitidos)}, que es lo "
+                f"único que el formateo y el análisis miran. O lo movés adentro, "
+                f"o queda sin verificar y nadie se entera.")
+
+
+def _check_toolchain_del_job(nombre: str, job: dict) -> None:
+    """Un job instala UNA sola toolchain de Dart, y si es la de Flutter, fijada.
+
+    `flutter-action` agrega al PATH el Dart que Flutter trae adentro. Un job
+    que instale las dos termina usando el de Flutter para todo, así que el SDK
+    que declaró la matriz —que existe para que la corrida sea reproducible
+    contra una versión concreta— deja de usarse **sin que nada falle**. Las dos
+    patas de la matriz corren el mismo Dart y el verde deja de significar lo
+    que dice.
+
+    Es una sustitución silenciosa de instrumento: no hay error, y lo que se
+    midió no es lo que se declaró medir.
+
+    NO se prohíbe usar `dart` después de Flutter: en un job que solo instala
+    Flutter, su Dart embebido es el instrumento correcto y queda fijado por
+    `flutter-version`. Lo que se prohíbe es tener dos y no saber cuál corre.
+    """
+    if not isinstance(job, dict):
+        return
+    pasos = [p for p in (job.get("steps") or []) if isinstance(p, dict)]
+    usa = [str(p.get("uses", "")) for p in pasos]
+    tiene_dart = any("setup-dart" in u for u in usa)
+    tiene_flutter = any("flutter-action" in u for u in usa)
+    if tiene_dart and tiene_flutter:
+        fallos.append(
+            f"el job «{nombre}» instala Dart Y Flutter. Flutter pone su propio "
+            f"Dart en el PATH, así que todo paso `dart` posterior deja de usar "
+            f"el SDK de la matriz y nada falla: el verde deja de significar que "
+            f"se probó contra la versión declarada. Separalos en dos jobs.")
+    for p in pasos:
+        if "flutter-action" not in str(p.get("uses", "")):
+            continue
+        version = str((p.get("with") or {}).get("flutter-version", ""))
+        # Comprobar que el campo EXISTA no alcanza: `stable`, `main` y
+        # `${{ matrix.x }}` son valores presentes y ninguno fija nada. Es el
+        # mismo error que ya se cerró con `alternative` y `knownEvasions`:
+        # comprobación de PRESENCIA donde tenía que ser de CONTENIDO.
+        #
+        # NO HAY EXENCIÓN DE CANARIO, Y ESO SE DECIDIÓ DOS VECES.
+        #
+        # La primera versión permitía versión flotante si el job declaraba
+        # `continue-on-error: ${{ matrix.canario }}`, razonando que la matriz de
+        # Dart ya usa ese patrón. Tenía un agujero medido: no verificaba el
+        # VALOR de la matriz, así que un job sin matriz o con `canario: [false]`
+        # pasaba como canario y bloqueaba igual.
+        #
+        # Se podía tapar verificando el valor. Se sacó entera, porque el
+        # agujero era el síntoma: no existe ningún canario de Flutter. La
+        # exención estaba escrita para un caso hipotético, y eso es lo que el
+        # plan llama construir sin que un fallo lo justifique — ADR-002 lo dice
+        # de su propia decisión: «por razones presentes, no por especulación
+        # futura».
+        #
+        # El día que haga falta un canario de Flutter, extender esta regla es
+        # un acto visible y revisado. Eso es el ratchet funcionando, no un
+        # estorbo.
+        if not VERSION_EXACTA.fullmatch(version):
+            fallos.append(
+                f"el job «{nombre}» instala Flutter con "
+                f"`flutter-version: {version or '(ausente)'}`, que no es una "
+                f"versión exacta. Un canal, una rama o una expresión se "
+                f"resuelven a algo distinto en cada corrida: el merge se rompe "
+                f"sin que nadie haya cambiado nada. Escribí `X.Y.Z`.")
+
+
+def _aislado(que: str, fn, *args) -> None:
+    """Corre una sección y **convierte su fallo en un hallazgo, no en un corte**.
+
+    Antes cada derivación abortaba la función entera con un `return`, y una
+    excepción se llevaba puesto `capas.py` completo: con un `.index` que no
+    encontraba su ancla, los cuatro pasos quedaban sin imprimir ni una línea y
+    la salida era un traceback. Diez controles saltados por un ancla.
+
+    Es la misma forma que la cascada del producto ya tiene resuelta: un paso que
+    se rompe no aborta la corrida — es `Broken`, se reporta, y los demás siguen.
+    Este verificador no estaba obedeciendo la regla que hace cumplir.
+    """
+    try:
+        fn(*args)
+    except Exception:  # noqa: BLE001 — cualquier fallo es un hallazgo, no un corte
+        ultima = traceback.format_exc().strip().splitlines()[-3:]
+        fallos.append(f"{que}: la comprobación se rompió y NO se pudo hacer. "
+                      f"No mirar no es lo mismo que no encontrar nada.\n      "
+                      + "\n      ".join(l.strip() for l in ultima))
+
+
+def _check_readme() -> None:
+    """La tabla y las cifras del README se DERIVAN del registro, no se mantienen.
+
+    Un review encontró que la tabla documentaba ocho reglas cuando había nueve,
+    seguía nombrando un directorio renombrado, y presentaba como pendiente algo
+    ya construido. Nada lo detectaba: `cifras.py` deriva cantidades, pero vive
+    en el otro repositorio y mira otro corpus.
+
+    **Las secciones son independientes a propósito.** Estaban encadenadas por
+    seis `return`, así que un fallo cualquiera apagaba en silencio a los que
+    venían después: se reproduce inyectando dos defectos y viendo aparecer uno.
+    Un control que deja de mirar porque OTRO control falló es exactamente la
+    ceguera que ADR-011 persigue, reaparecida adentro del verificador.
+    """
+    doc = RAIZ / "GOBIERNO.md"
+    if not doc.exists():
+        fallos.append("falta GOBIERNO.md, que es donde se declara qué gobierna "
+                      "este repositorio.")
+        return
+    texto = doc.read_text(encoding="utf-8")
+    for que, seccion in (
+        ("GOBIERNO · la tabla de reglas", _readme_tabla),
+        ("GOBIERNO · las rutas que nombra", _readme_rutas),
+        ("GOBIERNO · los pasos obligatorios", _readme_pasos),
+        ("GOBIERNO · las cardinalidades", _doc_cardinalidades),
+        ("GOBIERNO · los nombres retirados", _readme_nombres),
+    ):
+        _aislado(que, seccion, texto)
+
+
+def _readme_tabla(texto: str) -> None:
+    filas = dict(re.findall(r"^\| `([a-z][a-z-]+)` \|.*\| `([^`]+)` \|$",
+                            texto, re.M))
+    if not filas:
+        fallos.append("no encontré la tabla de reglas en GOBIERNO.md. Cero filas "
+                      "se lee igual que una tabla al día.")
+        return
+    for rid in sorted(set(REGLAS) - set(filas)):
+        fallos.append(f"GOBIERNO.md: la regla «{rid}» gobierna este repositorio y "
+                      f"no está en la tabla. Quien lea el README no se entera "
+                      f"de que existe.")
+    for rid in sorted(set(filas) - set(REGLAS)):
+        fallos.append(f"GOBIERNO.md: la tabla declara «{rid}», que ya no está en "
+                      f"arquitectura.json. Una fila vieja describe un control "
+                      f"que no corre.")
+    for rid, aplicador in sorted(filas.items()):
+        esperado = REGLAS.get(rid, {}).get("aplicada_por", "capas.py")
+        if aplicador != esperado:
+            fallos.append(f"GOBIERNO.md: dice que «{rid}» la aplica «{aplicador}»; "
+                          f"el registro dice «{esperado}».")
+
+
+def _readme_rutas(texto: str) -> None:
+    """Rutas del repositorio que ya no existen.
+
+    SIN exigir backticks: la que sobrevivió al renombre estaba dentro de un
+    bloque de código, y el check miraba solo las que estaban entre comillas
+    invertidas. Buscar solo donde es cómodo mirar es la misma ceguera de
+    siempre, en la documentación.
+
+    Excepción DERIVADA, no una lista a mano: las rutas de las violaciones
+    canónicas existen solo mientras un sabotaje está aplicado. Documentar la
+    salida real del arnés las nombra, y son correctas justamente por no existir
+    en reposo.
+    """
+    transitorias = {r["violacion_canonica"]["donde"]
+                    for r in REGLAS.values() if r.get("violacion_canonica")}
+    for ruta in sorted(set(re.findall(
+            r"(?<![\w/])((?:tool|packages)/[A-Za-z0-9_./-]+)", texto))):
+        if ruta in transitorias:
+            continue
+        if not (RAIZ / ruta.rstrip("/.")).exists():
+            fallos.append(f"GOBIERNO.md nombra «{ruta}», que no existe en el "
+                          f"árbol. Una ruta muerta en la documentación manda a "
+                          f"quien la siga a un lugar que no está.")
+
+
+def _readme_pasos(texto: str) -> None:
+    """Una cantidad afirmada en prosa que nada deriva envejece sin ruido: el
+    README decía «siete pasos obligatorios» cuando ya eran diez, y lo encontró
+    un review. Es el mismo criterio que `cifras.py` aplica al corpus."""
+    miembros, _ = miembros_del_workspace()
+    # Los fijos MÁS uno por miembro del `workspace:`. La cuenta dejó de ser una
+    # constante el día que los pasos de prueba se derivaron.
+    total = len(PASOS_OBLIGATORIOS) + len(miembros)
+    for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
+        if int(m.group(1)) != total:
+            fallos.append(f"GOBIERNO.md dice «{m.group(1)} pasos obligatorios» y "
+                          f"`capas.py` verifica {total} —{len(PASOS_OBLIGATORIOS)} "
+                          f"fijos más uno por cada uno de los {len(miembros)} "
+                          f"miembros del workspace—. Una cantidad en prosa que "
+                          f"nada deriva envejece sola.")
+
+
+# **La derivación del presupuesto de la cascada se fue a `tool/analisis`.**
+#
+# Contaba corchetes sobre el texto para encontrar la lista de pasos, y una
+# revisión lo reprodujo: un `]` dentro de un comentario —`// ]`— hacía que el
+# recorte cerrara ahí, y con el recorte incluyendo UN paso ningún guardia
+# disparaba. El README podía afirmar un paso donde había dos y el check quedaba
+# verde. El comentario de aquel parser decía que el llamador lo cazaría.
+#
+# No se arregla contando mejor. Quien sabe qué es un comentario y qué es un
+# corchete es el analizador, y `tool/analisis` ya lo tiene — igual que el grafo
+# se le pide a pub y el workflow a un parser de YAML. Ver `_cifrasDeLaCascada`
+# en `tool/analisis/bin/check.dart`.
+
+
+def _doc_cardinalidades(texto: str) -> None:
+    """Ninguna cardinalidad que nada derive.
+
+    **Las dos derivaciones de puertos se retiraron, y con ellas su validación.**
+    Fijaban dos ORACIONES en español por regex —«N de los M puertos siguen sin
+    implementación»— y después leían `packages/core/lib/src/puertos.dart` para
+    comparar. Tres representaciones de la misma cifra: el código, el inventario y
+    la prosa. La prosa era la única que había que mantener a mano, y ya envejeció
+    tres veces.
+
+    Al irse la prosa se fue su validación, y con ella el `n_total == 0` que no
+    sabía distinguir «leí y hay cero puertos» de «no pude leer el archivo». Esa
+    conflación era correcta mientras el producto siempre estuvo; el reinicio la
+    vuelve falsa, y acá deja de existir en vez de arreglarse.
+
+    **Lo que NO se retira es la prohibición.** Borrar el guardia dejaría el hueco
+    fail-open: dentro de seis meses alguien escribe una cantidad a mano, envejece,
+    y nada avisa. La prohibición lo deja fail-closed — el día que haya algo que
+    contar, obliga a construir la derivación primero, cuando ya tiene sujeto.
+    """
+    # La UNICA derivacion que sobrevive es la de los pasos obligatorios, que
+    # `_readme_pasos` valida contra PASOS_OBLIGATORIOS. Sus ocurrencias quedan
+    # CUBIERTAS: una cifra derivada es legitima; una escrita a mano, no.
+    cubierto: set[int] = set()
+    for m in re.finditer(r"[Ll]os (\d+) pasos obligatorios", texto):
+        cubierto.update(range(m.start(), m.end()))
+
+    _readme_numerales_sueltos(texto, cubierto)
+
+
+def _readme_numerales_sueltos(texto: str, cubierto: set[int]) -> None:
+    """**Cualquier OTRA forma de decir la misma cifra.**
+
+    Este check ya falló dos veces por lo mismo, y la tercera la encontró un
+    review: derivaba la frase que tenía delante, así que el documento podía
+    afirmar el inventario con otras palabras y envejecer sin ruido.
+
+    No se deriva la frase: se prohíbe la cifra suelta. Toda oración que hable de
+    uno de los CONCEPTOS_CON_CARDINALIDAD y traiga un numeral tiene que ser una
+    de las derivadas.
+
+    **Alcance ampliado, y su contrato acotado.** Antes miraba solo oraciones con
+    `puertos` y solo dígitos de dos cifras o más. Pasaban `«3 puertos»`, `«un
+    puerto»`, `«9 pasos»` y `«el presupuesto es de 5 minutos»`. Ahora cubre los
+    cinco conceptos, dígitos desde `0` y formas cardinales desde `cero`.
+
+    Lo que NO cubre —cuantificadores no cardinales como `ambos`, `sendos`,
+    `media docena`, `varios`— es **riesgo residual declarado**, escrito en
+    GOBIERNO.md. Un control léxico no puede demostrar una garantía semántica, y
+    prometerlo sería la misma clase de falso verde que este arnés persigue.
+    """
+    numeral = (r"(?<![\w./-])(\d+|" + "|".join(PALABRAS_NUMERO) + r")(?![\w.-])")
+
+    def _mirar(oracion: str, desplazamiento: int) -> None:
+        if not re.search(CONCEPTOS_CON_CARDINALIDAD, oracion, re.I):
+            return
+        for m in re.finditer(numeral, oracion, re.I):
+            if desplazamiento + m.start() in cubierto:
+                continue
+            fallos.append(
+                f"GOBIERNO.md: «{m.group(0)}» en una oración sobre "
+                f"puertos/pasos/cascada/presupuesto/minutos, y nada la deriva. "
+                f"Una cantidad en prosa que nadie deriva envejece sola, y esta "
+                f"ya envejeció tres veces. Escribila en la forma derivada, o "
+                f"sacá el número: «{oracion.strip()[:90]}»")
+
+    inicio = 0
+    for corte in re.finditer(r"(?<=[.!?])\s+|\n\s*\n|\n(?=[|#])", texto):
+        _mirar(texto[inicio:corte.start()], inicio)
+        inicio = corte.end()
+    # **EL FRAGMENTO FINAL.** El bucle solo mira lo que hay ANTES de un corte, así
+    # que la última oración —o un documento que no termina en puntuación— quedaba
+    # sin mirar. Un punto ciego en el borde es un punto ciego igual.
+    _mirar(texto[inicio:], inicio)
+
+
+def _readme_nombres(texto: str) -> None:
+    """Nombres retirados, que no siempre aparecen como ruta completa. El árbol
+    de estructura del README listaba `serializacion/` a secas, colgando de
+    `tool/`: ninguna ruta que verificar, y el nombre viejo igual de vivo."""
+    for patron, motivo in NOMBRES_RETIRADOS.items():
+        for m in re.finditer(patron, texto):
+            fallos.append(f"GOBIERNO.md: «{m.group(0)}» es un nombre retirado. "
+                          f"{motivo}")
+
+
+def _check_ci_ejecuta() -> None:
+    """CI sigue invocando cada paso obligatorio, y ninguno está neutralizado.
+
+    Un paso borrado del workflow no lo detectaba nada. Desde que las ramas
+    están protegidas y el merge depende de este workflow, borrar un paso es
+    abrir la compuerta sin tocar ninguna regla.
+
+    NO SE PARSEA A MANO. El workflow se le pide a un parser de YAML, por la
+    misma razón por la que el grafo de dependencias se le pide a pub: un
+    parser casero devuelve cero pasos ante una sintaxis que no reconoce, y
+    cero pasos se lee igual que «están todos». Si el parser no está
+    disponible, esto FALLA — no mirar no es lo mismo que no encontrar nada.
+    """
+    ci = RAIZ / ".github" / "workflows" / "checks.yml"
+    if not ci.exists():
+        fallos.append("falta .github/workflows/checks.yml. Sin workflow no hay "
+                      "compuerta, y las ramas protegidas exigen un check que "
+                      "nadie produce.")
+        return
+    try:
+        import yaml
+    except ImportError:
+        fallos.append("no pude importar `yaml` para leer el workflow. Sin parser "
+                      "no puedo saber qué pasos corren, y suponer que corren "
+                      "todos es exactamente el falso verde que este check evita. "
+                      "Instalalo: `pip install pyyaml`.")
+        return
+    try:
+        doc = yaml.safe_load(ci.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        fallos.append(f"no pude leer checks.yml como YAML: {e}")
+        return
+
+    pasos = []
+    for nombre_job, job in (doc.get("jobs") or {}).items():
+        _check_toolchain_del_job(nombre_job, job)
+        if not isinstance(job, dict):
+            continue
+        coe = job.get("continue-on-error")
+        if coe not in (None, False, CANARIO_DECLARADO):
+            fallos.append(
+                f"el job «{nombre_job}» declara `continue-on-error: {coe!r}`. "
+                f"Todos sus pasos corren, se ven en rojo, y el job no falla: "
+                f"la compuerta queda abierta sin tocar ni un check. La única "
+                f"forma permitida es «{CANARIO_DECLARADO}», que es el canario "
+                f"declarado de la matriz.")
+        for paso in (job.get("steps") or []):
+            if isinstance(paso, dict):
+                pasos.append(paso)
+    if not pasos:
+        fallos.append("leí el workflow y no encontré NI UN paso. Cero pasos se "
+                      "lee igual que todos los pasos presentes.")
+        return
+    # Comparación EXACTA, no por subcadena. Un check que solo exige que el
+    # comando aparezca MENCIONADO acepta `echo "dart test"` y
+    # `dart test || true`: los dos contienen el texto y ninguno gobierna el
+    # resultado del job. Lo encontró un review, y es el mismo criterio que
+    # `VALORES_FIJOS`: lo que no deriva, se fija.
+    for etiqueta, (comando, wd) in PASOS_OBLIGATORIOS.items():
+        encontrados = [p for p in pasos
+                       if str(p.get("run", "")).strip() == comando
+                       and p.get("working-directory") == wd]
+        if not encontrados:
+            parecidos = [str(p.get("run", "")).strip() for p in pasos
+                         if comando.split()[-1] in str(p.get("run", ""))]
+            detalle = (f"\n      hay pasos que lo MENCIONAN sin ejecutarlo así: "
+                       f"{parecidos}" if parecidos else "")
+            fallos.append(
+                f"CI ya no ejecuta {etiqueta} exactamente como «{comando}»"
+                + (f" en «{wd}»" if wd else "")
+                + f". Un comando envuelto —`echo`, `|| true`, otro directorio— "
+                  f"aparece en el archivo y no gobierna el resultado del job."
+                + detalle)
+            continue
+        for p in encontrados:
+            # `is True` no alcanzaba: `${{ true }}` y `'true'` son cadenas, y
+            # GitHub las evalúa igual. Cualquier valor que no sea ausencia o
+            # `false` deja el paso corriendo sin gobernar el resultado.
+            coe = p.get("continue-on-error")
+            if coe not in (None, False):
+                fallos.append(
+                    f"CI ejecuta {etiqueta} con `continue-on-error: {coe!r}`. Corre, "
+                    f"se ve en rojo, y no detiene nada — es severidad `reporta` "
+                    f"disfrazada de `bloquea`. Si es deliberado, va como canario "
+                    f"declarado en la matriz, no acá.")
+            # Un `if:` sobre un paso obligatorio lo vuelve condicional, y
+            # `if: false` lo omite entero sin borrarlo del archivo: el comando
+            # sigue escrito, el meta-check lo encuentra, y nunca corre.
+            if "if" in p:
+                fallos.append(
+                    f"CI ejecuta {etiqueta} bajo la condición `if: {p['if']!r}`. "
+                    f"Un paso obligatorio no es condicional: si la condición da "
+                    f"falso, el comando sigue escrito en el archivo y no corre "
+                    f"nunca. Lo que varía por plataforma va en la matriz.")
+
+    # --- LOS PASOS DE PRUEBA · UNO POR MIEMBRO DEL `workspace:` --------------
+    #
+    # **Acá el meta-check CAMBIA DE FORMA, no de rigor.** Arriba un `if:` sobre
+    # un paso obligatorio es un fallo, y por buenos motivos: `if: false` omite el
+    # paso entero sin borrarlo, así que el comando sigue escrito, el meta-check lo
+    # encuentra, y nunca corre.
+    #
+    # Pero un paquete sin pruebas no puede tener un paso incondicional: `dart test`
+    # sobre un paquete sin `test/**/*_test.dart` sale con 79 —«No tests ran»— y el
+    # job queda rojo por no haber nada que correr. Y con el producto vacío eso
+    # valdría para los nueve.
+    #
+    # Así que la regla pasa de «ninguna condición permitida» a **«SOLO la condición
+    # exacta prevista para ESE paquete»**, que es el mismo estilo con que
+    # `PASOS_OBLIGATORIOS` fija el comando exacto en lugar de prohibir comandos.
+    # Un pin, no un permiso: `if: false`, otro paquete, otro glob o una expresión
+    # ensanchada son otro control, y se reportan.
+    miembros, mal = miembros_del_workspace()
+    if mal:
+        fallos.append(mal)
+        return
+    for paquete in miembros:
+        comando = f"dart test packages/{paquete}"
+        esperada = condicion_de_pruebas(paquete)
+        encontrados = [p for p in pasos
+                       if str(p.get("run", "")).strip() == comando
+                       and p.get("working-directory") is None]
+        if not encontrados:
+            fallos.append(
+                f"«{paquete}» es miembro del `workspace:` y CI no ejecuta sus "
+                f"pruebas como «{comando}». Un paquete sin su paso es un paquete "
+                f"donde una prueba futura no correría nunca, y nada lo diría.")
+            continue
+        for p in encontrados:
+            coe = p.get("continue-on-error")
+            if coe not in (None, False):
+                fallos.append(
+                    f"CI ejecuta las pruebas de «{paquete}» con "
+                    f"`continue-on-error: {coe!r}`: corre, se ve en rojo y no "
+                    f"detiene nada.")
+            real = p.get("if")
+            if real is None:
+                fallos.append(
+                    f"las pruebas de «{paquete}» corren SIN condición. Un paquete "
+                    f"sin pruebas hace salir a `dart test` con 79 y el job queda "
+                    f"rojo por no haber nada que correr. La condición va y es "
+                    f"exactamente:\n      {esperada}")
+            elif str(real).strip() != esperada:
+                fallos.append(
+                    f"las pruebas de «{paquete}» corren bajo una condición que no "
+                    f"es la prevista. Una condición ensanchada, apuntada a otro "
+                    f"paquete o puesta en `false` es otro control.\n"
+                    f"      esperada: {esperada}\n"
+                    f"      real:     {str(real).strip()}")
+
+    # Y al revés: un paso que prueba un paquete que el `workspace:` no declara.
+    for p in pasos:
+        m = re.fullmatch(r"dart test packages/([A-Za-z0-9_]+)",
+                         str(p.get("run", "")).strip())
+        if m and m.group(1) not in miembros:
+            fallos.append(
+                f"CI ejecuta «{m.group(0)}» y «{m.group(1)}» no es miembro del "
+                f"`workspace:`. Un paso que prueba lo que no existe se lee como "
+                f"cobertura y no la da.")
+
+
+def _check_casos_ciegos() -> None:
+    """TODA regla declara cómo se la deja ciega. Sin excepción.
+
+    Es el invariante ejecutable de ADR-011, que estuvo escrito y sin instalar:
+    «para cada paso registrado existe un caso donde el paso NO PUEDE ejecutarse
+    y el resultado es no concluyente, nunca verde».
+
+    La `violacion_canonica` prueba que el check detecta un EXCESO —algo que no
+    debería estar—. Nada probaba que detecte una OMISIÓN —que no pudo mirar—, y
+    ese es el sesgo natural de todo verificador (corolario 5). Las dos hacen
+    falta: son modos de fallo distintos y ninguno implica al otro.
+    """
+    for rid in sorted(set(REGLAS) | set(CIEGO_FIJO)):
+        regla = REGLAS.get(rid)
+        if regla is None:
+            fallos.append(f"arquitectura.json: falta la regla «{rid}», que tiene "
+                          f"mecanismo de ceguera fijado. Desapareció sin ruido.")
+            continue
+        ciego = regla.get("caso_ciego")
+        if not ciego:
+            fallos.append(
+                f"arquitectura.json: «{rid}» no declara `caso_ciego`. Sin él, "
+                f"nadie probó nunca qué hace este control cuando NO PUEDE MIRAR, "
+                f"y su silencio es indistinguible de su aprobación (ADR-011 §5).")
+            continue
+        for campo in ("que", "como", "por_que_ciega", "debe_mencionar"):
+            if not ciego.get(campo):
+                fallos.append(f"arquitectura.json: el `caso_ciego` de «{rid}» no "
+                              f"declara «{campo}».")
+        esperado = CIEGO_FIJO.get(rid)
+        if esperado is None:
+            fallos.append(f"arquitectura.json: «{rid}» declara `caso_ciego` y su "
+                          f"mecanismo no está fijado en capas.py. Un mecanismo sin "
+                          f"fijar se puede cambiar por uno que no ciegue nada.")
+        elif ciego.get("como") != esperado:
+            fallos.append(f"arquitectura.json: el `caso_ciego` de «{rid}» usa "
+                          f"«{ciego.get('como')}»; el mecanismo fijado es «{esperado}». "
+                          f"Cambiarlo deja el caso pasando siempre.")
+
+
+def _check_no_cuenta() -> None:
+    """Ninguna exencion de token que no este fijada acá, y ninguna regla ajena
+    que se la agregue. Vaciar un alcance se ve; agregarle una exencion no."""
+    for rid, regla in REGLAS.items():
+        alcance = regla.get("alcance")
+        declarado = alcance.get("no_cuenta", []) if isinstance(alcance, dict) else []
+        esperado = NO_CUENTA_FIJO.get(rid, [])
+        actual = [(e.get("donde"), e.get("token")) for e in declarado]
+        if actual != esperado:
+            fallos.append(
+                f"arquitectura.json: «{rid}.alcance.no_cuenta» no es el fijado.\n"
+                f"      declarado: {actual}\n"
+                f"      fijado:    {esperado}\n"
+                f"      Una exencion de token neutraliza la regla sin vaciar ningun campo.")
+        for e in declarado:
+            for campo in ("que", "donde", "token", "por_que", "quien_lo_cubre"):
+                if not e.get(campo):
+                    fallos.append(f"arquitectura.json: una exencion de «{rid}» no declara "
+                                  f"«{campo}». Una ausencia sin motivo es una ausencia silenciosa.")
+
+
+def _check_delegadas() -> None:
+    """Una regla que capas.py no aplica solo es legitima si declara QUIEN la
+    aplica, ese aplicador existe, y CI lo invoca. Sin las tres cosas es F33:
+    registrada y no ejecutada."""
+    ci = RAIZ / ".github" / "workflows" / "checks.yml"
+    texto = ci.read_text(encoding="utf-8") if ci.exists() else ""
+    for rid in sorted(set(REGLAS) - set(OBLIGATORIAS)):
+        aplicador = REGLAS[rid].get("aplicada_por")
+        if not aplicador:
+            fallos.append(f"arquitectura.json: «{rid}» no la aplica capas.py y no declara "
+                          f"`aplicada_por`. Una regla escrita y no ejecutada es la "
+                          f"enfermedad que este proyecto combate.")
+            continue
+        if not (RAIZ / aplicador).exists():
+            fallos.append(f"arquitectura.json: «{rid}» delega en «{aplicador}», que no existe.")
+        elif aplicador not in texto:
+            fallos.append(f"arquitectura.json: «{rid}» delega en «{aplicador}», que CI no invoca. "
+                          f"Registrada y no ejecutada es exactamente F33.")
+
+
+# --- flechas internas · por NOMBRE, solo dentro del workspace -----------
+
+def _huella_de(doc: dict) -> str:
+    canon = json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def huella_actual() -> str:
+    """Huella del DOCUMENTO COMPLETO de arquitectura, `esquema` incluido.
+
+    Antes cubria solo `reglas`, asi que el numero de esquema —que decide como se
+    interpreta todo lo demas— se podia cambiar sin que la huella se enterara. Una
+    huella que no cubre la version del formato protege el contenido y deja
+    abierta la puerta de al lado.
+    """
+    return _huella_de(_ARQ_DOC or {})
+
+
+def huella_inventario() -> str:
+    """Lo mismo para el inventario de simbolos, que tiene la suya."""
+    return _huella_de(_INV_DOC or {})
+
+
+def _check_registros() -> None:
+    """Los dos registros existen, son legibles y declaran un esquema compatible.
+
+    **Va PRIMERO, y es el unico control que puede dejar a los demas sin sujeto.**
+    Si un registro no se puede leer, `REGLAS` o `INVENTARIO` quedan vacios y todo
+    lo que venga despues reportaria «no hay nada que objetar» — que es la forma
+    mas pura del falso verde que este archivo existe para impedir.
+    """
+    for doc, mal, ruta, clave in ((_ARQ_DOC, _ARQ_MAL, ARQ, "reglas"),
+                                  (_INV_DOC, _INV_MAL, INV, "inventario")):
+        if mal:
+            fallos.append(mal)
+            continue
+        if "esquema" not in doc:
+            fallos.append(
+                f"{ruta.name} no declara `esquema`. La version del formato decide "
+                f"como se interpreta todo lo demas: sin ella, el verificador "
+                f"adivina. Agregala con el valor {ESQUEMA}.")
+        elif doc["esquema"] != ESQUEMA:
+            fallos.append(
+                f"{ruta.name} declara `esquema: {doc['esquema']!r}` y este arnes "
+                f"entiende {ESQUEMA}. Interpretar un formato que no se conoce es "
+                f"peor que no interpretarlo: se lee como que se verifico.")
+        if clave not in doc:
+            fallos.append(
+                f"{ruta.name} no tiene la clave «{clave}», que es donde vive su "
+                f"contenido. Un registro sin su clave es un registro vacio con "
+                f"aspecto de completo.")
+
+
+def _check_huella() -> None:
+    """Respaldo para todo lo que no está pinneado campo por campo.
+
+    Cubre el DOCUMENTO ENTERO de cada registro, `esquema` incluido. Antes cubria
+    solo `reglas`: el numero de esquema quedaba fuera, y con el la decision de
+    como se interpreta el resto.
+
+    LÍMITE DECLARADO: esto vuelve imposible degradar la política en silencio,
+    no vuelve imposible degradarla. Quien edite un registro y su huella junto
+    cambia la arquitectura de forma visible y revisable — que es exactamente lo
+    que se busca. Contra eso no hay check: hay revisión.
+    """
+    for ruta, huella, actual in ((ARQ, HUELLA, huella_actual),
+                                 (INV, HUELLA_INV, huella_inventario)):
+        if not huella.exists():
+            fallos.append(f"falta tool/checks/{huella.name}. Generala con "
+                          f"`capas.py --huella`.")
+            continue
+        esperada = huella.read_text(encoding="utf-8").strip()
+        if actual() != esperada:
+            fallos.append(
+                f"{ruta.name} cambió y su huella no.\n"
+                f"      commiteada: {esperada}\n"
+                f"      actual:     {actual()}\n"
+                "      Si el cambio es deliberado, regenerala con `capas.py --huella` "
+                "y que se revise en el mismo commit.")
+
+
+def check_flechas(g: dict[str, dict], raiz_ws: str) -> None:
+    """Los miembros salen del grafo de pub, NO del listado de `packages/`.
+
+    Antes se derivaban del directorio, y un miembro declarado en `workspace:`
+    fuera de `packages/` quedaba sin gobierno: no aparecia en el bucle y su
+    ausencia se leia igual que «no encontre nada». Es el corolario 5 de ADR-011
+    aplicado al propio check.
+    """
+    regla = REGLAS["deps-hacia-core"]
+    permitidas = regla["permitidas"]
+    # `excepciones_dev_dependencies` es la única puerta para una arista de
+    # DESARROLLO entre paquetes internos que `permitidas` no habilita. Antes
+    # de esto la clave existía en arquitectura.json y no la leía nadie: ni
+    # este check, ni `probar_reglas.py`, ni `tool/analisis` — prosa con forma
+    # de control, en un archivo donde todas las demás claves se consumen.
+    excepciones_dev = {
+        (e["paquete"], e["dependencia"])
+        for e in regla.get("excepciones_dev_dependencies", [])
+    }
+    internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
+    for huerfano in sorted(set(paquetes()) - internos):
+        fallos.append(f"packages/{huerfano}: pub no lo reporta como miembro. "
+                      f"¿Falta en `workspace:`? Un paquete fuera del grafo no lo mira nadie.")
+    for nombre in sorted(internos):
+        if nombre not in permitidas:
+            fallos.append(f"«{nombre}»: es miembro del workspace y no está en «deps-hacia-core». "
+                          f"Declaralo o sacalo de `workspace:`.")
+            continue
+        ok = set(permitidas[nombre])
+        for dep in g[nombre].get("directDependencies", []):
+            if dep in internos and dep not in ok:
+                fallos.append(
+                    f"packages/{nombre}: depende de «{dep}», que no está permitido.\n"
+                    f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
+        _check_flechas_dev(nombre, g[nombre], internos, ok, excepciones_dev, regla)
+
+
+def _check_flechas_dev(nombre: str, nodo: dict, internos: set[str], ok: set[str],
+                       excepciones_dev: set[tuple[str, str]], regla: dict) -> None:
+    """La misma flecha que `check_flechas`, pero de DESARROLLO.
+
+    `directDependencies` no la ve —viaja por su propia clave del grafo de
+    pub— así que antes de esto un paquete que no puede ver un plugin como
+    dependencia real podía verlo igual en `dev_dependencies:`, sin que nada lo
+    notara: la regla tenía la forma de proteger a `orchestration` de los
+    plugins y no lo hacía. Lo que YA está permitido como dependencia real
+    (`ok`) no necesita excepción aparte; lo que no, solo pasa si el par
+    (paquete, dependencia) está declarado en `excepciones_dev_dependencies`.
+    """
+    for dep in nodo.get("devDependencies", []):
+        if dep in internos and dep not in ok and (nombre, dep) not in excepciones_dev:
+            fallos.append(
+                f"packages/{nombre}: depende, como dependencia de desarrollo, de "
+                f"«{dep}», que no está permitido ni declarado en "
+                f"«excepciones_dev_dependencies».\n"
+                f"      permitidas: {sorted(ok) or 'ninguna'} — {regla['enunciado']}")
+
+
+# --- las flechas declaradas se usan -------------------------------------
+
+def _importado_por_paquete() -> dict[str, dict[str, set[str]]]:
+    """Qué paquetes internos importa cada paquete, y **desde qué ámbito**.
+
+    **Sale del grafo, no de un regex sobre el texto.** La primera versión
+    buscaba `package:<nombre>/` en todo el archivo, así que un comentario
+    contaba como uso: una revisión lo reprodujo declarando `rules` en `cli`,
+    sin ningún import, con una sola línea `// package:rules/rules.dart` — y
+    `capas.py` salió con cero. Era el mismo error de leer sintaxis con una
+    expresión regular que este arnés acababa de sacar de otra parte.
+
+    `grafo.jsonl` lo deriva `tool/analisis` del ÁRBOL SINTÁCTICO, mirando
+    `ImportDirective` y `ExportDirective`, y `grafo-derivado` lo verifica contra
+    el árbol en cada corrida. Un comentario no es una directiva, así que no
+    aparece.
+
+    **Si el grafo no está, esto no pasa en silencio:** sin aristas no hay uso
+    para nadie y toda dependencia declarada queda señalada. Falla cerrado.
+    """
+    por_paquete: dict[str, dict[str, set[str]]] = {}
+    archivo = RAIZ / "grafo.jsonl"
+    if not archivo.exists():
+        return por_paquete
+    for linea in archivo.read_text(encoding="utf-8").splitlines():
+        if not linea.strip():
+            continue
+        try:
+            nodo = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        origen = _paquete_de(nodo.get("id", ""))
+        if origen is None:
+            continue
+        ambito = _ambito_de(nodo["id"])
+        caja = por_paquete.setdefault(origen, {"produccion": set(), "prueba": set()})
+        for arista in nodo.get("aristas", []):
+            if arista.get("tipo") != "importa":
+                continue
+            destino = _paquete_de(arista.get("a", ""))
+            if destino is not None and destino != origen:
+                caja[ambito].add(destino)
+    return por_paquete
+
+
+def _paquete_de(ruta: str) -> str | None:
+    partes = ruta.split("/")
+    return partes[1] if len(partes) > 2 and partes[0] == "packages" else None
+
+
+def _ambito_de(ruta: str) -> str:
+    """Producción es `lib/` y `bin/`. **Todo lo demás, no.**
+
+    La primera versión preguntaba al revés —«¿es `test/`?»— y el `else` volvía
+    producción a cualquier otro directorio. Una revisión lo reprodujo con
+    `integration_test/`: una dependencia usada solo por pruebas de integración
+    quedaba declarada como de producción y ningún control lo veía.
+
+    Enumerar qué directorios son de prueba es la misma carrera que una lista
+    negra: `integration_test/`, `benchmark/`, `example/`, y el que alguien
+    invente mañana. Enumerar cuáles son de PRODUCCIÓN es un conjunto cerrado que
+    fija el propio layout de pub, y falla del lado seguro — un directorio que
+    esta función no conoce nunca vuelve producción a una dependencia.
+    """
+    partes = ruta.split("/")
+    return ("produccion" if len(partes) > 2 and partes[2] in ("lib", "bin")
+            else "prueba")
+
+
+def check_dependencias_usadas(g: dict[str, dict], raiz_ws: str) -> None:
+    """Toda dependencia interna declarada se importa, **y desde el ámbito que
+    su sección promete**.
+
+    `deps-hacia-core` dice qué flechas están PERMITIDAS; esta dice que las
+    declaradas se USAN. Un review encontró tres en `cli` con cero imports, y
+    escribir el check encontró dos más en los stubs. Ninguna otra regla podía
+    verlas: estaban permitidas, así que para `deps-hacia-core` no había nada mal.
+
+    **Y la sección importa.** Una dependencia de producción que solo se importa
+    desde `test/` está declarada en el lugar equivocado: `plugin_fake` estaba así
+    en `cli` —siete archivos, todos de prueba— mientras `plugin_dart` ya usaba el
+    patrón correcto. Confundir «¿se importa en algún lado?» con «¿está en la
+    sección correcta?» deja pasar la mitad de la pregunta.
+
+    Las externas quedan afuera a propósito: que `test` esté declarado y no se use
+    es ruido de desarrollo; que `cli` declare `vcs` es una afirmación sobre la
+    arquitectura del producto.
+    """
+    regla = REGLAS["dependencias-declaradas-se-usan"]
+    importa = _importado_por_paquete()
+    internos = {n for n, d in g.items() if d.get("source") == "root"} - {raiz_ws}
+    for nombre in sorted(internos):
+        if not (PAQUETES / nombre).exists():
+            continue
+        caja = importa.get(nombre, {"produccion": set(), "prueba": set()})
+        for dep in g[nombre].get("directDependencies", []):
+            if dep not in internos or dep in caja["produccion"]:
+                continue
+            if dep in caja["prueba"]:
+                fallos.append(
+                    f"packages/{nombre}: declara «{dep}» como dependencia de "
+                    f"producción y solo la importa desde `test/`.\n"
+                    f"      → Movela a `dev_dependencies`, que es donde una "
+                    f"dependencia de prueba dice lo que es.")
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia y no la "
+                f"importa en ninguna directiva. {regla['enunciado']}\n"
+                f"      → {regla['alternativa']}")
+        for dep in g[nombre].get("devDependencies", []):
+            if dep not in internos:
+                continue
+            if dep in caja["produccion"] or dep in caja["prueba"]:
+                continue
+            fallos.append(
+                f"packages/{nombre}: declara «{dep}» como dependencia de "
+                f"desarrollo y no la importa en ninguna directiva. "
+                f"{regla['enunciado']}\n      → {regla['alternativa']}")
+
+
+# --- origen de dependencias · independiente de la anterior --------------
+
+def check_origenes(g: dict[str, dict]) -> None:
+    regla = REGLAS["nucleo-sin-externas"]
+    permitidos = set(regla["origenes_permitidos"])
+    for nombre in regla["paquetes"]:
+        if nombre not in g:
+            fallos.append(f"packages/{nombre}: pub no lo reporta en el grafo")
+            continue
+        # Las DOS claves. pub las reporta por separado, y mirar solo la
+        # primera dejaba entrar cualquier externa por `dev_dependencies:`.
+        # El enunciado dice «ninguna», no «ninguna de produccion».
+        for clave in ("directDependencies", "devDependencies"):
+            for dep in g[nombre].get(clave, []):
+                origen = g.get(dep, {}).get("source", "desconocido")
+                if origen not in permitidos:
+                    que = "dependencia" if clave == "directDependencies" else "dependencia de desarrollo"
+                    fallos.append(f"packages/{nombre}: {que} «{dep}» de origen «{origen}». "
+                                  f"{regla['enunciado']}")
+
+
+# --- cadenas acotadas a su adapter --------------------------------------
+
+def check_cadenas() -> None:
+    for rid, regla in REGLAS.items():
+        if TIPOS.get(rid) == "cadenas_acotadas" and regla.get("tipo") == "cadenas_acotadas":
+            _cadenas_de(rid, regla)
+
+
+MIRADOS: dict[str, int] = {}
+
+
+def _cadenas_de(rid: str, regla: dict) -> None:
+    alcance = regla["alcance"]
+    extensiones = set(alcance["extensiones"])
+    permitidos = set(regla["solo_en"])
+    patron = re.compile("(" + "|".join(re.escape(c) for c in regla["cadenas"]) + ")", re.I)
+    excluidos = {n for grupo in alcance.get("excluir", {}).values()
+                 if isinstance(grupo, dict) for n in grupo["que"]}
+    # Exenciones de TOKEN: borran solo el token exento, no la línea. Así
+    # `import 'paquete_vigilado/algo.dart'` sigue disparando por el nombre del
+    # paquete aunque el sufijo esté exento. Borrar la línea entera sería la
+    # exención tragándose lo que la regla existe para ver.
+    exenciones = [(re.compile(e["donde"]), re.compile(e["token"]))
+                  for e in alcance.get("no_cuenta", [])]
+    raiz = RAIZ / alcance["raiz"]
+    mirados = 0
+    for archivo in sorted(raiz.rglob("*")):
+        if not archivo.is_file() or archivo.suffix not in extensiones:
+            continue
+        rel = archivo.relative_to(raiz)
+        if not rel.parts or rel.parts[0] in permitidos or excluidos.intersection(rel.parts):
+            continue
+        mirados += 1
+        for n, linea in enumerate(archivo.read_text(encoding="utf-8").splitlines(), 1):
+            mirada = linea
+            for donde, token in exenciones:
+                if donde.search(linea):
+                    mirada = token.sub("", mirada)
+            m = patron.search(mirada)
+            if m:
+                fallos.append(f"{archivo.relative_to(RAIZ)}:{n}: «{m.group(0)}» fuera de "
+                              f"{sorted(permitidos) or 'todo paquete'} — {regla['enunciado']}\n"
+                              f"      → {regla['alternativa']}")
+    MIRADOS[rid] = mirados
+    if mirados == 0:
+        # ADR-011: la ausencia de evidencia es fallo, no aprobación. Cero
+        # archivos inspeccionados no es «no encontré nada»: es «no miré».
+        fallos.append(
+            f"«{rid}»: recorrió «{alcance['raiz']}» y no inspeccionó NI UN archivo, "
+            f"así que pasó sin mirar. Verde acá es indistinguible de verde sobre "
+            f"un árbol limpio. Revisá `alcance.raiz` y `alcance.extensiones`.")
+
+
+def _paso(nombre, fn, *args) -> None:
+    """Un paso que se rompe **se reporta y no se lleva a los demás**.
+
+    Sin esto, un `.index` sin ancla mataba el proceso entero: los cuatro pasos
+    quedaban sin imprimir y la salida era un traceback. No era un falso verde
+    —el código de salida seguía en 1— pero sí un diagnóstico inservible y diez
+    controles saltados por una causa ajena.
+    """
+    antes = len(fallos)
+    _aislado(nombre, fn, *args)
+    print(f"  {nombre:<38} {'ok' if len(fallos) == antes else f'{len(fallos) - antes} fallo(s)'}")
+
+
+def main() -> int:
+    if "--huella" in sys.argv:
+        HUELLA.write_text(huella_actual() + "\n", encoding="utf-8")
+        HUELLA_INV.write_text(huella_inventario() + "\n", encoding="utf-8")
+        print(f"arquitectura.huella: {huella_actual()}")
+        print(f"inventario.huella:   {huella_inventario()}")
+        return 0
+    # **Cada control es su propio paso, y ninguno puede apagar a otro.**
+    #
+    # Antes `check_meta` corría siete controles adentro de una sola llamada, así
+    # que una excepción en el primero —un campo del registro con la forma
+    # equivocada, por ejemplo— dejaba sin ejecutar al de CI y al del README. El
+    # resultado global quedaba rojo y los defectos aparecían de a uno por
+    # corrida, que es el problema que el aislamiento vino a cerrar y que quedó
+    # a mitad de camino. Lo encontró una revisión.
+    for nombre, fn in (
+        ("los registros se pueden leer", _check_registros),
+        ("registro aplicable", check_registro),
+        ("exenciones de token", _check_no_cuenta),
+        ("casos ciegos declarados", _check_casos_ciegos),
+        ("exclusiones que no eximen paquetes", _check_exclusiones),
+        ("paquetes que las reglas nombran", _check_paquetes_nombrados),
+        ("CI ejecuta lo que dice", _check_ci_ejecuta),
+        ("el gobierno describe lo que gobierna", _check_readme),
+        ("nada fuera del alcance del formateo", _check_nada_fuera_de_alcance),
+        ("la huella de la política", _check_huella),
+        ("reglas delegadas a otro motor", _check_delegadas),
+    ):
+        _paso(nombre, fn)
+
+    # **El grafo también va aislado.** Corría fuera de `_paso`, así que un fallo
+    # suyo se llevaba puesto el proceso antes de llegar a las cadenas.
+    g: dict[str, dict] = {}
+    raiz_ws = ""
+
+    def _pedir_grafo() -> None:
+        nonlocal g, raiz_ws
+        g, raiz_ws = grafo()
+
+    _paso("grafo de dependencias", _pedir_grafo)
+    if g:
+        _paso("flechas entre paquetes internos", check_flechas, g, raiz_ws)
+        _paso("núcleo sin dependencias externas", check_origenes, g)
+        _paso("las flechas declaradas se usan", check_dependencias_usadas, g,
+              raiz_ws)
+    else:
+        print(f"  {'flechas y orígenes':<38} NO DISPONIBLE")
+    _paso("cadenas acotadas a su adapter", check_cadenas)
+
+    if fallos:
+        print("\ncapas: FALLA\n")
+        for f in fallos:
+            print(f"  {f}")
+        return 1
+    detalle = ", ".join(f"{k}: {v}" for k, v in sorted(MIRADOS.items()))
+    print(f"\ncapas: ok — {len(paquetes())} paquetes, {len(OBLIGATORIAS)} reglas aplicadas.\n"
+          f"       archivos inspeccionados por regla de cadenas → {detalle}\n"
+          f"       pasos obligatorios verificados en CI → {len(PASOS_OBLIGATORIOS) + len(miembros_del_workspace()[0])}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

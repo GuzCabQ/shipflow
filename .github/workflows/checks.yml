@@ -1,0 +1,229 @@
+# Los checks de la fase 0.
+#
+# Van en CI y no en un gancho local por lo que B3 demostró: la capa de ganchos
+# no resiste al operador, y el operador somos nosotros con presión de entrega.
+# El fallo del intento anterior fue exactamente eso — un `pre-push` y un
+# `--no-verify` que lo salteaba.
+
+name: checks
+
+on:
+  push:
+  pull_request:
+
+# Least-agency aplicado al CI: el workflow solo lee el repo.
+permissions:
+  contents: read
+
+jobs:
+  capas:
+    name: reglas de arquitectura · Dart ${{ matrix.sdk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # La versión con la que se verificó. Es la que hace reproducible el
+          # resultado. El principio es de docs/09 §3 —«si el arnés cambia entre
+          # corridas, las comparaciones no significan nada»— aplicado hacia
+          # adentro: docs/08 §4 dice lo mismo del CLI agéntico, no del SDK Dart.
+          - sdk: "3.12.0"
+            canario: false
+          # Y el canal estable como CANARIO: avisa cuando un SDK nuevo rompe
+          # algo, sin bloquear el merge. Reporta, no detiene — ADR-013.
+          - sdk: stable
+            canario: true
+
+    continue-on-error: ${{ matrix.canario }}
+
+    steps:
+      # Acciones fijadas por SHA, no por tag: un tag es mutable y esto es
+      # código de terceros corriendo con acceso al repo. Es ASI04.
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      # `capas.py` lee el workflow con un parser de YAML para verificar que
+      # siga ejecutando cada paso obligatorio. No se parsea a mano: un parser
+      # casero devuelve cero pasos ante una sintaxis que no reconoce, y cero
+      # pasos se lee igual que «están todos». Si este paso desaparece, el
+      # import falla y el check se pone rojo — falla del lado seguro.
+      # Fijado por versión, como el SDK y las acciones: es código de terceros
+      # que corre con acceso al repo, y de él depende el meta-check que decide
+      # si CI sigue ejecutando sus propios pasos.
+      - name: parser de yaml, para que capas.py pueda leer este workflow
+        run: python3 -m pip install --quiet "pyyaml==6.0.3"
+
+      # Deja registrado contra qué se corrió. Sin esto el verde no es comparable.
+      - name: versiones
+        run: dart --version && python3 --version
+
+      # Precondición de capas.py: el grafo se le pide a pub, no se parsea a mano.
+      - name: resolver dependencias
+        run: dart pub get
+
+      - name: capas
+        run: python3 tool/checks/capas.py
+
+      # Las reglas que necesitan el árbol sintáctico de core. Su paquete está
+      # fuera del `workspace:` a propósito, así que resuelve aparte.
+      - name: resolver el verificador de árbol sintáctico
+        run: dart pub get
+        working-directory: tool/analisis
+
+      - name: serialización, opacidad y puertos sin implementación
+        run: dart run bin/check.dart
+        working-directory: tool/analisis
+
+      # El grafo interno: regenerado contra commiteado. Un mapa desactualizado
+      # es peor que no tener mapa — las reglas derivadas de él pasan a ser
+      # mentira con aspecto de evidencia.
+      - name: grafo · derivado == commiteado
+        run: dart run bin/grafo.dart
+        working-directory: tool/analisis
+
+      # Y la prueba de que esos checks saben fallar. Corre siempre, no una vez
+      # a mano: un guardia que existe y nunca se disparó es indistinguible de
+      # uno roto — es F40, y la clase 1 entera del catálogo.
+      - name: los checks saben fallar
+        run: python3 tool/checks/probar_reglas.py
+
+      # La recuperación ante interrupción es un control como cualquier otro, y
+      # los sabotajes de arriba corren TODOS por el camino feliz donde el
+      # proceso termina: pueden seguir verdes mientras esto se rompe.
+      #
+      # Acá había una cuenta —«los 85 sabotajes»— que envejeció sola: el arnés
+      # ya aplica 105. No se actualiza el número, se saca. Un número en prosa
+      # que nada deriva vuelve a envejecer; el que manda lo imprime
+      # `probar_reglas.py` en cada corrida.
+      - name: la recuperación sabe hacer su trabajo
+        run: python3 tool/checks/probar_recuperacion.py
+
+      # --- LAS PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` ---------------
+      #
+      # **Cada paso es CONDICIONAL, y la condición es exactamente una.**
+      # `dart test packages/X` sobre un paquete sin `test/**/*_test.dart` sale
+      # con 79 —«No tests ran»— y el job queda rojo por no haber nada que
+      # correr. `hashFiles` devuelve cadena vacía cuando no encuentra archivos,
+      # así que `!= ''` es exactamente «existe al menos una prueba».
+      #
+      # `capas.py` deriva esta lista del `workspace:` de la raíz y compara la
+      # condición CARÁCTER POR CARÁCTER. Faltaban tres pasos —`rules`, `agents`
+      # y `plugin_fake`—: una prueba agregada ahí no habría corrido nunca, y
+      # nada lo decía. Por eso la lista se deriva y no se escribe.
+      #
+      # Un `if:` sobre un paso obligatorio sigue siendo un fallo en todos los
+      # demás pasos. Acá la regla no se relajó: pasó de «ninguna condición» a
+      # «solo la condición prevista para ESE paquete». Un pin, no un permiso.
+
+      # Invariantes del dominio.
+      - name: pruebas de core
+        if: ${{ hashFiles('packages/core/test/**/*_test.dart') != '' }}
+        run: dart test packages/core
+
+      # La cascada: el registro de pasos, la cuenta de registrados
+      # contra ejecutados (ADR-011 corolario 2) y la precedencia de estados.
+      - name: pruebas de orchestration
+        if: ${{ hashFiles('packages/orchestration/test/**/*_test.dart') != '' }}
+        run: dart test packages/orchestration
+
+      # `vcs` contra `git` de verdad: la rama, los commits y que un commit se
+      # quede EXACTAMENTE con los archivos de su rebanada.
+      - name: pruebas de vcs
+        if: ${{ hashFiles('packages/vcs/test/**/*_test.dart') != '' }}
+        run: dart test packages/vcs
+
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de rules
+        if: ${{ hashFiles('packages/rules/test/**/*_test.dart') != '' }}
+        run: dart test packages/rules
+
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de agents
+        if: ${{ hashFiles('packages/agents/test/**/*_test.dart') != '' }}
+        run: dart test packages/agents
+
+      # Unitarias de la implementación real: lo que solo ella puede
+      # ejercer y que por eso no pertenece a la suite de contrato.
+      - name: pruebas de plugin_dart
+        if: ${{ hashFiles('packages/plugin_dart/test/**/*_test.dart') != '' }}
+        run: dart test packages/plugin_dart
+
+      # Sin API todavía. El paso existe para que una prueba futura corra.
+      - name: pruebas de plugin_fake
+        if: ${{ hashFiles('packages/plugin_fake/test/**/*_test.dart') != '' }}
+        run: dart test packages/plugin_fake
+
+      # El adapter de la forja contra un servidor local: que el push no le
+      # entregue la credencial a los ganchos ni al credential helper del
+      # usuario, y que `open` repetido no cree un segundo PR.
+      - name: pruebas de forge
+        if: ${{ hashFiles('packages/forge/test/**/*_test.dart') != '' }}
+        run: dart test packages/forge
+
+      # Las suites de CONTRATO, que corren cada puerto contra su
+      # implementación real y su fake. Sin ellas, todo lo que se pruebe con el
+      # fake queda verde por construcción (docs/08 §2).
+      - name: pruebas de cli
+        if: ${{ hashFiles('packages/cli/test/**/*_test.dart') != '' }}
+        run: dart test packages/cli
+
+      - name: analyze
+        run: dart analyze --fatal-infos
+
+
+  # EL FORMATO, EN SU PROPIO JOB. TAMPOCO ES PROLIJIDAD.
+  #
+  # El estilo del formateador **cambia entre versiones menores de Dart**: con
+  # el árbol formateado por 3.12, la pata `stable` —3.13— reformateaba cinco
+  # archivos y el canario quedaba rojo por construcción. Un canario que no
+  # puede ponerse verde deja de mirarse.
+  #
+  # El primer intento fue fijar el estilo con `--language-version=3.6`. Estaba
+  # mal, y lo encontró un review: esa opción no fija solo el estilo, fija la
+  # GRAMÁTICA. Con ella, sintaxis válida en 3.11 —`dot-shorthands`— falla al
+  # formatear mientras `dart analyze` la acepta. Era un techo sintáctico en 3.6
+  # instalado en silencio, que es peor que el canario rojo.
+  #
+  # Entonces se formatea con la versión que el pubspec declara, y el estilo lo
+  # decide **un solo SDK, el bloqueante**. La pata `stable` sigue comprobando
+  # análisis y pruebas; el estilo no lo decide.
+  #
+  # ACOPLE DECLARADO: este `sdk` tiene que ser el mismo que la pata NO canario
+  # de la matriz de arriba. Son dos lugares y se mueven juntos.
+  #
+  # No hace falta `dart pub get`: `dart format` lee la versión de lenguaje del
+  # pubspec más cercano, medido sobre este árbol sin resolver.
+  formato:
+    name: el formato, con el SDK que decide el estilo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: "3.12.0"
+
+      # `--output=none` porque una COMPUERTA verifica y no muta. Sin el,
+      # `dart format` reescribe los archivos mientras comprueba: en CI da igual
+      # —el checkout se descarta— pero el mismo comando corre en local como
+      # compuerta de cada bloque, y ahi reformatear en silencio dentro de un paso
+      # que dice «verificar» es exactamente la clase de efecto que este arnes no
+      # admite. El comando es UNO, en los dos lados.
+      - name: format
+        run: dart format --output=none --set-exit-if-changed packages tool

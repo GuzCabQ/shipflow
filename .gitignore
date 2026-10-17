@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────
+# shipflow · el CLI. El corpus de diseño vive en ../sdlc-agentico/ y es
+# OTRO repositorio.
+#
+# NO hacer `git init` en el directorio padre: anidaría ambos repos y git
+# los trataría como gitlinks — commits que apuntan a nada, en silencio.
+# ─────────────────────────────────────────────────────────────────────
+
+.dart_tool/
+.packages
+build/
+
+# pubspec.lock SI se versiona: shipflow es una aplicacion, no una libreria.
+# Una corrida no es reproducible si el arnes cambio (docs/08 §4, B3).
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+.DS_Store
+__pycache__/
+*.pyc
+
+# Snapshots que `probar_reglas.py` compila para no pagar el arranque de la VM
+# en cada uno de sus casos. Se generan y se borran en la misma corrida.
+*.dill
+
+# Diario del arnés de sabotajes: existe solo mientras hay uno aplicado.
+.sabotaje-en-curso.json

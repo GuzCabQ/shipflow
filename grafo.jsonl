@@ -1,0 +1,14 @@
+{"id":"GOBIERNO.md","tipo":"prosa","saltos":1,"aristas":[{"a":"arquitectura.json","tipo":"cita","origen":"derivado"},{"a":"arquitectura.json","tipo":"cita","origen":"derivado"}],"citado_por":["README.md"]}
+{"id":"HUECOS.md","tipo":"prosa","saltos":1,"aristas":[],"citado_por":["README.md"]}
+{"id":"README.md","tipo":"prosa","saltos":0,"aristas":[{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"HUECOS.md","tipo":"cita","origen":"derivado"}],"citado_por":[]}
+{"id":"packages/agents/lib/agents.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/cli/lib/cli.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/core/lib/core.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/forge/lib/forge.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/orchestration/lib/orchestration.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/plugin_dart/lib/plugin_dart.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/plugin_fake/lib/plugin_fake.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/rules/lib/rules.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/vcs/lib/vcs.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"tool/analisis/bin/check.dart","tipo":"codigo","saltos":0,"aristas":[{"a":"dart:convert","tipo":"importa","origen":"derivado"},{"a":"dart:io","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/analysis_context_collection.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/features.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/results.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/utilities.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/ast/ast.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/ast/token.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/ast/visitor.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/element/element.dart","tipo":"importa","origen":"derivado"}],"citado_por":[]}
+{"id":"tool/analisis/bin/grafo.dart","tipo":"codigo","saltos":0,"aristas":[{"a":"dart:convert","tipo":"importa","origen":"derivado"},{"a":"dart:io","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/features.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/analysis/utilities.dart","tipo":"importa","origen":"derivado"},{"a":"package:analyzer/dart/ast/ast.dart","tipo":"importa","origen":"derivado"}],"citado_por":[]}

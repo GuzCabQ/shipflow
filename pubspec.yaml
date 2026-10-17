@@ -1,0 +1,33 @@
+# Raíz del workspace. No publica: solo agrupa.
+name: shipflow
+description: Arnés agéntico de implementación. Raíz del workspace.
+publish_to: none
+
+environment:
+  # El arnés soporta el canal estable vigente, no el último SDK publicado
+  # (D-068). Los workspaces de pub necesitan 3.6.
+  # Alineado con lo que el lockfile REQUIERE de verdad: declaraba `^3.6.0` y el
+  # lock ya exigía >=3.11, así que era un piso que nadie podía cumplir — soporte
+  # prometido que nada podía honrar, que es una afirmación falsa y no un hueco.
+  sdk: ^3.11.0
+
+# Solo para el análisis estático y las pruebas. Van en la RAÍZ del workspace,
+# no en cada paquete, y eso no es comodidad: `core` no puede declarar ni una
+# dependencia de desarrollo sin violar `nucleo-sin-externas`, que mira el origen
+# de TODA dependencia directa. Los miembros del workspace comparten esta
+# resolución, así que `packages/core/test/` importa el framework sin que `core`
+# lo declare.
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0
+
+workspace:
+  - packages/core
+  - packages/orchestration
+  - packages/vcs
+  - packages/rules
+  - packages/agents
+  - packages/plugin_dart
+  - packages/plugin_fake
+  - packages/forge
+  - packages/cli
