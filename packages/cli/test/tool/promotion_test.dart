@@ -480,6 +480,22 @@ void main() {
       },
     );
 
+    test(
+      'reconciliar sin permiso de escritura falla sin cambiar nada',
+      () async {
+        await place(old, installedName);
+        await place(fresh, candidateName);
+        writeManifest(manifest('staging'));
+        final before = await state(binDir);
+        await chmod('0555', binDir.path);
+        await expectLater(
+          promote(await request(await executable('3.0.0'), '3.0.0')),
+          rejected('Permission denied'),
+        );
+        expect(await state(binDir), before);
+      },
+    );
+
     test('una primera instalación interrumpida no queda instalada', () async {
       await place(fresh, installedName);
       writeManifest(manifest('swapping', firstInstall: true));

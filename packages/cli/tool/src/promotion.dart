@@ -88,6 +88,12 @@ Future<void> promote(PromotionRequest request) async {
   try {
     await _reconcile(bin);
     await _replace(bin, request, digest);
+  } on FileSystemException catch (error) {
+    throw PromotionException(
+      'no se pudo modificar ${bin.path} '
+      '(${error.osError?.message ?? error.message}); lo que haya quedado a '
+      'medias conserva su manifiesto y se reconcilia en la próxima ejecución.',
+    );
   } finally {
     await lock.unlock();
     await lock.close();

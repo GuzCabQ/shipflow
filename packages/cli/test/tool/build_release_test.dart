@@ -240,10 +240,37 @@ void main() {
         expect(code, 1);
         expect(
           message,
-          'build_release: el directorio que contiene --output no existe; '
-          'no se compiló nada.\n',
+          'build_release: el directorio que contiene --output no existe o no '
+          'es un directorio; no se compiló nada.\n',
         );
         expect(directory.listSync(), isEmpty);
+      },
+    );
+
+    test(
+      'un padre de --output sin escritura falla sin detalles del runtime',
+      () async {
+        final parent = await Directory(
+          '${directory.path}/solo-lectura',
+        ).create();
+        await Process.run('chmod', ['0555', parent.path]);
+        try {
+          final (code, message) = await invoke([
+            '--version',
+            '1.0.0',
+            '--output',
+            '${parent.path}/release',
+          ]);
+          expect(code, 1);
+          expect(
+            message,
+            'build_release: no se pudo crear el directorio de trabajo junto a '
+            '--output (Permission denied); no se compiló nada.\n',
+          );
+          expect(parent.listSync(), isEmpty);
+        } finally {
+          await Process.run('chmod', ['0755', parent.path]);
+        }
       },
     );
 

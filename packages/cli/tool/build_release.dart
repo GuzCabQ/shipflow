@@ -127,12 +127,21 @@ Future<ReleaseBuild> buildRelease({
   }
   if (!output.absolute.parent.existsSync()) {
     throw const ReleaseBuildException(
-      'el directorio que contiene --output no existe; no se compiló nada.',
+      'el directorio que contiene --output no existe o no es un directorio; '
+      'no se compiló nada.',
     );
   }
   final tool = checksumTool ?? _hostChecksumTool();
   final source = entrypoint ?? await _publicEntrypoint();
-  final staging = await output.absolute.parent.createTemp('.shipflow-release-');
+  final Directory staging;
+  try {
+    staging = await output.absolute.parent.createTemp('.shipflow-release-');
+  } on FileSystemException catch (error) {
+    throw ReleaseBuildException(
+      'no se pudo crear el directorio de trabajo junto a --output '
+      '(${_reason(error)}); no se compiló nada.',
+    );
+  }
   try {
     final name = 'shipflow-$version-$platform';
     final artifact = File('${staging.path}/$name');
@@ -183,11 +192,21 @@ Future<ReleaseBuild> buildRelease({
   } on Object catch (error) {
     if (staging.existsSync()) await staging.delete(recursive: true);
     if (error is FileSystemException || error is ProcessException) {
-      throw ReleaseBuildException('la build no terminó: $error');
+      throw ReleaseBuildException(
+        'la build no terminó (${_reason(error)}); no hay candidato.',
+      );
     }
     rethrow;
   }
 }
+
+/// El motivo del sistema operativo, sin la ruta ni la traza de la excepción.
+String _reason(Object error) => switch (error) {
+  FileSystemException(:final osError?) => osError.message,
+  FileSystemException(:final message) => message,
+  ProcessException(:final message) => message,
+  _ => 'error inesperado',
+};
 
 ChecksumTool _hostChecksumTool() {
   try {
