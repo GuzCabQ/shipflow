@@ -1,0 +1,11 @@
+# Sólo la forma del piloto fijado: los hechos de versión, sin su código.
+name: smooth_app
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+  flutter: ^3.44.8
+
+dependencies:
+  flutter:
+    sdk: flutter

@@ -70,7 +70,7 @@ void main() {
       });
     }
 
-    for (final positional in ['init', 'help', 'version', 'analyze']) {
+    for (final positional in ['doctor', 'help', 'version', 'analyze']) {
       test('$positional es un argumento posicional inesperado', () {
         expectHumanError([positional], "argumento inesperado: '$positional'");
       });

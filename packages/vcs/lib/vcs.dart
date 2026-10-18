@@ -1,2 +1,4 @@
-/// vcs — sin API todavia. La fase 0 instala los controles, no el producto.
+/// vcs — el contexto del repositorio, observado sin ejecutar procesos.
 library;
+
+export 'src/repository_context_inspector.dart' show inspectRepositoryContext;

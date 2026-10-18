@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:cli/cli.dart';
 import 'package:test/test.dart';
+import 'static_evaluation.dart';
 
 const compiledVersion = '9.8.7-contrato.1+build.5';
 const failureDiagnostic = 'shipflow: no se pudo completar la operación.\n';
@@ -137,7 +138,7 @@ final class CompiledContract {
   }
 
   void expectContract(List<String> arguments, Observed observed) {
-    final expected = evaluateCli(arguments, version: compiledVersion);
+    final expected = evaluate(arguments, version: compiledVersion);
     final payload = utf8.encode(expected.payload);
     final onStdout = expected.channel == CliOutputChannel.stdout;
     expect(observed.exitCode, expected.exitCode, reason: '$arguments');
