@@ -91,19 +91,36 @@ Future<void> _replace(
   writeManifest(layout, manifest);
   try {
     await _swap(layout, request.artifact, manifest, readVersion);
-  } on Object catch (error) {
-    final failure = _describe(error);
-    try {
-      await restore(layout, manifest, readVersion);
-    } on Object catch (restoreError) {
-      throw PromotionException(
-        '$failure\nAdemás, la restauración no terminó: '
-        '${_describe(restoreError)}',
-      );
-    }
-    throw PromotionException('$failure\nSe restauró la instalación previa.');
+  } on Object catch (error, stack) {
+    await _rollBack(layout, manifest, readVersion, error, stack);
   }
   await finish(layout);
+}
+
+/// Restaura ante cualquier fallo de [_swap]. Un fallo operativo se informa
+/// como frase; un defecto de programación se relanza con su tipo y su traza,
+/// y si la restauración también falla, el primer defecto es el que sale.
+Future<Never> _rollBack(
+  PromotionLayout layout,
+  PromotionManifest manifest,
+  VersionReader readVersion,
+  Object error,
+  StackTrace stack,
+) async {
+  final failure = _describe(error);
+  try {
+    await restore(layout, manifest, readVersion);
+  } on Object catch (restoreError, restoreStack) {
+    if (failure == null) Error.throwWithStackTrace(error, stack);
+    final unrestored =
+        _describe(restoreError) ??
+        Error.throwWithStackTrace(restoreError, restoreStack);
+    throw PromotionException(
+      '$failure\nAdemás, la restauración no terminó: $unrestored',
+    );
+  }
+  if (failure == null) Error.throwWithStackTrace(error, stack);
+  throw PromotionException('$failure\nSe restauró la instalación previa.');
 }
 
 /// El manifiesto con el que empieza la promoción, o null si lo pedido ya es
@@ -174,16 +191,16 @@ Future<void> _swap(
   writeManifest(layout, manifest.at(PromotionPhase.committing));
 }
 
-/// Un fallo como frase para quien promueve: sin el tipo, la ruta ni la traza
-/// de la excepción.
-String _describe(Object error) => switch (error) {
+/// Un fallo operativo como frase para quien promueve, sin el tipo, la ruta ni
+/// la traza de la excepción; null si [error] no es uno de los previstos.
+String? _describe(Object error) => switch (error) {
   PromotionException(:final message) => message,
   FileSystemException(:final osError?) =>
     'falló una operación de archivo (${osError.message})',
   FileSystemException(:final message) =>
     'falló una operación de archivo ($message)',
   ProcessException(:final message) => 'no se pudo lanzar un proceso ($message)',
-  _ => 'falló la promoción por un error inesperado',
+  _ => null,
 };
 
 void _requireType(String path, FileSystemEntityType expected, String what) {

@@ -16,18 +16,51 @@ Future<RandomAccessFile> _openForLock(File file) =>
 /// ejecuciones sincronicen sobre el mismo inode. Es un lock de proceso: cerrar
 /// cualquier descriptor de este archivo dentro del mismo proceso lo libera,
 /// así que nada más lo abre mientras dura.
+///
+/// Liberar siempre intenta cerrar, aunque soltar el lock falle. Si [body]
+/// falló, ese es el fallo que se propaga, con su tipo y su traza: el sistema
+/// libera el lock al terminar el proceso, y un fallo al soltarlo no dice nada
+/// nuevo sobre la instalación. Si [body] terminó, el fallo al liberar se
+/// informa como uno controlado.
 Future<T> withPromotionLock<T>(
   PromotionLayout layout,
   Future<T> Function() body, {
   LockOpener open = _openForLock,
 }) async {
   final lock = await _acquire(layout, open);
+  final T result;
   try {
-    return await body();
-  } finally {
-    await lock.unlock();
-    await lock.close();
+    result = await body();
+  } on Object catch (error, stack) {
+    await _release(lock);
+    Error.throwWithStackTrace(error, stack);
   }
+  final failure = await _release(lock);
+  if (failure != null) {
+    throw PromotionException(
+      'la promoción terminó, pero no se pudo liberar el lock de '
+      '${layout.bin.path} (${failure.osError?.message ?? failure.message}); '
+      'el sistema lo libera al terminar este proceso.',
+    );
+  }
+  return result;
+}
+
+/// Suelta y cierra [lock]; devuelve el primer fallo de archivo, si hubo.
+Future<FileSystemException?> _release(RandomAccessFile lock) async {
+  FileSystemException? failure;
+  try {
+    await lock.unlock();
+  } on FileSystemException catch (error) {
+    failure = error;
+  } finally {
+    try {
+      await lock.close();
+    } on FileSystemException catch (error) {
+      failure ??= error;
+    }
+  }
+  return failure;
 }
 
 Future<RandomAccessFile> _acquire(
@@ -45,7 +78,11 @@ Future<RandomAccessFile> _acquire(
   try {
     await lock.lock(FileLock.exclusive);
   } on FileSystemException {
-    await lock.close();
+    try {
+      await lock.close();
+    } on FileSystemException {
+      // El lock ocupado es el motivo; un cierre fallido no lo reemplaza.
+    }
     throw PromotionException(
       'otra promoción tiene el lock de ${layout.bin.path}; no se modificó nada.',
     );

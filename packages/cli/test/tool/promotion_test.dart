@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 import '../../tool/build_release.dart';
 import '../../tool/promote.dart';
 import '../../tool/src/checksum.dart';
+import '../../tool/src/executable_checks.dart';
 import '../../tool/src/promotion.dart';
 
 const installedName = 'shipflow';
@@ -97,6 +98,7 @@ void main() {
   Future<File> executable(
     String version, {
     bool failsWhenInstalled = false,
+    bool hangsWhenInstalled = false,
     String salt = '',
   }) async {
     final file = File('${artifacts.path}/candidato-${counter++}');
@@ -104,6 +106,7 @@ void main() {
       '#!/bin/sh\n'
       '# $salt\n'
       '${failsWhenInstalled ? 'case "\${0##*/}" in shipflow) exit 1;; esac\n' : ''}'
+      '${hangsWhenInstalled ? 'case "\${0##*/}" in shipflow) exec sleep 60;; esac\n' : ''}'
       "printf 'shipflow %s\\n' '$version'\n",
     );
     await chmod('0755', file.path);
@@ -408,6 +411,81 @@ void main() {
       },
     );
 
+    test(
+      'un defecto interno restaura y se propaga con su tipo y su traza',
+      () async {
+        await install(await executable('1.0.0'));
+        final defect = StateError('defecto interno');
+        var installedReads = 0;
+        Future<String?> readVersion(File file) async {
+          if (file.path.endsWith('/$installedName') && ++installedReads == 2) {
+            throw defect;
+          }
+          return reportedVersion(file);
+        }
+
+        Object? thrown;
+        StackTrace? stack;
+        try {
+          await promote(
+            await request(await executable('2.0.0'), '2.0.0'),
+            readVersion: readVersion,
+          );
+        } on Object catch (error, trace) {
+          thrown = error;
+          stack = trace;
+        }
+        expect(thrown, same(defect));
+        expect(
+          stack.toString().split('\n').first,
+          contains('promotion_test.dart'),
+        );
+        await expectClean('1.0.0');
+      },
+    );
+
+    test('si además la restauración falla, sale el defecto original', () async {
+      await install(await executable('1.0.0'));
+      final defect = StateError('defecto interno');
+      var installedReads = 0;
+      Future<String?> readVersion(File file) async {
+        if (!file.path.endsWith('/$installedName')) {
+          return reportedVersion(file);
+        }
+        installedReads++;
+        if (installedReads == 2) throw defect;
+        if (installedReads == 3) return 'otra';
+        return reportedVersion(file);
+      }
+
+      await expectLater(
+        promote(
+          await request(await executable('2.0.0'), '2.0.0'),
+          readVersion: readVersion,
+        ),
+        throwsA(same(defect)),
+      );
+    });
+
+    test(
+      'un candidato que se cuelga al instalarse se mata y se restaura',
+      () async {
+        await install(await executable('1.0.0'));
+        await expectLater(
+          promote(
+            await request(
+              await executable('2.0.0', hangsWhenInstalled: true),
+              '2.0.0',
+            ),
+            readVersion: (file) =>
+                reportedVersion(file, timeout: const Duration(seconds: 1)),
+          ),
+          rejected('Se restauró'),
+        );
+        await expectClean('1.0.0');
+      },
+    );
+
     test('en una primera instalación no deja un ejecutable roto', () async {
       await expectLater(
         promote(
@@ -552,6 +630,13 @@ void main() {
         () async {
           await place(old, installedName);
           File('${binDir.path}/$manifestName').writeAsStringSync('{a medias');
+        },
+      ),
+      (
+        'un manifiesto con una versión previa que no es texto',
+        () async {
+          await place(old, installedName);
+          writeManifest({...manifest('staging'), 'previousVersion': 1});
         },
       ),
       (
