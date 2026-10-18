@@ -2,10 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'cli_response.dart';
-
-const _internalFailureExitCode = 70;
-const _internalFailureDiagnostic =
-    'shipflow: no se pudo completar la operación.\n';
+import 'internal_failure.dart';
 
 /// Escribe [response] en su canal y devuelve el código de salida del proceso.
 ///
@@ -21,8 +18,8 @@ Future<int> emitCliResponse(
     CliOutputChannel.stderr => (standardError, standardOut),
   };
   if (await _deliver(required, response.payload)) return response.exitCode;
-  await _deliver(alternate, _internalFailureDiagnostic);
-  return _internalFailureExitCode;
+  await _deliver(alternate, internalFailureDiagnostic);
+  return internalFailureExitCode;
 }
 
 Future<bool> _deliver(IOSink sink, String payload) async {

@@ -1,20 +1,16 @@
 import 'dart:io';
 
 import 'package:cli/cli.dart';
+import 'package:plugin_dart/plugin_dart.dart';
 
 Future<void> main(List<String> arguments) async {
   exitCode = await emitCliResponse(
-    switch (parseCliCommand(arguments)) {
-      final StaticCommand command => respondStatically(
-        command,
-        version: buildVersion,
-      ),
-      RunInitDryRun() => const CliResponse(
-        exitCode: 70,
-        channel: CliOutputChannel.stderr,
-        payload: 'shipflow: no se pudo completar la operación.\n',
-      ),
-    },
+    await runCliAtProcessBoundary(
+      arguments,
+      version: buildVersion,
+      workingDirectory: currentWorkingDirectory(),
+      recognizeProject: recognizeDartProject,
+    ),
     standardOut: stdout,
     standardError: stderr,
   );

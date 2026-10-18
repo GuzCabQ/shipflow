@@ -8,5 +8,13 @@ environment:
 
 resolution: workspace
 
+dependencies:
+  core:
+    path: ../core
+  plugin_dart:
+    path: ../plugin_dart
+  vcs:
+    path: ../vcs
+
 dev_dependencies:
   test: ^1.25.0
