@@ -2,7 +2,10 @@
 {"id":"HUECOS.md","tipo":"prosa","saltos":1,"aristas":[],"citado_por":["README.md"]}
 {"id":"README.md","tipo":"prosa","saltos":0,"aristas":[{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"GOBIERNO.md","tipo":"cita","origen":"derivado"},{"a":"HUECOS.md","tipo":"cita","origen":"derivado"}],"citado_por":[]}
 {"id":"packages/agents/lib/agents.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
-{"id":"packages/cli/lib/cli.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
+{"id":"packages/cli/lib/cli.dart","tipo":"codigo","saltos":0,"aristas":[{"a":"packages/cli/lib/src/cli_application.dart","tipo":"importa","origen":"derivado"},{"a":"packages/cli/lib/src/cli_response.dart","tipo":"importa","origen":"derivado"}],"citado_por":["packages/cli/test/cli_application_test.dart"]}
+{"id":"packages/cli/lib/src/cli_application.dart","tipo":"codigo","saltos":1,"aristas":[{"a":"dart:convert","tipo":"importa","origen":"derivado"},{"a":"packages/cli/lib/src/cli_response.dart","tipo":"importa","origen":"derivado"}],"citado_por":["packages/cli/lib/cli.dart"]}
+{"id":"packages/cli/lib/src/cli_response.dart","tipo":"codigo","saltos":1,"aristas":[],"citado_por":["packages/cli/lib/cli.dart","packages/cli/lib/src/cli_application.dart"]}
+{"id":"packages/cli/test/cli_application_test.dart","tipo":"codigo","saltos":0,"aristas":[{"a":"dart:convert","tipo":"importa","origen":"derivado"},{"a":"dart:io","tipo":"importa","origen":"derivado"},{"a":"dart:isolate","tipo":"importa","origen":"derivado"},{"a":"package:test/test.dart","tipo":"importa","origen":"derivado"},{"a":"packages/cli/lib/cli.dart","tipo":"importa","origen":"derivado"}],"citado_por":[]}
 {"id":"packages/core/lib/core.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
 {"id":"packages/forge/lib/forge.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}
 {"id":"packages/orchestration/lib/orchestration.dart","tipo":"codigo","saltos":0,"aristas":[],"citado_por":[]}

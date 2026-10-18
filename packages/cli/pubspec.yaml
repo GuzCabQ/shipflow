@@ -1,5 +1,5 @@
 name: cli
-description: "Paquete reservado. Sin API todavia."
+description: "El ejecutable shipflow."
 publish_to: none
 version: 0.1.0
 
@@ -7,3 +7,6 @@ environment:
   sdk: ^3.11.0
 
 resolution: workspace
+
+dev_dependencies:
+  test: ^1.25.0
