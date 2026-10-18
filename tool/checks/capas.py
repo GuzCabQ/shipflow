@@ -25,6 +25,8 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from ejecucion_nativa import (  # noqa: E402
+    EJECUCION_NATIVA, errores_de_ejecucion_nativa)
 
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
@@ -212,7 +214,7 @@ PASOS_OBLIGATORIOS = {
     # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
     # `stable` no decide el estilo. El comando es el real, sin banderas.
     "el formato": ("dart format --output=none --set-exit-if-changed packages tool", None),
-    # El ejecutable en cada plataforma declarada. Ver `EJECUCION_NATIVA`.
+    # El ejecutable en cada plataforma declarada. Ver `ejecucion_nativa.py`.
     "las dependencias exactas del lockfile": ("dart pub get --enforce-lockfile", None),
     "las pruebas del CLI en la plataforma nativa": ("dart test packages/cli/test", None),
     "la build oficial nativa": (
@@ -221,22 +223,6 @@ PASOS_OBLIGATORIOS = {
     "el artefacto de la plataforma responde": (
         'test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-'
         '${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"', None),
-}
-
-# **Una plataforma soportada es una plataforma donde el binario CORRIÓ.**
-# Compilar para otra plataforma produce bytes, no evidencia. Por eso los pasos
-# nativos tienen que vivir en UN job cuya matriz sea exactamente estos runners,
-# cada uno con el nombre de release que su artefacto lleva. Que los pasos
-# existan en el workflow no alcanza: con la matriz recortada, el runner fijo o
-# el job omitido, el comando sigue escrito y la plataforma deja de ejecutarse.
-EJECUCION_NATIVA = {
-    "plataformas": {"ubuntu-24.04": "linux-x64", "macos-14": "macos-arm64"},
-    "runs-on": "${{ matrix.runner }}",
-    "sdk": "3.12.0",
-    "pasos": ("las dependencias exactas del lockfile",
-              "las pruebas del CLI en la plataforma nativa",
-              "la build oficial nativa",
-              "el artefacto de la plataforma responde"),
 }
 
 # El job puede declararse `continue-on-error` SOLO con esta expresión, que es
@@ -899,56 +885,8 @@ def _check_ejecucion_nativa() -> None:
         fallos.append(f"no pude leer el workflow para verificar la ejecución "
                       f"nativa: {e}")
         return
-    comandos = {PASOS_OBLIGATORIOS[e][0] for e in EJECUCION_NATIVA["pasos"]}
-    candidatos = []
-    for nombre, job in (doc.get("jobs") or {}).items():
-        if not isinstance(job, dict):
-            continue
-        corridos = {str(p.get("run", "")).strip()
-                    for p in (job.get("steps") or []) if isinstance(p, dict)}
-        if corridos & comandos:
-            candidatos.append((nombre, job, corridos))
-    if len(candidatos) != 1:
-        fallos.append(
-            f"los pasos del ejecutable nativo aparecen en "
-            f"{[n for n, _, _ in candidatos] or 'ningún'} job. Tienen que vivir "
-            f"juntos en UN job con la matriz de plataformas declaradas; "
-            f"repartidos, ninguno garantiza que el binario corrió donde dice.")
-        return
-    nombre, job, corridos = candidatos[0]
-    for etiqueta in EJECUCION_NATIVA["pasos"]:
-        if PASOS_OBLIGATORIOS[etiqueta][0] not in corridos:
-            fallos.append(f"el job «{nombre}» no ejecuta {etiqueta}: sin ese "
-                          f"paso la plataforma no queda atestiguada.")
-    if "if" in job:
-        fallos.append(f"el job «{nombre}» lleva la condición `if: {job['if']!r}`. "
-                      f"Un job omitido deja cada plataforma sin ejecutar y el "
-                      f"comando sigue escrito.")
-    if job.get("continue-on-error") not in (None, False):
-        fallos.append(f"el job «{nombre}» declara `continue-on-error`: una "
-                      f"plataforma roja dejaría de bloquear.")
-    if job.get("runs-on") != EJECUCION_NATIVA["runs-on"]:
-        fallos.append(f"el job «{nombre}» corre en `runs-on: {job.get('runs-on')!r}` "
-                      f"y no en {EJECUCION_NATIVA['runs-on']}: la matriz de "
-                      f"plataformas queda decorativa.")
-    matriz = ((job.get("strategy") or {}).get("matrix") or {})
-    if set(matriz) != {"include"}:
-        fallos.append(f"la matriz del job «{nombre}» declara {sorted(matriz)} y "
-                      f"solo puede declarar `include`: un `exclude` o un eje "
-                      f"más cambian qué plataformas corren.")
-    patas = {str(p.get("runner")): str(p.get("plataforma"))
-             for p in (matriz.get("include") or []) if isinstance(p, dict)}
-    if patas != EJECUCION_NATIVA["plataformas"]:
-        fallos.append(f"la matriz del job «{nombre}» ejecuta {patas} y las "
-                      f"plataformas declaradas son {EJECUCION_NATIVA['plataformas']}. "
-                      f"Una plataforma sin su runner nativo no está verificada.")
-    sdks = [str((p.get("with") or {}).get("sdk"))
-            for p in (job.get("steps") or [])
-            if isinstance(p, dict) and "setup-dart" in str(p.get("uses", ""))]
-    if sdks != [EJECUCION_NATIVA["sdk"]]:
-        fallos.append(f"el job «{nombre}» instala el SDK {sdks}; el ejecutable "
-                      f"nativo se verifica con el SDK bloqueante "
-                      f"«{EJECUCION_NATIVA['sdk']}».")
+    comandos = {e: PASOS_OBLIGATORIOS[e][0] for e in EJECUCION_NATIVA["pasos"]}
+    fallos.extend(errores_de_ejecucion_nativa(doc, comandos))
 
 
 def _check_casos_ciegos() -> None:

@@ -54,6 +54,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
+from sabotajes_nativos import casos_nativos  # noqa: E402
 
 # **Los sabotajes corren sobre una COPIA PRIVADA, nunca sobre el checkout
 # compartido.** Esta bandera la pone el proceso externo cuando ya hizo la copia;
@@ -972,94 +973,9 @@ def casos() -> list[dict]:
 
     # --- EL EJECUTABLE NATIVO -------------------------------------------------
     #
-    # Dos familias, y las ve un control distinto cada una. Borrar un paso nativo
-    # o volverlo decorativo cambia un comando, y eso lo ve la comparación exacta
-    # de `PASOS_OBLIGATORIOS`. Recortar la matriz, fijar el runner u omitir el
-    # job deja cada comando intacto y la plataforma sin ejecutar: eso solo lo ve
-    # `_check_ejecucion_nativa`.
-    _nativos = (
-        ("dependencias exactas del lockfile", "dart pub get --enforce-lockfile"),
-        ("pruebas del CLI en la plataforma nativa", "dart test packages/cli/test"),
-        ("build oficial nativa",
-         'dart run packages/cli/tool/build_release.dart --version 0.0.0-ci '
-         '--output "$RUNNER_TEMP/shipflow-release"'),
-        ("el artefacto de esta plataforma responde",
-         'test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-'
-         '${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"'),
-    )
-    for _paso, _comando in _nativos:
-        c.append({
-            "nombre": f"nativo · «{_paso}» borrado del workflow",
-            "archivos": {CI_REL: ancla(
-                ci, f"      - name: {_paso}\n        run: {_comando}\n", "",
-                que=f"el paso nativo «{_paso}»")},
-            "menciona": "ya no ejecuta",
-        })
-        c.append({
-            "nombre": f"nativo · «{_paso}» con «|| true»",
-            "archivos": {CI_REL: ancla(
-                ci, f"        run: {_comando}\n",
-                f"        run: {_comando} || true\n",
-                que=f"el comando nativo «{_paso}»")},
-            "menciona": "exactamente",
-        })
-    c.append({
-        "nombre": "nativo · la build oficial omitida con «if: false»",
-        "archivos": {CI_REL: ancla(
-            ci, f"        run: {_nativos[2][1]}\n",
-            f"        run: {_nativos[2][1]}\n        if: false\n",
-            que="la build oficial nativa")},
-        "menciona": "condición",
-    })
-    c.append({
-        "nombre": "nativo · las pruebas nativas con continue-on-error",
-        "archivos": {CI_REL: ancla(
-            ci, f"        run: {_nativos[1][1]}\n",
-            f"        run: {_nativos[1][1]}\n        continue-on-error: true\n",
-            que="las pruebas nativas")},
-        "menciona": "no detiene nada",
-    })
-    _dart_nativo = ('      - name: dart, el SDK bloqueante\n'
-                    '        uses: dart-lang/setup-dart@'
-                    '6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n'
-                    '        with:\n          sdk: "3.12.0"')
-    for _etiqueta, _viejo, _nuevo, _menciona in (
-        ("la pata de macOS fuera de la matriz",
-         "          - runner: macos-14\n            plataforma: macos-arm64\n", "",
-         "no está verificada"),
-        ("un runner que no es el nativo de su plataforma",
-         "          - runner: macos-14\n", "          - runner: macos-13\n",
-         "no está verificada"),
-        ("runs-on fijo en vez del runner de la matriz",
-         "    runs-on: ${{ matrix.runner }}\n", "    runs-on: ubuntu-24.04\n",
-         "queda decorativa"),
-        ("un exclude que saca una pata",
-         "        include:\n          - runner: ubuntu-24.04\n",
-         "        exclude:\n          - runner: macos-14\n"
-         "        include:\n          - runner: ubuntu-24.04\n",
-         "solo puede declarar `include`"),
-        ("el job entero omitido con «if: false»",
-         "  nativo:\n    name: ejecutable nativo",
-         "  nativo:\n    if: false\n    name: ejecutable nativo",
-         "Un job omitido"),
-        ("el job entero con continue-on-error",
-         "    runs-on: ${{ matrix.runner }}\n",
-         "    runs-on: ${{ matrix.runner }}\n    continue-on-error: true\n",
-         "dejaría de bloquear"),
-        ("el SDK en un canal flotante",
-         _dart_nativo, _dart_nativo.replace('"3.12.0"', "stable"),
-         "SDK bloqueante"),
-        ("un paso nativo repartido en otro job",
-         "        run: dart format --output=none --set-exit-if-changed packages tool\n",
-         "        run: dart format --output=none --set-exit-if-changed packages tool\n"
-         f"\n      - name: build fuera de su job\n        run: {_nativos[2][1]}\n",
-         "Tienen que vivir"),
-    ):
-        c.append({
-            "nombre": f"nativo · {_etiqueta}",
-            "archivos": {CI_REL: ancla(ci, _viejo, _nuevo, que=_etiqueta)},
-            "menciona": _menciona,
-        })
+    # Viven en `sabotajes_nativos.py`, junto con por qué cada familia la ve un
+    # control distinto.
+    c.extend(casos_nativos(ci, CI_REL))
 
     # --- LA POLITICA DE PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` --------
     #
