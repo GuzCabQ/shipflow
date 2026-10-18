@@ -78,6 +78,23 @@ void main() {
     });
   });
 
+  test('lo que se mira para detectar profundidad también cuenta', () async {
+    for (final name in ['a', 'b', 'c']) {
+      sandbox.place('$name/pubspec.yaml');
+    }
+    var pulled = 0;
+    final result = await scanProject(
+      sandbox.root,
+      limits: const ScanLimits(maxEntries: 3, maxDepth: 1),
+      list: (directory) => listWithoutFollowing(directory).map((entity) {
+        pulled++;
+        return entity;
+      }),
+    );
+    expect(pulled, 4);
+    expect(limitationsOf(result), ['scan_limit_reached:a:true']);
+  });
+
   group('manifiestos', () {
     setUp(() {
       sandbox.place('a/pubspec.yaml');

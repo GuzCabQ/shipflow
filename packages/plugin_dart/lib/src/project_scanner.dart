@@ -63,9 +63,14 @@ Future<ScanResult> scanProject(
 }
 
 final class _Scan {
-  _Scan(this.root, this.limits, this.list, this.readBytes);
+  _Scan(this.root, this.limits, this.list, this.readBytes)
+    : _authorizedRoot = _canonical(root.path);
 
   final Directory root;
+
+  /// La raíz real al empezar. Las rutas se comparan con ella y no con una
+  /// nueva resolución de [root], que otro proceso pudo cambiar por un enlace.
+  final String? _authorizedRoot;
   final ScanLimits limits;
   final DirectoryLister list;
   final ByteReader readBytes;
@@ -86,6 +91,10 @@ final class _Scan {
     if (children == null) return;
     final why = depth == 0 ? null : _escaped(directory.path, _directory);
     if (why != null) return _block(why.code, why.message, directory.path);
+    if (children.length > room) {
+      return _stop('entradas', limits.maxEntries, directory.path);
+    }
+    _entries += children.length;
     if (children.isEmpty) return;
     if (deep) {
       return _block(
@@ -94,10 +103,6 @@ final class _Scan {
         directory.path,
       );
     }
-    if (children.length > room) {
-      return _stop('entradas', limits.maxEntries, directory.path);
-    }
-    _entries += children.length;
     for (final child in children..sort(_byName)) {
       if (_stopped) return;
       await _visitEntity(child, depth + 1);
@@ -154,7 +159,7 @@ final class _Scan {
     final read = await readStableFile(
       file,
       maxBytes: isManifest ? limits.maxManifestBytes : limits.maxMarkerBytes,
-      readBytes: readBytes,
+      readBytes: _revalidatedRead,
     );
     if (_escaped(file.path, _file) case final why?) {
       return _block(why.code, why.message, file.path);
@@ -188,6 +193,16 @@ final class _Scan {
     StableSource() => throw StateError('una fuente estable no se rechaza'),
   };
 
+  /// Revalida antes de cada lectura, no sólo antes de la primera: abrir lo
+  /// que ya no es la fuente enumerada podría leer fuera de la raíz o, con un
+  /// FIFO, no volver nunca. El motivo exacto lo informa [_accept] después.
+  Future<List<int>> _revalidatedRead(File file, int maxBytes) {
+    if (_escaped(file.path, _file) != null) {
+      throw const FileSystemException('cambió antes de leerse');
+    }
+    return readBytes(file, maxBytes);
+  }
+
   /// Por qué [path] ya no es lo que se enumeró: un [expected] sin enlaces
   /// dentro de la raíz. Se comprueba antes y después de usarlo, porque entre
   /// la enumeración y el uso otro proceso pudo cambiar un tramo por un enlace
@@ -212,7 +227,8 @@ final class _Scan {
               message: 'dejó de ser un directorio durante el recorrido',
             );
     }
-    if (_canonical(path) == '${_canonical(root.path)}/${_relative(path)}') {
+    if (_authorizedRoot != null &&
+        _canonical(path) == '$_authorizedRoot/${_relative(path)}') {
       return null;
     }
     return (

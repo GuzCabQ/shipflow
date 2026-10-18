@@ -191,6 +191,84 @@ void main() {
     });
   });
 
+  group('entre lecturas, o la raíz misma', () {
+    late Directory outside;
+    var calls = 0;
+
+    setUp(() async {
+      calls = 0;
+      final made = await Directory.systemTemp.createTemp('shipflow-fuera-');
+      outside = Directory(made.resolveSymbolicLinksSync());
+      File('${outside.path}/pubspec.yaml').writeAsStringSync('name: ajeno\n');
+      Directory('${outside.path}/z').createSync();
+      File('${outside.path}/z/pubspec.yaml').writeAsStringSync('name: ajeno\n');
+    });
+    tearDown(() => outside.delete(recursive: true));
+
+    /// Cuenta las lecturas y, al terminar la primera, aplica [change].
+    ByteReader afterFirstRead(void Function() change) =>
+        (file, maxBytes) async {
+          final bytes = await readBoundedBytes(file, maxBytes);
+          if (++calls == 1) change();
+          return bytes;
+        };
+
+    test('la raíz sustituida por un enlace no autoriza su destino', () async {
+      sandbox.place('pubspec.yaml');
+      final original = sandbox.root.path;
+      final moved = '$original-movida';
+      addTearDown(() {
+        Link(original).deleteSync();
+        Directory(moved).renameSync(original);
+      });
+      final result = await scanProject(
+        sandbox.root,
+        readBytes: afterFirstRead(() {
+          Directory(original).renameSync(moved);
+          Link(original).createSync(outside.path);
+        }),
+      );
+      expect(calls, 1);
+      expect(sourcePaths(result), isEmpty);
+      expect(limitationsOf(result), [
+        'source_changed_during_scan:pubspec.yaml:true',
+      ]);
+    });
+
+    test('la segunda lectura no pasa por un enlace nuevo', () async {
+      sandbox.place('z/pubspec.yaml');
+      final result = await scanProject(
+        sandbox.root,
+        readBytes: afterFirstRead(() {
+          Directory('${sandbox.root.path}/z').deleteSync(recursive: true);
+          Link('${sandbox.root.path}/z').createSync('${outside.path}/z');
+        }),
+      );
+      expect(calls, 1);
+      expect(limitationsOf(result), [
+        'source_changed_during_scan:z/pubspec.yaml:true',
+      ]);
+    });
+
+    test(
+      'un FIFO puesto entre lecturas no se abre',
+      () async {
+        final source = sandbox.place('pubspec.yaml');
+        final result = await scanProject(
+          sandbox.root,
+          readBytes: afterFirstRead(() {
+            source.deleteSync();
+            final made = Process.runSync('mkfifo', [source.path]);
+            expect(made.exitCode, 0, reason: '${made.stderr}');
+          }),
+        );
+        expect(calls, 1);
+        expect(limitationsOf(result), ['source_unreadable:pubspec.yaml:true']);
+      },
+      timeout: const Timeout(Duration(seconds: 20)),
+    );
+  });
+
   test('un manifiesto que cambia entre lecturas bloquea', () async {
     sandbox.place('pubspec.yaml');
     var call = 0;
