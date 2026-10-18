@@ -227,3 +227,51 @@ jobs:
       # admite. El comando es UNO, en los dos lados.
       - name: format
         run: dart format --output=none --set-exit-if-changed packages tool
+
+
+  # EL EJECUTABLE, EN CADA PLATAFORMA QUE SE DECLARA SOPORTADA.
+  #
+  # Un artefacto compilado para otra plataforma no demuestra que funcione:
+  # cada pata compila en su propio runner y ejecuta lo que compiló. La build
+  # oficial ya corre el binario y compara su versión; el último paso lo vuelve a
+  # invocar por el nombre de release de ESTA pata, así que una pata que hubiera
+  # producido el artefacto de otra plataforma no lo encuentra.
+  #
+  # `capas.py` fija esta matriz, sus runners, el SDK y estos pasos.
+  nativo:
+    name: ejecutable nativo · ${{ matrix.plataforma }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            plataforma: linux-x64
+          - runner: macos-14
+            plataforma: macos-arm64
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: dart, el SDK bloqueante
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: "3.12.0"
+
+      - name: plataforma del runner
+        run: dart --version && uname -sm
+
+      - name: dependencias exactas del lockfile
+        run: dart pub get --enforce-lockfile
+
+      - name: pruebas del CLI en la plataforma nativa
+        run: dart test packages/cli/test
+
+      - name: build oficial nativa
+        run: dart run packages/cli/tool/build_release.dart --version 0.0.0-ci --output "$RUNNER_TEMP/shipflow-release"
+
+      - name: el artefacto de esta plataforma responde
+        run: test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"
