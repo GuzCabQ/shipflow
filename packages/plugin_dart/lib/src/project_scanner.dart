@@ -115,7 +115,16 @@ final class _Scan {
         await visit(entity, depth);
       case File():
         final kind = _kindOf(name, depth);
-        if (kind != null) await _accept(entity, kind);
+        if (kind == null) return;
+        if (FileSystemEntity.typeSync(entity.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+          return _block(
+            LimitationCode.sourceUnreadable,
+            'no es un archivo regular; no se abrió',
+            entity.path,
+          );
+        }
+        await _accept(entity, kind);
     }
   }
 

@@ -135,6 +135,32 @@ dependency_overrides:
     });
   });
 
+  group('el anidamiento por bloques también se acota sin caer', () {
+    for (final (name, text) in [
+      ('secuencias', 'name: a\nx:\n  ${'- ' * 10000}z\n'),
+      ('claves explícitas', 'name: a\nx:\n  ${'? ' * 10000}z\n'),
+      (
+        'sangrías',
+        'name: a\n${[for (var i = 0; i < 300; i++) '${' ' * i}k$i:'].join('\n')} v\n',
+      ),
+    ]) {
+      test(name, () {
+        final watch = Stopwatch()..start();
+        final observed = observeManifest(manifest(text));
+        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+        expect(observed.facts, isNull);
+        expect(codes(observed), ['invalid_manifest']);
+      });
+    }
+
+    test('un manifiesto real con sangría normal no se rechaza', () {
+      final observed = observeManifest(
+        manifest('name: a\ndependencies:\n  b:\n    path: ../b\n'),
+      );
+      expect(observed.limitations, isEmpty);
+    });
+  });
+
   group('un valor de más de 4096 bytes', () {
     test('conserva un adelanto válido y lo declara truncado', () {
       final observed = observeManifest(manifest('name: ${'ñ' * 3000}\n'));
@@ -146,6 +172,25 @@ dependency_overrides:
       expect(codes(observed), ['observed_value_truncated']);
       expect(observed.limitations.single.blocking, isTrue);
     });
+
+    for (final (name, key, path) in [
+      ('una clave de dependencia', 'k' * 5000, 'p'),
+      ('la clave y la ruta juntas', 'k' * 3000, 'p' * 3000),
+    ]) {
+      test('$name no se interpreta truncada', () {
+        final observed = observeManifest(
+          manifest('name: a\ndependencies:\n  $key: {path: $path}\n'),
+        );
+        expect(observed.facts!.pathDependencies, isEmpty);
+        expect(codes(observed), ['observed_value_truncated']);
+        for (final limitation in observed.limitations) {
+          expect(
+            utf8.encode(limitation.message).length,
+            lessThanOrEqualTo(4096),
+          );
+        }
+      });
+    }
 
     test('justo 4096 bytes no se trunca', () {
       final observed = observeManifest(manifest('name: ${'a' * 4096}\n'));

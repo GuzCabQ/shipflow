@@ -21,11 +21,7 @@ final class ManifestEvidence {
           : null,
       pathDependencies = List.unmodifiable([
         for (final d in facts.pathDependencies)
-          _draft(
-            facts,
-            EvidenceKind.pathDependency,
-            '${d.section}.${d.name}: ${d.path}',
-          )!,
+          _draft(facts, EvidenceKind.pathDependency, d.evidenceValue)!,
       ]),
       workspace = List.unmodifiable([
         for (final member in facts.workspace)

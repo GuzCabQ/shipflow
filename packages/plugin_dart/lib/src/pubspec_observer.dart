@@ -7,9 +7,11 @@ import 'observed_value.dart';
 import 'project_scanner.dart';
 import 'recognition_codes.dart';
 
-/// El parser de YAML es recursivo: más allá de esta profundidad de
-/// colecciones de flujo agota la pila. Ningún manifiesto real se le acerca.
-const maxFlowNesting = 64;
+/// El parser de YAML es recursivo y agota la pila con unos miles de niveles,
+/// de flujo o de bloque. Antes de parsear se acotan ambos: los corchetes y
+/// llaves abiertos, y el prefijo estructural de cada línea (sangría más
+/// indicadores `- ` y `? `), que crece al menos uno por nivel de bloque.
+const maxYamlNesting = 64;
 
 const _pathDependencySections = [
   'dependencies',
@@ -25,7 +27,13 @@ final class PathDependencyFact {
 
   /// Tal como la declara el manifiesto, relativa a su directorio o absoluta.
   final String path;
+
+  /// Cómo se muestra como evidencia.
+  String get evidenceValue => describePathDependency(section, name, path);
 }
+
+String describePathDependency(String section, String name, String path) =>
+    '$section.$name: $path';
 
 /// Sólo los hechos que el reconocimiento usa, nunca el árbol entero.
 final class ManifestFacts {
@@ -99,14 +107,17 @@ final class _Observer {
     } on FormatException {
       return _invalid('no es texto UTF-8');
     }
-    if (_flowNesting(text) > maxFlowNesting) {
-      return _invalid('anida más de $maxFlowNesting colecciones');
+    if (_flowNesting(text) > maxYamlNesting ||
+        _blockPrefix(text) > 2 * maxYamlNesting) {
+      return _invalid('anida más de $maxYamlNesting niveles');
     }
     final Object? parsed;
     try {
       parsed = loadYaml(text, recover: false);
     } on YamlException {
       return _invalid('no es YAML válido');
+    } on StackOverflowError {
+      return _invalid('anida más de lo que se puede leer');
     }
     return parsed is YamlMap ? parsed : _invalid('no es un mapa YAML');
   }
@@ -145,9 +156,29 @@ final class _Observer {
     return [
       for (final MapEntry(:key, :value) in dependencies.entries)
         if (key is String && value is YamlMap && value.containsKey('path'))
-          if (text(value['path'], '$section.$key.path') case final path?)
-            PathDependencyFact(section, key, path),
+          ?_pathDependency(section, key, value['path']),
     ];
+  }
+
+  /// La dependencia sólo si su evidencia, `<sección>.<nombre>: <ruta>`, cabe
+  /// entera: una ruta o un nombre truncados no se interpretan.
+  PathDependencyFact? _pathDependency(
+    String section,
+    String key,
+    Object? path,
+  ) {
+    if (path is! String) return _invalid('«$section.*.path» no es texto');
+    if (boundObservedValue(
+      describePathDependency(section, key, path),
+    ).truncated) {
+      _limit(
+        LimitationCode.observedValueTruncated,
+        'una dependencia local de «$section» excede $maxObservedValueBytes '
+        'bytes y no se interpreta',
+      );
+      return null;
+    }
+    return PathDependencyFact(section, key, path);
   }
 
   Null _invalid(String why) {
@@ -179,4 +210,28 @@ int _flowNesting(String text) {
     }
   }
   return deepest;
+}
+
+/// El mayor prefijo estructural de una línea: su sangría más dos por cada
+/// indicador `- ` o `? ` que la abre.
+int _blockPrefix(String text) {
+  var widest = 0;
+  for (final line in text.split('\n')) {
+    var index = 0;
+    while (index < line.length && (line[index] == ' ' || line[index] == '\t')) {
+      index++;
+    }
+    var prefix = index;
+    while (index + 1 < line.length &&
+        (line[index] == '-' || line[index] == '?') &&
+        (line[index + 1] == ' ' || line[index + 1] == '\t')) {
+      index += 2;
+      prefix += 2;
+      while (index < line.length && line[index] == ' ') {
+        index++;
+      }
+    }
+    if (prefix > widest) widest = prefix;
+  }
+  return widest;
 }

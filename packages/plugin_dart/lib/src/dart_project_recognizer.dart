@@ -61,9 +61,7 @@ final class _Observations {
         limitations.add(
           RecognitionLimitation(
             code: LimitationCode.pathDependencyOutsideRoot,
-            message:
-                'la dependencia local «${dependency.name}» sale de la raíz y '
-                'no se atraviesa',
+            message: 'una dependencia local sale de la raíz y no se atraviesa',
             path: facts.source.path,
             blocking: true,
           ),

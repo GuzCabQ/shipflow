@@ -116,6 +116,26 @@ void main() {
     );
   });
 
+  test(
+    'una fuente que no es un archivo regular bloquea sin abrirse',
+    () async {
+      sandbox.directory('f');
+      for (final name in ['f/pubspec.yaml', '.fvmrc']) {
+        final made = await Process.run('mkfifo', [
+          '${sandbox.root.path}/$name',
+        ]);
+        expect(made.exitCode, 0, reason: '${made.stderr}');
+      }
+      final result = await scan();
+      expect(sourcePaths(result), isEmpty);
+      expect(limitationsOf(result), [
+        'source_unreadable:.fvmrc:true',
+        'source_unreadable:f/pubspec.yaml:true',
+      ]);
+    },
+    timeout: const Timeout(Duration(seconds: 20)),
+  );
+
   test('un manifiesto que cambia entre lecturas bloquea', () async {
     sandbox.place('pubspec.yaml');
     var call = 0;
