@@ -64,7 +64,10 @@ void main() {
         'recognition_runner.dart',
       },
       'lib/src/cli_response.dart': <String>{},
-      'lib/src/internal_failure.dart': {'cli_response.dart'},
+      'lib/src/internal_failure.dart': {
+        'cli_application.dart',
+        'cli_response.dart',
+      },
       'lib/src/recognition_presenter.dart': {
         'package:core/core.dart',
         'cli_application.dart',

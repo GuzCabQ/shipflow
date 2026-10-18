@@ -7,6 +7,7 @@ const cliName = 'shipflow';
 const schemaVersion = 1;
 const successExitCode = 0;
 const invalidUsageExitCode = 64;
+const errorResponseType = 'error';
 
 typedef _Option = ({List<String> flags, String column, String text});
 typedef _Help = ({
@@ -98,7 +99,7 @@ CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
   if (json) {
     return jsonResponse(invalidUsageExitCode, {
       'schemaVersion': schemaVersion,
-      'type': 'error',
+      'type': errorResponseType,
       'code': 'invalid_usage',
       'message': problem,
       'exitCode': invalidUsageExitCode,

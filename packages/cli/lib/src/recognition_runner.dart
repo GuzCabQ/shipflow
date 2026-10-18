@@ -8,6 +8,10 @@ import 'cli_command.dart';
 import 'cli_response.dart';
 import 'recognition_presenter.dart';
 
+const _rootNotFound = 'root_not_found';
+const _rootNotDirectory = 'root_not_directory';
+const _rootInaccessible = 'root_inaccessible';
+
 /// Lo que un plugin observa en una raíz canónica.
 typedef RecognitionContributor =
     Future<RecognitionContribution> Function(Directory root);
@@ -85,22 +89,8 @@ String _absolutePath(Directory directory) {
 Future<({String? resolved, RecognitionLimitation? problem})> _inspectableRoot(
   String requested,
 ) async {
-  switch (FileSystemEntity.typeSync(requested)) {
-    case FileSystemEntityType.notFound:
-      return (
-        resolved: null,
-        problem: _rootProblem('root_not_found', 'la raíz no existe'),
-      );
-    case FileSystemEntityType.directory:
-      break;
-    default:
-      return (
-        resolved: null,
-        problem: _rootProblem(
-          'root_not_directory',
-          'la raíz no es un directorio',
-        ),
-      );
+  if (_typeProblem(requested) case final problem?) {
+    return (resolved: null, problem: problem);
   }
   try {
     final resolved = Directory(requested).resolveSymbolicLinksSync();
@@ -110,12 +100,22 @@ Future<({String? resolved, RecognitionLimitation? problem})> _inspectableRoot(
     return (
       resolved: null,
       problem: _rootProblem(
-        'root_inaccessible',
+        _rootInaccessible,
         'la raíz no se puede leer (${error.osError?.message ?? error.message})',
       ),
     );
   }
 }
+
+RecognitionLimitation? _typeProblem(String requested) =>
+    switch (FileSystemEntity.typeSync(requested)) {
+      FileSystemEntityType.directory => null,
+      FileSystemEntityType.notFound => _rootProblem(
+        _rootNotFound,
+        'la raíz no existe',
+      ),
+      _ => _rootProblem(_rootNotDirectory, 'la raíz no es un directorio'),
+    };
 
 RecognitionLimitation _rootProblem(String code, String message) =>
     RecognitionLimitation(
