@@ -481,4 +481,31 @@ void main() {
       }
     }
   });
+
+  // V0-S16
+  test('ningún comentario de packages/cli nombra una ruta local', () async {
+    final root = await packageRoot();
+    final local = RegExp(
+      r'/Users/|/home/|~/|/private/|/var/folders/|file://|[A-Za-z]:\\|'
+      r'Downloads|Obsidian',
+      caseSensitive: false,
+    );
+    final found = <String>[];
+    for (final file
+        in root
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where(
+              (f) => f.path.endsWith('.dart') && !f.path.contains('.dart_tool'),
+            )) {
+      final lines = file.readAsLinesSync();
+      for (var i = 0; i < lines.length; i++) {
+        final line = lines[i].trimLeft();
+        if (line.startsWith('//') && local.hasMatch(line)) {
+          found.add('${file.path.substring(root.path.length + 1)}:${i + 1}');
+        }
+      }
+    }
+    expect(found, isEmpty);
+  });
 }
