@@ -1,5 +1,5 @@
 name: core
-description: "Paquete reservado. Sin API todavia."
+description: "Los tipos neutrales del reconocimiento de proyectos."
 publish_to: none
 version: 0.1.0
 
