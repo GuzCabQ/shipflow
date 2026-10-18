@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:cli/cli.dart';
 import 'package:test/test.dart';
 
 import 'cli_support.dart';
+import 'static_evaluation.dart';
 
 void main() {
   group('argumentos reflejados', () {
@@ -24,7 +24,7 @@ void main() {
       ('\uD800', r'\u{d800}'),
     ]) {
       test('${jsonEncode(raw)} se refleja escapado en una línea', () {
-        final response = evaluateCli([raw], version: version);
+        final response = evaluate([raw], version: version);
         expect(response.payload, humanError("argumento inesperado: '$shown'"));
         expect('\n'.allMatches(response.payload).length, 2);
       });
@@ -33,7 +33,7 @@ void main() {
 
   group('truncamiento', () {
     String reflected(String argument) {
-      final firstLine = evaluateCli([
+      final firstLine = evaluate([
         argument,
       ], version: version).payload.split('\n').first;
       final start = firstLine.indexOf("'") + 1;
@@ -50,7 +50,7 @@ void main() {
     });
 
     test('un argumento de un megabyte se trunca a 160 más …', () {
-      final payload = evaluateCli(['x' * (1 << 20)], version: version).payload;
+      final payload = evaluate(['x' * (1 << 20)], version: version).payload;
       expect(payload, humanError("argumento inesperado: '${'x' * 160}…'"));
     });
 

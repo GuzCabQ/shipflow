@@ -32,11 +32,18 @@ void main() {
       'lib/cli.dart': {
         'src/build_version.dart',
         'src/cli_application.dart',
+        'src/cli_command.dart',
         'src/cli_emitter.dart',
         'src/cli_response.dart',
       },
       'lib/src/build_version.dart': <String>{},
-      'lib/src/cli_application.dart': {'dart:convert', 'cli_response.dart'},
+      'lib/src/cli_application.dart': {
+        'dart:convert',
+        'cli_command.dart',
+        'cli_response.dart',
+      },
+      'lib/src/cli_command.dart': {'terminal_text.dart'},
+      'lib/src/terminal_text.dart': <String>{},
       'lib/src/cli_emitter.dart': {
         'dart:convert',
         'dart:io',

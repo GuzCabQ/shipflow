@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:cli/cli.dart';
 import 'package:test/test.dart';
+import 'static_evaluation.dart';
 
 const failureDiagnostic = 'shipflow: no se pudo completar la operación.\n';
 
@@ -58,7 +59,7 @@ void main() {
     final out = collecting();
     final err = collecting();
     final code = await emitCliResponse(
-      evaluateCli(['--inventada'], version: '1.0.0'),
+      evaluate(['--inventada'], version: '1.0.0'),
       standardOut: out.sink,
       standardError: err.sink,
     );
@@ -75,7 +76,7 @@ void main() {
     final out = collecting();
     final err = collecting();
     final code = await emitCliResponse(
-      evaluateCli(['--json', '--inventada'], version: '1.0.0'),
+      evaluate(['--json', '--inventada'], version: '1.0.0'),
       standardOut: out.sink,
       standardError: err.sink,
     );
@@ -90,20 +91,20 @@ void main() {
   test('escribe UTF-8 aunque el sink tenga otra codificación', () async {
     final out = collecting(encoding: latin1);
     await emitCliResponse(
-      evaluateCli(['--help'], version: '1.0.0'),
+      evaluate(['--help'], version: '1.0.0'),
       standardOut: out.sink,
       standardError: collecting().sink,
     );
     expect(
       out.collector.bytes,
-      utf8.encode(evaluateCli(['--help'], version: '1.0.0').payload),
+      utf8.encode(evaluate(['--help'], version: '1.0.0').payload),
     );
   });
 
   test('si stdout falla devuelve 70 y avisa por stderr', () async {
     final err = collecting();
     final code = await emitCliResponse(
-      evaluateCli(['--json'], version: '1.0.0'),
+      evaluate(['--json'], version: '1.0.0'),
       standardOut: broken(),
       standardError: err.sink,
     );
@@ -114,7 +115,7 @@ void main() {
   test('si stderr falla devuelve 70 y avisa por stdout', () async {
     final out = collecting();
     final code = await emitCliResponse(
-      evaluateCli(['--inventada'], version: '1.0.0'),
+      evaluate(['--inventada'], version: '1.0.0'),
       standardOut: out.sink,
       standardError: broken(),
     );
@@ -124,7 +125,7 @@ void main() {
 
   test('si fallan los dos canales devuelve 70 sin lanzar', () async {
     final code = await emitCliResponse(
-      evaluateCli(['--version'], version: '1.0.0'),
+      evaluate(['--version'], version: '1.0.0'),
       standardOut: broken(),
       standardError: broken(),
     );

@@ -2,6 +2,7 @@ import 'package:cli/cli.dart';
 import 'package:test/test.dart';
 
 import 'cli_support.dart';
+import 'static_evaluation.dart';
 
 void main() {
   group('ayuda', () {
@@ -64,7 +65,7 @@ void main() {
 
     test('la versión es la recibida, no una constante', () {
       expect(
-        evaluateCli(['--version'], version: '0.0.0-dev').payload,
+        evaluate(['--version'], version: '0.0.0-dev').payload,
         'shipflow 0.0.0-dev\n',
       );
     });
