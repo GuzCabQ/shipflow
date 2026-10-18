@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
-import 'limitation_codes.dart';
+import 'recognition_codes.dart';
 import 'scan_limits.dart';
 import 'stable_file_reader.dart';
 
