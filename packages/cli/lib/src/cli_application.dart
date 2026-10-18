@@ -8,6 +8,8 @@ const _versionFlag = '--version';
 const _jsonFlag = '--json';
 const _maxReflectedRunes = 160;
 const _invalidUsageExitCode = 64;
+const _successExitCode = 0;
+const _schemaVersion = 1;
 
 const _summary =
     'Shipflow supervisa cambios de software verificables y recuperables.';
@@ -33,7 +35,7 @@ CliResponse evaluateCli(List<String> arguments, {required String version}) {
   if (problem != null) {
     return json
         ? _jsonResponse(_invalidUsageExitCode, {
-            'schemaVersion': 1,
+            'schemaVersion': _schemaVersion,
             'type': 'error',
             'code': 'invalid_usage',
             'message': problem,
@@ -47,18 +49,18 @@ CliResponse evaluateCli(List<String> arguments, {required String version}) {
   }
   if (arguments.contains(_versionFlag)) {
     return json
-        ? _jsonResponse(0, {
-            'schemaVersion': 1,
+        ? _jsonResponse(_successExitCode, {
+            'schemaVersion': _schemaVersion,
             'type': 'version',
             'name': _name,
             'version': version,
-            'exitCode': 0,
+            'exitCode': _successExitCode,
           })
         : _success('$_name $version\n');
   }
   return json
-      ? _jsonResponse(0, {
-          'schemaVersion': 1,
+      ? _jsonResponse(_successExitCode, {
+          'schemaVersion': _schemaVersion,
           'type': 'help',
           'name': _name,
           'usage': _usage,
@@ -66,7 +68,7 @@ CliResponse evaluateCli(List<String> arguments, {required String version}) {
             for (final option in _options)
               {'flags': option.flags, 'description': option.text},
           ],
-          'exitCode': 0,
+          'exitCode': _successExitCode,
         })
       : _success(_humanHelp());
 }
@@ -171,7 +173,7 @@ String _humanHelp() {
 }
 
 CliResponse _success(String payload) => CliResponse(
-  exitCode: 0,
+  exitCode: _successExitCode,
   channel: CliOutputChannel.stdout,
   payload: payload,
 );

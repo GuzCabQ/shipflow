@@ -3,11 +3,17 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'src/checksum.dart';
+import 'src/options.dart';
 import 'src/semver.dart';
 
 const _usage =
     'uso: dart run packages/cli/tool/build_release.dart '
     '--version <semver> --output <ruta>';
+const _names = {'--version', '--output'};
+
+const _exitBuilt = 0;
+const _exitFailed = 1;
+const _exitUsage = 64;
 
 Future<void> main(List<String> arguments) async {
   exitCode = await runBuildRelease(
@@ -54,20 +60,20 @@ Future<int> runBuildRelease(
   required IOSink standardOut,
   required IOSink standardError,
 }) async {
-  final options = _parse(arguments);
+  final options = parseNamedOptions(arguments, _names) ?? const {};
   final version = options['--version'];
   final output = options['--output'];
   if (options.isEmpty || version == null || output == null) {
     standardError.writeln(
       'build_release: se requieren exactamente --version y --output.\n$_usage',
     );
-    return 64;
+    return _exitUsage;
   }
   if (!isValidSemVer(version)) {
     standardError.writeln(
       'build_release: «$version» no es SemVer 2.0; no se compiló nada.',
     );
-    return 64;
+    return _exitUsage;
   }
   try {
     final build = await buildRelease(
@@ -81,24 +87,11 @@ Future<int> runBuildRelease(
       'sha256:     ${build.evidence.sha256} (${build.evidence.tool})\n'
       'SHA256SUMS: ${build.checksums.path}',
     );
-    return 0;
+    return _exitBuilt;
   } on ReleaseBuildException catch (error) {
     standardError.writeln('build_release: ${error.message}');
-    return 1;
+    return _exitFailed;
   }
-}
-
-/// Cada opción aparece una vez con su valor; cualquier otra forma es inválida.
-Map<String, String> _parse(List<String> arguments) {
-  const names = {'--version', '--output'};
-  final options = <String, String>{};
-  if (arguments.length.isOdd) return const {};
-  for (var i = 0; i < arguments.length; i += 2) {
-    final name = arguments[i];
-    if (!names.contains(name) || options.containsKey(name)) return const {};
-    options[name] = arguments[i + 1];
-  }
-  return options;
 }
 
 /// Compila, ejecuta y digiere el artefacto en un directorio de trabajo
