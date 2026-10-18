@@ -33,15 +33,13 @@ final class PromotionManifest {
     previousSha256: previousSha256,
   );
 
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
     'schemaVersion': _schemaVersion,
     'phase': phase.name,
     'candidateVersion': candidateVersion,
     'candidateSha256': candidateSha256,
-    if (previousVersion != null && previousSha256 != null) ...{
-      'previousVersion': previousVersion!,
-      'previousSha256': previousSha256!,
-    },
+    'previousVersion': previousVersion,
+    'previousSha256': previousSha256,
   };
 }
 
