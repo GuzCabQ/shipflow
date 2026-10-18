@@ -32,21 +32,7 @@ const _options = [
 CliResponse evaluateCli(List<String> arguments, {required String version}) {
   final json = arguments.contains(_jsonFlag);
   final problem = _firstProblem(arguments);
-  if (problem != null) {
-    return json
-        ? _jsonResponse(_invalidUsageExitCode, {
-            'schemaVersion': _schemaVersion,
-            'type': 'error',
-            'code': 'invalid_usage',
-            'message': problem,
-            'exitCode': _invalidUsageExitCode,
-          })
-        : CliResponse(
-            exitCode: _invalidUsageExitCode,
-            channel: CliOutputChannel.stderr,
-            payload: "$_name: $problem\nUsa 'shipflow --help'.\n",
-          );
-  }
+  if (problem != null) return _usageError(problem, json: json);
   if (arguments.contains(_versionFlag)) {
     return json
         ? _jsonResponse(_successExitCode, {
@@ -59,19 +45,35 @@ CliResponse evaluateCli(List<String> arguments, {required String version}) {
         : _success('$_name $version\n');
   }
   return json
-      ? _jsonResponse(_successExitCode, {
-          'schemaVersion': _schemaVersion,
-          'type': 'help',
-          'name': _name,
-          'usage': _usage,
-          'options': [
-            for (final option in _options)
-              {'flags': option.flags, 'description': option.text},
-          ],
-          'exitCode': _successExitCode,
-        })
+      ? _jsonResponse(_successExitCode, _jsonHelp())
       : _success(_humanHelp());
 }
+
+CliResponse _usageError(String problem, {required bool json}) => json
+    ? _jsonResponse(_invalidUsageExitCode, {
+        'schemaVersion': _schemaVersion,
+        'type': 'error',
+        'code': 'invalid_usage',
+        'message': problem,
+        'exitCode': _invalidUsageExitCode,
+      })
+    : CliResponse(
+        exitCode: _invalidUsageExitCode,
+        channel: CliOutputChannel.stderr,
+        payload: "$_name: $problem\nUsa 'shipflow --help'.\n",
+      );
+
+Map<String, Object> _jsonHelp() => {
+  'schemaVersion': _schemaVersion,
+  'type': 'help',
+  'name': _name,
+  'usage': _usage,
+  'options': [
+    for (final option in _options)
+      {'flags': option.flags, 'description': option.text},
+  ],
+  'exitCode': _successExitCode,
+};
 
 String? _firstProblem(List<String> arguments) {
   final seen = <String>[];

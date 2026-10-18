@@ -16,17 +16,8 @@ Future<String?> reportedVersion(
   File executable, {
   Duration timeout = versionTimeout,
 }) async {
-  final Process process;
-  try {
-    process = await Process.start(
-      executable.path,
-      ['--version'],
-      environment: const {},
-      includeParentEnvironment: false,
-    );
-  } on ProcessException {
-    return null;
-  }
+  final process = await _start(executable);
+  if (process == null) return null;
   final out = _Capture(process.stdout);
   final err = _Capture(process.stderr);
   final int exitCode;
@@ -45,6 +36,19 @@ Future<String?> reportedVersion(
   final match = RegExp(r'^shipflow (\S+)\n$').firstMatch(out.text ?? '');
   if (exitCode != 0 || err.text != '' || match == null) return null;
   return match.group(1);
+}
+
+Future<Process?> _start(File executable) async {
+  try {
+    return await Process.start(
+      executable.path,
+      ['--version'],
+      environment: const {},
+      includeParentEnvironment: false,
+    );
+  } on ProcessException {
+    return null;
+  }
 }
 
 /// Junta lo que emite un stream de un proceso.

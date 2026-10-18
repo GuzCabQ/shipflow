@@ -33,23 +33,23 @@ Future<int> runPromote(
     );
     return _exitUsage;
   }
-  final binDirectory = Directory(options['--bin-dir']!);
+  final request = _requestFrom(options);
   try {
-    await promote(
-      PromotionRequest(
-        artifact: File(options['--artifact']!),
-        expectedSha256: options['--sha256']!,
-        expectedVersion: options['--version']!,
-        binDirectory: binDirectory,
-      ),
-    );
+    await promote(request);
   } on PromotionException catch (error) {
     standardError.writeln('promote: ${error.message}');
     return _exitRejected;
   }
   standardOut.writeln(
-    'shipflow ${options['--version']} promovido en '
-    '${binDirectory.absolute.path}/shipflow y verificado.',
+    'shipflow ${request.expectedVersion} promovido en '
+    '${request.binDirectory.absolute.path}/shipflow y verificado.',
   );
   return _exitPromoted;
 }
+
+PromotionRequest _requestFrom(Map<String, String> options) => PromotionRequest(
+  artifact: File(options['--artifact']!),
+  expectedSha256: options['--sha256']!,
+  expectedVersion: options['--version']!,
+  binDirectory: Directory(options['--bin-dir']!),
+);

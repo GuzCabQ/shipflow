@@ -60,21 +60,9 @@ Future<int> runBuildRelease(
   required IOSink standardOut,
   required IOSink standardError,
 }) async {
-  final options = parseNamedOptions(arguments, _names) ?? const {};
-  final version = options['--version'];
-  final output = options['--output'];
-  if (options.isEmpty || version == null || output == null) {
-    standardError.writeln(
-      'build_release: se requieren exactamente --version y --output.\n$_usage',
-    );
-    return _exitUsage;
-  }
-  if (!isValidSemVer(version)) {
-    standardError.writeln(
-      'build_release: «$version» no es SemVer 2.0; no se compiló nada.',
-    );
-    return _exitUsage;
-  }
+  final request = _readRequest(arguments, standardError);
+  if (request == null) return _exitUsage;
+  final (:version, :output) = request;
   try {
     final build = await buildRelease(
       version: version,
@@ -94,6 +82,30 @@ Future<int> runBuildRelease(
   }
 }
 
+/// Las dos opciones, o null después de explicar en [standardError] por qué
+/// no alcanzan.
+({String version, String output})? _readRequest(
+  List<String> arguments,
+  IOSink standardError,
+) {
+  final options = parseNamedOptions(arguments, _names) ?? const {};
+  final version = options['--version'];
+  final output = options['--output'];
+  if (options.isEmpty || version == null || output == null) {
+    standardError.writeln(
+      'build_release: se requieren exactamente --version y --output.\n$_usage',
+    );
+    return null;
+  }
+  if (!isValidSemVer(version)) {
+    standardError.writeln(
+      'build_release: «$version» no es SemVer 2.0; no se compiló nada.',
+    );
+    return null;
+  }
+  return (version: version, output: output);
+}
+
 /// Compila, ejecuta y digiere el artefacto en un directorio de trabajo
 /// hermano de [output], que sólo se vuelve [output] si todo lo anterior
 /// resultó: un fallo nunca deja un candidato aceptable.
@@ -104,10 +116,50 @@ Future<ReleaseBuild> buildRelease({
   Abi? hostAbi,
   ChecksumTool? checksumTool,
 }) async {
+  final platform = _requireBuildable(version, output, hostAbi ?? Abi.current());
+  final tool = checksumTool ?? _hostChecksumTool();
+  final source = entrypoint ?? await _publicEntrypoint();
+  final staging = await _createStaging(output);
+  try {
+    return await _assemble(staging, output, version, platform, source, tool);
+  } on Object catch (error) {
+    final failure = _failure(error);
+    if (failure == null) rethrow;
+    await _discard(staging, failure);
+  }
+}
+
+/// Compila, ejecuta y digiere en [staging], y lo publica como [output].
+Future<ReleaseBuild> _assemble(
+  Directory staging,
+  Directory output,
+  String version,
+  String platform,
+  File source,
+  ChecksumTool tool,
+) async {
+  final name = 'shipflow-$version-$platform';
+  final artifact = File('${staging.path}/$name');
+  await _compile(source, artifact, version);
+  await _requireAnswer(artifact, version);
+  final evidence = await _digest(artifact, tool);
+  File(
+    '${staging.path}/SHA256SUMS',
+  ).writeAsStringSync('${evidence.sha256}  $name\n', flush: true);
+  final published = await staging.rename(output.path);
+  return ReleaseBuild(
+    artifact: File('${published.path}/$name'),
+    checksums: File('${published.path}/SHA256SUMS'),
+    platform: platform,
+    evidence: evidence,
+  );
+}
+
+/// El nombre de release de esta plataforma, una vez que nada impide compilar.
+String _requireBuildable(String version, Directory output, Abi abi) {
   if (!isValidSemVer(version)) {
     throw ReleaseBuildException('«$version» no es SemVer 2.0.');
   }
-  final abi = hostAbi ?? Abi.current();
   final platform = releasePlatformFor(abi);
   if (platform == null) {
     throw ReleaseBuildException(
@@ -124,84 +176,84 @@ Future<ReleaseBuild> buildRelease({
       'no se compiló nada.',
     );
   }
-  final tool = checksumTool ?? _hostChecksumTool();
-  final source = entrypoint ?? await _publicEntrypoint();
-  final Directory staging;
+  return platform;
+}
+
+Future<Directory> _createStaging(Directory output) async {
   try {
-    staging = await output.absolute.parent.createTemp('.shipflow-release-');
+    return await output.absolute.parent.createTemp('.shipflow-release-');
   } on FileSystemException catch (error) {
     throw ReleaseBuildException(
       'no se pudo crear el directorio de trabajo junto a --output '
       '(${_reason(error)}); no se compiló nada.',
     );
   }
-  try {
-    final name = 'shipflow-$version-$platform';
-    final artifact = File('${staging.path}/$name');
-    final compiled = await Process.run(Platform.resolvedExecutable, [
-      'compile',
-      'exe',
-      '-DSHIPFLOW_VERSION=$version',
-      '-o',
-      artifact.path,
-      source.path,
-    ]);
-    if (compiled.exitCode != 0 || !artifact.existsSync()) {
-      throw ReleaseBuildException(
-        '${source.path} no compiló:\n${compiled.stdout}${compiled.stderr}',
-      );
-    }
-    final ran = await Process.run(
-      artifact.path,
-      ['--version'],
-      workingDirectory: staging.path,
-      environment: const {},
-      includeParentEnvironment: false,
+}
+
+Future<void> _compile(File source, File artifact, String version) async {
+  final compiled = await Process.run(Platform.resolvedExecutable, [
+    'compile',
+    'exe',
+    '-DSHIPFLOW_VERSION=$version',
+    '-o',
+    artifact.path,
+    source.path,
+  ]);
+  if (compiled.exitCode != 0 || !artifact.existsSync()) {
+    throw ReleaseBuildException(
+      '${source.path} no compiló:\n${compiled.stdout}${compiled.stderr}',
     );
-    final expected = 'shipflow $version\n';
-    if (ran.exitCode != 0 || ran.stdout != expected || ran.stderr != '') {
-      throw ReleaseBuildException(
-        'el artefacto no respondió «${expected.trim()}» a --version: '
-        'código ${ran.exitCode}, stdout «${ran.stdout}», '
-        'stderr «${ran.stderr}».',
-      );
-    }
-    final ChecksumEvidence evidence;
-    try {
-      evidence = await computeSha256With(artifact, tool);
-    } on ChecksumException catch (error) {
-      throw ReleaseBuildException(error.message);
-    }
-    File(
-      '${staging.path}/SHA256SUMS',
-    ).writeAsStringSync('${evidence.sha256}  $name\n', flush: true);
-    final published = await staging.rename(output.path);
-    return ReleaseBuild(
-      artifact: File('${published.path}/$name'),
-      checksums: File('${published.path}/SHA256SUMS'),
-      platform: platform,
-      evidence: evidence,
-    );
-  } on Object catch (error) {
-    final String failure;
-    if (error is ReleaseBuildException) {
-      failure = error.message;
-    } else if (error is FileSystemException || error is ProcessException) {
-      failure = 'la build no terminó (${_reason(error)}); no hay candidato.';
-    } else {
-      rethrow;
-    }
-    try {
-      if (staging.existsSync()) await staging.delete(recursive: true);
-    } on FileSystemException catch (cleanup) {
-      throw ReleaseBuildException(
-        '$failure\nAdemás, no se pudo borrar el directorio de trabajo '
-        '.shipflow-release-* junto a --output (${_reason(cleanup)}); no es un '
-        'candidato y hay que borrarlo a mano.',
-      );
-    }
-    throw ReleaseBuildException(failure);
   }
+}
+
+/// Ejecuta el artefacto recién compilado sin entorno heredado.
+Future<void> _requireAnswer(File artifact, String version) async {
+  final ran = await Process.run(
+    artifact.path,
+    ['--version'],
+    workingDirectory: artifact.parent.path,
+    environment: const {},
+    includeParentEnvironment: false,
+  );
+  final expected = 'shipflow $version\n';
+  if (ran.exitCode != 0 || ran.stdout != expected || ran.stderr != '') {
+    throw ReleaseBuildException(
+      'el artefacto no respondió «${expected.trim()}» a --version: '
+      'código ${ran.exitCode}, stdout «${ran.stdout}», '
+      'stderr «${ran.stderr}».',
+    );
+  }
+}
+
+Future<ChecksumEvidence> _digest(File artifact, ChecksumTool tool) async {
+  try {
+    return await computeSha256With(artifact, tool);
+  } on ChecksumException catch (error) {
+    throw ReleaseBuildException(error.message);
+  }
+}
+
+/// El fallo de la build como frase, o null si no es uno de los previstos.
+String? _failure(Object error) => switch (error) {
+  ReleaseBuildException(:final message) => message,
+  FileSystemException() || ProcessException() =>
+    'la build no terminó (${_reason(error)}); no hay candidato.',
+  _ => null,
+};
+
+/// Borra el directorio de trabajo y falla con [failure]; si no se puede
+/// borrar, lo dice para que nadie lo tome por un candidato.
+Future<Never> _discard(Directory staging, String failure) async {
+  try {
+    if (staging.existsSync()) await staging.delete(recursive: true);
+  } on FileSystemException catch (cleanup) {
+    throw ReleaseBuildException(
+      '$failure\nAdemás, no se pudo borrar el directorio de trabajo '
+      '.shipflow-release-* junto a --output (${_reason(cleanup)}); no es un '
+      'candidato y hay que borrarlo a mano.',
+    );
+  }
+  throw ReleaseBuildException(failure);
 }
 
 /// El motivo del sistema operativo, sin la ruta ni la traza de la excepción.

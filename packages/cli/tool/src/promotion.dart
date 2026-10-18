@@ -131,25 +131,12 @@ Future<PromotionManifest?> _stagingManifest(
   String digest,
   VersionReader readVersion,
 ) async {
-  final installed = layout.installed;
   final version = request.expectedVersion;
-  if (!installed.existsSync()) {
-    return PromotionManifest(
-      phase: PromotionPhase.staging,
-      candidateVersion: version,
-      candidateSha256: digest,
-    );
-  }
-  final previousSha256 = await sha256Of(installed);
-  final previousVersion = await readVersion(installed);
-  if (previousVersion == null) {
-    throw PromotionException(
-      '${installed.path} no responde --version; sin una instalación '
-      'verificable no hay a qué volver, así que no se reemplaza.',
-    );
-  }
-  if (previousVersion == version) {
-    if (previousSha256 == digest) return null;
+  final previous = layout.installed.existsSync()
+      ? await _installedIdentity(layout.installed, readVersion)
+      : null;
+  if (previous != null && previous.version == version) {
+    if (previous.sha256 == digest) return null;
     throw PromotionException(
       'ya está instalada la misma versión $version con otros bytes; una '
       'build distinta necesita una versión distinguible.',
@@ -159,9 +146,25 @@ Future<PromotionManifest?> _stagingManifest(
     phase: PromotionPhase.staging,
     candidateVersion: version,
     candidateSha256: digest,
-    previousVersion: previousVersion,
-    previousSha256: previousSha256,
+    previousVersion: previous?.version,
+    previousSha256: previous?.sha256,
   );
+}
+
+/// La versión y el digest del instalado, sin los cuales no hay a qué volver.
+Future<({String version, String sha256})> _installedIdentity(
+  File installed,
+  VersionReader readVersion,
+) async {
+  final sha256 = await sha256Of(installed);
+  final version = await readVersion(installed);
+  if (version == null) {
+    throw PromotionException(
+      '${installed.path} no responde --version; sin una instalación '
+      'verificable no hay a qué volver, así que no se reemplaza.',
+    );
+  }
+  return (version: version, sha256: sha256);
 }
 
 /// Copia, verifica y pone el candidato en el lugar del instalado, dejando

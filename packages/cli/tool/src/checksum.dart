@@ -73,7 +73,16 @@ Future<ChecksumEvidence> computeSha256With(
           .trim(),
     );
   }
-  final lines = const LineSplitter().convert(result.stdout as String);
+  return ChecksumEvidence(
+    sha256: _singleDigest(result.stdout as String, artifact, tool),
+    tool: tool.description,
+  );
+}
+
+/// El digest de la única línea que [tool] imprimió, que tiene que nombrar
+/// exactamente a [artifact].
+String _singleDigest(String output, File artifact, ChecksumTool tool) {
+  final lines = const LineSplitter().convert(output);
   final match = lines.length == 1
       ? RegExp(r'^([0-9a-f]{64}) [ *](.+)$').firstMatch(lines.single)
       : null;
@@ -83,5 +92,5 @@ Future<ChecksumEvidence> computeSha256With(
       '«${tool.description}» no devolvió un único digest de ${artifact.path}.',
     );
   }
-  return ChecksumEvidence(sha256: match.group(1)!, tool: tool.description);
+  return match.group(1)!;
 }
