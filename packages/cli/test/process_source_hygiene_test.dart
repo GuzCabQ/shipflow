@@ -137,6 +137,28 @@ void main() {
     },
   );
 
+  test('el reconocimiento no incorpora Linguist', () async {
+    final packages = (await packageRoot()).parent;
+    final self = File(
+      '${(await packageRoot()).path}/test/process_source_hygiene_test.dart',
+    ).absolute.path;
+    final mentions = [
+      for (final file
+          in packages
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where(
+                (f) =>
+                    !f.path.contains('.dart_tool') &&
+                    (f.path.endsWith('.dart') || f.path.endsWith('.yaml')) &&
+                    f.absolute.path != self,
+              ))
+        if (file.readAsStringSync().toLowerCase().contains('linguist'))
+          file.path.substring(packages.path.length + 1),
+    ];
+    expect(mentions, isEmpty);
+  });
+
   test('ningún comentario de packages/cli nombra una ruta local', () async {
     final root = await packageRoot();
     final local = RegExp(
