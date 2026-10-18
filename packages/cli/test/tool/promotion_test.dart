@@ -350,7 +350,13 @@ void main() {
       expect(binDir.listSync(), isEmpty);
     });
 
-    for (final name in [installedName, lockName, candidateName, manifestName]) {
+    for (final name in [
+      installedName,
+      lockName,
+      candidateName,
+      manifestName,
+      '$manifestName.tmp',
+    ]) {
       test('un $name enlace se rechaza sin seguirlo', () async {
         final target = File('${sandbox.path}/objetivo')
           ..writeAsStringSync('no tocar');
@@ -467,6 +473,18 @@ void main() {
       await promote(await request(fresh, '2.0.0'));
       await expectClean('2.0.0');
     });
+
+    test(
+      'un manifiesto temporal a medias se descarta al reconciliar',
+      () async {
+        await place(old, previousName);
+        await place(fresh, installedName);
+        writeManifest(manifest('swapping'));
+        File('${binDir.path}/$manifestName.tmp').writeAsStringSync('{"schem');
+        await promote(await request(old, '1.0.0'));
+        await expectClean('1.0.0');
+      },
+    );
 
     test('una primera instalación interrumpida no queda instalada', () async {
       await place(fresh, installedName);

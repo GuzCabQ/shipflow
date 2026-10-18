@@ -9,6 +9,7 @@ const _installedName = 'shipflow';
 const _candidateName = '.shipflow.candidate';
 const _previousName = '.shipflow.previous';
 const _manifestName = '.shipflow.promote.json';
+const _manifestDraftName = '.shipflow.promote.json.tmp';
 const _lockName = '.shipflow.promote.lock';
 
 const _phaseStaging = 'staging';
@@ -77,6 +78,7 @@ Future<void> promote(PromotionRequest request) async {
     _candidateName,
     _previousName,
     _manifestName,
+    _manifestDraftName,
     _lockName,
   ]) {
     _rejectLink('${bin.path}/$name');
@@ -174,6 +176,8 @@ Future<void> _finish(Directory bin) async {
 /// actúa cuando cada archivo presente coincide con el manifiesto; cualquier
 /// otra combinación se informa sin tocar nada.
 Future<void> _reconcile(Directory bin) async {
+  final draft = File('${bin.path}/$_manifestDraftName');
+  if (draft.existsSync()) await draft.delete();
   final manifestFile = File('${bin.path}/$_manifestName');
   if (!manifestFile.existsSync()) {
     final residues = [
@@ -275,10 +279,14 @@ Map<String, Object?> _readManifest(File file) {
   return decoded;
 }
 
+/// Escribe un borrador y lo renombra sobre el manifiesto: una interrupción deja
+/// el manifiesto anterior o el nuevo, nunca uno a medias.
 void _writeManifest(Directory bin, Map<String, Object> manifest) {
   final file = File('${bin.path}/$_manifestName');
+  final draft = File('${bin.path}/$_manifestDraftName');
   try {
-    file.writeAsStringSync('${jsonEncode(manifest)}\n', flush: true);
+    draft.writeAsStringSync('${jsonEncode(manifest)}\n', flush: true);
+    draft.renameSync(file.path);
   } on FileSystemException catch (error) {
     throw PromotionException(
       'no se pudo escribir ${file.path}: ${error.osError ?? error.message}.',
