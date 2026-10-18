@@ -385,6 +385,29 @@ void main() {
       await expectClean('1.0.0');
     });
 
+    test(
+      'un fallo de archivo a mitad del reemplazo restaura sin detalles crudos',
+      () async {
+        await install(await executable('1.0.0'));
+        Directory('${binDir.path}/$candidateName').createSync();
+        await expectLater(
+          promote(await request(await executable('2.0.0'), '2.0.0')),
+          throwsA(
+            isA<PromotionException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('Se restauró'), isNot(contains('Exception'))),
+            ),
+          ),
+        );
+        expect(
+          await answer('${binDir.path}/$installedName'),
+          'shipflow 1.0.0\n',
+        );
+        expect(File('${binDir.path}/$manifestName').existsSync(), isFalse);
+      },
+    );
+
     test('en una primera instalación no deja un ejecutable roto', () async {
       await expectLater(
         promote(

@@ -157,17 +157,31 @@ Future<void> _replace(
 
     _writeManifest(bin, {...manifest, 'phase': _phaseCommitting});
   } on Object catch (error) {
+    final failure = _describe(error);
     try {
       await _restore(bin, manifest);
-    } on PromotionException catch (restoreError) {
+    } on Object catch (restoreError) {
       throw PromotionException(
-        '$error\nAdemás, la restauración no terminó: ${restoreError.message}',
+        '$failure\nAdemás, la restauración no terminó: '
+        '${_describe(restoreError)}',
       );
     }
-    throw PromotionException('$error\nSe restauró la instalación previa.');
+    throw PromotionException('$failure\nSe restauró la instalación previa.');
   }
   await _finish(bin);
 }
+
+/// Un fallo como frase para quien promueve: sin el tipo, la ruta ni la traza
+/// de la excepción.
+String _describe(Object error) => switch (error) {
+  PromotionException(:final message) => message,
+  FileSystemException(:final osError?) =>
+    'falló una operación de archivo (${osError.message})',
+  FileSystemException(:final message) =>
+    'falló una operación de archivo ($message)',
+  ProcessException(:final message) => 'no se pudo lanzar un proceso ($message)',
+  _ => 'falló la promoción por un error inesperado',
+};
 
 /// Una promoción verificada termina borrando el respaldo y el manifiesto.
 Future<void> _finish(Directory bin) async {

@@ -190,13 +190,24 @@ Future<ReleaseBuild> buildRelease({
       evidence: evidence,
     );
   } on Object catch (error) {
-    if (staging.existsSync()) await staging.delete(recursive: true);
-    if (error is FileSystemException || error is ProcessException) {
+    final String failure;
+    if (error is ReleaseBuildException) {
+      failure = error.message;
+    } else if (error is FileSystemException || error is ProcessException) {
+      failure = 'la build no terminó (${_reason(error)}); no hay candidato.';
+    } else {
+      rethrow;
+    }
+    try {
+      if (staging.existsSync()) await staging.delete(recursive: true);
+    } on FileSystemException catch (cleanup) {
       throw ReleaseBuildException(
-        'la build no terminó (${_reason(error)}); no hay candidato.',
+        '$failure\nAdemás, no se pudo borrar el directorio de trabajo '
+        '.shipflow-release-* junto a --output (${_reason(cleanup)}); no es un '
+        'candidato y hay que borrarlo a mano.',
       );
     }
-    rethrow;
+    throw ReleaseBuildException(failure);
   }
 }
 

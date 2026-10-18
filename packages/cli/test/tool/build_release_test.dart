@@ -362,6 +362,43 @@ void main() {
     );
 
     test(
+      'si la limpieza del directorio de trabajo falla, el error sigue controlado',
+      () async {
+        final parent = await Directory('${directory.path}/padre').create();
+        try {
+          await expectLater(
+            buildRelease(
+              version: '1.0.0',
+              output: Directory('${parent.path}/release'),
+              checksumTool: const ChecksumTool(
+                executable: '/bin/sh',
+                arguments: [
+                  '-c',
+                  r'chmod 0555 "$(dirname "$(dirname "$1")")"; exit 3',
+                  'sh',
+                ],
+              ),
+            ),
+            throwsA(
+              isA<ReleaseBuildException>().having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('no se pudo borrar el directorio de trabajo'),
+                  contains('Permission denied'),
+                  isNot(contains('#0')),
+                  isNot(contains('Exception')),
+                ),
+              ),
+            ),
+          );
+        } finally {
+          await Process.run('chmod', ['-R', 'u+w', parent.path]);
+        }
+      },
+    );
+
+    test(
       'la build oficial compila, ejecuta, compara y publica SHA256SUMS',
       () async {
         const version = '1.4.0-rc.1+ci.7';
