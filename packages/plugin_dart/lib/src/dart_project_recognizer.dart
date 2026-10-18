@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 
 import 'evidence_draft.dart';
 import 'manifest_evidence.dart';
+import 'observed_value.dart';
 import 'path_dependency_boundary.dart';
 import 'project_scanner.dart';
 import 'pubspec_observer.dart';
@@ -54,14 +55,20 @@ final class _Observations {
   void _addManifest(ManifestFacts facts) {
     final evidence = ManifestEvidence(facts);
     manifests.add(evidence);
-    _addConstraint(evidence.sdkConstraint, sdkConstraints);
-    _addConstraint(evidence.flutterConstraint, flutterConstraints);
+    _addConstraint(evidence.sdkConstraint, facts.sdkConstraint, sdkConstraints);
+    _addConstraint(
+      evidence.flutterConstraint,
+      facts.flutterConstraint,
+      flutterConstraints,
+    );
     for (final dependency in facts.pathDependencies) {
-      if (isOutsideRoot(root, facts, dependency)) {
+      if (dependency.truncated) continue;
+      final placement = placePathDependency(root, facts, dependency);
+      if (_placementProblem(placement) case (final code, final message)?) {
         limitations.add(
           RecognitionLimitation(
-            code: LimitationCode.pathDependencyOutsideRoot,
-            message: 'una dependencia local sale de la raíz y no se atraviesa',
+            code: code,
+            message: message,
             path: facts.source.path,
             blocking: true,
           ),
@@ -70,8 +77,13 @@ final class _Observations {
     }
   }
 
-  void _addConstraint(EvidenceDraft? draft, List<ConstraintEvidence> into) {
-    if (draft == null) return;
+  /// Un adelanto truncado ya bloquea por sí mismo y no se parsea.
+  void _addConstraint(
+    EvidenceDraft? draft,
+    ObservedValue? observed,
+    List<ConstraintEvidence> into,
+  ) {
+    if (draft == null || observed!.truncated) return;
     final (:constraint, :limitation) = parseConstraint(draft);
     if (constraint != null) into.add(constraint);
     if (limitation != null) limitations.add(limitation);
@@ -185,3 +197,17 @@ final class _Observations {
     ];
   }
 }
+
+/// Por qué una dependencia local no se atraviesa, o null si queda dentro.
+(String, String)? _placementProblem(PathDependencyPlacement placement) =>
+    switch (placement) {
+      PathDependencyPlacement.inside => null,
+      PathDependencyPlacement.outside => (
+        LimitationCode.pathDependencyOutsideRoot,
+        'una dependencia local sale de la raíz y no se atraviesa',
+      ),
+      PathDependencyPlacement.unresolved => (
+        LimitationCode.pathDependencyUnresolved,
+        'una dependencia local no se pudo resolver y no se atraviesa',
+      ),
+    };

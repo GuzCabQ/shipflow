@@ -9,12 +9,12 @@ final class ManifestEvidence {
       sdkConstraint = _draft(
         facts,
         EvidenceKind.sdkConstraint,
-        facts.sdkConstraint,
+        facts.sdkConstraint?.text,
       ),
       flutterConstraint = _draft(
         facts,
         EvidenceKind.flutterConstraint,
-        facts.flutterConstraint,
+        facts.flutterConstraint?.text,
       ),
       flutterDependency = facts.flutterDependency
           ? _draft(facts, EvidenceKind.flutterDependency, 'sdk: flutter')
@@ -25,7 +25,7 @@ final class ManifestEvidence {
       ]),
       workspace = List.unmodifiable([
         for (final member in facts.workspace)
-          _draft(facts, EvidenceKind.workspaceMember, member)!,
+          _draft(facts, EvidenceKind.workspaceMember, member.text)!,
       ]);
 
   final ManifestFacts facts;
@@ -45,11 +45,9 @@ final class ManifestEvidence {
     ...workspace,
   ];
 
-  /// Lo que hace de este paquete uno Flutter.
-  List<EvidenceDraft> get flutterSignals => [
-    ?flutterConstraint,
-    ?flutterDependency,
-  ];
+  /// Lo que hace de este paquete uno Flutter: sólo la dependencia del SDK.
+  /// `environment.flutter` acota la compatibilidad, no elige el stack.
+  List<EvidenceDraft> get flutterSignals => [?flutterDependency];
 
   /// El directorio del manifiesto, relativo a la raíz; `.` es la raíz.
   String get unitPath {

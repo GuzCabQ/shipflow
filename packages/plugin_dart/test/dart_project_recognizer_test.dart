@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
@@ -64,11 +65,27 @@ void main() {
     expect(report.units.single.kind, 'flutter_package');
   });
 
+  test('una restricción Flutter sola no elige Flutter', () async {
+    sandbox.place(
+      'pubspec.yaml',
+      'name: app\nenvironment:\n  flutter: ^3.0.0\n',
+    );
+    final report = await recognize();
+    expect(report.status, RecognitionStatus.recognized);
+    expect(report.candidates.single.id, 'dart');
+    expect(report.units.single.kind, 'dart_package');
+    expect(
+      report.evidence.map((e) => e.kind),
+      contains('manifest.flutter_constraint'),
+    );
+  });
+
   test('paquetes Dart y Flutter conviven bajo un candidato Flutter', () async {
     sandbox.place('packages/app/pubspec.yaml', '''
 name: app
-environment:
-  flutter: ^3.0.0
+dependencies:
+  flutter:
+    sdk: flutter
 ''');
     sandbox.place('packages/core_logic/pubspec.yaml', 'name: core_logic\n');
     final report = await recognize();
@@ -200,5 +217,25 @@ dependencies:
     final report = assemble(sandbox.root, contribution);
     expect(report.status, RecognitionStatus.ambiguous);
     expect(codesOf(report.limitations), ['source_too_large']);
+  });
+
+  test('un adelanto truncado se muestra pero no se interpreta', () async {
+    sandbox.place(
+      'pubspec.yaml',
+      'name: a\nenvironment:\n  sdk: "${'^' * 5000}"\n'
+          'dependencies:\n  x: {path: ${'../' * 1700}}\n',
+    );
+    final report = await recognize();
+    expect(report.status, RecognitionStatus.ambiguous);
+    expect(codesOf(report.limitations), [
+      'observed_value_truncated',
+      'observed_value_truncated',
+    ]);
+    final shown = {
+      for (final e in report.evidence)
+        if (e.value.endsWith('…')) e.kind: utf8.encode(e.value).length,
+    };
+    expect(shown.keys, {'manifest.path_dependency', 'manifest.sdk_constraint'});
+    expect(shown.values, everyElement(lessThanOrEqualTo(4096)));
   });
 }

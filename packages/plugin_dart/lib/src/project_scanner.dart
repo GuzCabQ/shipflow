@@ -6,12 +6,14 @@ import 'recognition_codes.dart';
 import 'scan_limits.dart';
 import 'stable_file_reader.dart';
 
-/// Lista un directorio sin seguir enlaces; las pruebas lo sustituyen para
-/// provocar fallos que el sistema de archivos no reproduce a pedido.
-typedef DirectoryLister = List<FileSystemEntity> Function(Directory directory);
+/// Enumera un directorio sin seguir enlaces y a demanda, para que el
+/// recorrido deje de pedir entradas al agotar su presupuesto. Las pruebas lo
+/// sustituyen para provocar fallos que el sistema no reproduce a pedido.
+typedef DirectoryLister =
+    Stream<FileSystemEntity> Function(Directory directory);
 
-List<FileSystemEntity> listWithoutFollowing(Directory directory) =>
-    directory.listSync(followLinks: false);
+Stream<FileSystemEntity> listWithoutFollowing(Directory directory) =>
+    directory.list(followLinks: false);
 
 const _excludedDirectories = {
   '.git',
@@ -74,30 +76,45 @@ final class _Scan {
   var _sourceBytes = 0;
   var _stopped = false;
 
+  /// Pide a lo sumo una entrada más de las que caben: si el directorio no
+  /// cabe entero se corta en él, porque qué entradas llegaron primero depende
+  /// del orden del sistema de archivos.
   Future<void> visit(Directory directory, int depth) async {
-    final List<FileSystemEntity> children;
-    try {
-      children = list(directory)..sort(_byName);
-    } on FileSystemException {
-      return _block(
-        LimitationCode.subtreeUnreadable,
-        'no se pudo listar este directorio; su contenido no se inspeccionó',
-        directory.path,
-      );
-    }
-    if (children.isNotEmpty && depth + 1 > limits.maxDepth) {
+    final deep = depth + 1 > limits.maxDepth;
+    final room = limits.maxEntries - _entries;
+    final children = await _list(directory, deep ? 1 : room + 1);
+    if (children == null) return;
+    final why = depth == 0 ? null : _escaped(directory.path, _directory);
+    if (why != null) return _block(why.code, why.message, directory.path);
+    if (children.isEmpty) return;
+    if (deep) {
       return _block(
         LimitationCode.scanLimitReached,
         'excede la profundidad máxima de ${limits.maxDepth}; no se inspeccionó',
         directory.path,
       );
     }
-    for (final child in children) {
+    if (children.length > room) {
+      return _stop('entradas', limits.maxEntries, directory.path);
+    }
+    _entries += children.length;
+    for (final child in children..sort(_byName)) {
       if (_stopped) return;
-      if (++_entries > limits.maxEntries) {
-        return _stop('entradas', limits.maxEntries, child.path);
-      }
       await _visitEntity(child, depth + 1);
+    }
+  }
+
+  /// Hasta [count] entradas de [directory], o null si no se pudo listar.
+  Future<List<FileSystemEntity>?> _list(Directory directory, int count) async {
+    try {
+      return await list(directory).take(count).toList();
+    } on FileSystemException {
+      _block(
+        LimitationCode.subtreeUnreadable,
+        'no se pudo listar este directorio; su contenido no se inspeccionó',
+        directory.path,
+      );
+      return null;
     }
   }
 
@@ -106,23 +123,17 @@ final class _Scan {
     if (entity is! File && _excludedDirectories.contains(name)) return;
     switch (entity) {
       case Link():
-        _block(
-          LimitationCode.symlinkNotFollowed,
-          'es un enlace simbólico y no se sigue',
-          entity.path,
-        );
+        _block(LimitationCode.symlinkNotFollowed, _linkMessage, entity.path);
       case Directory():
+        if (_escaped(entity.path, _directory) case final why?) {
+          return _block(why.code, why.message, entity.path);
+        }
         await visit(entity, depth);
       case File():
         final kind = _kindOf(name, depth);
         if (kind == null) return;
-        if (FileSystemEntity.typeSync(entity.path, followLinks: false) !=
-            FileSystemEntityType.file) {
-          return _block(
-            LimitationCode.sourceUnreadable,
-            'no es un archivo regular; no se abrió',
-            entity.path,
-          );
+        if (_escaped(entity.path, _file) case final why?) {
+          return _block(why.code, why.message, entity.path);
         }
         await _accept(entity, kind);
     }
@@ -145,6 +156,9 @@ final class _Scan {
       maxBytes: isManifest ? limits.maxManifestBytes : limits.maxMarkerBytes,
       readBytes: readBytes,
     );
+    if (_escaped(file.path, _file) case final why?) {
+      return _block(why.code, why.message, file.path);
+    }
     if (read is StableSource) return _keep(file, kind, read);
     final (code, message) = _rejection(read);
     _block(code, message, file.path);
@@ -174,6 +188,39 @@ final class _Scan {
     StableSource() => throw StateError('una fuente estable no se rechaza'),
   };
 
+  /// Por qué [path] ya no es lo que se enumeró: un [expected] sin enlaces
+  /// dentro de la raíz. Se comprueba antes y después de usarlo, porque entre
+  /// la enumeración y el uso otro proceso pudo cambiar un tramo por un enlace
+  /// y el sistema lo seguiría. Queda la ventana de cambiarlo y restaurarlo
+  /// entre ambas comprobaciones; en una fuente, además con lecturas iguales.
+  ({String code, String message})? _escaped(
+    String path,
+    FileSystemEntityType expected,
+  ) {
+    final type = FileSystemEntity.typeSync(path, followLinks: false);
+    if (type == FileSystemEntityType.link) {
+      return (code: LimitationCode.symlinkNotFollowed, message: _linkMessage);
+    }
+    if (type != expected) {
+      return expected == _file
+          ? (
+              code: LimitationCode.sourceUnreadable,
+              message: 'no es un archivo regular; no se abrió',
+            )
+          : (
+              code: LimitationCode.sourceChanged,
+              message: 'dejó de ser un directorio durante el recorrido',
+            );
+    }
+    if (_canonical(path) == '${_canonical(root.path)}/${_relative(path)}') {
+      return null;
+    }
+    return (
+      code: LimitationCode.sourceChanged,
+      message: 'su ruta salió de la raíz durante el recorrido; no se usó',
+    );
+  }
+
   void _stop(String what, int max, String path) {
     _stopped = true;
     _block(
@@ -195,6 +242,19 @@ final class _Scan {
   String _relative(String path) {
     final prefix = root.path.endsWith('/') ? root.path : '${root.path}/';
     return path == root.path ? '.' : path.substring(prefix.length);
+  }
+}
+
+const _directory = FileSystemEntityType.directory;
+const _file = FileSystemEntityType.file;
+const _linkMessage = 'es un enlace simbólico y no se sigue';
+
+/// La ruta real de [path], o null si ya no se puede resolver.
+String? _canonical(String path) {
+  try {
+    return File(path).resolveSymbolicLinksSync();
+  } on FileSystemException {
+    return null;
   }
 }
 

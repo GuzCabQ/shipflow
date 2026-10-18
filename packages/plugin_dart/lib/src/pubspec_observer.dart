@@ -28,8 +28,14 @@ final class PathDependencyFact {
   /// Tal como la declara el manifiesto, relativa a su directorio o absoluta.
   final String path;
 
-  /// Cómo se muestra como evidencia.
-  String get evidenceValue => describePathDependency(section, name, path);
+  /// Cómo se muestra como evidencia, acotada.
+  String get evidenceValue => _observed.text;
+
+  /// Si la evidencia no cabe entera: entonces la ruta no se interpreta.
+  bool get truncated => _observed.truncated;
+
+  ObservedValue get _observed =>
+      boundObservedValue(describePathDependency(section, name, path));
 }
 
 String describePathDependency(String section, String name, String path) =>
@@ -44,17 +50,17 @@ final class ManifestFacts {
     required this.flutterConstraint,
     required this.flutterDependency,
     required List<PathDependencyFact> pathDependencies,
-    required List<String> workspace,
+    required List<ObservedValue> workspace,
   }) : pathDependencies = List.unmodifiable(pathDependencies),
        workspace = List.unmodifiable(workspace);
 
   final ScannedSource source;
   final String? name;
-  final String? sdkConstraint;
-  final String? flutterConstraint;
+  final ObservedValue? sdkConstraint;
+  final ObservedValue? flutterConstraint;
   final bool flutterDependency;
   final List<PathDependencyFact> pathDependencies;
-  final List<String> workspace;
+  final List<ObservedValue> workspace;
 }
 
 final class ManifestObservation {
@@ -73,7 +79,7 @@ ManifestObservation observeManifest(ScannedSource source) {
   final environment = observer.map(document['environment'], 'environment');
   final facts = ManifestFacts(
     source: source,
-    name: observer.text(document['name'], 'name', keepTruncated: true),
+    name: observer.text(document['name'], 'name')?.text,
     sdkConstraint: observer.text(environment?['sdk'], 'environment.sdk'),
     flutterConstraint: observer.text(
       environment?['flutter'],
@@ -127,21 +133,22 @@ final class _Observer {
     return _invalid('«$field» no es un mapa');
   }
 
-  /// [node] como texto acotado. Un valor truncado se conserva sólo con
-  /// [keepTruncated]: interpretar un adelanto como el valor sería inventar.
-  String? text(Object? node, String field, {bool keepTruncated = false}) {
+  /// [node] como texto acotado. Un valor truncado se conserva como adelanto
+  /// para explicar el resultado; quien lo use no debe interpretarlo.
+  ObservedValue? text(Object? node, String field) {
     if (node == null) return null;
     if (node is! String) return _invalid('«$field» no es texto');
-    final (:text, :truncated) = boundObservedValue(node);
-    if (!truncated) return text;
-    _limit(
-      LimitationCode.observedValueTruncated,
-      '«$field» excede $maxObservedValueBytes bytes y se conserva truncado',
-    );
-    return keepTruncated ? text : null;
+    final observed = boundObservedValue(node);
+    if (observed.truncated) {
+      _limit(
+        LimitationCode.observedValueTruncated,
+        '«$field» excede $maxObservedValueBytes bytes y se conserva truncado',
+      );
+    }
+    return observed;
   }
 
-  List<String> texts(Object? node, String field) {
+  List<ObservedValue> texts(Object? node, String field) {
     if (node == null) return const [];
     if (node is! YamlList) {
       _invalid('«$field» no es una lista');
@@ -160,25 +167,23 @@ final class _Observer {
     ];
   }
 
-  /// La dependencia sólo si su evidencia, `<sección>.<nombre>: <ruta>`, cabe
-  /// entera: una ruta o un nombre truncados no se interpretan.
+  /// La dependencia, marcada como truncada si su evidencia
+  /// `<sección>.<nombre>: <ruta>` no cabe entera.
   PathDependencyFact? _pathDependency(
     String section,
     String key,
     Object? path,
   ) {
     if (path is! String) return _invalid('«$section.*.path» no es texto');
-    if (boundObservedValue(
-      describePathDependency(section, key, path),
-    ).truncated) {
+    final dependency = PathDependencyFact(section, key, path);
+    if (dependency.truncated) {
       _limit(
         LimitationCode.observedValueTruncated,
         'una dependencia local de «$section» excede $maxObservedValueBytes '
-        'bytes y no se interpreta',
+        'bytes; se conserva truncada y no se interpreta',
       );
-      return null;
     }
-    return PathDependencyFact(section, key, path);
+    return dependency;
   }
 
   Null _invalid(String why) {

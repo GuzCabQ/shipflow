@@ -25,7 +25,7 @@ void main() {
     );
     final facts = observed.facts!;
     expect(facts.name, 'app');
-    expect(facts.sdkConstraint, '^3.5.0');
+    expect(facts.sdkConstraint?.text, '^3.5.0');
     expect(facts.flutterConstraint, isNull);
     expect(facts.flutterDependency, isFalse);
     expect(facts.pathDependencies, isEmpty);
@@ -51,14 +51,17 @@ void main() {
     final facts = observeManifest(
       manifest('name: app\nenvironment:\n  flutter: ">=3.0.0"\n'),
     ).facts!;
-    expect(facts.flutterConstraint, '>=3.0.0');
+    expect(facts.flutterConstraint?.text, '>=3.0.0');
   });
 
   test('los miembros del workspace', () {
     final facts = observeManifest(
       manifest('name: root\nworkspace:\n  - packages/b\n  - packages/a\n'),
     ).facts!;
-    expect(facts.workspace, ['packages/b', 'packages/a']);
+    expect(
+      [for (final m in facts.workspace) m.text],
+      ['packages/b', 'packages/a'],
+    );
   });
 
   test('las dependencias locales de las tres secciones', () {
@@ -173,15 +176,42 @@ dependency_overrides:
       expect(observed.limitations.single.blocking, isTrue);
     });
 
+    test('una restricción y un miembro conservan su adelanto', () {
+      final observed = observeManifest(
+        manifest(
+          'name: a\nenvironment:\n  sdk: "${'^' * 5000}"\n'
+          'workspace:\n  - ${'w' * 5000}\n',
+        ),
+      );
+      for (final value in [
+        observed.facts!.sdkConstraint!,
+        observed.facts!.workspace.single,
+      ]) {
+        expect(value.truncated, isTrue);
+        expect(utf8.encode(value.text).length, lessThanOrEqualTo(4096));
+        expect(value.text, endsWith('…'));
+      }
+      expect(codes(observed), [
+        'observed_value_truncated',
+        'observed_value_truncated',
+      ]);
+    });
+
     for (final (name, key, path) in [
       ('una clave de dependencia', 'k' * 5000, 'p'),
       ('la clave y la ruta juntas', 'k' * 3000, 'p' * 3000),
     ]) {
-      test('$name no se interpreta truncada', () {
+      test('$name conserva su adelanto marcado como truncado', () {
         final observed = observeManifest(
           manifest('name: a\ndependencies:\n  $key: {path: $path}\n'),
         );
-        expect(observed.facts!.pathDependencies, isEmpty);
+        final dependency = observed.facts!.pathDependencies.single;
+        expect(dependency.truncated, isTrue);
+        expect(
+          utf8.encode(dependency.evidenceValue).length,
+          lessThanOrEqualTo(4096),
+        );
+        expect(dependency.evidenceValue, endsWith('…'));
         expect(codes(observed), ['observed_value_truncated']);
         for (final limitation in observed.limitations) {
           expect(

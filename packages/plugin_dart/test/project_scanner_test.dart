@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:plugin_dart/plugin_dart.dart';
 import 'package:plugin_dart/src/project_scanner.dart';
+import 'package:plugin_dart/src/stable_file_reader.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';
@@ -107,7 +108,11 @@ void main() {
     }
     final forward = await scan();
     final reversed = await scan(
-      list: (directory) => listWithoutFollowing(directory).reversed.toList(),
+      list: (directory) async* {
+        yield* Stream.fromIterable(
+          (await listWithoutFollowing(directory).toList()).reversed,
+        );
+      },
     );
     expect(sourcePaths(reversed), sourcePaths(forward));
     expect(
@@ -135,6 +140,56 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 20)),
   );
+
+  group('lo que otro proceso cambia por un enlace durante el recorrido', () {
+    late Directory outside;
+
+    setUp(() async {
+      final made = await Directory.systemTemp.createTemp('shipflow-fuera-');
+      outside = Directory(made.resolveSymbolicLinksSync());
+      File('${outside.path}/pubspec.yaml').writeAsStringSync('name: ajeno\n');
+    });
+    tearDown(() => outside.delete(recursive: true));
+
+    /// Lee normalmente, pero antes de la primera lectura cambia [relative]
+    /// por un enlace a [outside], como podría hacerlo otro proceso.
+    ByteReader swapping(String relative) {
+      var swapped = false;
+      return (file, maxBytes) {
+        if (!swapped) {
+          swapped = true;
+          Directory(
+            '${sandbox.root.path}/$relative',
+          ).deleteSync(recursive: true);
+          Link('${sandbox.root.path}/$relative').createSync(outside.path);
+        }
+        return readBoundedBytes(file, maxBytes);
+      };
+    }
+
+    test(
+      'un directorio ya enumerado no se lista a través del enlace',
+      () async {
+        sandbox.place('pubspec.yaml');
+        sandbox.directory('z');
+        final result = await scanProject(
+          sandbox.root,
+          readBytes: swapping('z'),
+        );
+        expect(sourcePaths(result), ['pubspec.yaml']);
+        expect(limitationsOf(result), ['symlink_not_followed:z:true']);
+      },
+    );
+
+    test('una fuente cuyo directorio cambia mientras se lee', () async {
+      sandbox.place('z/pubspec.yaml');
+      final result = await scanProject(sandbox.root, readBytes: swapping('z'));
+      expect(sourcePaths(result), isEmpty);
+      expect(limitationsOf(result), [
+        'source_changed_during_scan:z/pubspec.yaml:true',
+      ]);
+    });
+  });
 
   test('un manifiesto que cambia entre lecturas bloquea', () async {
     sandbox.place('pubspec.yaml');

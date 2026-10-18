@@ -35,7 +35,8 @@ void main() {
 
   group('entradas', () {
     setUp(() {
-      // a, a/pubspec.yaml, build, build/x: cuatro entidades observadas.
+      // a y build, más a/pubspec.yaml: tres entidades observadas. build se
+      // cuenta aunque se excluya; lo que tiene dentro no se observa.
       sandbox.place('a/pubspec.yaml');
       sandbox.place('build/x');
     });
@@ -46,10 +47,34 @@ void main() {
       expect(sourcePaths(result), ['a/pubspec.yaml']);
     });
 
-    test('la siguiente corta todo y bloquea', () async {
+    test('el directorio que no cabe corta todo y bloquea', () async {
       final result = await scan(const ScanLimits(maxEntries: 2));
-      expect(limitationsOf(result), ['scan_limit_reached:build:true']);
-      expect(sourcePaths(result), ['a/pubspec.yaml']);
+      expect(limitationsOf(result), ['scan_limit_reached:a:true']);
+      expect(sourcePaths(result), isEmpty);
+    });
+
+    test('de un directorio que no cabe no se toma un subconjunto', () async {
+      sandbox.place('pubspec.yaml');
+      final result = await scan(const ScanLimits(maxEntries: 2));
+      expect(limitationsOf(result), ['scan_limit_reached:.:true']);
+      expect(sourcePaths(result), isEmpty);
+    });
+
+    test('la enumeración se detiene al agotar el presupuesto', () async {
+      for (var i = 0; i < 1200; i++) {
+        sandbox.place('f$i', '');
+      }
+      var pulled = 0;
+      final result = await scanProject(
+        sandbox.root,
+        limits: const ScanLimits(maxEntries: 1),
+        list: (directory) => listWithoutFollowing(directory).map((entity) {
+          pulled++;
+          return entity;
+        }),
+      );
+      expect(pulled, lessThanOrEqualTo(2));
+      expect(limitationsOf(result), ['scan_limit_reached:.:true']);
     });
   });
 

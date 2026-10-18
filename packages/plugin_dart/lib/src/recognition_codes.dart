@@ -10,6 +10,7 @@ abstract final class LimitationCode {
   static const invalidToolchainMarker = 'invalid_toolchain_marker';
   static const invalidConstraint = 'invalid_constraint';
   static const pathDependencyOutsideRoot = 'path_dependency_outside_root';
+  static const pathDependencyUnresolved = 'path_dependency_unresolved';
   static const observedValueTruncated = 'observed_value_truncated';
 }
 
