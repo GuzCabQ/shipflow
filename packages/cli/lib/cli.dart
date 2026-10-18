@@ -1,2 +1,6 @@
-/// cli — sin API todavia. La fase 0 instala los controles, no el producto.
 library;
+
+export 'src/build_version.dart';
+export 'src/cli_application.dart' show evaluateCli;
+export 'src/cli_emitter.dart';
+export 'src/cli_response.dart';

@@ -35,17 +35,28 @@ dart test packages/forge           # si y solo si tiene test/**/*_test.dart
 dart test packages/cli             # si y solo si tiene test/**/*_test.dart
 dart analyze --fatal-infos
 dart format --output=none --set-exit-if-changed packages tool
+# y, en su job, una vez por plataforma declarada (ubuntu-24.04 y macos-14):
+dart pub get --enforce-lockfile
+dart test packages/cli/test
+dart run packages/cli/tool/build_release.dart --version 0.0.0-ci --output "$RUNNER_TEMP/shipflow-release"
+test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"
 ```
 
-**Los 17 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
+**Los 21 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
 por comando: un paso borrado de CI, o neutralizado con un `continue-on-error`,
 pone el check en rojo.
 
-**Ocho son fijos; los otros nueve se DERIVAN del `workspace:`** —uno por miembro—
+**Doce son fijos; los otros nueve se DERIVAN del `workspace:`** —uno por miembro—
 y son CONDICIONALES: cada uno corre si y solo si su paquete tiene al menos un
 `test/**/*_test.dart`. Sin la condición, un paquete sin pruebas hace salir a
 `dart test` con 79 —«No tests ran»— y el job queda rojo por no haber nada que
 correr.
+
+Los del ejecutable nativo viven en su propio job, y `capas.py` fija además su
+matriz: cada plataforma declarada con su runner —`ubuntu-24.04` para Linux x64,
+`macos-14` para macOS ARM64—, el SDK bloqueante y `runs-on` tomado de la matriz.
+Una pata quitada, un runner cambiado o el job omitido ponen el check en rojo: un
+artefacto que no corrió en su plataforma no la verifica.
 
 La lista se deriva y no se escribe porque escrita a mano ya se había separado:
 `rules`, `agents` y `plugin_fake` no tenían el suyo, así que una prueba agregada
@@ -124,7 +135,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 154 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 172 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.
@@ -151,7 +162,7 @@ derive. El motivo está pagado tres veces: una cifra en prosa que nadie deriva
 envejece sola, y la anterior lo hizo —«cuatro de los veintitrés» cuando eran
 otras— sin que nada lo viera.
 
-**Lo que sí puede afirmarse:** los 17 pasos obligatorios, porque `capas.py` los
+**Lo que sí puede afirmarse:** los 21 pasos obligatorios, porque `capas.py` los
 deriva de `PASOS_OBLIGATORIOS` y falla si la cifra no coincide.
 
 **Lo que no puede afirmarse:** ninguna otra cantidad asociada a *puertos*,

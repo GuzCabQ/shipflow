@@ -54,6 +54,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
+from sabotajes_nativos import casos_nativos  # noqa: E402
 
 # **Los sabotajes corren sobre una COPIA PRIVADA, nunca sobre el checkout
 # compartido.** Esta bandera la pone el proceso externo cuando ya hizo la copia;
@@ -969,6 +970,12 @@ def casos() -> list[dict]:
             que="el `--output=none` de la compuerta de formato")},
         "menciona": "exactamente",
     })
+
+    # --- EL EJECUTABLE NATIVO -------------------------------------------------
+    #
+    # Viven en `sabotajes_nativos.py`, junto con por qué cada familia la ve un
+    # control distinto.
+    c.extend(casos_nativos(ci, CI_REL))
 
     # --- LA POLITICA DE PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` --------
     #

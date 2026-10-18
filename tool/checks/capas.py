@@ -25,6 +25,8 @@ import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from ejecucion_nativa import (  # noqa: E402
+    EJECUCION_NATIVA, errores_de_ejecucion_nativa)
 
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
@@ -212,6 +214,15 @@ PASOS_OBLIGATORIOS = {
     # Ahora el formato corre en un job propio con el SDK bloqueante fijado, y
     # `stable` no decide el estilo. El comando es el real, sin banderas.
     "el formato": ("dart format --output=none --set-exit-if-changed packages tool", None),
+    # El ejecutable en cada plataforma declarada. Ver `ejecucion_nativa.py`.
+    "las dependencias exactas del lockfile": ("dart pub get --enforce-lockfile", None),
+    "las pruebas del CLI en la plataforma nativa": ("dart test packages/cli/test", None),
+    "la build oficial nativa": (
+        'dart run packages/cli/tool/build_release.dart --version 0.0.0-ci '
+        '--output "$RUNNER_TEMP/shipflow-release"', None),
+    "el artefacto de la plataforma responde": (
+        'test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-'
+        '${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"', None),
 }
 
 # El job puede declararse `continue-on-error` SOLO con esta expresión, que es
@@ -864,6 +875,20 @@ def _check_ci_ejecuta() -> None:
                 f"cobertura y no la da.")
 
 
+def _check_ejecucion_nativa() -> None:
+    """Los pasos nativos corren en su job, una vez por plataforma declarada."""
+    ci = RAIZ / ".github" / "workflows" / "checks.yml"
+    try:
+        import yaml
+        doc = yaml.safe_load(ci.read_text(encoding="utf-8")) or {}
+    except Exception as e:  # noqa: BLE001 — sin workflow legible no hay nada que afirmar
+        fallos.append(f"no pude leer el workflow para verificar la ejecución "
+                      f"nativa: {e}")
+        return
+    comandos = {e: PASOS_OBLIGATORIOS[e][0] for e in EJECUCION_NATIVA["pasos"]}
+    fallos.extend(errores_de_ejecucion_nativa(doc, comandos))
+
+
 def _check_casos_ciegos() -> None:
     """TODA regla declara cómo se la deja ciega. Sin excepción.
 
@@ -1314,6 +1339,7 @@ def main() -> int:
         ("exclusiones que no eximen paquetes", _check_exclusiones),
         ("paquetes que las reglas nombran", _check_paquetes_nombrados),
         ("CI ejecuta lo que dice", _check_ci_ejecuta),
+        ("el ejecutable corre en cada plataforma", _check_ejecucion_nativa),
         ("el gobierno describe lo que gobierna", _check_readme),
         ("nada fuera del alcance del formateo", _check_nada_fuera_de_alcance),
         ("la huella de la política", _check_huella),
