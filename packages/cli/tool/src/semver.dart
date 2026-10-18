@@ -1,7 +1,7 @@
 /// Valida una versión según la gramática completa de SemVer 2.0.0.
 ///
-/// Recorre la entrada una sola vez y sin expresiones regulares, así que una
-/// entrada hostil se decide en tiempo lineal.
+/// No usa expresiones regulares y cada paso es lineal, así que una entrada
+/// hostil se decide en tiempo lineal.
 bool isValidSemVer(String value) {
   final plus = value.indexOf('+');
   final beforeBuild = plus < 0 ? value : value.substring(0, plus);

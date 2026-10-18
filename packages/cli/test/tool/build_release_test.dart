@@ -83,7 +83,6 @@ void main() {
       );
     });
 
-    // V0-S31
     test(
       'una herramienta ausente es capacidad ausente, no un digest vacío',
       () {
@@ -154,7 +153,6 @@ void main() {
     });
   });
 
-  // V0-S14, V0-S39
   group('plataformas declaradas', () {
     test('sólo macOS ARM64 y Linux x64 tienen nombre de release', () {
       expect(releasePlatformFor(Abi.macosArm64), 'macos-arm64');
@@ -194,7 +192,6 @@ void main() {
       return (code, err.text);
     }
 
-    // V0-S10, V0-S28
     test('sin versión falla antes de compilar', () async {
       final (code, message) = await invoke([
         '--output',
@@ -205,7 +202,6 @@ void main() {
       expect(directory.listSync(), isEmpty);
     });
 
-    // V0-S10, V0-S29
     for (final version in [
       'v1.2.3',
       '1.2',
@@ -231,6 +227,25 @@ void main() {
         },
       );
     }
+
+    test(
+      'un --output sin directorio padre falla sin detalles del runtime',
+      () async {
+        final (code, message) = await invoke([
+          '--version',
+          '1.0.0',
+          '--output',
+          '${directory.path}/no-existe/release',
+        ]);
+        expect(code, 1);
+        expect(
+          message,
+          'build_release: el directorio que contiene --output no existe; '
+          'no se compiló nada.\n',
+        );
+        expect(directory.listSync(), isEmpty);
+      },
+    );
 
     for (final arguments in [
       <String>[],
@@ -277,7 +292,6 @@ void main() {
       expect(directory.listSync().map((e) => e.path), [broken.path]);
     });
 
-    // V0-S30
     test('un artefacto que informa otra versión se invalida', () async {
       final impostor = File('${directory.path}/impostor.dart')
         ..writeAsStringSync("void main() => print('shipflow 0.0.1');\n");
@@ -295,7 +309,6 @@ void main() {
       expect(directory.listSync().map((e) => e.path), [impostor.path]);
     });
 
-    // V0-S31
     test(
       'sin herramienta de checksum no hay candidato ni digest vacío',
       () async {

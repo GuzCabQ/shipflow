@@ -212,7 +212,6 @@ void main() {
       expect(snapshot(directory), before);
     });
 
-    // V0-S9
     test('en un directorio de sólo lectura no crea nada', () async {
       final directory = await Directory(
         '${sandbox.path}/solo-lectura',
@@ -236,7 +235,6 @@ void main() {
       expect(snapshot(directory), before);
     });
 
-    // V0-S6, V0-S7
     test(
       'un .sdlc/version y un pubspec.yaml vecinos no cambian la versión',
       () async {
@@ -258,7 +256,6 @@ void main() {
       },
     );
 
-    // V0-S11
     for (final (name, environment) in [
       ('sin variables', <String, String>{}),
       ('locale C', {'LANG': 'C', 'LC_ALL': 'C'}),
@@ -279,7 +276,6 @@ void main() {
       });
     }
 
-    // V0-S26
     test('un shipflow anterior en el PATH no es el que se prueba', () async {
       final impostorDirectory = await Directory(
         '${sandbox.path}/impostor',
@@ -305,7 +301,6 @@ void main() {
       await expectAllCases(impostorDirectory, environment: {'PATH': path});
     });
 
-    // V0-S8, V0-S38
     test('sin red, sin escribir y sin lanzar procesos', () async {
       final directory = await Directory(
         '${sandbox.path}/aislado',
@@ -347,7 +342,6 @@ void main() {
       expect([watchedHome, watchedTemp, directory].map(snapshot), before);
     });
 
-    // V0-S24
     test('con stdout cerrado devuelve 70 y no afirma JSON', () async {
       for (final arguments in [
         ['--json'],
@@ -377,7 +371,6 @@ void main() {
       expect(utf8.decode(observed.stdout), failureDiagnostic);
     });
 
-    // V0-S18
     test('un error controlado no filtra detalles del runtime', () async {
       for (final arguments in cases) {
         final observed = await run(
@@ -393,7 +386,6 @@ void main() {
       }
     });
 
-    // V0-S5
     test('cada respuesta JSON es exactamente una línea', () async {
       for (final arguments in cases.where((a) => a.contains('--json'))) {
         final observed = await run(
@@ -410,7 +402,6 @@ void main() {
       }
     });
 
-    // V0-S25
     test('el artefacto se llama shipflow y no responde como sdlc', () async {
       expect(binary.split('/').last, 'shipflow');
       for (final arguments in cases) {
@@ -427,7 +418,6 @@ void main() {
     });
   });
 
-  // V0-S38
   test('el ejecutable público sólo importa lo que necesita', () async {
     final root = await packageRoot();
     final imports = <String, Set<String>>{};
@@ -482,7 +472,6 @@ void main() {
     }
   });
 
-  // V0-S16
   test('ningún comentario de packages/cli nombra una ruta local', () async {
     final root = await packageRoot();
     final local = RegExp(

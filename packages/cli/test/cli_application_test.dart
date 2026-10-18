@@ -133,7 +133,6 @@ void main() {
   });
 
   group('uso inválido humano', () {
-    // V0-S1
     test('un flag desconocido junto a --help no produce ayuda', () {
       expectHumanError([
         '--inventada',
@@ -145,7 +144,6 @@ void main() {
       ], "opción desconocida: '--inventada'");
     });
 
-    // V0-S2
     test('--help y --version son contradictorios', () {
       expectHumanError([
         '--help',
@@ -157,7 +155,6 @@ void main() {
       ], "'--version' y '-h' no se pueden combinar");
     });
 
-    // V0-S3
     test('repetir --version es un duplicado visible', () {
       expectHumanError([
         '--version',
@@ -170,13 +167,11 @@ void main() {
       expectHumanError(['-h', '-h'], "opción repetida: '-h'");
     });
 
-    // V0-S21
     test('-h y --help juntos son la misma opción duplicada', () {
       expectHumanError(['-h', '--help'], "'-h' y '--help' son la misma opción");
       expectHumanError(['--help', '-h'], "'--help' y '-h' son la misma opción");
     });
 
-    // V0-S23
     test('--json=true es desconocido y no activa JSON', () {
       expectHumanError([
         '--json=true',
@@ -233,7 +228,6 @@ void main() {
   });
 
   group('uso inválido JSON', () {
-    // V0-S4
     test('--json --inventada produce un único objeto de error', () {
       expectJsonError([
         '--json',
@@ -241,7 +235,6 @@ void main() {
       ], '"opción desconocida: \'--inventada\'"');
     });
 
-    // V0-S22
     test('--json después del inválido también produce JSON', () {
       expectJsonError([
         '--inventada',
@@ -269,7 +262,6 @@ void main() {
     });
   });
 
-  // V0-S19
   group('argumentos reflejados', () {
     for (final (raw, shown) in [
       ('línea\nnueva', r'línea\nnueva'),
@@ -295,7 +287,6 @@ void main() {
     }
   });
 
-  // V0-S20
   group('truncamiento', () {
     String reflected(String argument) {
       final firstLine = evaluateCli([
@@ -375,7 +366,6 @@ void main() {
       });
     }
 
-    // V0-S25
     test('ninguna respuesta se identifica como sdlc', () {
       for (final arguments in cases) {
         final payload = evaluateCli(arguments, version: version).payload;

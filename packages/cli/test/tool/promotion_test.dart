@@ -201,7 +201,6 @@ void main() {
       before = await state(binDir);
     });
 
-    // V0-S15
     test('un digest que no coincide se rechaza', () async {
       final artifact = await executable('2.0.0');
       await expectLater(
@@ -211,7 +210,6 @@ void main() {
       expect(await state(binDir), before);
     });
 
-    // V0-S32
     test('un candidato que informa otra versión se rechaza', () async {
       await expectLater(
         promote(await request(await executable('2.0.1'), '2.0.0')),
@@ -231,7 +229,6 @@ void main() {
       expect(await state(binDir), before);
     });
 
-    // V0-S33
     test('la misma versión con bytes distintos se rechaza', () async {
       await expectLater(
         promote(
@@ -314,7 +311,6 @@ void main() {
     });
   });
 
-  // V0-S36
   group('enlaces simbólicos', () {
     test('un artefacto enlace se rechaza sin seguirlo', () async {
       final target = await executable('2.0.0');
@@ -372,7 +368,6 @@ void main() {
     }
   });
 
-  // V0-S27, V0-S37
   group('verificación posterior al reemplazo', () {
     test('si falla, restaura el anterior y éste vuelve a responder', () async {
       final old = await install(await executable('1.0.0'));
@@ -404,7 +399,6 @@ void main() {
     });
   });
 
-  // V0-S34
   group('reconciliación de una promoción interrumpida', () {
     late File old;
     late File fresh;
@@ -620,7 +614,6 @@ void main() {
       expect(err, contains('SHA-256'));
     });
 
-    // V0-S35
     test('otra promoción con el lock tomado no modifica nada', () async {
       await install(await executable('1.0.0'));
       File('${binDir.path}/$lockName').createSync();

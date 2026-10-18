@@ -125,6 +125,11 @@ Future<ReleaseBuild> buildRelease({
       FileSystemEntityType.notFound) {
     throw ReleaseBuildException('${output.path} ya existe; no se reemplaza.');
   }
+  if (!output.absolute.parent.existsSync()) {
+    throw const ReleaseBuildException(
+      'el directorio que contiene --output no existe; no se compiló nada.',
+    );
+  }
   final tool = checksumTool ?? _hostChecksumTool();
   final source = entrypoint ?? await _publicEntrypoint();
   final staging = await output.absolute.parent.createTemp('.shipflow-release-');
@@ -175,8 +180,11 @@ Future<ReleaseBuild> buildRelease({
       platform: platform,
       evidence: evidence,
     );
-  } catch (_) {
+  } on Object catch (error) {
     if (staging.existsSync()) await staging.delete(recursive: true);
+    if (error is FileSystemException || error is ProcessException) {
+      throw ReleaseBuildException('la build no terminó: $error');
+    }
     rethrow;
   }
 }

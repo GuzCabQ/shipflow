@@ -100,7 +100,6 @@ void main() {
     );
   });
 
-  // V0-S24
   test('si stdout falla devuelve 70 y avisa por stderr', () async {
     final err = collecting();
     final code = await emitCliResponse(
