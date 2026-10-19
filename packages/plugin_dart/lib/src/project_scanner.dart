@@ -150,12 +150,12 @@ final class _Scan {
       return _omit(OmissionDraft(relative, OmissionRule.baselineExclusion, []));
     }
     switch (entity) {
+      case Link() || Directory() when _exclusions[relative] != null:
+        _omit(_exclusions[relative]!);
       case Link() when _optionalCandidate(relative):
         return;
       case Link():
         _block(LimitationCode.symlinkNotFollowed, linkMessage, entity.path);
-      case Directory() when _exclusions[relative] != null:
-        _omit(_exclusions[relative]!);
       case Directory():
         if (guard.escapedDirectory(entity.path) case final why?) {
           return _block(why.code, why.message, entity.path);

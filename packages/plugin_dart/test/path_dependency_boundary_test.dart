@@ -16,7 +16,8 @@ void main() {
   tearDown(() => outside.delete(recursive: true));
 
   /// Los códigos de limitación de una raíz cuyo manifiesto declara [path].
-  /// `build` es una exclusión conocida: un enlace ahí no limita por sí solo.
+  /// Un enlace en `vendor` limita también por sí solo: el escáner no lo
+  /// sigue.
   Future<Set<String>> limitationsFor(String path) async {
     sandbox.place(
       'pubspec.yaml',
@@ -35,16 +36,18 @@ void main() {
   test('un .. se aplica después de seguir el enlace que lo precede', () async {
     Directory('${outside.path}/deep').createSync();
     Directory('${outside.path}/dep').createSync();
-    Link('${sandbox.root.path}/build').createSync('${outside.path}/deep');
-    expect(await limitationsFor('build/../dep'), {
+    Link('${sandbox.root.path}/vendor').createSync('${outside.path}/deep');
+    expect(await limitationsFor('vendor/../dep'), {
       'path_dependency_outside_root',
+      'symlink_not_followed',
     });
   });
 
   test('un enlace seguido de un tramo inexistente sale', () async {
-    Link('${sandbox.root.path}/build').createSync(outside.path);
-    expect(await limitationsFor('build/falta/pkg'), {
+    Link('${sandbox.root.path}/vendor').createSync(outside.path);
+    expect(await limitationsFor('vendor/falta/pkg'), {
       'path_dependency_outside_root',
+      'symlink_not_followed',
     });
   });
 
@@ -54,9 +57,20 @@ void main() {
   });
 
   test('un enlace roto no se toma como pertenencia', () async {
-    Link('${sandbox.root.path}/build').createSync('${outside.path}/no-existe');
-    expect(await limitationsFor('build/pkg'), {'path_dependency_unresolved'});
+    Link('${sandbox.root.path}/vendor').createSync('${outside.path}/no-existe');
+    expect(await limitationsFor('vendor/pkg'), {
+      'path_dependency_unresolved',
+      'symlink_not_followed',
+    });
   });
+
+  test(
+    'un enlace omitido por una exclusión no se resuelve para salir',
+    () async {
+      Link('${sandbox.root.path}/build').createSync(outside.path);
+      expect(await limitationsFor('build/../dep'), {'required_path_excluded'});
+    },
+  );
 
   test('un .. por encima de / se queda en /', () async {
     expect(await limitationsFor('/../..'), {'path_dependency_outside_root'});

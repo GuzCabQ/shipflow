@@ -130,13 +130,27 @@ void main() {
   });
 
   group('links and broken manifests grant nothing', () {
-    test('a declared directory that is a link still blocks', () async {
+    test('a declared directory that is a link is omitted unfollowed', () async {
       sandbox.place('pubspec.yaml', flutterManifest(['assets/']));
-      sandbox.directory('real');
+      sandbox.place('real/pubspec.yaml', 'name: hidden\n');
       Link('${sandbox.root.path}/assets').createSync('real');
       final result = await scan();
-      expect(limitationsOf(result), ['symlink_not_followed:assets:true']);
-      expect(result.omissions, isEmpty);
+      expect(result.limitations, isEmpty);
+      expect(omissionsOf(result), [
+        'assets:declared_resource:manifest.resource_directory',
+      ]);
+      expect(spy.listed, isNot(contains('assets')));
+    });
+
+    test('a link where nothing is declared still blocks', () async {
+      sandbox.place('pubspec.yaml', flutterManifest(['assets/fonts/']));
+      sandbox.directory('real');
+      sandbox.directory('assets');
+      Link('${sandbox.root.path}/assets/images').createSync('../real');
+      final result = await scan();
+      expect(limitationsOf(result), [
+        'symlink_not_followed:assets/images:true',
+      ]);
     });
 
     test('an invalid manifest grants no exclusion', () async {

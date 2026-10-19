@@ -108,9 +108,13 @@ final class _Walk {
     return tree == null ? null : ReferenceExcluded(tree);
   }
 
+  /// Un tramo omitido se reconoce por su ruta, antes de mirarlo: aunque sea
+  /// un enlace, no se resuelve para salir de él.
   ReferencePlacement? _descend(String segment) {
     current = '$current/$segment';
     if (missing) return null;
+    final omitted = _inside ? omittedTree(_relative) : null;
+    if (omitted != null) return ReferenceExcluded(omitted);
     final type = FileSystemEntity.typeSync(current, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
       if (!isAbsentPath(current)) return const ReferenceUnresolved();
