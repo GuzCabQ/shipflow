@@ -52,6 +52,18 @@ void main() {
             Map<String, Object?> Function(Map<String, Object?>),
           )
         >{
+          'ReportLimits': (
+            const ReportLimits.extended().toJson(),
+            (j) => ReportLimits.fromJson(j).toJson(),
+          ),
+          'DerivedUsage': (
+            const DerivedUsage(items: 7, textBytes: 11).toJson(),
+            (j) => DerivedUsage.fromJson(j).toJson(),
+          ),
+          'ReportLimitExceeded': (
+            const ReportLimitExceeded(ReportLimitDimension.jsonBytes).toJson(),
+            (j) => ReportLimitExceeded.fromJson(j).toJson(),
+          ),
           'RecognitionEvidence': (
             evidence.toJson(),
             (j) => RecognitionEvidence.fromJson(j).toJson(),
