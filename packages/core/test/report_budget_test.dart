@@ -193,6 +193,8 @@ void main() {
         RecognitionEvidence(
           id: 'e0001',
           kind: 'kind',
+          role: EvidenceRole.identity,
+          label: 'L',
           path: 'manifest',
           value: 'añ',
           fingerprint: 'sha256:x',
@@ -200,14 +202,24 @@ void main() {
       ],
       conflicts: const [],
       limitations: const [],
+      relations: const [],
+      contextSources: const [],
+      omissions: const [],
     );
     final textBytes = [
-      'e0001', 'kind', 'manifest', 'añ', 'sha256:x', // evidencia
+      'e0001',
+      'kind',
+      'identity',
+      'L',
+      'manifest',
+      'añ',
+      'sha256:x', // evidencia
       'c', 'C', 'p', 'e0001', // candidato y su referencia
       'u0001', 'añ', 'k', '.', 'e0001', // unidad y su referencia
       recordProjectIdentity.code, recordProjectIdentity.description,
       enableStackPlugin.code, enableStackPlugin.description,
       'p', // pluginIds de la propuesta
+      declaredProjectRecognition, // alcance del reporte
     ].fold(0, (sum, text) => sum + utf8.encode(text).length);
 
     RecognitionReport assemble(ReportLimits limits) => assembleRecognition(

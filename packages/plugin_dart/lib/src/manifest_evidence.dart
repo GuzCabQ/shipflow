@@ -30,6 +30,11 @@ final class ManifestEvidence {
       workspace = List.unmodifiable([
         for (final member in facts.workspace)
           _draft(facts, EvidenceKind.workspaceMember, member.text)!,
+      ]),
+      description = _draft(facts, EvidenceKind.description, facts.description),
+      resourceDirectories = List.unmodifiable([
+        for (final path in facts.resourceDirectories)
+          _draft(facts, EvidenceKind.resourceDirectory, path)!,
       ]);
 
   final ManifestFacts facts;
@@ -39,6 +44,10 @@ final class ManifestEvidence {
   final EvidenceDraft? flutterDependency;
   final List<EvidenceDraft> pathDependencies;
   final List<EvidenceDraft> workspace;
+  final EvidenceDraft? description;
+
+  /// Paralela a `facts.resourceDirectories`.
+  final List<EvidenceDraft> resourceDirectories;
 
   /// Perezosa: quien la recorre admite cada referencia antes de pedir otra.
   Iterable<EvidenceDraft> get all sync* {
@@ -48,6 +57,8 @@ final class ManifestEvidence {
     if (flutterDependency case final draft?) yield draft;
     yield* pathDependencies;
     yield* workspace;
+    if (description case final draft?) yield draft;
+    yield* resourceDirectories;
   }
 
   /// Lo que hace de este paquete uno Flutter: sólo la dependencia del SDK.

@@ -67,15 +67,17 @@ RecognitionContribution sampleContribution() => RecognitionContribution(
       evidenceIds: const ['e0001'],
     ),
   ],
-  evidence: const [
-    RecognitionEvidence(
-      id: 'e0001',
-      kind: 'k',
-      path: 'manifest',
-      value: 'app',
-      fingerprint: 'sha256:x',
-    ),
-  ],
+  evidence: const [_sampleEvidence],
   conflicts: const [],
   limitations: const [],
+);
+
+const _sampleEvidence = RecognitionEvidence(
+  id: 'e0001',
+  kind: 'k',
+  role: EvidenceRole.identity,
+  label: 'Nombre del paquete',
+  path: 'manifest',
+  value: 'app',
+  fingerprint: 'sha256:x',
 );

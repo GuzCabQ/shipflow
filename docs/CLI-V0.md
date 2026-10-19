@@ -8,7 +8,9 @@ etapa del ciclo de desarrollo.
 > con `shipflow init --dry-run`, descrito en [`CLI-V1.md`](CLI-V1.md): la ayuda
 > raíz agrega la línea de uso de `init` y una sección «Comandos», y `init` deja
 > de ser un argumento inesperado. Ayuda, versión, errores de uso, códigos y la
-> forma de sus respuestas JSON se conservan tal como se describen aquí.
+> forma de sus respuestas JSON se conservan tal como se describen aquí, con
+> `schemaVersion: 1`; sólo la respuesta de `init --dry-run` tiene su propia
+> versión.
 
 ## Plataformas verificadas
 

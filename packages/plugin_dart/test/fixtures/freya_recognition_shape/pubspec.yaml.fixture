@@ -1,0 +1,23 @@
+# Forma sintética de una app Flutter con un catálogo local que depende de
+# ella. No copia el proyecto real: sólo reproduce lo que el reconocimiento
+# mira. Los enlaces y la carpeta temporal de iOS los crea la prueba.
+name: freya
+description: "A new Flutter project."
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+  fonts:
+    - family: OpenSans
+      fonts:
+        - asset: assets/fonts/OpenSans.ttf

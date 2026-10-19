@@ -31,16 +31,20 @@ void main() {
         'requestedRoot',
         'resolvedRoot',
         'repository',
+        'recognitionScope',
         'candidates',
         'units',
         'evidence',
         'conflicts',
         'limitations',
+        'relations',
+        'contextSources',
+        'omissions',
         'proposal',
         'effects',
         'exitCode',
       ]);
-      expect(body['schemaVersion'], 1);
+      expect(body['schemaVersion'], 2);
       expect(body['type'], 'init_dry_run');
     });
 
@@ -60,6 +64,17 @@ void main() {
         'pluginId': 'plugin',
         'evidenceIds': ['e0001', 'e0002'],
       });
+    });
+
+    test('declara su alcance y las listas nuevas aunque estén vacías', () {
+      expect(body['recognitionScope'], 'declared_project_recognition');
+      for (final list in ['relations', 'contextSources', 'omissions']) {
+        expect(body[list], isA<List<Object?>>(), reason: list);
+      }
+    });
+
+    test('un consumidor que sólo admite la versión 1 la rechaza', () {
+      expect(() => readRecognitionV1(payload), throwsFormatException);
     });
 
     test('declara cero efectos', () {
@@ -147,4 +162,14 @@ void main() {
       expect(body['resolvedRoot'], isNull);
     });
   });
+}
+
+/// Un consumidor del reconocimiento v1: rechaza otra versión en vez de leer
+/// en silencio campos que no conoce.
+Map<String, Object?> readRecognitionV1(String payload) {
+  final body = jsonDecode(payload) as Map<String, Object?>;
+  if (body['schemaVersion'] != 1) {
+    throw FormatException('versión no soportada', body['schemaVersion']);
+  }
+  return body;
 }

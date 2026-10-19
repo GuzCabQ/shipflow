@@ -61,9 +61,18 @@ void main() {
       expect(json['requestedRoot'], sandbox.root.path);
       expect(json['resolvedRoot'], sandbox.root.path);
       expect(json['repository'], containsPair('status', 'detected'));
-      for (final list in ['candidates', 'units', 'evidence', 'conflicts']) {
+      for (final list in [
+        'candidates',
+        'units',
+        'evidence',
+        'conflicts',
+        'relations',
+        'contextSources',
+        'omissions',
+      ]) {
         expect(json[list], isEmpty, reason: list);
       }
+      expect(json['schemaVersion'], 2);
       final limitation = (json['limitations']! as List).single as Map;
       expect(limitation['code'], 'report_limit_reached');
       expect(limitation['blocking'], isTrue);
@@ -94,6 +103,8 @@ void main() {
             evidence: [
               for (var i = 0; i < 16385; i++)
                 RecognitionEvidence(
+                  role: EvidenceRole.identity,
+                  label: 'Nombre del paquete',
                   id: 'e$i',
                   kind: 'k',
                   path: 'p',
@@ -164,6 +175,8 @@ void main() {
             evidence: [
               for (var i = 0; i < 250; i++)
                 RecognitionEvidence(
+                  role: EvidenceRole.identity,
+                  label: 'Nombre del paquete',
                   id: 'e$i',
                   kind: 'k',
                   path: 'p',

@@ -1,9 +1,12 @@
 import 'recognition_contribution.dart';
 import 'recognition_enums.dart';
 import 'recognition_findings.dart';
+import 'recognition_omissions.dart';
 import 'recognition_proposal.dart';
+import 'recognition_relations.dart';
 import 'recognition_report.dart';
 import 'recognition_topology.dart';
+import 'recognition_validation.dart';
 import 'repository_context.dart';
 import 'report_admission.dart';
 import 'report_budget.dart';
@@ -32,7 +35,7 @@ RecognitionReport assembleRecognition({
   ReportLimits limits = const ReportLimits(),
 }) {
   final merged = _merge(contributions);
-  _validate(merged);
+  validateContribution(merged);
   final status = _statusOf(merged);
   final proposal = _proposalFor(status, merged.candidates);
   admitAssembled(merged, proposal, limits);
@@ -46,6 +49,9 @@ RecognitionReport assembleRecognition({
     evidence: merged.evidence,
     conflicts: merged.conflicts,
     limitations: merged.limitations,
+    relations: merged.relations,
+    contextSources: merged.contextSources,
+    omissions: merged.omissions,
     proposal: proposal,
     effects: RecognitionEffects.none,
   );
@@ -66,8 +72,28 @@ RecognitionContribution _merge(List<RecognitionContribution> contributions) {
       ..sort((a, b) => _compare(_conflictKey(a), _conflictKey(b))),
     limitations: all((c) => c.limitations)
       ..sort((a, b) => _compare(_limitationKey(a), _limitationKey(b))),
+    relations: all((c) => c.relations).map(_sortedRelation).toList()
+      ..sort((a, b) => _compare(_relationKey(a), _relationKey(b))),
+    contextSources: all((c) => c.contextSources)
+      ..sort((a, b) => _compare([a.scopePath, a.path], [b.scopePath, b.path])),
+    omissions: all((c) => c.omissions).map(_sortedOmission).toList()
+      ..sort(
+        (a, b) => _compare(
+          [a.path, a.rule.toWireName()],
+          [b.path, b.rule.toWireName()],
+        ),
+      ),
   );
 }
+
+List<String> _relationKey(RecognitionRelation r) => [
+  r.fromPath,
+  r.kind.toWireName(),
+  r.targetPath ?? '',
+  r.declaredName ?? '',
+  r.evidenceIds.join(','),
+  r.id,
+];
 
 List<String> _conflictKey(RecognitionConflict c) => [
   c.code,
@@ -107,42 +133,31 @@ ProjectUnit _sortedUnit(ProjectUnit u) => ProjectUnit(
   evidenceIds: _sortedIds(u.evidenceIds),
 );
 
+RecognitionRelation _sortedRelation(RecognitionRelation r) =>
+    RecognitionRelation(
+      id: r.id,
+      kind: r.kind,
+      fromPath: r.fromPath,
+      declaredName: r.declaredName,
+      targetPath: r.targetPath,
+      targetUnitId: r.targetUnitId,
+      status: r.status,
+      evidenceIds: _sortedIds(r.evidenceIds),
+    );
+
+RecognitionOmission _sortedOmission(RecognitionOmission o) =>
+    RecognitionOmission(
+      path: o.path,
+      rule: o.rule,
+      evidenceIds: _sortedIds(o.evidenceIds),
+    );
+
 RecognitionConflict _sortedConflict(RecognitionConflict c) =>
     RecognitionConflict(
       code: c.code,
       message: c.message,
       evidenceIds: _sortedIds(c.evidenceIds),
     );
-
-void _validate(RecognitionContribution merged) {
-  final evidenceIds = _unique('evidencia', merged.evidence.map((e) => e.id));
-  _unique('unidad', merged.units.map((u) => u.id));
-  _unique('candidato', merged.candidates.map((c) => c.id));
-  final references = [
-    for (final c in merged.candidates) ...c.evidenceIds,
-    for (final u in merged.units) ...u.evidenceIds,
-    for (final c in merged.conflicts) ...c.evidenceIds,
-  ];
-  for (final id in references) {
-    if (!evidenceIds.contains(id)) {
-      throw ArgumentError.value(
-        id,
-        'evidenceIds',
-        'no hay evidencia con ese ID',
-      );
-    }
-  }
-}
-
-Set<String> _unique(String what, Iterable<String> ids) {
-  final seen = <String>{};
-  for (final id in ids) {
-    if (!seen.add(id)) {
-      throw ArgumentError.value(id, 'id', 'ID de $what repetido');
-    }
-  }
-  return seen;
-}
 
 RecognitionStatus _statusOf(RecognitionContribution merged) {
   final blocked = merged.limitations.any((l) => l.blocking);

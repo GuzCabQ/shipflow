@@ -13,6 +13,8 @@ RecognitionEvidence evidence(String id, {String path = 'a/manifest'}) =>
       kind: 'manifest.package_name',
       path: path,
       value: id,
+      role: EvidenceRole.identity,
+      label: 'Nombre',
       fingerprint: 'sha256:$id',
     );
 
@@ -38,12 +40,18 @@ RecognitionContribution contribution({
   List<RecognitionEvidence> evidence = const [],
   List<RecognitionConflict> conflicts = const [],
   List<RecognitionLimitation> limitations = const [],
+  List<RecognitionRelation> relations = const [],
+  List<ContextSource> contextSources = const [],
+  List<RecognitionOmission> omissions = const [],
 }) => RecognitionContribution(
   candidates: candidates,
   units: units,
   evidence: evidence,
   conflicts: conflicts,
   limitations: limitations,
+  relations: relations,
+  contextSources: contextSources,
+  omissions: omissions,
 );
 
 RecognitionReport assemble(List<RecognitionContribution> contributions) =>

@@ -94,6 +94,9 @@ List<Object> _builtFrom(_Originals o) => [
     evidence: o.found,
     conflicts: o.conflicts,
     limitations: o.limitations,
+    relations: const [],
+    contextSources: const [],
+    omissions: const [],
   ),
   _reportFrom(o),
 ];
@@ -108,6 +111,9 @@ RecognitionReport _reportFrom(_Originals o) => RecognitionReport(
   evidence: o.found,
   conflicts: o.conflicts,
   limitations: o.limitations,
+  relations: const [],
+  contextSources: const [],
+  omissions: const [],
   proposal: proposal,
   effects: RecognitionEffects.none,
 );
@@ -123,6 +129,9 @@ RecognitionReport _reportWith(RecognitionStatus status, String? resolved) =>
       evidence: const [],
       conflicts: const [],
       limitations: const [],
+      relations: const [],
+      contextSources: const [],
+      omissions: const [],
       proposal: proposal,
       effects: RecognitionEffects.none,
     );

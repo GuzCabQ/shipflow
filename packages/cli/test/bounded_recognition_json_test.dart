@@ -9,7 +9,7 @@ import 'recognition_reports.dart';
 /// La respuesta JSON completa que jsonEncode escribiría para [report].
 String referenceJson(RecognitionReport report) {
   final exitCode = report.status == RecognitionStatus.recognized ? 0 : 65;
-  return '${jsonEncode({'schemaVersion': 1, 'type': 'init_dry_run', ...report.toJson(), 'exitCode': exitCode})}\n';
+  return '${jsonEncode({'schemaVersion': 2, 'type': 'init_dry_run', ...report.toJson(), 'exitCode': exitCode})}\n';
 }
 
 int bytesOf(String text) => utf8.encode(text).length;
@@ -27,18 +27,12 @@ RecognitionReport inflated(String value, {int count = 1}) => RecognitionReport(
   ),
   candidates: const [],
   units: const [],
-  evidence: [
-    for (var i = 0; i < count; i++)
-      RecognitionEvidence(
-        id: 'e${i.toString().padLeft(4, '0')}',
-        kind: 'k',
-        path: 'p',
-        value: value,
-        fingerprint: 'f',
-      ),
-  ],
+  evidence: [for (var i = 0; i < count; i++) _evidence(i, value)],
   conflicts: const [],
   limitations: const [],
+  relations: const [],
+  contextSources: const [],
+  omissions: const [],
   proposal: RecognitionProposal(
     eligible: false,
     pluginIds: const [],
@@ -47,12 +41,83 @@ RecognitionReport inflated(String value, {int count = 1}) => RecognitionReport(
   effects: RecognitionEffects.none,
 );
 
+RecognitionEvidence _evidence(int index, String value) => RecognitionEvidence(
+  id: 'e${index.toString().padLeft(4, '0')}',
+  kind: 'k',
+  role: EvidenceRole.identity,
+  label: 'Nombre del paquete',
+  path: 'p',
+  value: value,
+  fingerprint: 'f',
+);
+
+/// Un reporte con una relación, una omisión y [count] fuentes candidatas.
+RecognitionReport scoped({int count = 1}) => assembleRecognition(
+  requestedRoot: '/r',
+  resolvedRoot: '/r',
+  repository: absentRepository,
+  contributions: [
+    RecognitionContribution(
+      candidates: const [],
+      units: [_unit],
+      evidence: [evidence('e0001', 'a/manifest', 'a')],
+      conflicts: const [],
+      limitations: const [],
+      relations: [_relation],
+      contextSources: [for (var i = 0; i < count; i++) _missing('f\u0001$i')],
+      omissions: [
+        RecognitionOmission(
+          path: '.git',
+          rule: OmissionRule.baselineExclusion,
+          evidenceIds: const [],
+        ),
+      ],
+    ),
+  ],
+);
+
+final _unit = ProjectUnit(
+  id: 'u0001',
+  name: 'a',
+  kind: 'package',
+  path: 'a',
+  evidenceIds: const ['e0001'],
+);
+
+final _relation = RecognitionRelation(
+  id: 'r0001',
+  kind: RelationKind.workspaceMember,
+  fromPath: '.',
+  declaredName: null,
+  targetPath: 'a',
+  targetUnitId: 'u0001',
+  status: RelationStatus.corroborated,
+  evidenceIds: const ['e0001'],
+);
+
+ContextSource _missing(String path) => ContextSource(
+  scopePath: '.',
+  path: path,
+  kind: ContextSourceKind.documentation,
+  entityType: ContextEntityType.missing,
+  reason: ContextReason.notFound,
+);
+
 void main() {
   group('encodeRecognitionWithinLimit', () {
     test('json_budget_counts_envelope_and_newline', () {
       final source = report();
       final expected = referenceJson(source);
       final exact = bytesOf(expected);
+      expect(encodeRecognitionWithinLimit(source, maxBytes: exact), expected);
+      expect(encodeRecognitionWithinLimit(source, maxBytes: exact - 1), isNull);
+    });
+
+    test('the new lists count towards the JSON limit', () {
+      final source = scoped(count: 40);
+      final expected = referenceJson(source);
+      final exact = bytesOf(expected);
+      expect(source.contextSources, hasLength(40));
       expect(encodeRecognitionWithinLimit(source, maxBytes: exact), expected);
       expect(encodeRecognitionWithinLimit(source, maxBytes: exact - 1), isNull);
     });
@@ -134,6 +199,9 @@ void main() {
         evidence: const [],
         conflicts: const [],
         limitations: const [],
+        relations: const [],
+        contextSources: const [],
+        omissions: const [],
         proposal: big.proposal,
         effects: RecognitionEffects.none,
       );
