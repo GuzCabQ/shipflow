@@ -10,3 +10,5 @@ export 'src/recognition/recognition_proposal.dart';
 export 'src/recognition/recognition_report.dart';
 export 'src/recognition/recognition_topology.dart';
 export 'src/recognition/repository_context.dart';
+export 'src/recognition/report_budget.dart';
+export 'src/recognition/report_limit_report.dart';

@@ -42,21 +42,25 @@ void main() {
     final response = await sandbox.run(['init', '--dry-run']);
     expect(response.channel, CliOutputChannel.stdout);
     expect(response.exitCode, 0);
-    expect(response.payload, startsWith('Shipflow · reconocimiento\n'));
-    expect(response.payload, contains('Raíz resuelta: ${sandbox.root.path}\n'));
+    expect(
+      response.payload,
+      startsWith('Shipflow · reconocimiento del proyecto\n'),
+    );
+    expect(response.payload, contains('Carpeta: ${sandbox.root.path}\n'));
     expect(sandbox.received, hasLength(1));
   });
 
   test('sin candidatos no es soportada y sale con 65', () async {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
-      contributor: (_) async => RecognitionContribution(
-        candidates: const [],
-        units: const [],
-        evidence: const [],
-        conflicts: const [],
-        limitations: const [],
-      ),
+      contributor: (_, {required reportLimits}) async =>
+          RecognitionContribution(
+            candidates: const [],
+            units: const [],
+            evidence: const [],
+            conflicts: const [],
+            limitations: const [],
+          ),
     );
     expect(decode(response)['status'], 'unsupported');
     expect(response.exitCode, 65);
@@ -65,8 +69,8 @@ void main() {
   test('un conflicto es ambiguo y sale con 65', () async {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
-      contributor: (root) async {
-        final base = await sandbox.contribute(root);
+      contributor: (root, {required reportLimits}) async {
+        final base = await sandbox.contribute(root, reportLimits: reportLimits);
         return RecognitionContribution(
           candidates: base.candidates,
           units: base.units,
@@ -97,7 +101,8 @@ void main() {
     ]) {
       final response = await sandbox.run(
         arguments,
-        contributor: (_) => fail('$arguments no debía reconocer'),
+        contributor: (_, {required reportLimits}) =>
+            fail('$arguments no debía reconocer'),
       );
       expect(response.exitCode, anyOf(0, 64), reason: '$arguments');
     }

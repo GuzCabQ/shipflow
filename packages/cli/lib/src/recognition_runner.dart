@@ -6,28 +6,38 @@ import 'package:vcs/vcs.dart';
 import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
+import 'logical_root.dart';
 import 'recognition_presenter.dart';
 
 const _rootNotFound = 'root_not_found';
 const _rootNotDirectory = 'root_not_directory';
 const _rootInaccessible = 'root_inaccessible';
 
-/// Lo que un plugin observa en una raíz canónica.
+/// Lo que un plugin observa en una raíz canónica, dentro de [reportLimits].
+/// Si no cabe, lanza [ReportLimitExceeded].
 typedef RecognitionContributor =
-    Future<RecognitionContribution> Function(Directory root);
+    Future<RecognitionContribution> Function(
+      Directory root, {
+      required ReportLimits reportLimits,
+    });
 
 /// Responde [arguments]. Un fallo de programación sale tal cual, con su
 /// objeto y su traza: traducirlo es trabajo de la frontera del proceso.
+///
+/// [logicalRootHint] es la ruta lógica que el entorno dice tener, como
+/// `PWD`; sólo se muestra si resuelve a la misma carpeta real.
 Future<CliResponse> runCli(
   List<String> arguments, {
   required String version,
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
+  String? logicalRootHint,
 }) => runCommand(
   parseCliCommand(arguments),
   version: version,
   workingDirectory: workingDirectory,
   recognizeProject: recognizeProject,
+  logicalRootHint: logicalRootHint,
 );
 
 Future<CliResponse> runCommand(
@@ -35,11 +45,18 @@ Future<CliResponse> runCommand(
   required String version,
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
+  String? logicalRootHint,
 }) async => switch (command) {
   final StaticCommand static => respondStatically(static, version: version),
-  RunInitDryRun(:final json) => presentRecognition(
-    await recognizeRoot(workingDirectory, recognizeProject),
+  RunInitDryRun(:final json, :final budgetProfile) => presentRecognition(
+    await recognizeRoot(
+      workingDirectory,
+      recognizeProject,
+      logicalRootHint: logicalRootHint,
+      budgetProfile: budgetProfile,
+    ),
     json: json,
+    budgetProfile: budgetProfile,
   ),
 };
 
@@ -55,11 +72,17 @@ Directory currentWorkingDirectory() {
 
 /// Resuelve la raíz, observa su repositorio, la entrega al plugin una vez y
 /// agrega el resultado una vez. Una raíz que no se puede inspeccionar no
-/// llega al plugin.
+/// llega al plugin, y [logicalRootHint] no la rescata: la pista se corrobora
+/// sólo después, contra la raíz ya resuelta, y sólo cambia lo que se muestra.
+///
+/// Si la producción o el ensamblado exceden [budgetProfile], el inventario
+/// se descarta por un reporte compacto; cualquier otro error sale tal cual.
 Future<RecognitionReport> recognizeRoot(
   Directory workingDirectory,
-  RecognitionContributor recognizeProject,
-) async {
+  RecognitionContributor recognizeProject, {
+  String? logicalRootHint,
+  ReportBudgetProfile budgetProfile = ReportBudgetProfile.standard,
+}) async {
   final requested = _absolutePath(workingDirectory);
   final (:resolved, :problem) = await _inspectableRoot(requested);
   if (problem != null) {
@@ -69,12 +92,45 @@ Future<RecognitionReport> recognizeRoot(
     );
   }
   final root = Directory(resolved!);
-  return assembleRecognition(
-    requestedRoot: requested,
-    resolvedRoot: root.path,
-    repository: await inspectRepositoryContext(root),
-    contributions: [await recognizeProject(root)],
+  final alias = await corroborateLogicalRoot(
+    logicalRootHint,
+    canonicalRoot: root.path,
   );
+  return _recognizeWithin(
+    root,
+    requestedRoot: alias ?? requested,
+    repository: await inspectRepositoryContext(root),
+    recognizeProject: recognizeProject,
+    budgetProfile: budgetProfile,
+  );
+}
+
+/// Produce y ensambla dentro del perfil; si no cabe, el reporte compacto.
+Future<RecognitionReport> _recognizeWithin(
+  Directory root, {
+  required String requestedRoot,
+  required RepositoryContext repository,
+  required RecognitionContributor recognizeProject,
+  required ReportBudgetProfile budgetProfile,
+}) async {
+  final limits = reportLimitsOf(budgetProfile);
+  try {
+    return assembleRecognition(
+      requestedRoot: requestedRoot,
+      resolvedRoot: root.path,
+      repository: repository,
+      contributions: [await recognizeProject(root, reportLimits: limits)],
+      limits: limits,
+    );
+  } on ReportLimitExceeded catch (exceeded) {
+    return reportLimitReached(
+      requestedRoot: requestedRoot,
+      resolvedRoot: root.path,
+      repository: repository,
+      dimension: exceeded.dimension,
+      extended: budgetProfile == ReportBudgetProfile.extended,
+    );
+  }
 }
 
 String _absolutePath(Directory directory) {

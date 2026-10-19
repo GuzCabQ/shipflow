@@ -87,23 +87,32 @@ final class InitProcessSandbox {
         ..parent.createSync(recursive: true)
         ..writeAsStringSync(content);
 
-  Future<RunResult> run(List<String> arguments, {Directory? at}) =>
-      _run(binary, arguments, at ?? root);
+  /// [environment] se agrega a HOME y TMPDIR; nunca se hereda el global.
+  Future<RunResult> run(
+    List<String> arguments, {
+    Directory? at,
+    Map<String, String> environment = const {},
+  }) => _run(binary, arguments, at ?? root, environment);
 
   /// El mismo contrato desde el código fuente, con `dart <entrypoint>`.
-  Future<RunResult> runSource(List<String> arguments, {Directory? at}) =>
-      _run(Platform.resolvedExecutable, [entrypoint, ...arguments], at ?? root);
+  Future<RunResult> runSource(List<String> arguments, {Directory? at}) => _run(
+    Platform.resolvedExecutable,
+    [entrypoint, ...arguments],
+    at ?? root,
+    const {},
+  );
 
   Future<RunResult> _run(
     String executable,
     List<String> arguments,
     Directory at,
+    Map<String, String> environment,
   ) async {
     final result = await Process.run(
       executable,
       arguments,
       workingDirectory: at.path,
-      environment: {'HOME': home.path, 'TMPDIR': temp.path},
+      environment: {'HOME': home.path, 'TMPDIR': temp.path, ...environment},
       includeParentEnvironment: false,
     );
     return RunResult(

@@ -133,27 +133,7 @@ void main() {
       final directory = await Directory(
         '${contract.sandbox.path}/aislado',
       ).create(recursive: true);
-      final List<String> prefix;
-      if (Platform.isMacOS) {
-        prefix = [
-          '/usr/bin/sandbox-exec',
-          '-p',
-          '(version 1)(allow default)(deny network*)(deny process-fork)'
-              '(deny file-write* (with no-report))',
-        ];
-      } else if (Platform.isLinux) {
-        final probe = await Process.run('unshare', [
-          '--user',
-          '--map-root-user',
-          '--net',
-          'true',
-        ]);
-        prefix = probe.exitCode == 0
-            ? ['unshare', '--user', '--map-root-user', '--net']
-            : ['sudo', '-n', 'unshare', '--net'];
-      } else {
-        fail('sin mecanismo de aislamiento para ${Platform.operatingSystem}');
-      }
+      final prefix = await _isolationPrefix();
       final isolation = await Process.run(prefix.first, [
         ...prefix.skip(1),
         '/bin/sh',
@@ -177,4 +157,29 @@ void main() {
       );
     });
   });
+}
+
+/// El comando que aísla un proceso de la red, de escribir y de lanzar otros
+/// procesos en este sistema operativo.
+Future<List<String>> _isolationPrefix() async {
+  if (Platform.isMacOS) {
+    return [
+      '/usr/bin/sandbox-exec',
+      '-p',
+      '(version 1)(allow default)(deny network*)(deny process-fork)'
+          '(deny file-write* (with no-report))',
+    ];
+  } else if (Platform.isLinux) {
+    final probe = await Process.run('unshare', [
+      '--user',
+      '--map-root-user',
+      '--net',
+      'true',
+    ]);
+    return probe.exitCode == 0
+        ? ['unshare', '--user', '--map-root-user', '--net']
+        : ['sudo', '-n', 'unshare', '--net'];
+  } else {
+    fail('sin mecanismo de aislamiento para ${Platform.operatingSystem}');
+  }
 }

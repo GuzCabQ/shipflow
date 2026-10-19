@@ -3,15 +3,14 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
+import 'derived_observation_budget.dart';
 import 'observed_value.dart';
+import 'yaml_nesting_guard.dart';
 import 'project_scanner.dart';
 import 'recognition_codes.dart';
 
-/// El parser de YAML es recursivo y agota la pila con unos miles de niveles,
-/// de flujo o de bloque. Antes de parsear se acotan ambos: los corchetes y
-/// llaves abiertos, y el prefijo estructural de cada línea (sangría más
-/// indicadores `- ` y `? `), que crece al menos uno por nivel de bloque.
-const maxYamlNesting = 64;
+/// El valor de la evidencia de una dependencia `flutter: {sdk: flutter}`.
+const flutterDependencyValue = 'sdk: flutter';
 
 const _pathDependencySections = [
   'dependencies',
@@ -72,26 +71,19 @@ final class ManifestObservation {
   final List<RecognitionLimitation> limitations;
 }
 
-ManifestObservation observeManifest(ScannedSource source) {
-  final observer = _Observer(source);
+/// Los hechos de [source]. Cada uno que será evidencia se cobra a [budget]
+/// al extraerse, antes de retenerlo; las listas se recorren de a uno.
+ManifestObservation observeManifest(
+  ScannedSource source, {
+  DerivedObservationBudget? budget,
+}) {
+  final observer = _Observer(
+    source,
+    budget ?? DerivedObservationBudget(const ReportLimits()),
+  );
   final document = observer.document();
   if (document == null) return ManifestObservation(null, observer.limitations);
-  final environment = observer.map(document['environment'], 'environment');
-  final facts = ManifestFacts(
-    source: source,
-    name: observer.text(document['name'], 'name')?.text,
-    sdkConstraint: observer.text(environment?['sdk'], 'environment.sdk'),
-    flutterConstraint: observer.text(
-      environment?['flutter'],
-      'environment.flutter',
-    ),
-    flutterDependency: _hasFlutterDependency(document['dependencies']),
-    pathDependencies: [
-      for (final section in _pathDependencySections)
-        ...observer.pathDependencies(document[section], section),
-    ],
-    workspace: observer.texts(document['workspace'], 'workspace'),
-  );
+  final facts = observer.facts(document);
   return ManifestObservation(facts, observer.limitations);
 }
 
@@ -101,10 +93,59 @@ bool _hasFlutterDependency(Object? dependencies) =>
     (dependencies['flutter'] as YamlMap)['sdk'] == 'flutter';
 
 final class _Observer {
-  _Observer(this.source);
+  _Observer(this.source, this.budget);
 
   final ScannedSource source;
+  final DerivedObservationBudget budget;
   final limitations = <RecognitionLimitation>[];
+
+  /// Los hechos de [document], cada uno cobrado al extraerse.
+  ManifestFacts facts(YamlMap document) {
+    final environment = map(document['environment'], 'environment');
+    return ManifestFacts(
+      source: source,
+      name: fact(EvidenceKind.packageName, document['name'], 'name')?.text,
+      sdkConstraint: fact(
+        EvidenceKind.sdkConstraint,
+        environment?['sdk'],
+        'environment.sdk',
+      ),
+      flutterConstraint: fact(
+        EvidenceKind.flutterConstraint,
+        environment?['flutter'],
+        'environment.flutter',
+      ),
+      flutterDependency: flutterDependency(document['dependencies']),
+      pathDependencies: [
+        for (final section in _pathDependencySections)
+          ...pathDependencies(document[section], section),
+      ],
+      workspace: workspace(document['workspace']),
+    );
+  }
+
+  /// Las partes de la evidencia de [value] que el reporte retendrá.
+  List<String> _evidenceTexts(String kind, String value) => [
+    kind,
+    source.path,
+    value,
+    source.read.fingerprint,
+  ];
+
+  /// [node] como texto acotado y ya cobrado como evidencia de [kind].
+  ObservedValue? fact(String kind, Object? node, String field) {
+    final observed = text(node, field);
+    if (observed != null) budget.row(_evidenceTexts(kind, observed.text));
+    return observed;
+  }
+
+  bool flutterDependency(Object? dependencies) {
+    if (!_hasFlutterDependency(dependencies)) return false;
+    budget.row(
+      _evidenceTexts(EvidenceKind.flutterDependency, flutterDependencyValue),
+    );
+    return true;
+  }
 
   YamlMap? document() {
     final String text;
@@ -113,8 +154,7 @@ final class _Observer {
     } on FormatException {
       return _invalid('no es texto UTF-8');
     }
-    if (_flowNesting(text) > maxYamlNesting ||
-        _blockPrefix(text) > 2 * maxYamlNesting) {
+    if (nestsTooDeep(text)) {
       return _invalid('anida más de $maxYamlNesting niveles');
     }
     final Object? parsed;
@@ -148,23 +188,46 @@ final class _Observer {
     return observed;
   }
 
-  List<ObservedValue> texts(Object? node, String field) {
+  List<ObservedValue> workspace(Object? node) {
     if (node == null) return const [];
     if (node is! YamlList) {
-      _invalid('«$field» no es una lista');
+      _invalid('«workspace» no es una lista');
       return const [];
     }
-    return [for (final item in node) ?text(item, field)];
+    return budget
+        .admitEach(
+          node.map((item) => text(item, 'workspace')).nonNulls,
+          textsOf: (m) => _evidenceTexts(EvidenceKind.workspaceMember, m.text),
+          build: (m) => m,
+        )
+        .toList();
   }
 
   List<PathDependencyFact> pathDependencies(Object? node, String section) {
     final dependencies = map(node, section);
     if (dependencies == null) return const [];
-    return [
-      for (final MapEntry(:key, :value) in dependencies.entries)
-        if (key is String && value is YamlMap && value.containsKey('path'))
-          ?_pathDependency(section, key, value['path']),
-    ];
+    return budget
+        .admitEach(
+          dependencies.entries
+              .where(
+                (e) =>
+                    e.key is String &&
+                    e.value is YamlMap &&
+                    (e.value as YamlMap).containsKey('path'),
+              )
+              .map(
+                (e) => _pathDependency(
+                  section,
+                  e.key as String,
+                  (e.value as YamlMap)['path'],
+                ),
+              )
+              .nonNulls,
+          textsOf: (d) =>
+              _evidenceTexts(EvidenceKind.pathDependency, d.evidenceValue),
+          build: (d) => d,
+        )
+        .toList();
   }
 
   /// La dependencia, marcada como truncada si su evidencia
@@ -191,52 +254,15 @@ final class _Observer {
     return null;
   }
 
-  void _limit(String code, String message) => limitations.add(
-    RecognitionLimitation(
-      code: code,
-      message: message,
-      path: source.path,
-      blocking: true,
-    ),
-  );
-}
-
-/// La mayor profundidad de `[` y `{`, contando también los que estén dentro
-/// de cadenas: sobreestimar sólo convierte un manifiesto raro en limitación.
-int _flowNesting(String text) {
-  var depth = 0;
-  var deepest = 0;
-  for (final unit in text.codeUnits) {
-    if (unit == 0x5B || unit == 0x7B) {
-      depth++;
-      if (depth > deepest) deepest = depth;
-    } else if ((unit == 0x5D || unit == 0x7D) && depth > 0) {
-      depth--;
-    }
+  void _limit(String code, String message) {
+    budget.row([code, message, source.path]);
+    limitations.add(
+      RecognitionLimitation(
+        code: code,
+        message: message,
+        path: source.path,
+        blocking: true,
+      ),
+    );
   }
-  return deepest;
-}
-
-/// El mayor prefijo estructural de una línea: su sangría más dos por cada
-/// indicador `- ` o `? ` que la abre.
-int _blockPrefix(String text) {
-  var widest = 0;
-  for (final line in text.split('\n')) {
-    var index = 0;
-    while (index < line.length && (line[index] == ' ' || line[index] == '\t')) {
-      index++;
-    }
-    var prefix = index;
-    while (index + 1 < line.length &&
-        (line[index] == '-' || line[index] == '?') &&
-        (line[index + 1] == ' ' || line[index + 1] == '\t')) {
-      index += 2;
-      prefix += 2;
-      while (index < line.length && line[index] == ' ') {
-        index++;
-      }
-    }
-    if (prefix > widest) widest = prefix;
-  }
-  return widest;
 }

@@ -63,8 +63,8 @@ void main() {
 
   group('uso inválido', () {
     const missingDryRun =
-        'init requiere --dry-run: esta versión sólo reconoce el proyecto, '
-        'sin modificarlo';
+        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
+        'sólo inspecciona, sin modificar ni guardar el proyecto';
 
     test('init solo explica que hace falta --dry-run', () {
       expectInitError(['init'], missingDryRun);
@@ -125,6 +125,97 @@ void main() {
     test('un error de init no pide reconocer', () {
       expect(parseCliCommand(['init']), isA<StaticCommand>());
       expect(parseCliCommand(['init', '--dry-run', 'x']), isA<StaticCommand>());
+    });
+  });
+
+  group('--report-budget', () {
+    for (final (arguments, profile) in [
+      (['init', '--dry-run'], ReportBudgetProfile.standard),
+      (
+        ['init', '--dry-run', '--report-budget=standard'],
+        ReportBudgetProfile.standard,
+      ),
+      (
+        ['init', '--report-budget=extended', '--dry-run'],
+        ReportBudgetProfile.extended,
+      ),
+      (
+        ['init', '--dry-run', '--report-budget=extended', '--json'],
+        ReportBudgetProfile.extended,
+      ),
+    ]) {
+      test('$arguments elige $profile', () {
+        final command = parseCliCommand(arguments) as RunInitDryRun;
+        expect(command.budgetProfile, profile);
+        expect(command.json, arguments.contains('--json'));
+      });
+    }
+
+    const unknownValue =
+        'valor no admitido para --report-budget: usa '
+        '--report-budget=standard o --report-budget=extended';
+    for (final (arguments, reason) in [
+      (['init', '--dry-run', '--report-budget='], unknownValue),
+      (['init', '--dry-run', '--report-budget=huge'], unknownValue),
+      (['init', '--dry-run', '--report-budget=Extended'], unknownValue),
+      (['init', '--dry-run', '--report-budget=20000'], unknownValue),
+      (['init', '--dry-run', '--report-budget=unlimited'], unknownValue),
+      (['init', '--dry-run', '--report-budget', 'extended'], unknownValue),
+      (
+        [
+          'init',
+          '--dry-run',
+          '--report-budget=extended',
+          '--report-budget=extended',
+        ],
+        "opción repetida: '--report-budget'",
+      ),
+      (
+        [
+          'init',
+          '--dry-run',
+          '--report-budget=standard',
+          '--report-budget=extended',
+        ],
+        "opción repetida: '--report-budget'",
+      ),
+      (
+        ['init', '--help', '--report-budget=extended'],
+        "'--help' y '--report-budget=extended' no se pueden combinar",
+      ),
+      (
+        ['init', '--report-budget=standard', '-h'],
+        "'--report-budget=standard' y '-h' no se pueden combinar",
+      ),
+      (
+        ['init', '--report-budget=extended'],
+        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
+            'sólo inspecciona, sin modificar ni guardar el proyecto',
+      ),
+    ]) {
+      test('$arguments: $reason', () => expectInitError(arguments, reason));
+    }
+
+    test('fuera de init es una opción desconocida', () {
+      for (final arguments in [
+        ['--report-budget=extended'],
+        ['--version', '--report-budget=extended'],
+        ['--report-budget=extended', 'init', '--dry-run'],
+      ]) {
+        final command = parseCliCommand(arguments);
+        expect(command, isA<RejectUsage>(), reason: '$arguments');
+        expect(
+          (command as RejectUsage).problem,
+          "opción desconocida: '--report-budget=extended'",
+        );
+      }
+    });
+
+    test('un error de perfil no pide reconocer', () {
+      expect(
+        parseCliCommand(['init', '--dry-run', '--report-budget=x']),
+        isA<StaticCommand>(),
+      );
     });
   });
 }

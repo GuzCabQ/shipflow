@@ -23,51 +23,59 @@ final class RunnerSandbox {
     });
   }
 
-  Future<RecognitionContribution> contribute(Directory directory) async {
+  Future<RecognitionContribution> contribute(
+    Directory directory, {
+    required ReportLimits reportLimits,
+  }) async {
     received.add(directory.path);
-    return RecognitionContribution(
-      candidates: [
-        StackCandidate(
-          id: 'stack',
-          displayName: 'Stack',
-          pluginId: 'plugin',
-          evidenceIds: const ['e0001'],
-        ),
-      ],
-      units: [
-        ProjectUnit(
-          id: 'u0001',
-          name: 'app',
-          kind: 'package',
-          path: '.',
-          evidenceIds: const ['e0001'],
-        ),
-      ],
-      evidence: const [
-        RecognitionEvidence(
-          id: 'e0001',
-          kind: 'k',
-          path: 'manifest',
-          value: 'app',
-          fingerprint: 'sha256:x',
-        ),
-      ],
-      conflicts: const [],
-      limitations: const [],
-    );
+    return sampleContribution();
   }
 
   Future<CliResponse> run(
     List<String> arguments, {
     Directory? workingDirectory,
     RecognitionContributor? contributor,
+    String? logicalRootHint,
   }) => runCli(
     arguments,
     version: '1.0.0',
     workingDirectory: workingDirectory ?? root,
     recognizeProject: contributor ?? contribute,
+    logicalRootHint: logicalRootHint,
   );
 }
 
 Map<String, Object?> decode(CliResponse response) =>
     jsonDecode(response.payload) as Map<String, Object?>;
+
+/// Un paquete reconocible: un candidato, una unidad y su evidencia.
+RecognitionContribution sampleContribution() => RecognitionContribution(
+  candidates: [
+    StackCandidate(
+      id: 'stack',
+      displayName: 'Stack',
+      pluginId: 'plugin',
+      evidenceIds: const ['e0001'],
+    ),
+  ],
+  units: [
+    ProjectUnit(
+      id: 'u0001',
+      name: 'app',
+      kind: 'package',
+      path: '.',
+      evidenceIds: const ['e0001'],
+    ),
+  ],
+  evidence: const [
+    RecognitionEvidence(
+      id: 'e0001',
+      kind: 'k',
+      path: 'manifest',
+      value: 'app',
+      fingerprint: 'sha256:x',
+    ),
+  ],
+  conflicts: const [],
+  limitations: const [],
+);

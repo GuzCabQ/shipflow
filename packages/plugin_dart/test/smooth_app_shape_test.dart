@@ -14,45 +14,58 @@ Future<Directory> fixture() async {
 }
 
 void main() {
-  test('la forma del piloto es Flutter, ambigua por su toolchain', () async {
-    final root = Directory((await fixture()).resolveSymbolicLinksSync());
-    final report = assembleRecognition(
-      requestedRoot: root.path,
-      resolvedRoot: root.path,
-      repository: const RepositoryContext(
-        status: RepositoryStatus.absent,
-        root: null,
-        relation: RepositoryRelation.none,
-      ),
-      contributions: [await recognizeDartProject(root)],
-    );
-    expect(report.status, RecognitionStatus.ambiguous);
-    expect(report.candidates.map((c) => c.id), ['flutter']);
-    expect(report.units.map((u) => '${u.name} ${u.path}'), [
-      'smooth_app packages/smooth_app',
-    ]);
-    expect(
-      [for (final c in report.conflicts) c.code],
-      ['toolchain_outside_constraint', 'toolchain_versions_disagree'],
-    );
-    expect(report.limitations, isEmpty);
-    expect(report.proposal.eligible, isFalse);
-    expect(
-      [
-        for (final e in report.evidence)
-          '${e.id} ${e.path} ${e.kind} ${e.value}',
-      ],
-      [
-        'e0001 .fvmrc toolchain.fvm 3.38.7',
-        'e0002 flutter-version.txt toolchain.flutter_version_file 3.44.8',
-        'e0003 packages/smooth_app/pubspec.yaml manifest.flutter_constraint ^3.44.8',
-        'e0004 packages/smooth_app/pubspec.yaml manifest.flutter_dependency sdk: flutter',
-        'e0005 packages/smooth_app/pubspec.yaml manifest.package_name smooth_app',
-        'e0006 packages/smooth_app/pubspec.yaml manifest.sdk_constraint ^3.12.2',
-      ],
-    );
-    expect(report.conflicts.first.evidenceIds, ['e0001', 'e0003']);
-    expect(report.conflicts.last.evidenceIds, ['e0001', 'e0002']);
+  group('la forma del piloto', () {
+    late RecognitionReport report;
+
+    setUpAll(() async {
+      final root = Directory((await fixture()).resolveSymbolicLinksSync());
+      report = assembleRecognition(
+        requestedRoot: root.path,
+        resolvedRoot: root.path,
+        repository: const RepositoryContext(
+          status: RepositoryStatus.absent,
+          root: null,
+          relation: RepositoryRelation.none,
+        ),
+        contributions: [await recognizeDartProject(root)],
+      );
+    });
+
+    test('es Flutter, de un paquete, y no elegible', () {
+      expect(report.status, RecognitionStatus.ambiguous);
+      expect(report.candidates.map((c) => c.id), ['flutter']);
+      expect(report.units.map((u) => '${u.name} ${u.path}'), [
+        'smooth_app packages/smooth_app',
+      ]);
+      expect(report.limitations, isEmpty);
+      expect(report.proposal.eligible, isFalse);
+    });
+
+    test('es ambigua por sus dos conflictos de toolchain', () {
+      expect(
+        [for (final c in report.conflicts) c.code],
+        ['toolchain_outside_constraint', 'toolchain_versions_disagree'],
+      );
+      expect(report.conflicts.first.evidenceIds, ['e0001', 'e0003']);
+      expect(report.conflicts.last.evidenceIds, ['e0001', 'e0002']);
+    });
+
+    test('numera su evidencia por ruta, tipo y valor', () {
+      expect(
+        [
+          for (final e in report.evidence)
+            '${e.id} ${e.path} ${e.kind} ${e.value}',
+        ],
+        [
+          'e0001 .fvmrc toolchain.fvm 3.38.7',
+          'e0002 flutter-version.txt toolchain.flutter_version_file 3.44.8',
+          'e0003 packages/smooth_app/pubspec.yaml manifest.flutter_constraint ^3.44.8',
+          'e0004 packages/smooth_app/pubspec.yaml manifest.flutter_dependency sdk: flutter',
+          'e0005 packages/smooth_app/pubspec.yaml manifest.package_name smooth_app',
+          'e0006 packages/smooth_app/pubspec.yaml manifest.sdk_constraint ^3.12.2',
+        ],
+      );
+    });
   });
 
   test('la fixture sólo contiene los tres hechos fijados', () async {

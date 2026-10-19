@@ -7,56 +7,10 @@ import 'recognition_fixtures.dart';
 
 void main() {
   test('mutar las listas originales no cambia el objeto', () {
-    final ids = ['e0001'];
-    final candidates = [candidate];
-    final units = [unit];
-    final found = [evidence];
-    final conflicts = [conflict];
-    final limitations = [limitation];
-    final plugins = ['plugin-a'];
-    final actions = [action];
-    final built = [
-      StackCandidate(
-        id: 'c',
-        displayName: 'C',
-        pluginId: 'p',
-        evidenceIds: ids,
-      ),
-      ProjectUnit(id: 'u', name: 'u', kind: 'k', path: 'p', evidenceIds: ids),
-      RecognitionConflict(code: 'c', message: 'm', evidenceIds: ids),
-      RecognitionProposal(eligible: true, pluginIds: plugins, actions: actions),
-      RecognitionContribution(
-        candidates: candidates,
-        units: units,
-        evidence: found,
-        conflicts: conflicts,
-        limitations: limitations,
-      ),
-      RecognitionReport(
-        status: RecognitionStatus.ambiguous,
-        requestedRoot: '/a',
-        resolvedRoot: '/a',
-        repository: repository,
-        candidates: candidates,
-        units: units,
-        evidence: found,
-        conflicts: conflicts,
-        limitations: limitations,
-        proposal: proposal,
-        effects: RecognitionEffects.none,
-      ),
-    ];
+    final originals = _Originals();
+    final built = _builtFrom(originals);
     final before = [for (final value in built) jsonEncode(value)];
-    for (final list in <List<Object>>[
-      ids,
-      candidates,
-      units,
-      found,
-      conflicts,
-      limitations,
-      plugins,
-      actions,
-    ]) {
+    for (final list in originals.all) {
       list.clear();
     }
     expect([for (final value in built) jsonEncode(value)], before);
@@ -86,26 +40,12 @@ void main() {
   });
 
   test('sólo un reporte invalidRoot carece de raíz resuelta', () {
-    RecognitionReport build(RecognitionStatus status, String? resolved) =>
-        RecognitionReport(
-          status: status,
-          requestedRoot: '/a',
-          resolvedRoot: resolved,
-          repository: repository,
-          candidates: const [],
-          units: const [],
-          evidence: const [],
-          conflicts: const [],
-          limitations: const [],
-          proposal: proposal,
-          effects: RecognitionEffects.none,
-        );
     expect(
-      () => build(RecognitionStatus.unsupported, null),
+      () => _reportWith(RecognitionStatus.unsupported, null),
       throwsArgumentError,
     );
     expect(
-      () => build(RecognitionStatus.invalidRoot, '/a'),
+      () => _reportWith(RecognitionStatus.invalidRoot, '/a'),
       throwsArgumentError,
     );
     final invalid = RecognitionReport.invalidRoot(
@@ -119,3 +59,70 @@ void main() {
     expect(invalid.effects.toJson(), RecognitionEffects.none.toJson());
   });
 }
+
+/// Las listas con que se construye cada valor, para mutarlas después.
+final class _Originals {
+  final ids = ['e0001'];
+  final candidates = [candidate];
+  final units = [unit];
+  final found = [evidence];
+  final conflicts = [conflict];
+  final limitations = [limitation];
+  final plugins = ['plugin-a'];
+  final actions = [action];
+
+  List<List<Object>> get all => [
+    ids,
+    candidates,
+    units,
+    found,
+    conflicts,
+    limitations,
+    plugins,
+    actions,
+  ];
+}
+
+List<Object> _builtFrom(_Originals o) => [
+  StackCandidate(id: 'c', displayName: 'C', pluginId: 'p', evidenceIds: o.ids),
+  ProjectUnit(id: 'u', name: 'u', kind: 'k', path: 'p', evidenceIds: o.ids),
+  RecognitionConflict(code: 'c', message: 'm', evidenceIds: o.ids),
+  RecognitionProposal(eligible: true, pluginIds: o.plugins, actions: o.actions),
+  RecognitionContribution(
+    candidates: o.candidates,
+    units: o.units,
+    evidence: o.found,
+    conflicts: o.conflicts,
+    limitations: o.limitations,
+  ),
+  _reportFrom(o),
+];
+
+RecognitionReport _reportFrom(_Originals o) => RecognitionReport(
+  status: RecognitionStatus.ambiguous,
+  requestedRoot: '/a',
+  resolvedRoot: '/a',
+  repository: repository,
+  candidates: o.candidates,
+  units: o.units,
+  evidence: o.found,
+  conflicts: o.conflicts,
+  limitations: o.limitations,
+  proposal: proposal,
+  effects: RecognitionEffects.none,
+);
+
+RecognitionReport _reportWith(RecognitionStatus status, String? resolved) =>
+    RecognitionReport(
+      status: status,
+      requestedRoot: '/a',
+      resolvedRoot: resolved,
+      repository: repository,
+      candidates: const [],
+      units: const [],
+      evidence: const [],
+      conflicts: const [],
+      limitations: const [],
+      proposal: proposal,
+      effects: RecognitionEffects.none,
+    );

@@ -17,7 +17,11 @@ final class ManifestEvidence {
         facts.flutterConstraint?.text,
       ),
       flutterDependency = facts.flutterDependency
-          ? _draft(facts, EvidenceKind.flutterDependency, 'sdk: flutter')
+          ? _draft(
+              facts,
+              EvidenceKind.flutterDependency,
+              flutterDependencyValue,
+            )
           : null,
       pathDependencies = List.unmodifiable([
         for (final d in facts.pathDependencies)
@@ -36,14 +40,15 @@ final class ManifestEvidence {
   final List<EvidenceDraft> pathDependencies;
   final List<EvidenceDraft> workspace;
 
-  List<EvidenceDraft> get all => [
-    ?name,
-    ?sdkConstraint,
-    ?flutterConstraint,
-    ?flutterDependency,
-    ...pathDependencies,
-    ...workspace,
-  ];
+  /// Perezosa: quien la recorre admite cada referencia antes de pedir otra.
+  Iterable<EvidenceDraft> get all sync* {
+    if (name case final draft?) yield draft;
+    if (sdkConstraint case final draft?) yield draft;
+    if (flutterConstraint case final draft?) yield draft;
+    if (flutterDependency case final draft?) yield draft;
+    yield* pathDependencies;
+    yield* workspace;
+  }
 
   /// Lo que hace de este paquete uno Flutter: sólo la dependencia del SDK.
   /// `environment.flutter` acota la compatibilidad, no elige el stack.

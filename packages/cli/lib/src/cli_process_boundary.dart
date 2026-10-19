@@ -13,6 +13,7 @@ Future<CliResponse> runCliAtProcessBoundary(
   required String version,
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
+  String? logicalRootHint,
 }) async {
   CliCommand? command;
   try {
@@ -22,6 +23,7 @@ Future<CliResponse> runCliAtProcessBoundary(
       version: version,
       workingDirectory: workingDirectory,
       recognizeProject: recognizeProject,
+      logicalRootHint: logicalRootHint,
     );
   } on Object {
     return internalFailure(json: command?.json ?? false);
