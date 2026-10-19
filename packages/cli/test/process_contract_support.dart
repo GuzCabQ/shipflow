@@ -72,36 +72,39 @@ final class CompiledContract {
 
   /// Compila una vez para todo el archivo y borra el sandbox al terminar.
   void register() {
-    setUpAll(() async {
-      final root = await packageRoot();
-      entrypoint = '${root.path}/bin/shipflow.dart';
-      sandbox = await Directory.systemTemp.createTemp('shipflow-contrato-');
-      watchedHome = await Directory('${sandbox.path}/home').create();
-      watchedTemp = await Directory('${sandbox.path}/tmp').create();
-      final artifacts = await Directory('${sandbox.path}/artefacto').create();
-      binary = '${artifacts.path}/shipflow';
-      final compiled = await Process.run(Platform.resolvedExecutable, [
-        'compile',
-        'exe',
-        '-DSHIPFLOW_VERSION=$compiledVersion',
-        '-o',
-        binary,
-        entrypoint,
-      ]);
-      expect(
-        compiled.exitCode,
-        0,
-        reason: '${compiled.stdout}${compiled.stderr}',
-      );
-      expect(root.path.startsWith(sandbox.path), isFalse);
-    });
+    setUpAll(_compile);
+    tearDownAll(_remove);
+  }
 
-    tearDownAll(() async {
-      if (await sandbox.exists()) {
-        await Process.run('chmod', ['-R', 'u+w', sandbox.path]);
-        await sandbox.delete(recursive: true);
-      }
-    });
+  Future<void> _compile() async {
+    final root = await packageRoot();
+    entrypoint = '${root.path}/bin/shipflow.dart';
+    sandbox = await Directory.systemTemp.createTemp('shipflow-contrato-');
+    watchedHome = await Directory('${sandbox.path}/home').create();
+    watchedTemp = await Directory('${sandbox.path}/tmp').create();
+    final artifacts = await Directory('${sandbox.path}/artefacto').create();
+    binary = '${artifacts.path}/shipflow';
+    final compiled = await Process.run(Platform.resolvedExecutable, [
+      'compile',
+      'exe',
+      '-DSHIPFLOW_VERSION=$compiledVersion',
+      '-o',
+      binary,
+      entrypoint,
+    ]);
+    expect(
+      compiled.exitCode,
+      0,
+      reason: '${compiled.stdout}${compiled.stderr}',
+    );
+    expect(root.path.startsWith(sandbox.path), isFalse);
+  }
+
+  Future<void> _remove() async {
+    if (await sandbox.exists()) {
+      await Process.run('chmod', ['-R', 'u+w', sandbox.path]);
+      await sandbox.delete(recursive: true);
+    }
   }
 
   Future<Observed> run(

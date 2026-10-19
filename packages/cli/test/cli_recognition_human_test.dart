@@ -29,31 +29,7 @@ void main() {
   });
 
   test('no concluyente: conflictos con sus fuentes y limitaciones', () {
-    final payload = human(
-      report(
-        conflicts: [
-          RecognitionConflict(
-            code: 'versions_disagree',
-            message: 'no coinciden',
-            evidenceIds: const ['e0002', 'e0001'],
-          ),
-        ],
-        limitations: const [
-          RecognitionLimitation(
-            code: 'note',
-            message: 'sólo una nota',
-            path: null,
-            blocking: false,
-          ),
-          RecognitionLimitation(
-            code: 'subtree_unreadable',
-            message: 'no se pudo listar',
-            path: 'cerrado',
-            blocking: true,
-          ),
-        ],
-      ),
-    );
+    final payload = human(conflicted());
     expect(
       payload,
       '${expectedHead}Reconocimiento no concluyente\n'
@@ -185,3 +161,28 @@ void main() {
     });
   });
 }
+
+/// Un conflicto con dos fuentes, una nota que no bloquea y una lectura que sí.
+RecognitionReport conflicted() => report(
+  conflicts: [
+    RecognitionConflict(
+      code: 'versions_disagree',
+      message: 'no coinciden',
+      evidenceIds: const ['e0002', 'e0001'],
+    ),
+  ],
+  limitations: const [
+    RecognitionLimitation(
+      code: 'note',
+      message: 'sólo una nota',
+      path: null,
+      blocking: false,
+    ),
+    RecognitionLimitation(
+      code: 'subtree_unreadable',
+      message: 'no se pudo listar',
+      path: 'cerrado',
+      blocking: true,
+    ),
+  ],
+);

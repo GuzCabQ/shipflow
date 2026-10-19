@@ -83,24 +83,9 @@ void main() {
 
     test('el ensamblador vuelve a contar lo mismo, más la propuesta', () async {
       final contribution = await recognize(const ReportLimits());
-      final proposalBytes = [
-        recordProjectIdentity.code,
-        recordProjectIdentity.description,
-        enableStackPlugin.code,
-        enableStackPlugin.description,
-        'plugin_dart',
-      ].fold(0, (sum, text) => sum + utf8.encode(text).length);
-      RecognitionReport assemble(ReportLimits limits) => assembleRecognition(
-        requestedRoot: sandbox.root.path,
-        resolvedRoot: sandbox.root.path,
-        repository: const RepositoryContext(
-          status: RepositoryStatus.absent,
-          root: null,
-          relation: RepositoryRelation.none,
-        ),
-        contributions: [contribution],
-        limits: limits,
-      );
+      RecognitionReport assemble(ReportLimits limits) =>
+          _assemble(sandbox.root, contribution, limits);
+      final proposalBytes = _proposalBytes();
       assemble(
         ReportLimits(
           maxDerivedItems: 7,
@@ -235,3 +220,28 @@ environment:
     expect(dimensions.toSet(), hasLength(1));
   });
 }
+
+/// Lo que la propuesta de un reconocimiento Dart agrega en bytes.
+int _proposalBytes() => [
+  recordProjectIdentity.code,
+  recordProjectIdentity.description,
+  enableStackPlugin.code,
+  enableStackPlugin.description,
+  'plugin_dart',
+].fold(0, (sum, text) => sum + utf8.encode(text).length);
+
+RecognitionReport _assemble(
+  Directory root,
+  RecognitionContribution contribution,
+  ReportLimits limits,
+) => assembleRecognition(
+  requestedRoot: root.path,
+  resolvedRoot: root.path,
+  repository: const RepositoryContext(
+    status: RepositoryStatus.absent,
+    root: null,
+    relation: RepositoryRelation.none,
+  ),
+  contributions: [contribution],
+  limits: limits,
+);

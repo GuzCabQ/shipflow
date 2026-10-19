@@ -7,50 +7,68 @@ import 'package:test/test.dart';
 import 'recognition_reports.dart';
 
 void main() {
-  test('una sola línea con las claves en el orden del protocolo', () {
-    final response = presentRecognition(report(), json: true);
-    expect(response.channel, CliOutputChannel.stdout);
-    expect(response.payload, endsWith('}\n'));
-    expect('\n'.allMatches(response.payload).length, 1);
-    final body = jsonDecode(response.payload) as Map<String, Object?>;
-    expect(body.keys, [
-      'schemaVersion',
-      'type',
-      'status',
-      'requestedRoot',
-      'resolvedRoot',
-      'repository',
-      'candidates',
-      'units',
-      'evidence',
-      'conflicts',
-      'limitations',
-      'proposal',
-      'effects',
-      'exitCode',
-    ]);
-    expect(body['schemaVersion'], 1);
-    expect(body['type'], 'init_dry_run');
-    expect(body['repository'], {
-      'status': 'absent',
-      'root': null,
-      'relation': 'none',
+  group('la respuesta JSON de un reconocimiento', () {
+    late String payload;
+    late Map<String, Object?> body;
+
+    setUp(() {
+      final response = presentRecognition(report(), json: true);
+      expect(response.channel, CliOutputChannel.stdout);
+      payload = response.payload;
+      body = jsonDecode(payload) as Map<String, Object?>;
     });
-    expect((body['units']! as List).map((u) => (u as Map)['path']), [
-      'packages/a',
-      'packages/b',
-    ]);
-    expect((body['candidates']! as List).single, {
-      'id': 'stack',
-      'displayName': 'Stack',
-      'pluginId': 'plugin',
-      'evidenceIds': ['e0001', 'e0002'],
+
+    test('ocupa una sola línea', () {
+      expect(payload, endsWith('}\n'));
+      expect('\n'.allMatches(payload).length, 1);
     });
-    expect(body['effects'], {
-      'filesWritten': 0,
-      'directoriesCreated': 0,
-      'processesStarted': 0,
-      'networkRequests': 0,
+
+    test('lleva las claves en el orden del protocolo', () {
+      expect(body.keys, [
+        'schemaVersion',
+        'type',
+        'status',
+        'requestedRoot',
+        'resolvedRoot',
+        'repository',
+        'candidates',
+        'units',
+        'evidence',
+        'conflicts',
+        'limitations',
+        'proposal',
+        'effects',
+        'exitCode',
+      ]);
+      expect(body['schemaVersion'], 1);
+      expect(body['type'], 'init_dry_run');
+    });
+
+    test('proyecta repositorio, unidades y candidatos con sus campos', () {
+      expect(body['repository'], {
+        'status': 'absent',
+        'root': null,
+        'relation': 'none',
+      });
+      expect((body['units']! as List).map((u) => (u as Map)['path']), [
+        'packages/a',
+        'packages/b',
+      ]);
+      expect((body['candidates']! as List).single, {
+        'id': 'stack',
+        'displayName': 'Stack',
+        'pluginId': 'plugin',
+        'evidenceIds': ['e0001', 'e0002'],
+      });
+    });
+
+    test('declara cero efectos', () {
+      expect(body['effects'], {
+        'filesWritten': 0,
+        'directoriesCreated': 0,
+        'processesStarted': 0,
+        'networkRequests': 0,
+      });
     });
   });
 

@@ -125,18 +125,12 @@ void main() {
       ).open(mode: FileMode.append);
       await lock.lock(FileLock.exclusive);
       try {
-        final contender = await Process.run(Platform.resolvedExecutable, [
-          'run',
+        final contender = await _promoteFromAnotherProcess(
           script,
-          '--artifact',
-          artifact.path,
-          '--sha256',
-          await sha(artifact),
-          '--version',
-          '2.0.0',
-          '--bin-dir',
-          box.binDir.path,
-        ]).timeout(const Duration(minutes: 2));
+          artifact,
+          sha: await sha(artifact),
+          binDir: box.binDir,
+        );
         expect(contender.exitCode, 1, reason: '${contender.stderr}');
         expect(contender.stderr, contains('otra promoción'));
         expect(await state(box.binDir), before);
@@ -149,3 +143,23 @@ void main() {
     });
   });
 }
+
+/// Promueve [artifact] como 2.0.0 desde un proceso aparte, que compite por
+/// el lock con este.
+Future<ProcessResult> _promoteFromAnotherProcess(
+  String script,
+  File artifact, {
+  required String sha,
+  required Directory binDir,
+}) => Process.run(Platform.resolvedExecutable, [
+  'run',
+  script,
+  '--artifact',
+  artifact.path,
+  '--sha256',
+  sha,
+  '--version',
+  '2.0.0',
+  '--bin-dir',
+  binDir.path,
+]).timeout(const Duration(minutes: 2));
