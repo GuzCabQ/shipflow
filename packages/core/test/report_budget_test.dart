@@ -193,7 +193,7 @@ void main() {
         RecognitionEvidence(
           id: 'e0001',
           kind: 'kind',
-          path: 'pubspec.yaml',
+          path: 'manifest',
           value: 'añ',
           fingerprint: 'sha256:x',
         ),
@@ -202,7 +202,7 @@ void main() {
       limitations: const [],
     );
     final textBytes = [
-      'e0001', 'kind', 'pubspec.yaml', 'añ', 'sha256:x', // evidencia
+      'e0001', 'kind', 'manifest', 'añ', 'sha256:x', // evidencia
       'c', 'C', 'p', 'e0001', // candidato y su referencia
       'u0001', 'añ', 'k', '.', 'e0001', // unidad y su referencia
       recordProjectIdentity.code, recordProjectIdentity.description,
