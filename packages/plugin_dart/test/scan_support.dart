@@ -110,3 +110,15 @@ const candidateCatalogue = [
     expectsDirectory: false,
   ),
 ];
+
+/// Un manifiesto Flutter que declara [assets] en `flutter.assets`.
+String flutterManifest(List<String> assets, {String name = 'app'}) =>
+    '''
+name: $name
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  assets:
+${[for (final a in assets) '    - $a'].join('\n')}
+''';

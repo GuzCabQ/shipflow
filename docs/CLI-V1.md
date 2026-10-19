@@ -318,7 +318,8 @@ recorren, y quedan como omisiones:
 Un árbol excluido se omite aunque sea un enlace, sin seguirlo ni enumerar su
 destino. Fuera de esas reglas, un enlace bloquea: una carpeta con el mismo
 nombre en otra ruta, o un `assets` sin declarar, no obtiene excepción. Un
-manifiesto inválido, inestable o enlazado no concede exclusiones. Una entrada
+manifiesto inválido, inestable, enlazado, sin nombre o con una limitación que
+bloquea no concede exclusiones. Una entrada
 de archivo en `flutter.assets` no excluye su carpeta; `flutter.fonts` no se
 interpreta; una forma no soportada (absoluta, con `..`, patrones, URI,
 separadores invertidos, fuera de `assets/`) se advierte y no excluye nada.

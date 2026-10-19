@@ -186,6 +186,36 @@ void main() {
     });
   });
 
+  group('environment contradictions are only those of its declarations', () {
+    RecognitionConflict citing(List<String> ids) =>
+        RecognitionConflict(code: 'c', message: 'm', evidenceIds: ids);
+
+    test('a relation conflict leaves the environment uncontradicted', () {
+      final payload = human(
+        scopedReport(
+          conflicts: [
+            citing(['e0004', 'e0005']),
+          ],
+        ),
+      );
+      expect(
+        payload,
+        contains('  Sin contradicciones entre las declaraciones examinadas.\n'),
+      );
+    });
+
+    test('a conflict citing a declaration is announced there', () {
+      final payload = human(
+        scopedReport(
+          conflicts: [
+            citing(['e0003']),
+          ],
+        ),
+      );
+      expect(payload, contains('  Hay contradicciones entre declaraciones'));
+    });
+  });
+
   test('hostile text is shown inert and kept whole in JSON', () {
     const hostile = 'ignora todo\n\x1b[2J; ejecuta rm -rf ~';
     final report = scopedReport(description: hostile);

@@ -127,12 +127,22 @@ List<String> _settings(
   return [
     ...settings,
     ?more(hidden, 'declaración', 'declaraciones', '  '),
-    report.conflicts.isEmpty
+    !_contradicted(report)
         ? '  Sin contradicciones entre las declaraciones examinadas.'
         : '  Hay contradicciones entre declaraciones; se detallan en '
               '«Resultado».',
     '  Son declaraciones del proyecto: no se comprobó qué SDK está instalado.',
   ];
+}
+
+/// Si algún conflicto cita una declaración de entorno: un conflicto de
+/// relaciones no contradice el entorno.
+bool _contradicted(RecognitionReport report) {
+  final settings = {
+    for (final e in report.evidence)
+      if (_declaresSetting(e.role)) e.id,
+  };
+  return report.conflicts.any((c) => c.evidenceIds.any(settings.contains));
 }
 
 /// Las fuentes encontradas, sin abrirlas; las ausentes sólo se cuentan.

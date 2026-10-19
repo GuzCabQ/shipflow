@@ -113,7 +113,7 @@ final class _Scan {
         directory.path,
       );
     }
-    await _visitChildren(children..sort(_byName), depth + 1);
+    await _visitChildren(children..sort(byName), depth + 1);
   }
 
   /// El manifiesto regular primero, y después el resto en orden de nombre.
@@ -122,7 +122,7 @@ final class _Scan {
     int depth,
   ) async {
     final manifest = children
-        .where((c) => c is File && _nameOf(c.path) == manifestFileName)
+        .where((c) => c is File && nameOf(c.path) == manifestFileName)
         .firstOrNull;
     for (final child in [?manifest, ...children.where((c) => c != manifest)]) {
       if (_stopped) return;
@@ -146,7 +146,7 @@ final class _Scan {
 
   Future<void> _visitEntity(FileSystemEntity entity, int depth) async {
     final relative = guard.relative(entity.path);
-    if (entity is! File && baselineExclusions.contains(_nameOf(relative))) {
+    if (entity is! File && baselineExclusions.contains(nameOf(relative))) {
       return _omit(OmissionDraft(relative, OmissionRule.baselineExclusion, []));
     }
     switch (entity) {
@@ -162,7 +162,7 @@ final class _Scan {
         }
         await visit(entity, depth);
       case File():
-        final kind = _kindOf(_nameOf(relative), depth);
+        final kind = _kindOf(nameOf(relative), depth);
         if (kind == null) return;
         if (guard.escapedFile(entity.path) case final why?) {
           return _block(why.code, why.message, entity.path);
@@ -219,7 +219,8 @@ final class _Scan {
   }
 
   /// Una sola vez: sus hechos sirven al reconocedor y sus exclusiones, al
-  /// resto del recorrido de este directorio. Uno inválido no concede nada.
+  /// resto del recorrido de este directorio. Sólo un paquete con nombre y
+  /// sin limitaciones bloqueantes concede exclusiones.
   void _analyze(ScannedSource source) {
     final observation = observeManifest(source, budget: budget);
     manifestLimitations.addAll(observation.limitations);
@@ -227,8 +228,11 @@ final class _Scan {
     if (facts == null) return;
     final evidence = ManifestEvidence(facts);
     manifests.add(evidence);
-    _exclusions.addAll(exclusionsOf(evidence));
-    if (facts.name != null) _scopes.add(evidence.unitPath);
+    if (facts.name == null) return;
+    _scopes.add(evidence.unitPath);
+    if (observation.limitations.every((l) => !l.blocking)) {
+      _exclusions.addAll(exclusionsOf(evidence));
+    }
   }
 
   /// Las fuentes candidatas, con las entradas que queden. Si el recorrido ya
@@ -292,8 +296,3 @@ final class _Scan {
     );
   }
 }
-
-String _nameOf(String path) => path.substring(path.lastIndexOf('/') + 1);
-
-int _byName(FileSystemEntity a, FileSystemEntity b) =>
-    _nameOf(a.path).compareTo(_nameOf(b.path));

@@ -90,3 +90,9 @@ String? _canonical(String path) {
   ),
   StableSource() => throw StateError('una fuente estable no se rechaza'),
 };
+
+/// El último tramo de [path].
+String nameOf(String path) => path.substring(path.lastIndexOf('/') + 1);
+
+int byName(FileSystemEntity a, FileSystemEntity b) =>
+    nameOf(a.path).compareTo(nameOf(b.path));
