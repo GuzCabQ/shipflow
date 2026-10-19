@@ -92,19 +92,8 @@ void main() {
       final human = await process.run(['init', '--dry-run']);
       expect(human.exitCode, 0);
       expect(human.stderr, isEmpty);
-      expect(
-        human.stdout,
-        startsWith(
-          'Shipflow · reconocimiento del proyecto\nProyecto reconocido\n',
-        ),
-      );
-      expect(
-        human.stdout,
-        endsWith(
-          'Para repetir la inspección con detalle estructurado:\n'
-          '  shipflow init --dry-run --json\n',
-        ),
-      );
+      expect(human.stdout, startsWith(_recognizedHead));
+      expect(human.stdout, endsWith(_detailLine));
     });
 
     test('la forma del piloto reproduce lo fijado', () async {
@@ -151,3 +140,11 @@ void main() {
     });
   });
 }
+
+const _recognizedHead =
+    'Shipflow · reconocimiento del proyecto\n'
+    'Identidad reconocida dentro del alcance indicado\n';
+
+const _detailLine =
+    'Para repetir la inspección con detalle estructurado:\n'
+    '  shipflow init --dry-run --json\n';

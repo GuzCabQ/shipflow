@@ -9,21 +9,16 @@ void main() {
   test('reconocido: qué se vio, qué no se comprobó y qué sigue', () {
     expect(
       human(report()),
-      '${expectedHead}Proyecto reconocido\n'
+      '${expectedHead}Identidad reconocida dentro del alcance indicado\n'
       'Carpeta: /resuelta\n'
       'Alias: /solicitada\n'
-      'Tecnología: Stack\n'
-      'Paquetes observados: 2\n'
-      '  a · packages/a\n'
-      '  b · packages/b\n'
-      '\n'
-      'No se detectaron conflictos ni límites en este reconocimiento.\n'
-      'La propuesta es elegible, pero no se aplicó.\n'
+      '$expectedTwoUnits'
+      'Resultado\n'
+      '  No se detectaron conflictos ni límites en este reconocimiento.\n'
+      '  La propuesta es elegible, pero no se aplicó.\n'
       '$expectedScope'
-      '\n'
       '$expectedEffects'
-      'La inspección terminó. Esta versión todavía no aplica la inicialización '
-      'ni inicia tareas.\n'
+      '$expectedRecognizedNext'
       '$expectedDetail',
     );
   });
@@ -35,24 +30,25 @@ void main() {
       '${expectedHead}Reconocimiento no concluyente\n'
       'Carpeta: /resuelta\n'
       'Alias: /solicitada\n'
-      'Tecnología: Stack\n'
-      'Paquetes observados: 2\n'
-      '  a · packages/a\n'
-      '  b · packages/b\n'
-      '\n'
-      'Conflictos:\n'
-      '  - no coinciden · fuentes: packages/a/manifest (a), '
+      'Hay 2 causas que impiden continuar; se detallan en «Resultado».\n'
+      '$expectedTwoUnits'
+      'Resultado\n'
+      '  Qué impide continuar:\n'
+      '    versions_disagree (1):\n'
+      '      - no coinciden · fuentes: packages/a/manifest (a), '
       'packages/b/manifest (b)\n'
-      'Limitaciones:\n'
-      '  - sólo una nota (no bloquea)\n'
-      '  - no se pudo listar · cerrado\n'
-      '$expectedBlocked'
+      '    subtree_unreadable (1):\n'
+      '      - no se pudo listar · cerrado\n'
+      '  Advertencias que no bloquean:\n'
+      '    note (1):\n'
+      '      - sólo una nota\n'
+      '  La propuesta no puede aplicarse: hay contradicciones entre '
+      'declaraciones y limitaciones bloqueantes.\n'
       '$expectedScope'
-      '\n'
       '$expectedEffects'
-      'Revisa las fuentes indicadas y repite la inspección después de decidir '
-      'su corrección.\n'
-      'Revisa las limitaciones indicadas; el reconocimiento está incompleto.\n'
+      '  Revisa las fuentes indicadas y repite la inspección después de '
+      'decidir su corrección.\n'
+      '$expectedLimitsNext'
       '$expectedDetail',
     );
   });
@@ -62,28 +58,26 @@ void main() {
       requestedRoot: '/r',
       resolvedRoot: '/r',
       repository: absentRepository,
-      contributions: [
-        RecognitionContribution(
-          candidates: const [],
-          units: const [],
-          evidence: const [],
-          conflicts: const [],
-          limitations: const [],
-        ),
-      ],
+      contributions: const [],
     );
     expect(
       human(unsupported),
       '${expectedHead}Proyecto no soportado\n'
       'Carpeta: /r\n'
-      'Paquetes observados: 0\n'
       '\n'
-      'No se detectaron conflictos ni límites en este reconocimiento.\n'
+      'Identidad\n'
+      '  Tecnología: no identificada\n'
+      '\n'
+      'Unidades y relaciones\n'
+      '  Paquetes observados: 0\n'
+      '  Relaciones declaradas: ninguna\n'
+      '$expectedEmptyBlocks'
+      'Resultado\n'
+      '  No se detectaron conflictos ni límites en este reconocimiento.\n'
       '$expectedScope'
-      '\n'
       '$expectedEffects'
-      'Esta versión reconoce proyectos Dart y Flutter mediante sus manifiestos '
-      'y marcadores.\n'
+      '  Esta versión reconoce proyectos Dart y Flutter mediante sus '
+      'manifiestos y marcadores.\n'
       '$expectedDetail',
     );
   });
@@ -104,13 +98,15 @@ void main() {
       response.payload,
       '${expectedHead}No se pudo inspeccionar la carpeta\n'
       'Carpeta: /no-existe\n'
+      'Hay 1 causa que impide continuar; se detalla en «Resultado».\n'
       '\n'
-      'Limitaciones:\n'
-      '  - la raíz no existe\n'
+      'Resultado\n'
+      '  Qué impide continuar:\n'
+      '    root_not_found (1):\n'
+      '      - la raíz no existe\n'
       '$expectedScope'
-      '\n'
       '$expectedEffects'
-      'Comprueba que la carpeta exista y que tengas permiso para leerla.\n'
+      '  Comprueba que la carpeta exista y que tengas permiso para leerla.\n'
       '$expectedDetail',
     );
   });
@@ -130,16 +126,19 @@ void main() {
         '${expectedHead}Reconocimiento no concluyente\n'
         'Carpeta: /real\n'
         'Alias: /alias\n'
+        'Hay 1 causa que impide continuar; se detalla en «Resultado».\n'
         '\n'
-        'Limitaciones:\n'
-        '  - El reconocimiento alcanzó el límite de elementos del reporte del '
-        'perfil normal; no se publica un inventario parcial.\n'
-        '$expectedBlocked'
+        'Resultado\n'
+        '  Qué impide continuar:\n'
+        '    report_limit_reached (1):\n'
+        '      - El reconocimiento alcanzó el límite de elementos del reporte '
+        'del perfil normal; no se publica un inventario parcial.\n'
+        '  La propuesta no puede aplicarse: hay limitaciones bloqueantes.\n'
         '$expectedScope'
-        '\n'
         '$expectedEffects'
-        'Puedes repetir con shipflow init --dry-run --report-budget=extended. '
-        'El perfil ampliado puede consumir más recursos.\n'
+        '  Puedes repetir con shipflow init --dry-run '
+        '--report-budget=extended. El perfil ampliado puede consumir más '
+        'recursos.\n'
         '$expectedDetail',
       );
     });
@@ -150,9 +149,10 @@ void main() {
         payload,
         endsWith(
           '$expectedEffects'
-          'Se alcanzó el máximo disponible en esta versión. Inspecciona una '
+          '  Se alcanzó el máximo disponible en esta versión. Inspecciona una '
           'raíz tecnológica más acotada; esto cambia el alcance de la '
           'inspección.\n'
+          '\n'
           'Para repetir la inspección con detalle estructurado:\n'
           '  shipflow init --dry-run --json --report-budget=extended\n',
         ),

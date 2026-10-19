@@ -1,31 +1,30 @@
 import 'package:core/core.dart';
 
 import 'cli_command.dart';
-import 'terminal_text.dart';
-
-const _maxShownRunes = 240;
-const _maxPackages = 20;
-const _maxFindings = 10;
-const _maxSources = 5;
+import 'recognition_human_context.dart';
+import 'recognition_human_findings.dart';
+import 'recognition_human_support.dart';
 
 const _scope =
-    'No se comprobó si el proyecto compila, si sus pruebas pasan, si respeta '
-    'su arquitectura ni si el SDK está instalado.';
+    '  No se comprobó si el proyecto compila, si sus pruebas pasan, si '
+    'respeta su arquitectura, si sus recursos existen ni si el SDK está '
+    'instalado.';
 const _effects =
-    'No se modificó el proyecto. Shipflow no guardó este reporte ni creó un '
+    '  No se modificó el proyecto. Shipflow no guardó este reporte ni creó un '
     'expediente.';
-const _blocked =
-    'La propuesta no puede aplicarse: hay conflictos o limitaciones '
-    'bloqueantes.';
 const _reviewSources =
-    'Revisa las fuentes indicadas y repite la inspección después de decidir '
-    'su corrección.';
+    '  Revisa las fuentes indicadas y repite la inspección después de '
+    'decidir su corrección.';
 const _reviewLimitations =
-    'Revisa las limitaciones indicadas; el reconocimiento está incompleto.';
+    '  Revisa las causas indicadas; el reconocimiento está incompleto. Si una '
+    'causa depende del alcance de esta versión y no del proyecto, esta '
+    'versión no puede resolverla.';
 
-/// La vista humana de [report]: qué se observó, qué impide continuar, qué no
-/// se comprobó, qué se cambió o guardó y qué se puede hacer. Pura: no
-/// inspecciona nada ni consulta modelos, y no muestra IDs ni hashes.
+/// La ficha humana de [report]: identidad, unidades y relaciones, entorno
+/// declarado, fuentes candidatas, cobertura, y el resultado con lo que
+/// impide continuar, lo que no se comprobó, lo que no se guardó y el
+/// siguiente paso. Pura: no inspecciona nada ni consulta modelos, y no
+/// muestra IDs ni hashes. La misma clasificación gobierna JSON y código.
 String recognitionHumanText(
   RecognitionReport report, {
   ReportBudgetProfile budgetProfile = ReportBudgetProfile.standard,
@@ -33,18 +32,21 @@ String recognitionHumanText(
   final limit = report.limitations
       .where((l) => l.code == reportLimitReachedCode)
       .firstOrNull;
+  final findings = Findings(report);
+  final inventory =
+      limit == null && report.status != RecognitionStatus.invalidRoot;
   final extended = budgetProfile == ReportBudgetProfile.extended;
   final lines = [
     'Shipflow · reconocimiento del proyecto',
     _headline(report.status),
-    ..._observed(report, discarded: limit != null),
+    ..._place(report),
+    ?findings.summary,
+    if (inventory) ...scopedBlocks(report),
     '',
-    ..._findings(report, limit),
-    ..._proposal(report),
-    _scope,
+    'Resultado',
+    ..._result(report, findings),
+    ..._actions(report, limit, findings),
     '',
-    _effects,
-    ..._actions(report, limit),
     'Para repetir la inspección con detalle estructurado:',
     '  shipflow init --dry-run --json${extended ? ' --report-budget=extended' : ''}',
   ];
@@ -52,133 +54,74 @@ String recognitionHumanText(
 }
 
 String _headline(RecognitionStatus status) => switch (status) {
-  RecognitionStatus.recognized => 'Proyecto reconocido',
+  RecognitionStatus.recognized =>
+    'Identidad reconocida dentro del alcance indicado',
   RecognitionStatus.ambiguous => 'Reconocimiento no concluyente',
   RecognitionStatus.unsupported => 'Proyecto no soportado',
   RecognitionStatus.invalidRoot => 'No se pudo inspeccionar la carpeta',
 };
 
-/// Carpeta, alias corroborado, tecnología y paquetes observados. Un reporte
-/// descartado por su tamaño no tiene inventario que contar.
-List<String> _observed(RecognitionReport report, {required bool discarded}) {
+/// La carpeta inspeccionada y el alias corroborado, si lo hay.
+List<String> _place(RecognitionReport report) {
   final resolved = report.resolvedRoot;
   return [
-    'Carpeta: ${_safe(resolved ?? report.requestedRoot)}',
+    'Carpeta: ${shown(resolved ?? report.requestedRoot)}',
     if (resolved != null && report.requestedRoot != resolved)
-      'Alias: ${_safe(report.requestedRoot)}',
-    if (report.candidates.isNotEmpty)
-      'Tecnología: ${report.candidates.map((c) => _safe(c.displayName)).join(', ')}',
-    if (!discarded && report.status != RecognitionStatus.invalidRoot) ...[
-      'Paquetes observados: ${report.units.length}',
-      for (final u in report.units.take(_maxPackages))
-        '  ${_safe(u.name)} · ${_safe(u.path)}',
-      ?_more(report.units.length - _maxPackages, 'paquete', 'paquetes'),
-    ],
+      'Alias: ${shown(report.requestedRoot)}',
   ];
 }
 
-List<String> _findings(RecognitionReport report, RecognitionLimitation? limit) {
-  if (report.conflicts.isEmpty && report.limitations.isEmpty) {
-    return const [
-      'No se detectaron conflictos ni límites en este reconocimiento.',
-    ];
+List<String> _result(RecognitionReport report, Findings findings) => [
+  if (findings.empty)
+    '  No se detectaron conflictos ni límites en este reconocimiento.',
+  ...findings.lines(),
+  ?_proposal(report, findings),
+  _scope,
+  _effects,
+];
+
+/// Nunca llama conflicto a una limitación.
+String? _proposal(RecognitionReport report, Findings findings) {
+  if (report.status == RecognitionStatus.invalidRoot) return null;
+  final contradictions = report.conflicts.isNotEmpty;
+  final limits = report.limitations.any((l) => l.blocking);
+  if (findings.blocked) {
+    return '  La propuesta no puede aplicarse: hay '
+        '${[if (contradictions) 'contradicciones entre declaraciones', if (limits) 'limitaciones bloqueantes'].join(' y ')}.';
   }
-  final evidence = {for (final e in report.evidence) e.id: e};
-  return [
-    if (report.conflicts.isNotEmpty) ...[
-      'Conflictos:',
-      for (final c in report.conflicts.take(_maxFindings))
-        '  - ${_safe(c.message)}${_sources(c.evidenceIds, evidence)}',
-      ?_more(report.conflicts.length - _maxFindings, 'conflicto', 'conflictos'),
-    ],
-    if (report.limitations.isNotEmpty) ...[
-      'Limitaciones:',
-      for (final l in report.limitations.take(_maxFindings)) _limitation(l),
-      ?_more(
-        report.limitations.length - _maxFindings,
-        'limitación',
-        'limitaciones',
-      ),
-    ],
-  ];
+  return report.proposal.eligible
+      ? '  La propuesta es elegible, pero no se aplicó.'
+      : null;
 }
 
-/// Las fuentes de un conflicto, con su valor, hasta [_maxSources].
-String _sources(List<String> ids, Map<String, RecognitionEvidence> evidence) {
-  if (ids.isEmpty) return '';
-  final shown = [
-    for (final id in ids.take(_maxSources))
-      if (evidence[id] case final e?) '${_safe(e.path)} (${_safe(e.value)})',
-  ];
-  final rest = ids.length - _maxSources;
-  return ' · fuentes: ${shown.join(', ')}${rest > 0 ? ' y $rest más' : ''}';
-}
+List<String> _actions(
+  RecognitionReport report,
+  RecognitionLimitation? limit,
+  Findings findings,
+) => switch (report.status) {
+  RecognitionStatus.recognized => const [
+    '  La inspección terminó. Esta versión sólo entrega esta ficha: no '
+        'aplica la inicialización ni inicia tareas.',
+  ],
+  RecognitionStatus.unsupported => const [
+    '  Esta versión reconoce proyectos Dart y Flutter mediante sus '
+        'manifiestos y marcadores.',
+  ],
+  RecognitionStatus.invalidRoot => const [
+    '  Comprueba que la carpeta exista y que tengas permiso para leerla.',
+  ],
+  RecognitionStatus.ambiguous when limit != null => [
+    '  ${splitLimitMessage(limit.message).action}',
+  ],
+  RecognitionStatus.ambiguous => _ambiguousActions(report),
+};
 
-String _limitation(RecognitionLimitation l) {
-  final message = l.code == reportLimitReachedCode
-      ? _split(l.message).finding
-      : l.message;
-  return '  - ${_safe(message)}'
-      '${l.path == null ? '' : ' · ${_safe(l.path!)}'}'
-      '${l.blocking ? '' : ' (no bloquea)'}';
-}
-
-List<String> _proposal(RecognitionReport report) {
-  if (report.status == RecognitionStatus.invalidRoot) return const [];
-  if (report.conflicts.isNotEmpty ||
-      report.limitations.any((l) => l.blocking)) {
-    return const [_blocked];
-  }
-  if (report.proposal.eligible) {
-    return const ['La propuesta es elegible, pero no se aplicó.'];
-  }
-  return const [];
-}
-
-List<String> _actions(RecognitionReport report, RecognitionLimitation? limit) =>
-    switch (report.status) {
-      RecognitionStatus.recognized => const [
-        'La inspección terminó. Esta versión todavía no aplica la '
-            'inicialización ni inicia tareas.',
-      ],
-      RecognitionStatus.unsupported => const [
-        'Esta versión reconoce proyectos Dart y Flutter mediante sus '
-            'manifiestos y marcadores.',
-      ],
-      RecognitionStatus.invalidRoot => const [
-        'Comprueba que la carpeta exista y que tengas permiso para leerla.',
-      ],
-      RecognitionStatus.ambiguous when limit != null => [
-        _split(limit.message).action,
-      ],
-      RecognitionStatus.ambiguous => _ambiguousActions(report),
-    };
-
-/// Ante conflictos, revisar sus fuentes; ante límites de lectura, saber que
-/// el reconocimiento está incompleto. Nunca se elige una versión.
+/// Ante contradicciones, revisar sus fuentes; ante límites, saber que el
+/// reconocimiento está incompleto. Nunca se elige una versión.
 List<String> _ambiguousActions(RecognitionReport report) {
-  final readLimits = report.limitations.any((l) => l.blocking);
+  final limits = report.limitations.any((l) => l.blocking);
   return [
-    if (report.conflicts.isNotEmpty || !readLimits) _reviewSources,
-    if (readLimits) _reviewLimitations,
+    if (report.conflicts.isNotEmpty || !limits) _reviewSources,
+    if (limits) _reviewLimitations,
   ];
 }
-
-/// El mensaje del límite de reporte en lo que pasó y lo que se puede hacer:
-/// su primera oración, y el resto.
-({String finding, String action}) _split(String message) {
-  final cut = message.indexOf('. ');
-  if (cut < 0) return (finding: message, action: '');
-  return (
-    finding: message.substring(0, cut + 1),
-    action: message.substring(cut + 2),
-  );
-}
-
-String? _more(int extra, String singular, String plural) => extra <= 0
-    ? null
-    : extra == 1
-    ? '  Hay 1 $singular adicional; consulta la salida JSON.'
-    : '  Hay $extra $plural adicionales; consulta la salida JSON.';
-
-String _safe(String value) => singleLine(value, maxRunes: _maxShownRunes);

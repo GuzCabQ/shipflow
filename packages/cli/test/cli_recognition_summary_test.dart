@@ -10,12 +10,12 @@ void main() {
     test('20 paquetes se listan y el 21 se cuenta', () {
       expect(human(wide(units: 20)), isNot(contains('adicional')));
       final payload = human(wide(units: 21));
-      expect(payload, contains('Paquetes observados: 21\n'));
-      expect(payload, contains('  p19 · packages/p19\n'));
+      expect(payload, contains('  Paquetes observados: 21\n'));
+      expect(payload, contains('    p19 · packages/p19\n'));
       expect(payload, isNot(contains('p20 ·')));
       expect(
         payload,
-        contains('  Hay 1 paquete adicional; consulta la salida JSON.\n'),
+        contains('    Hay 1 paquete adicional; consulta la salida JSON.\n'),
       );
     });
 
@@ -28,29 +28,29 @@ void main() {
         ),
     ];
 
-    test('10 conflictos se listan enteros', () {
+    test('10 grupos de conflictos se listan enteros', () {
       final payload = human(wide(conflicts: conflicts(10)));
       for (var i = 0; i < 10; i++) {
-        expect(payload, contains('  - conflicto $i · fuentes:'));
+        expect(payload, contains('      - conflicto $i · fuentes:'));
       }
-      expect(payload, isNot(contains('Hay ')));
+      expect(payload, isNot(contains('grupo adicional')));
     });
 
-    test('el conflicto 11 se cuenta, no se lista', () {
+    test('el grupo 11 se cuenta, no se lista', () {
       final payload = human(wide(conflicts: conflicts(11)));
-      expect(payload, contains('  - conflicto 9 · fuentes:'));
+      expect(payload, contains('      - conflicto 9 · fuentes:'));
       expect(payload, isNot(contains('conflicto 10 ')));
       expect(
         payload,
-        contains('  Hay 1 conflicto adicional; consulta la salida JSON.\n'),
+        contains('    Hay 1 grupo adicional; consulta la salida JSON.\n'),
       );
       expect(
         human(wide(conflicts: conflicts(12))),
-        contains('  Hay 2 conflictos adicionales; consulta la salida JSON.\n'),
+        contains('    Hay 2 grupos adicionales; consulta la salida JSON.\n'),
       );
     });
 
-    test('un bloqueo después de las diez filas sigue anunciado', () {
+    test('un bloqueo después de diez advertencias sigue a la vista', () {
       final payload = human(
         wide(
           units: 1,
@@ -61,12 +61,25 @@ void main() {
           ],
         ),
       );
-      expect(payload, isNot(contains('mensaje z_bloquea')));
-      expect(
-        payload,
-        contains('  Hay 1 limitación adicional; consulta la salida JSON.\n'),
-      );
-      expect(payload, contains(expectedBlocked));
+      expect(payload, contains('Hay 1 causa que impide continuar'));
+      expect(payload, contains('      - mensaje z_bloquea\n'));
+      expect(payload, contains('hay limitaciones bloqueantes'));
+    });
+
+    test('relaciones, declaraciones y fuentes se cortan en 20', () {
+      final payload = human(crowded(21));
+      for (final (one, line) in [
+        ('relación', '    Hay 1 relación adicional'),
+        ('declaración', '  Hay 1 declaración adicional'),
+        ('fuente', '  Hay 1 fuente adicional'),
+      ]) {
+        expect(
+          payload,
+          contains('$line; consulta la salida JSON.\n'),
+          reason: one,
+        );
+      }
+      expect(human(crowded(20)), isNot(contains('adicional')));
     });
   });
 
@@ -77,7 +90,7 @@ void main() {
     expect(payload, isNot(contains('\x1b')));
     final name = report(unitName: 'x' * 300);
     final line = human(name).split('\n').firstWhere((l) => l.contains('x'));
-    expect(line, '  ${'x' * 240}… · packages/b');
+    expect(line, '    ${'x' * 240}… · packages/b');
   });
 
   test('ninguna variante afirma persistencia, salud ni IDs internos', () {
