@@ -49,8 +49,8 @@ String? unsupportedForm(RelationKind kind, String path) {
   final (code, cause, alternative) = _cause(placement, root);
   return (
     code,
-    '${_subject(declaration.kind)} «${declaration.shown}» $cause; la relación '
-        'queda sin corroborar y la propuesta no es elegible. $alternative',
+    '${_subject(declaration.kind)} «${declaration.shown}» $cause; queda sin '
+        'corroborar y bloquea la propuesta. $alternative',
   );
 }
 
@@ -65,7 +65,7 @@ String? unsupportedForm(RelationKind kind, String path) {
       ReferenceOutside() => (
         LimitationCode.pathDependencyOutsideRoot,
         'sale de la raíz y no se atraviesa',
-        'Para corroborarla, inspecciona una raíz que contenga ambos paquetes.',
+        'Inspecciona una raíz que contenga ambos paquetes.',
       ),
       ReferenceUnresolved() => (
         LimitationCode.pathDependencyUnresolved,
@@ -75,7 +75,7 @@ String? unsupportedForm(RelationKind kind, String path) {
       ReferenceLinked(:final link) => (
         LimitationCode.unsupportedLocalReference,
         'pasa por el enlace «${_relative(link, root)}», que no se sigue',
-        'Esta versión no sigue enlaces para corroborar relaciones.',
+        'Esta versión no sigue enlaces para corroborar.',
       ),
       ReferenceExcluded() || ReferenceInside() => _withinRoot(placement),
     };
@@ -85,14 +85,13 @@ String? unsupportedForm(RelationKind kind, String path) {
     switch (placement) {
       ReferenceExcluded(:final tree) => (
         LimitationCode.requiredPathExcluded,
-        'apunta dentro de «$tree», que no se recorre por las reglas de alcance',
-        'No se reabre ese árbol; una inspección separada desde esa ruta puede '
-            'aportar otra ficha.',
+        'apunta dentro de «$tree», omitido por las reglas de alcance',
+        'Puedes inspeccionar esa ruta por separado.',
       ),
       ReferenceInside(:final path) => (
         LimitationCode.requiredManifestMissing,
-        'apunta a «$path», donde no se observó un manifiesto con nombre',
-        'Esta versión sólo corrobora destinos con un manifiesto válido.',
+        'apunta a «$path», sin un manifiesto con nombre',
+        'Esta versión sólo corrobora destinos con manifiesto.',
       ),
       _ => throw StateError('no es un destino dentro de la raíz'),
     };

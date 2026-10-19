@@ -106,12 +106,11 @@ void main() {
     final contribution = await recognizeDartProject(sandbox.root);
     expect([for (final l in contribution.limitations) l.message]..sort(), [
       'la dependencia local «dependencies.x: ../x» sale de la raíz y no se '
-          'atraviesa; la relación queda sin corroborar y la propuesta no es '
-          'elegible. Para corroborarla, inspecciona una raíz que contenga '
-          'ambos paquetes.',
+          'atraviesa; queda sin corroborar y bloquea la propuesta. '
+          'Inspecciona una raíz que contenga ambos paquetes.',
       'la dependencia local «dependencies.y: falta/../y» no se pudo resolver '
-          'y no se atraviesa; la relación queda sin corroborar y la propuesta '
-          'no es elegible. Comprueba que la ruta exista y se pueda leer.',
+          'y no se atraviesa; queda sin corroborar y bloquea la propuesta. '
+          'Comprueba que la ruta exista y se pueda leer.',
     ]);
   });
 

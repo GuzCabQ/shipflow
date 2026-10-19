@@ -26,6 +26,7 @@ Set<String> blockingOf(RecognitionReport report) => {
 };
 
 void main() {
+  group('diagnostics fit the human view', diagnosticsFitTheView);
   final sandbox = ScanSandbox()..register();
 
   Future<RecognitionReport> recognize({DirectoryLister? list}) async =>
@@ -175,7 +176,7 @@ void main() {
     expect(message, contains('«dependencies.c: build/c»'));
     expect(message, contains('«build»'));
     expect(message, contains('sin corroborar'));
-    expect(message, contains('inspección separada'));
+    expect(message, contains('por separado'));
   });
 
   test('two sections towards the same target keep their provenance', () async {
@@ -221,4 +222,33 @@ void main() {
     expect(relationsOf(report), ['.>packages/b:corroborated']);
     expect(report.status, RecognitionStatus.recognized);
   });
+}
+
+/// Con una declaración corta, cada diagnóstico cabe entero en una línea de
+/// la vista humana (240 runes), alternativa incluida.
+void diagnosticsFitTheView() {
+  final sandbox = ScanSandbox()..register();
+
+  for (final (declared, setup) in [
+    ('build/m', () => sandbox.place('build/m/pubspec.yaml', 'name: m\n')),
+    ('../m', () {}),
+    ('falta/../m', () {}),
+    ('vendor/m', () => Link('${sandbox.root.path}/vendor').createSync('.')),
+    ('nada/m', () {}),
+    ('"m*"', () {}),
+  ]) {
+    test('«$declared» fits whole', () async {
+      sandbox.place(
+        'pubspec.yaml',
+        'name: app\ndependencies:\n  modulo: {path: $declared}\n',
+      );
+      setup();
+      final contribution = await recognizeListing(sandbox.root);
+      final message = contribution.limitations
+          .firstWhere((l) => l.path == 'pubspec.yaml')
+          .message;
+      expect(message.runes.length, lessThanOrEqualTo(240), reason: message);
+      expect(message, endsWith('.'));
+    });
+  }
 }
