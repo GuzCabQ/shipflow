@@ -10,6 +10,7 @@ Future<void> main(List<String> arguments) async {
       version: buildVersion,
       workingDirectory: currentWorkingDirectory(),
       recognizeProject: recognizeDartProject,
+      logicalRootHint: Platform.environment['PWD'],
     ),
     standardOut: stdout,
     standardError: stderr,

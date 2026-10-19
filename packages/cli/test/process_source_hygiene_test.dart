@@ -40,6 +40,7 @@ void main() {
         'src/cli_emitter.dart',
         'src/cli_process_boundary.dart',
         'src/cli_response.dart',
+        'src/logical_root.dart',
         'src/recognition_presenter.dart',
         'src/recognition_runner.dart',
       },
@@ -64,6 +65,7 @@ void main() {
         'recognition_runner.dart',
       },
       'lib/src/cli_response.dart': <String>{},
+      'lib/src/logical_root.dart': {'dart:convert', 'dart:io'},
       'lib/src/internal_failure.dart': {
         'cli_application.dart',
         'cli_response.dart',
@@ -81,12 +83,17 @@ void main() {
         'cli_application.dart',
         'cli_command.dart',
         'cli_response.dart',
+        'logical_root.dart',
         'recognition_presenter.dart',
       },
       'lib/src/terminal_text.dart': <String>{},
     });
     for (final relative in ['bin/shipflow.dart', 'lib/src/cli_emitter.dart']) {
-      final source = File('${root.path}/$relative').readAsStringSync();
+      // La única lectura del entorno permitida: la pista PWD del composition
+      // root, que el runner corrobora antes de mostrarla.
+      final source = File(
+        '${root.path}/$relative',
+      ).readAsStringSync().replaceFirst("Platform.environment['PWD']", '');
       for (final effect in [
         'Process',
         'File',
@@ -139,6 +146,20 @@ void main() {
       }
     },
   );
+
+  test('sólo el composition root lee el entorno', () async {
+    final root = await packageRoot();
+    final readers = [
+      for (final file
+          in Directory('${root.path}/lib')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.dart')))
+        if (file.readAsStringSync().contains('environment'))
+          file.path.substring(root.path.length + 1),
+    ];
+    expect(readers, isEmpty);
+  });
 
   test('el reconocimiento no incorpora Linguist', () async {
     final packages = (await packageRoot()).parent;

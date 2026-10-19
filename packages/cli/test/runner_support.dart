@@ -61,11 +61,13 @@ final class RunnerSandbox {
     List<String> arguments, {
     Directory? workingDirectory,
     RecognitionContributor? contributor,
+    String? logicalRootHint,
   }) => runCli(
     arguments,
     version: '1.0.0',
     workingDirectory: workingDirectory ?? root,
     recognizeProject: contributor ?? contribute,
+    logicalRootHint: logicalRootHint,
   );
 }
 
