@@ -63,8 +63,8 @@ void main() {
 
   group('uso inválido', () {
     const missingDryRun =
-        'init requiere --dry-run: esta versión sólo reconoce el proyecto, '
-        'sin modificarlo';
+        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
+        'sólo inspecciona, sin modificar ni guardar el proyecto';
 
     test('init solo explica que hace falta --dry-run', () {
       expectInitError(['init'], missingDryRun);
@@ -189,8 +189,8 @@ void main() {
       ),
       (
         ['init', '--report-budget=extended'],
-        'init requiere --dry-run: esta versión sólo reconoce el proyecto, '
-            'sin modificarlo',
+        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
+            'sólo inspecciona, sin modificar ni guardar el proyecto',
       ),
     ]) {
       test('$arguments: $reason', () => expectInitError(arguments, reason));

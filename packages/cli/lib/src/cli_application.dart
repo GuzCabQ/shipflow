@@ -27,6 +27,8 @@ const _jsonOption = (
   column: jsonFlag,
   text: 'Emite una única respuesta JSON.',
 );
+const _initUsage =
+    'shipflow init --dry-run [--json] [--report-budget=standard|extended]';
 const _commands = [
   (name: initCommand, text: 'Reconoce un proyecto sin modificarlo.'),
 ];
@@ -37,7 +39,7 @@ const _rootHelp = (
   usage: [
     'shipflow [--help] [--json]',
     'shipflow --version [--json]',
-    'shipflow init --dry-run [--json]',
+    _initUsage,
   ],
   options: [
     _helpOption,
@@ -53,8 +55,10 @@ const _rootHelp = (
 
 const _initHelp = (
   summary:
-      'Reconoce la raíz tecnológica y propone una inicialización sin aplicarla.',
-  usage: ['shipflow init --dry-run [--json]'],
+      'Reconoce la raíz tecnológica y propone una inicialización sin aplicarla. '
+      'Sólo inspecciona: no modifica el proyecto, no guarda el reporte ni crea '
+      'un expediente, y no comprueba si compila ni el SDK instalado.',
+  usage: [_initUsage],
   options: [
     _helpOption,
     (
@@ -63,6 +67,14 @@ const _initHelp = (
       text: 'Inspecciona sin escribir ni ejecutar herramientas del proyecto.',
     ),
     _jsonOption,
+    (
+      flags: ['$reportBudgetFlag=standard', '$reportBudgetFlag=extended'],
+      column: '$reportBudgetFlag=standard|extended',
+      text:
+          'Perfil del reporte de esta invocación: standard, el de omisión, o '
+          'extended, que admite un reporte mayor y puede consumir más '
+          'recursos. No se guarda entre invocaciones.',
+    ),
   ],
   command: initCommand,
 );
@@ -147,10 +159,16 @@ String _humanHelp(_Help help) {
     ],
     '',
     'Opciones:',
-    for (final o in help.options) '  ${o.column.padRight(10)}  ${o.text}',
+    for (final o in help.options) ..._optionLines(o),
   ];
   return '${lines.join('\n')}\n';
 }
+
+/// Una opción y su texto en la misma línea; si la opción no cabe en la
+/// columna, el texto va debajo, alineado con los demás.
+List<String> _optionLines(_Option option) => option.column.length <= 10
+    ? ['  ${option.column.padRight(10)}  ${option.text}']
+    : ['  ${option.column}', '              ${option.text}'];
 
 CliResponse _success(String payload) => CliResponse(
   exitCode: successExitCode,

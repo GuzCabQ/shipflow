@@ -70,12 +70,15 @@ void main() {
       expect(human.stderr, isEmpty);
       expect(
         human.stdout,
-        startsWith('Shipflow · reconocimiento\nEstado: recognized\n'),
+        startsWith(
+          'Shipflow · reconocimiento del proyecto\nProyecto reconocido\n',
+        ),
       );
       expect(
         human.stdout,
         endsWith(
-          'Efectos: 0 archivos, 0 directorios, 0 procesos, 0 solicitudes de red.\n',
+          'Para repetir la inspección con detalle estructurado:\n'
+          '  shipflow init --dry-run --json\n',
         ),
       );
     });

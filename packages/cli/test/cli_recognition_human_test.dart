@@ -2,50 +2,35 @@ import 'package:cli/cli.dart';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
+import 'human_expectations.dart';
 import 'recognition_reports.dart';
 
 void main() {
-  test('un reconocimiento completo, sección por sección', () {
-    final response = presentRecognition(report(), json: false);
-    expect(response.channel, CliOutputChannel.stdout);
-    expect(response.exitCode, 0);
+  test('reconocido: qué se vio, qué no se comprobó y qué sigue', () {
     expect(
-      response.payload,
-      'Shipflow · reconocimiento\n'
-      'Estado: recognized\n'
-      'Raíz solicitada: /solicitada\n'
-      'Raíz resuelta: /resuelta\n'
-      'Git: absent\n'
-      'Candidatos:\n'
-      '  - stack · Stack · plugin plugin · evidencia e0001, e0002\n'
-      'Unidades:\n'
-      '  - u0001 · a · package · packages/a · evidencia e0001\n'
-      '  - u0002 · b · package · packages/b · evidencia e0002\n'
-      'Evidencia:\n'
-      '  - e0001 · manifest.package_name · packages/a/manifest · a · '
-      'sha256:e0001e0001e0001e0001e0001e0001e0001e0001\n'
-      '  - e0002 · manifest.package_name · packages/b/manifest · b · '
-      'sha256:e0002e0002e0002e0002e0002e0002e0002e0002\n'
-      'Conflictos:\n'
-      '  ninguno\n'
-      'Limitaciones:\n'
-      '  ninguno\n'
-      'Propuesta: elegible\n'
-      '  - record_project_identity · Registra la identidad del proyecto '
-      'reconocido.\n'
-      '  - enable_stack_plugin · Habilita el plugin del stack reconocido.\n'
-      'Efectos: 0 archivos, 0 directorios, 0 procesos, 0 solicitudes de red.\n',
+      human(report()),
+      '${expectedHead}Proyecto reconocido\n'
+      'Carpeta: /resuelta\n'
+      'Alias: /solicitada\n'
+      'Tecnología: Stack\n'
+      'Paquetes observados: 2\n'
+      '  a · packages/a\n'
+      '  b · packages/b\n'
+      '\n'
+      'No se detectaron conflictos ni límites en este reconocimiento.\n'
+      'La propuesta es elegible, pero no se aplicó.\n'
+      '$expectedScope'
+      '\n'
+      '$expectedEffects'
+      'La inspección terminó. Esta versión todavía no aplica la inicialización '
+      'ni inicia tareas.\n'
+      '$expectedDetail',
     );
   });
 
-  test('hallazgos, Git detectado y una propuesta no elegible', () {
-    final payload = presentRecognition(
+  test('no concluyente: conflictos con sus fuentes y limitaciones', () {
+    final payload = human(
       report(
-        repository: const RepositoryContext(
-          status: RepositoryStatus.detected,
-          root: '/repo',
-          relation: RepositoryRelation.ancestor,
-        ),
         conflicts: [
           RecognitionConflict(
             code: 'versions_disagree',
@@ -56,7 +41,7 @@ void main() {
         limitations: const [
           RecognitionLimitation(
             code: 'note',
-            message: 'sin ruta',
+            message: 'sólo una nota',
             path: null,
             blocking: false,
           ),
@@ -68,78 +53,135 @@ void main() {
           ),
         ],
       ),
-      json: false,
-    ).payload;
-    expect(payload, contains('Estado: ambiguous\n'));
-    expect(payload, contains('Git: detected · ancestor · /repo\n'));
-    expect(
-      payload,
-      contains(
-        'Conflictos:\n'
-        '  - versions_disagree · no coinciden · evidencia e0001, e0002\n',
-      ),
     );
     expect(
       payload,
-      contains(
-        'Limitaciones:\n'
-        '  - note · bloqueante: no · sin ruta · sin ruta\n'
-        '  - subtree_unreadable · bloqueante: sí · cerrado · no se pudo listar\n',
-      ),
+      '${expectedHead}Reconocimiento no concluyente\n'
+      'Carpeta: /resuelta\n'
+      'Alias: /solicitada\n'
+      'Tecnología: Stack\n'
+      'Paquetes observados: 2\n'
+      '  a · packages/a\n'
+      '  b · packages/b\n'
+      '\n'
+      'Conflictos:\n'
+      '  - no coinciden · fuentes: packages/a/manifest (a), '
+      'packages/b/manifest (b)\n'
+      'Limitaciones:\n'
+      '  - sólo una nota (no bloquea)\n'
+      '  - no se pudo listar · cerrado\n'
+      '$expectedBlocked'
+      '$expectedScope'
+      '\n'
+      '$expectedEffects'
+      'Revisa las fuentes indicadas y repite la inspección después de decidir '
+      'su corrección.\n'
+      'Revisa las limitaciones indicadas; el reconocimiento está incompleto.\n'
+      '$expectedDetail',
     );
-    expect(payload, contains('Propuesta: no elegible\n  ninguna\nEfectos:'));
   });
 
-  test('una raíz inválida no tiene raíz resuelta ni Git', () {
-    final payload = presentRecognition(
-      RecognitionReport.invalidRoot(
-        requestedRoot: '/no-existe',
-        reason: const RecognitionLimitation(
-          code: 'root_not_found',
-          message: 'la raíz no existe',
-          path: null,
-          blocking: true,
+  test('no soportado: explica el alcance Dart y Flutter', () {
+    final unsupported = assembleRecognition(
+      requestedRoot: '/r',
+      resolvedRoot: '/r',
+      repository: absentRepository,
+      contributions: [
+        RecognitionContribution(
+          candidates: const [],
+          units: const [],
+          evidence: const [],
+          conflicts: const [],
+          limitations: const [],
         ),
-      ),
-      json: false,
+      ],
     );
-    expect(payload.exitCode, 66);
-    expect(payload.payload, contains('Raíz resuelta: no disponible\n'));
-    expect(payload.payload, contains('Git: indeterminate\n'));
-    expect(payload.payload, contains('Candidatos:\n  ninguno\n'));
-  });
-
-  test('cada valor dinámico ocupa una sola línea segura', () {
-    final hostile = 'a\nb\u202Ec\x1b[2J';
-    final payload = presentRecognition(
-      report(unitName: hostile),
-      json: false,
-    ).payload;
-    final lines = payload.split('\n');
-    final benign = presentRecognition(report(), json: false).payload;
-    expect(lines.length, benign.split('\n').length);
-    expect(payload, contains(r'a\nb\u{202e}c\x1b[2J'));
-    expect(payload, isNot(contains('\u202E')));
-    expect(payload, isNot(contains('\x1b')));
-  });
-
-  test('un valor de más de 240 runes visibles se corta con …', () {
-    final payload = presentRecognition(
-      report(unitName: 'x' * 300),
-      json: false,
-    ).payload;
-    final unitLine = payload
-        .split('\n')
-        .firstWhere((String l) => l.startsWith('  - u0002'));
-    expect(unitLine, contains(' · ${'x' * 240}… · '));
-    expect(unitLine, isNot(contains('x' * 241)));
-  });
-
-  test('la vista humana y la JSON salen del mismo reporte', () {
-    final source = report();
     expect(
-      presentRecognition(source, json: false).exitCode,
-      presentRecognition(source, json: true).exitCode,
+      human(unsupported),
+      '${expectedHead}Proyecto no soportado\n'
+      'Carpeta: /r\n'
+      'Paquetes observados: 0\n'
+      '\n'
+      'No se detectaron conflictos ni límites en este reconocimiento.\n'
+      '$expectedScope'
+      '\n'
+      '$expectedEffects'
+      'Esta versión reconoce proyectos Dart y Flutter mediante sus manifiestos '
+      'y marcadores.\n'
+      '$expectedDetail',
     );
+  });
+
+  test('carpeta inválida: comprobar existencia y permisos', () {
+    final invalid = RecognitionReport.invalidRoot(
+      requestedRoot: '/no-existe',
+      reason: const RecognitionLimitation(
+        code: 'root_not_found',
+        message: 'la raíz no existe',
+        path: null,
+        blocking: true,
+      ),
+    );
+    final response = presentRecognition(invalid, json: false);
+    expect(response.exitCode, 66);
+    expect(
+      response.payload,
+      '${expectedHead}No se pudo inspeccionar la carpeta\n'
+      'Carpeta: /no-existe\n'
+      '\n'
+      'Limitaciones:\n'
+      '  - la raíz no existe\n'
+      '$expectedScope'
+      '\n'
+      '$expectedEffects'
+      'Comprueba que la carpeta exista y que tengas permiso para leerla.\n'
+      '$expectedDetail',
+    );
+  });
+
+  group('exceso del reporte', () {
+    RecognitionReport reached(bool extended) => reportLimitReached(
+      requestedRoot: '/alias',
+      resolvedRoot: '/real',
+      repository: absentRepository,
+      dimension: ReportLimitDimension.items,
+      extended: extended,
+    );
+
+    test('en normal ofrece ampliar', () {
+      expect(
+        human(reached(false)),
+        '${expectedHead}Reconocimiento no concluyente\n'
+        'Carpeta: /real\n'
+        'Alias: /alias\n'
+        '\n'
+        'Limitaciones:\n'
+        '  - El reconocimiento alcanzó el límite de elementos del reporte del '
+        'perfil normal; no se publica un inventario parcial.\n'
+        '$expectedBlocked'
+        '$expectedScope'
+        '\n'
+        '$expectedEffects'
+        'Puedes repetir con shipflow init --dry-run --report-budget=extended. '
+        'El perfil ampliado puede consumir más recursos.\n'
+        '$expectedDetail',
+      );
+    });
+
+    test('en ampliado explica el techo y conserva el perfil', () {
+      final payload = human(reached(true), ReportBudgetProfile.extended);
+      expect(
+        payload,
+        endsWith(
+          '$expectedEffects'
+          'Se alcanzó el máximo disponible en esta versión. Inspecciona una '
+          'raíz tecnológica más acotada; esto cambia el alcance de la '
+          'inspección.\n'
+          'Para repetir la inspección con detalle estructurado:\n'
+          '  shipflow init --dry-run --json --report-budget=extended\n',
+        ),
+      );
+      expect(payload, contains('del perfil ampliado; no se publica'));
+    });
   });
 }

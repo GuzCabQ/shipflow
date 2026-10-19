@@ -27,7 +27,8 @@ PathDependencyPlacement placePathDependency(
 /// antes de aplicar el siguiente `..`, que sube desde el destino real. Lo que
 /// no existe sólo alarga la ruta; un `..` detrás de un tramo inexistente, o
 /// un enlace que no resuelve, la dejan sin resolver en lugar de suponerla.
-/// Una ruta con NUL tampoco es una que el sistema pueda resolver.
+/// Una ruta con NUL tampoco es una que el sistema pueda resolver, ni un
+/// tramo que no se ve por permisos: no se sabe si existe.
 String? _resolve(String path) {
   if (path.contains('\x00')) return null;
   var current = ''; // canónica; vacía es `/`
@@ -45,6 +46,7 @@ String? _resolve(String path) {
     if (missing) continue;
     if (FileSystemEntity.typeSync(current, followLinks: false) ==
         FileSystemEntityType.notFound) {
+      if (!_absent(current)) return null;
       missing = true;
       continue;
     }
@@ -55,4 +57,17 @@ String? _resolve(String path) {
     }
   }
   return current.isEmpty ? '/' : current;
+}
+
+const _noSuchEntry = 2; // ENOENT, igual en macOS y Linux.
+
+/// Si [path] no existe de verdad. Un tramo que no se puede mirar, por
+/// permisos u otro motivo, no cuenta como inexistente.
+bool _absent(String path) {
+  try {
+    File(path).resolveSymbolicLinksSync();
+    return false;
+  } on FileSystemException catch (error) {
+    return error.osError?.errorCode == _noSuchEntry;
+  }
 }

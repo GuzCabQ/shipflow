@@ -42,8 +42,11 @@ void main() {
     final response = await sandbox.run(['init', '--dry-run']);
     expect(response.channel, CliOutputChannel.stdout);
     expect(response.exitCode, 0);
-    expect(response.payload, startsWith('Shipflow · reconocimiento\n'));
-    expect(response.payload, contains('Raíz resuelta: ${sandbox.root.path}\n'));
+    expect(
+      response.payload,
+      startsWith('Shipflow · reconocimiento del proyecto\n'),
+    );
+    expect(response.payload, contains('Carpeta: ${sandbox.root.path}\n'));
     expect(sandbox.received, hasLength(1));
   });
 

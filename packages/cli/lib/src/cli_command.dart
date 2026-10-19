@@ -97,8 +97,8 @@ CliCommand _parseInit(List<String> options, {required bool json}) {
     );
   }
   return RejectUsage(
-    'init requiere $dryRunFlag: esta versión sólo reconoce el proyecto, '
-    'sin modificarlo',
+    'init requiere $dryRunFlag: usa shipflow init $dryRunFlag; esta versión '
+    'sólo inspecciona, sin modificar ni guardar el proyecto',
     HelpTopic.init,
     json: json,
   );

@@ -76,12 +76,17 @@ void main() {
         'cli_application.dart',
         'cli_response.dart',
       },
+      'lib/src/recognition_human.dart': {
+        'package:core/core.dart',
+        'cli_command.dart',
+        'terminal_text.dart',
+      },
       'lib/src/recognition_presenter.dart': {
         'package:core/core.dart',
         'bounded_recognition_json.dart',
         'cli_command.dart',
         'cli_response.dart',
-        'terminal_text.dart',
+        'recognition_human.dart',
       },
       'lib/src/recognition_runner.dart': {
         'dart:io',
