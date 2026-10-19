@@ -152,4 +152,48 @@ void main() {
       throwsStateError,
     );
   });
+
+  group('un JSON que los escapes inflan', () {
+    // 250 valores de 4000 controles: caben en las cotas derivadas (1 MB de
+    // texto), pero escapados son unos 6 MB de JSON.
+    RecognitionContributor inflating() =>
+        recording((_, {required reportLimits}) async {
+          return RecognitionContribution(
+            candidates: const [],
+            units: const [],
+            evidence: [
+              for (var i = 0; i < 250; i++)
+                RecognitionEvidence(
+                  id: 'e$i',
+                  kind: 'k',
+                  path: 'p',
+                  value: '\x01' * 4000,
+                  fingerprint: 'f',
+                ),
+            ],
+            conflicts: const [],
+            limitations: const [],
+          );
+        });
+
+    test('corta igual en JSON y en la vista humana', () async {
+      final json = await run([], inflating());
+      final message =
+          ((json['limitations']! as List).single as Map)['message'] as String;
+      expect(message, contains('tamaño JSON del reporte del perfil normal'));
+      final human = await sandbox.run([
+        'init',
+        '--dry-run',
+      ], contributor: inflating());
+      expect(human.exitCode, 65);
+      expect(human.payload, contains('tamaño JSON del reporte'));
+    });
+
+    test('en ampliado lo mide contra la cota ampliada', () async {
+      final json = await run(['--report-budget=extended'], inflating());
+      final message =
+          ((json['limitations']! as List).single as Map)['message'] as String;
+      expect(message, contains('del perfil ampliado'));
+    });
+  });
 }

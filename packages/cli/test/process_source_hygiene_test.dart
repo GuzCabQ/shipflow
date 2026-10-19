@@ -34,6 +34,7 @@ void main() {
         'package:plugin_dart/plugin_dart.dart',
       },
       'lib/cli.dart': {
+        'src/bounded_recognition_json.dart',
         'src/build_version.dart',
         'src/cli_application.dart',
         'src/cli_command.dart',
@@ -43,6 +44,11 @@ void main() {
         'src/logical_root.dart',
         'src/recognition_presenter.dart',
         'src/recognition_runner.dart',
+      },
+      'lib/src/bounded_recognition_json.dart': {
+        'dart:convert',
+        'package:core/core.dart',
+        'cli_application.dart',
       },
       'lib/src/build_version.dart': <String>{},
       'lib/src/cli_application.dart': {
@@ -72,7 +78,8 @@ void main() {
       },
       'lib/src/recognition_presenter.dart': {
         'package:core/core.dart',
-        'cli_application.dart',
+        'bounded_recognition_json.dart',
+        'cli_command.dart',
         'cli_response.dart',
         'terminal_text.dart',
       },

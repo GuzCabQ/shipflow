@@ -1,38 +1,59 @@
 import 'package:core/core.dart';
 
-import 'cli_application.dart';
+import 'bounded_recognition_json.dart';
+import 'cli_command.dart';
 import 'cli_response.dart';
 import 'terminal_text.dart';
 
-const _recognitionType = 'init_dry_run';
-const _unrecognizedExitCode = 65;
-const _invalidRootExitCode = 66;
 const _maxShownRunes = 240;
 
-/// El código de salida de cada estado: un reconocimiento no verde sigue
-/// siendo un reporte válido.
-int recognitionExitCode(RecognitionStatus status) => switch (status) {
-  RecognitionStatus.recognized => successExitCode,
-  RecognitionStatus.ambiguous ||
-  RecognitionStatus.unsupported => _unrecognizedExitCode,
-  RecognitionStatus.invalidRoot => _invalidRootExitCode,
+/// La única tabla que une cada perfil con sus tres cotas.
+ReportLimits reportLimitsOf(ReportBudgetProfile profile) => switch (profile) {
+  ReportBudgetProfile.standard => const ReportLimits(),
+  ReportBudgetProfile.extended => const ReportLimits.extended(),
 };
 
 /// [report] como JSON de una línea o como vista humana, siempre en stdout.
-CliResponse presentRecognition(RecognitionReport report, {required bool json}) {
-  final exitCode = recognitionExitCode(report.status);
-  if (json) {
-    return jsonResponse(exitCode, {
-      'schemaVersion': schemaVersion,
-      'type': _recognitionType,
-      ...report.toJson(),
-      'exitCode': exitCode,
-    });
-  }
+/// El JSON se mide contra [budgetProfile] también cuando se pide la vista
+/// humana: si no cabe, ambas salen del mismo reporte compacto.
+CliResponse presentRecognition(
+  RecognitionReport report, {
+  required bool json,
+  ReportBudgetProfile budgetProfile = ReportBudgetProfile.standard,
+}) {
+  final (:effective, :encoded) = _withinJsonLimit(report, budgetProfile);
   return CliResponse(
-    exitCode: exitCode,
+    exitCode: recognitionExitCode(effective.status),
     channel: CliOutputChannel.stdout,
-    payload: '${_humanLines(report).join('\n')}\n',
+    payload: json ? encoded : '${_humanLines(effective).join('\n')}\n',
+  );
+}
+
+/// [report] y su JSON si caben en el perfil; si no, el reporte compacto y
+/// el suyo. Que tampoco el compacto quepa es un defecto, no otro límite.
+({RecognitionReport effective, String encoded}) _withinJsonLimit(
+  RecognitionReport report,
+  ReportBudgetProfile profile,
+) {
+  final maxBytes = reportLimitsOf(profile).maxReportJsonBytes;
+  final encoded = encodeRecognitionWithinLimit(report, maxBytes: maxBytes);
+  if (encoded != null) return (effective: report, encoded: encoded);
+  final resolvedRoot = report.resolvedRoot;
+  if (resolvedRoot == null) {
+    throw StateError('una raíz inválida excedió su JSON');
+  }
+  final compact = reportLimitReached(
+    requestedRoot: report.requestedRoot,
+    resolvedRoot: resolvedRoot,
+    repository: report.repository,
+    dimension: ReportLimitDimension.jsonBytes,
+    extended: profile == ReportBudgetProfile.extended,
+  );
+  return (
+    effective: compact,
+    encoded:
+        encodeRecognitionWithinLimit(compact, maxBytes: maxBytes) ??
+        (throw StateError('el reporte compacto no cabe en su perfil')),
   );
 }
 

@@ -21,12 +21,6 @@ typedef RecognitionContributor =
       required ReportLimits reportLimits,
     });
 
-/// La única tabla que une cada perfil con sus tres cotas.
-ReportLimits reportLimitsOf(ReportBudgetProfile profile) => switch (profile) {
-  ReportBudgetProfile.standard => const ReportLimits(),
-  ReportBudgetProfile.extended => const ReportLimits.extended(),
-};
-
 /// Responde [arguments]. Un fallo de programación sale tal cual, con su
 /// objeto y su traza: traducirlo es trabajo de la frontera del proceso.
 ///
@@ -62,6 +56,7 @@ Future<CliResponse> runCommand(
       budgetProfile: budgetProfile,
     ),
     json: json,
+    budgetProfile: budgetProfile,
   ),
 };
 
