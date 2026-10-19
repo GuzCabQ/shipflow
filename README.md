@@ -80,7 +80,7 @@ shipflow init --dry-run --report-budget=extended  # admite un reporte mayor
 ```
 
 El resumen dice qué se reconoció, qué impide continuar, qué no se comprobó
-(compilación, tests, SDK instalado) y que no se modificó ni guardó nada. El JSON
+(compilación, tests, arquitectura, SDK instalado) y que no se modificó ni guardó nada. El JSON
 conserva todo el detalle. Si un proyecto es demasiado grande para el perfil
 normal, Shipflow lo dice y sugiere `--report-budget=extended`; no publica un
 inventario parcial. Estados, códigos de salida, perfiles, límites y la garantía

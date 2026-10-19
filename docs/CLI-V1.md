@@ -21,8 +21,8 @@ No hace, y no afirma haber hecho:
 - no modifica, crea ni borra archivos del proyecto;
 - **no guarda el reporte** ni crea un expediente: el reporte existe sólo en esa
   ejecución (la terminal puede conservar su propio historial);
-- no ejecuta herramientas, compilaciones ni tests del proyecto, no usa red y no
-  consulta el SDK instalado;
+- no ejecuta herramientas, compilaciones ni tests del proyecto, no comprueba su
+  arquitectura, no usa red y no consulta el SDK instalado;
 - no aplica la inicialización: una propuesta «elegible» es una propuesta sin
   aplicar;
 - no diagnostica la salud del proyecto: «no se detectaron conflictos ni límites»
@@ -64,7 +64,7 @@ Paquetes observados: 1
 
 No se detectaron conflictos ni límites en este reconocimiento.
 La propuesta es elegible, pero no se aplicó.
-No se comprobó si el proyecto compila, si sus pruebas pasan o si el SDK está instalado.
+No se comprobó si el proyecto compila, si sus pruebas pasan, si respeta su arquitectura ni si el SDK está instalado.
 
 No se modificó el proyecto. Shipflow no guardó este reporte ni creó un expediente.
 La inspección terminó. Esta versión todavía no aplica la inicialización ni inicia tareas.
