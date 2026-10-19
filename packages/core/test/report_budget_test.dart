@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
@@ -163,6 +165,86 @@ void main() {
           message,
         );
       });
+    }
+  });
+
+  group('assembleRecognition vuelve a contar con un contador propio', () {
+    // Una evidencia, un candidato y una unidad que la citan, y al ser
+    // reconocido las dos acciones de la propuesta: 7 elementos.
+    final contribution = RecognitionContribution(
+      candidates: [
+        StackCandidate(
+          id: 'c',
+          displayName: 'C',
+          pluginId: 'p',
+          evidenceIds: const ['e0001'],
+        ),
+      ],
+      units: [
+        ProjectUnit(
+          id: 'u0001',
+          name: 'añ',
+          kind: 'k',
+          path: '.',
+          evidenceIds: const ['e0001'],
+        ),
+      ],
+      evidence: const [
+        RecognitionEvidence(
+          id: 'e0001',
+          kind: 'kind',
+          path: 'pubspec.yaml',
+          value: 'añ',
+          fingerprint: 'sha256:x',
+        ),
+      ],
+      conflicts: const [],
+      limitations: const [],
+    );
+    final textBytes = [
+      'e0001', 'kind', 'pubspec.yaml', 'añ', 'sha256:x', // evidencia
+      'c', 'C', 'p', 'e0001', // candidato y su referencia
+      'u0001', 'añ', 'k', '.', 'e0001', // unidad y su referencia
+      recordProjectIdentity.code, recordProjectIdentity.description,
+      enableStackPlugin.code, enableStackPlugin.description,
+      'p', // pluginIds de la propuesta
+    ].fold(0, (sum, text) => sum + utf8.encode(text).length);
+
+    RecognitionReport assemble(ReportLimits limits) => assembleRecognition(
+      requestedRoot: '/r',
+      resolvedRoot: '/r',
+      repository: const RepositoryContext(
+        status: RepositoryStatus.absent,
+        root: null,
+        relation: RepositoryRelation.none,
+      ),
+      contributions: [contribution],
+      limits: limits,
+    );
+
+    test('7 elementos caben y 6 no', () {
+      expect(
+        assemble(const ReportLimits(maxDerivedItems: 7)).status,
+        RecognitionStatus.recognized,
+      );
+      expect(
+        () => assemble(const ReportLimits(maxDerivedItems: 6)),
+        exceeds(ReportLimitDimension.items),
+      );
+    });
+
+    test('su texto exacto cabe y un byte menos no', () {
+      assemble(ReportLimits(maxDerivedTextBytes: textBytes));
+      expect(
+        () => assemble(ReportLimits(maxDerivedTextBytes: textBytes - 1)),
+        exceeds(ReportLimitDimension.textBytes),
+      );
+    });
+  });
+
+  test('utf8Length coincide con el encoder, incluso fuera del BMP', () {
+    for (final text in ['', 'abc', 'ñandú', '漢字', '😀x', 'a\u{D800}b']) {
+      expect(utf8Length(text), utf8.encode(text).length, reason: text);
     }
   });
 }

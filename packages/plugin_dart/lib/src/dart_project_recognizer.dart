@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'derived_observation_budget.dart';
 import 'evidence_draft.dart';
 import 'manifest_evidence.dart';
 import 'observed_value.dart';
@@ -20,20 +21,26 @@ const _flutterPackage = 'flutter_package';
 ///
 /// Sólo lee manifiestos y marcadores dentro de [limits]; no ejecuta
 /// herramientas, no resuelve dependencias y no consulta el SDK instalado.
+/// Lo que retiene se cobra a un único presupuesto de [reportLimits] antes de
+/// construirse; si no cabe, lanza [ReportLimitExceeded] y no devuelve nada.
 Future<RecognitionContribution> recognizeDartProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
+  ReportLimits reportLimits = const ReportLimits(),
 }) async {
-  final scan = await scanProject(root, limits: limits);
-  final observed = _Observations(root)..limitations.addAll(scan.limitations);
+  final budget = DerivedObservationBudget(reportLimits);
+  final scan = await scanProject(root, limits: limits, budget: budget);
+  final observed = _Observations(root, budget)
+    ..limitations.addAll(scan.limitations);
   scan.sources.forEach(observed.add);
   return observed.contribution();
 }
 
 final class _Observations {
-  _Observations(this.root);
+  _Observations(this.root, this.budget);
 
   final Directory root;
+  final DerivedObservationBudget budget;
   final manifests = <ManifestEvidence>[];
   final markers = <ToolchainMarker>[];
   final limitations = <RecognitionLimitation>[];
@@ -42,12 +49,12 @@ final class _Observations {
 
   void add(ScannedSource source) {
     if (source.kind != SourceKind.manifest) {
-      final (:marker, :limitation) = observeToolchainMarker(source);
+      final (:marker, :limitation) = observeToolchainMarker(source, budget);
       if (marker != null) markers.add(marker);
       if (limitation != null) limitations.add(limitation);
       return;
     }
-    final observation = observeManifest(source);
+    final observation = observeManifest(source, budget: budget);
     limitations.addAll(observation.limitations);
     if (observation.facts case final facts?) _addManifest(facts);
   }
@@ -65,6 +72,7 @@ final class _Observations {
       if (dependency.truncated) continue;
       final placement = placePathDependency(root, facts, dependency);
       if (_placementProblem(placement) case (final code, final message)?) {
+        budget.row([code, message, facts.source.path]);
         limitations.add(
           RecognitionLimitation(
             code: code,
@@ -84,7 +92,7 @@ final class _Observations {
     List<ConstraintEvidence> into,
   ) {
     if (draft == null || observed!.truncated) return;
-    final (:constraint, :limitation) = parseConstraint(draft);
+    final (:constraint, :limitation) = parseConstraint(draft, budget);
     if (constraint != null) into.add(constraint);
     if (limitation != null) limitations.add(limitation);
   }
@@ -93,10 +101,11 @@ final class _Observations {
     final ids = assignEvidenceIds([
       for (final m in manifests) ...m.all,
       for (final m in markers) m.evidence,
-    ]);
-    List<String> idsOf(Iterable<EvidenceDraft> drafts) => [
-      for (final d in drafts) ids[d]!,
-    ];
+    ], budget);
+    // Cada posición de referencia es un elemento más, con los bytes del ID.
+    List<String> idsOf(Iterable<EvidenceDraft> drafts) => budget
+        .admitEach(drafts, textsOf: (d) => [ids[d]!], build: (d) => ids[d]!)
+        .toList();
     return RecognitionContribution(
       candidates: [?_candidate(idsOf)],
       units: _units(idsOf),
@@ -110,28 +119,34 @@ final class _Observations {
             fingerprint: d.fingerprint,
           ),
       ],
-      conflicts: _conflicts(idsOf),
+      conflicts: _conflicts(ids),
       limitations: limitations,
     );
   }
 
-  List<RecognitionConflict> _conflicts(
-    List<String> Function(Iterable<EvidenceDraft>) idsOf,
-  ) => [
+  /// Las posiciones de referencia ya se cobraron con cada borrador; aquí
+  /// sólo los bytes de los IDs, que recién existen.
+  List<RecognitionConflict> _conflicts(Map<EvidenceDraft, String> ids) => [
     for (final c in [
       ..._duplicateNames(),
       ...toolchainConflicts(
         markers: markers,
         flutterConstraints: flutterConstraints,
         sdkConstraints: sdkConstraints,
+        budget: budget,
       ),
     ])
       RecognitionConflict(
         code: c.code,
         message: c.message,
-        evidenceIds: idsOf(c.evidence),
+        evidenceIds: [for (final d in c.evidence) _chargedId(ids[d]!)],
       ),
   ];
+
+  String _chargedId(String id) {
+    budget.charge(texts: [id]);
+    return id;
+  }
 
   List<ConflictDraft> _duplicateNames() {
     final byName = <String, List<EvidenceDraft>>{};
@@ -143,12 +158,11 @@ final class _Observations {
     return [
       for (final MapEntry(key: name, value: drafts) in byName.entries)
         if (drafts.length > 1)
-          ConflictDraft(
-            ConflictCode.duplicatePackageName,
-            'el nombre de paquete «$name» aparece en ${drafts.length} '
-            'manifiestos',
-            drafts,
-          ),
+          conflictDraft(budget, ConflictCode.duplicatePackageName, [
+            'el nombre de paquete «',
+            name,
+            '» aparece en ${drafts.length} manifiestos',
+          ], drafts),
     ];
   }
 
@@ -161,6 +175,7 @@ final class _Observations {
       for (final m in markers) m.evidence,
     ];
     if (flutter.isNotEmpty) {
+      budget.row(const ['flutter', 'Flutter', _pluginId]);
       return StackCandidate(
         id: 'flutter',
         displayName: 'Flutter',
@@ -170,6 +185,7 @@ final class _Observations {
     }
     final names = [for (final m in manifests) ?m.name];
     if (names.isEmpty) return null;
+    budget.row(const ['dart', 'Dart', _pluginId]);
     return StackCandidate(
       id: 'dart',
       displayName: 'Dart',
@@ -185,16 +201,24 @@ final class _Observations {
       for (final m in manifests)
         if (m.name != null) m,
     ]..sort((a, b) => a.unitPath.compareTo(b.unitPath));
-    return [
-      for (final (index, m) in named.indexed)
-        ProjectUnit(
-          id: 'u${(index + 1).toString().padLeft(4, '0')}',
-          name: m.name!.value,
-          kind: m.flutterSignals.isEmpty ? _dartPackage : _flutterPackage,
-          path: m.unitPath,
-          evidenceIds: idsOf(m.all),
-        ),
-    ];
+    return [for (final (index, m) in named.indexed) _unit(index, m, idsOf)];
+  }
+
+  ProjectUnit _unit(
+    int index,
+    ManifestEvidence m,
+    List<String> Function(Iterable<EvidenceDraft>) idsOf,
+  ) {
+    final id = 'u${(index + 1).toString().padLeft(4, '0')}';
+    final kind = m.flutterSignals.isEmpty ? _dartPackage : _flutterPackage;
+    budget.row([id, m.name!.value, kind, m.unitPath]);
+    return ProjectUnit(
+      id: id,
+      name: m.name!.value,
+      kind: kind,
+      path: m.unitPath,
+      evidenceIds: idsOf(m.all),
+    );
   }
 }
 

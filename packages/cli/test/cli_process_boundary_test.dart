@@ -1,4 +1,5 @@
 import 'package:cli/cli.dart';
+import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 import 'runner_support.dart';
@@ -16,10 +17,11 @@ void main() {
     recognizeProject: contributor ?? sandbox.contribute,
   );
 
-  Future<Never> failing(_) => Future.error(
-    StateError('defecto en ${sandbox.root.path}'),
-    StackTrace.current,
-  );
+  Future<Never> failing(_, {required ReportLimits reportLimits}) =>
+      Future.error(
+        StateError('defecto en ${sandbox.root.path}'),
+        StackTrace.current,
+      );
 
   test('un defecto en JSON es la respuesta interna estable', () async {
     final response = await boundary([

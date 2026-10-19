@@ -5,6 +5,8 @@ import 'recognition_proposal.dart';
 import 'recognition_report.dart';
 import 'recognition_topology.dart';
 import 'repository_context.dart';
+import 'report_admission.dart';
+import 'report_budget.dart';
 
 const recordProjectIdentity = ProposedAction(
   code: 'record_project_identity',
@@ -20,15 +22,20 @@ const enableStackPlugin = ProposedAction(
 ///
 /// Un ID repetido o una referencia a evidencia inexistente es un defecto del
 /// plugin que contribuyó, no un resultado: se rechaza con [ArgumentError].
+/// Si el conjunto, con las acciones de su propuesta, no cabe en [limits],
+/// lanza [ReportLimitExceeded].
 RecognitionReport assembleRecognition({
   required String requestedRoot,
   required String resolvedRoot,
   required RepositoryContext repository,
   required List<RecognitionContribution> contributions,
+  ReportLimits limits = const ReportLimits(),
 }) {
   final merged = _merge(contributions);
   _validate(merged);
   final status = _statusOf(merged);
+  final proposal = _proposalFor(status, merged.candidates);
+  admitAssembled(merged, proposal, limits);
   return RecognitionReport(
     status: status,
     requestedRoot: requestedRoot,
@@ -39,7 +46,7 @@ RecognitionReport assembleRecognition({
     evidence: merged.evidence,
     conflicts: merged.conflicts,
     limitations: merged.limitations,
-    proposal: _proposalFor(status, merged.candidates),
+    proposal: proposal,
     effects: RecognitionEffects.none,
   );
 }

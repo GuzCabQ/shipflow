@@ -1,0 +1,237 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:core/core.dart';
+import 'package:plugin_dart/plugin_dart.dart';
+import 'package:plugin_dart/src/derived_observation_budget.dart';
+import 'package:test/test.dart';
+
+import 'scan_support.dart';
+
+Matcher exceeds(ReportLimitDimension dimension) => throwsA(
+  isA<ReportLimitExceeded>().having((e) => e.dimension, 'dimension', dimension),
+);
+
+/// Un iterable que cuenta cuántos elementos se le piden: observa la
+/// producción en vez de confiar en un contador que ella misma reporta.
+final class CountingIterable extends Iterable<int> {
+  CountingIterable(this.length);
+
+  @override
+  final int length;
+  var pulled = 0;
+
+  @override
+  Iterator<int> get iterator => _Counting(this);
+}
+
+final class _Counting implements Iterator<int> {
+  _Counting(this.source);
+
+  final CountingIterable source;
+  var _index = -1;
+
+  @override
+  int get current => _index;
+
+  @override
+  bool moveNext() {
+    if (_index + 1 >= source.length) return false;
+    _index++;
+    source.pulled++;
+    return true;
+  }
+}
+
+void main() {
+  final sandbox = ScanSandbox()..register();
+
+  Future<RecognitionContribution> recognize(ReportLimits limits) =>
+      recognizeDartProject(sandbox.root, reportLimits: limits);
+
+  group('admitEach', () {
+    test('se detiene en el que no cabe, sin construirlo ni pedir más', () {
+      final source = CountingIterable(1000000);
+      final built = <int>[];
+      final budget = DerivedObservationBudget(
+        const ReportLimits(maxDerivedItems: 10),
+      );
+      expect(
+        () => budget
+            .admitEach(source, textsOf: (_) => const [], build: built.add)
+            .toList(),
+        exceeds(ReportLimitDimension.items),
+      );
+      expect(source.pulled, 11);
+      expect(built, hasLength(10));
+    });
+  });
+
+  group('un manifiesto mínimo cobra exactamente lo que retiene', () {
+    // name «añ»: una evidencia (21 + 12 + 3 + 71 bytes, id 5), el candidato
+    // dart (4 + 4 + 11) y su referencia (5), la unidad u0001 (5 + 3 + 12 + 1)
+    // y su referencia (5): 5 elementos y 162 bytes.
+    setUp(() => sandbox.place('pubspec.yaml', 'name: añ\n'));
+
+    test('5 elementos caben y 4 no', () async {
+      await recognize(const ReportLimits(maxDerivedItems: 5));
+      await expectLater(
+        recognize(const ReportLimits(maxDerivedItems: 4)),
+        exceeds(ReportLimitDimension.items),
+      );
+    });
+
+    test('el ensamblador vuelve a contar lo mismo, más la propuesta', () async {
+      final contribution = await recognize(const ReportLimits());
+      final proposalBytes = [
+        recordProjectIdentity.code,
+        recordProjectIdentity.description,
+        enableStackPlugin.code,
+        enableStackPlugin.description,
+        'plugin_dart',
+      ].fold(0, (sum, text) => sum + utf8.encode(text).length);
+      RecognitionReport assemble(ReportLimits limits) => assembleRecognition(
+        requestedRoot: sandbox.root.path,
+        resolvedRoot: sandbox.root.path,
+        repository: const RepositoryContext(
+          status: RepositoryStatus.absent,
+          root: null,
+          relation: RepositoryRelation.none,
+        ),
+        contributions: [contribution],
+        limits: limits,
+      );
+      assemble(
+        ReportLimits(
+          maxDerivedItems: 7,
+          maxDerivedTextBytes: 162 + proposalBytes,
+        ),
+      );
+      expect(
+        () => assemble(const ReportLimits(maxDerivedItems: 6)),
+        exceeds(ReportLimitDimension.items),
+      );
+      expect(
+        () => assemble(ReportLimits(maxDerivedTextBytes: 161 + proposalBytes)),
+        exceeds(ReportLimitDimension.textBytes),
+      );
+    });
+
+    test('162 bytes caben y 161 no', () async {
+      await recognize(const ReportLimits(maxDerivedTextBytes: 162));
+      await expectLater(
+        recognize(const ReportLimits(maxDerivedTextBytes: 161)),
+        exceeds(ReportLimitDimension.textBytes),
+      );
+    });
+  });
+
+  test('una lista workspace repetida se corta al llenarse', () async {
+    // 20.000 miembros de unos 104 bytes cada uno: el texto (1 MiB) se agota
+    // antes que los 16.384 elementos.
+    sandbox.place(
+      'pubspec.yaml',
+      'name: r\nworkspace:\n${'  - pkg\n' * 20000}',
+    );
+    await expectLater(
+      recognize(const ReportLimits()),
+      exceeds(ReportLimitDimension.textBytes),
+    );
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedTextBytes: 1 << 30)),
+      exceeds(ReportLimitDimension.items),
+    );
+  });
+
+  test('las dependencias locales también se cobran una por una', () async {
+    sandbox.place('pubspec.yaml', '''
+name: r
+dependencies:
+${[for (var i = 0; i < 40; i++) '  d$i: {path: d$i}'].join('\n')}
+''');
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedItems: 30)),
+      exceeds(ReportLimitDimension.items),
+    );
+  });
+
+  test('el escáner cobra sus limitaciones antes de crearlas', () async {
+    for (var i = 0; i < 20; i++) {
+      Link('${sandbox.root.path}/l$i').createSync(sandbox.root.path);
+    }
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedItems: 10)),
+      exceeds(ReportLimitDimension.items),
+    );
+  });
+
+  test('un nombre repetido referencia todas sus evidencias', () async {
+    for (var i = 0; i < 12; i++) {
+      sandbox.place('p$i/pubspec.yaml', 'name: igual\n');
+    }
+    // 12 evidencias, 12 unidades con una referencia cada una, el candidato
+    // con 12 y el conflicto con otras 12: 12 + 24 + 13 + 13 = 62.
+    await recognize(const ReportLimits(maxDerivedItems: 62));
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedItems: 61)),
+      exceeds(ReportLimitDimension.items),
+    );
+  });
+
+  test('los conflictos de versiones se cobran antes de su mensaje', () async {
+    sandbox.place('.fvmrc', '{"flutter": "3.0.0"}');
+    for (var i = 0; i < 30; i++) {
+      sandbox.place('p$i/pubspec.yaml', '''
+name: p$i
+environment:
+  flutter: ">=9.$i.0"
+''');
+    }
+    final full = await recognize(const ReportLimits());
+    expect(full.conflicts, hasLength(30));
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedItems: 100)),
+      exceeds(ReportLimitDimension.items),
+    );
+  });
+
+  test('un adelanto truncado cuenta sus 4096 bytes', () async {
+    sandbox.place(
+      'pubspec.yaml',
+      'name: a\nenvironment:\n  sdk: "${'^' * 5000}"\n',
+    );
+    await expectLater(
+      recognize(const ReportLimits(maxDerivedTextBytes: 4000)),
+      exceeds(ReportLimitDimension.textBytes),
+    );
+  });
+
+  test('el orden de creación no cambia la cota alcanzada', () async {
+    final dimensions = <ReportLimitDimension>[];
+    for (final order in [
+      ['a', 'b', 'c'],
+      ['c', 'b', 'a'],
+    ]) {
+      final root = await Directory.systemTemp.createTemp('shipflow-orden-');
+      addTearDown(() => root.delete(recursive: true));
+      for (final name in order) {
+        File('${root.path}/$name/pubspec.yaml')
+          ..parent.createSync()
+          ..writeAsStringSync('name: ${name * 300}\n');
+      }
+      try {
+        await recognizeDartProject(
+          Directory(root.resolveSymbolicLinksSync()),
+          reportLimits: const ReportLimits(
+            maxDerivedItems: 7,
+            maxDerivedTextBytes: 700,
+          ),
+        );
+        fail('debía exceder');
+      } on ReportLimitExceeded catch (e) {
+        dimensions.add(e.dimension);
+      }
+    }
+    expect(dimensions.toSet(), hasLength(1));
+  });
+}

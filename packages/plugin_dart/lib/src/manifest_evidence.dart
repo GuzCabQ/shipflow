@@ -17,7 +17,11 @@ final class ManifestEvidence {
         facts.flutterConstraint?.text,
       ),
       flutterDependency = facts.flutterDependency
-          ? _draft(facts, EvidenceKind.flutterDependency, 'sdk: flutter')
+          ? _draft(
+              facts,
+              EvidenceKind.flutterDependency,
+              flutterDependencyValue,
+            )
           : null,
       pathDependencies = List.unmodifiable([
         for (final d in facts.pathDependencies)

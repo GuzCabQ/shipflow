@@ -4,7 +4,11 @@ import 'package:plugin_dart/src/evidence_draft.dart';
 import 'package:plugin_dart/src/project_scanner.dart';
 import 'package:plugin_dart/src/recognition_codes.dart';
 import 'package:plugin_dart/src/stable_file_reader.dart';
-import 'package:plugin_dart/src/toolchain_observer.dart';
+import 'package:core/core.dart';
+import 'package:plugin_dart/src/derived_observation_budget.dart';
+import 'package:plugin_dart/src/toolchain_observer.dart'
+    hide observeToolchainMarker, parseConstraint, toolchainConflicts;
+import 'package:plugin_dart/src/toolchain_observer.dart' as toolchain;
 import 'package:pub_semver/pub_semver.dart';
 import 'package:test/test.dart';
 
@@ -178,3 +182,27 @@ void main() {
     });
   });
 }
+
+/// Cada llamada con un presupuesto propio, holgado: estas pruebas miran la
+/// interpretación, no el cobro.
+DerivedObservationBudget budget() =>
+    DerivedObservationBudget(const ReportLimits());
+
+({ConstraintEvidence? constraint, RecognitionLimitation? limitation})
+parseConstraint(EvidenceDraft evidence) =>
+    toolchain.parseConstraint(evidence, budget());
+
+({ToolchainMarker? marker, RecognitionLimitation? limitation})
+observeToolchainMarker(ScannedSource source) =>
+    toolchain.observeToolchainMarker(source, budget());
+
+List<ConflictDraft> toolchainConflicts({
+  required List<ToolchainMarker> markers,
+  required List<ConstraintEvidence> flutterConstraints,
+  required List<ConstraintEvidence> sdkConstraints,
+}) => toolchain.toolchainConflicts(
+  markers: markers,
+  flutterConstraints: flutterConstraints,
+  sdkConstraints: sdkConstraints,
+  budget: budget(),
+);

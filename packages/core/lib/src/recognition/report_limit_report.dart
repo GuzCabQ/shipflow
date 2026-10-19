@@ -42,10 +42,7 @@ RecognitionReport reportLimitReached({
   limitations: [
     RecognitionLimitation(
       code: reportLimitReachedCode,
-      message:
-          'El reconocimiento alcanzó el límite de ${_dimensionNames[dimension]} '
-          'del perfil ${extended ? 'ampliado' : 'normal'}; no se publica un '
-          'inventario parcial. ${extended ? _ceiling : _widen}',
+      message: _limitMessage(dimension, extended: extended),
       path: null,
       blocking: true,
     ),
@@ -57,3 +54,11 @@ RecognitionReport reportLimitReached({
   ),
   effects: RecognitionEffects.none,
 );
+
+String _limitMessage(
+  ReportLimitDimension dimension, {
+  required bool extended,
+}) =>
+    'El reconocimiento alcanzó el límite de ${_dimensionNames[dimension]} '
+    'del perfil ${extended ? 'ampliado' : 'normal'}; no se publica un '
+    'inventario parcial. ${extended ? _ceiling : _widen}';

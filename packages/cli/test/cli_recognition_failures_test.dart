@@ -11,7 +11,8 @@ void main() {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
       workingDirectory: workingDirectory,
-      contributor: (_) => fail('una raíz inválida no se reconoce'),
+      contributor: (_, {required reportLimits}) =>
+          fail('una raíz inválida no se reconoce'),
     );
     expect(response.exitCode, 66);
     final body = decode(response);
@@ -54,11 +55,11 @@ void main() {
       Object? thrown;
       StackTrace? stack;
       try {
-        await sandbox.run([
-          'init',
-          '--dry-run',
-          '--json',
-        ], contributor: (_) => Future.error(defect, trace));
+        await sandbox.run(
+          ['init', '--dry-run', '--json'],
+          contributor: (_, {required reportLimits}) =>
+              Future.error(defect, trace),
+        );
       } on Object catch (error, s) {
         thrown = error;
         stack = s;

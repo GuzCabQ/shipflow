@@ -112,3 +112,19 @@ DerivedUsage admitDerivedUsage(
   }
   return DerivedUsage(items: nextItems, textBytes: nextText);
 }
+
+/// Los bytes de [text] en UTF-8, sin codificarlo: un sustituto suelto ocupa
+/// tres, como el carácter de reemplazo que escribe el encoder.
+int utf8Length(String text) {
+  var bytes = 0;
+  for (final rune in text.runes) {
+    bytes += rune < 0x80
+        ? 1
+        : rune < 0x800
+        ? 2
+        : rune < 0x10000
+        ? 3
+        : 4;
+  }
+  return bytes;
+}

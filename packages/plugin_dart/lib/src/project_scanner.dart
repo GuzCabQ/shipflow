@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'derived_observation_budget.dart';
 import 'recognition_codes.dart';
 import 'scan_limits.dart';
 import 'stable_file_reader.dart';
@@ -50,20 +51,28 @@ final class ScanResult {
 }
 
 /// Recorre [root] en orden de ruta, sin seguir enlaces y dentro de
-/// [limits]. Lo que no pudo mirar queda como limitación bloqueante.
+/// [limits]. Lo que no pudo mirar queda como limitación bloqueante, cobrada
+/// a [budget] antes de crearse.
 Future<ScanResult> scanProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
   DirectoryLister list = listWithoutFollowing,
   ByteReader readBytes = readBoundedBytes,
+  DerivedObservationBudget? budget,
 }) async {
-  final scan = _Scan(root, limits, list, readBytes);
+  final scan = _Scan(
+    root,
+    limits,
+    list,
+    readBytes,
+    budget ?? DerivedObservationBudget(const ReportLimits()),
+  );
   await scan.visit(root, 0);
   return ScanResult(scan.sources, scan.limitations);
 }
 
 final class _Scan {
-  _Scan(this.root, this.limits, this.list, this.readBytes)
+  _Scan(this.root, this.limits, this.list, this.readBytes, this.budget)
     : _authorizedRoot = _canonical(root.path);
 
   final Directory root;
@@ -74,6 +83,7 @@ final class _Scan {
   final ScanLimits limits;
   final DirectoryLister list;
   final ByteReader readBytes;
+  final DerivedObservationBudget budget;
   final sources = <ScannedSource>[];
   final limitations = <RecognitionLimitation>[];
   var _entries = 0;
@@ -246,14 +256,18 @@ final class _Scan {
     );
   }
 
-  void _block(String code, String message, String path) => limitations.add(
-    RecognitionLimitation(
-      code: code,
-      message: message,
-      path: _relative(path),
-      blocking: true,
-    ),
-  );
+  void _block(String code, String message, String path) {
+    final relative = _relative(path);
+    budget.row([code, message, relative]);
+    limitations.add(
+      RecognitionLimitation(
+        code: code,
+        message: message,
+        path: relative,
+        blocking: true,
+      ),
+    );
+  }
 
   String _relative(String path) {
     final prefix = root.path.endsWith('/') ? root.path : '${root.path}/';

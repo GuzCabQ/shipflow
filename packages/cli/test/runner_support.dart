@@ -23,7 +23,10 @@ final class RunnerSandbox {
     });
   }
 
-  Future<RecognitionContribution> contribute(Directory directory) async {
+  Future<RecognitionContribution> contribute(
+    Directory directory, {
+    required ReportLimits reportLimits,
+  }) async {
     received.add(directory.path);
     return RecognitionContribution(
       candidates: [
