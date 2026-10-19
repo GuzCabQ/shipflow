@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
 import 'derived_observation_budget.dart';
+import 'evidence_draft.dart';
 import 'observed_value.dart';
 import 'yaml_nesting_guard.dart';
 import 'project_scanner.dart';
@@ -125,12 +126,8 @@ final class _Observer {
   }
 
   /// Las partes de la evidencia de [value] que el reporte retendrá.
-  List<String> _evidenceTexts(String kind, String value) => [
-    kind,
-    source.path,
-    value,
-    source.read.fingerprint,
-  ];
+  List<String> _evidenceTexts(String kind, String value) =>
+      evidenceRowTexts(kind, source.path, value, source.read.fingerprint);
 
   /// [node] como texto acotado y ya cobrado como evidencia de [kind].
   ObservedValue? fact(String kind, Object? node, String field) {

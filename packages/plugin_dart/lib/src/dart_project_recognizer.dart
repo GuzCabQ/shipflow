@@ -129,6 +129,8 @@ final class _Observations {
           RecognitionEvidence(
             id: id,
             kind: d.kind,
+            role: evidenceRoleOf(d.kind),
+            label: evidenceLabelOf(d.kind),
             path: d.path,
             value: d.value,
             fingerprint: d.fingerprint,

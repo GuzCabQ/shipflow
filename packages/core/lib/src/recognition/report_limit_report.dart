@@ -47,6 +47,9 @@ RecognitionReport reportLimitReached({
       blocking: true,
     ),
   ],
+  relations: const [],
+  contextSources: const [],
+  omissions: const [],
   proposal: RecognitionProposal(
     eligible: false,
     pluginIds: const [],

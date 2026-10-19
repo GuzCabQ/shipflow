@@ -8,6 +8,8 @@ const absentRepository = RepositoryContext(
 
 RecognitionEvidence evidence(String id, String path, String value) =>
     RecognitionEvidence(
+      role: EvidenceRole.identity,
+      label: 'Nombre del paquete',
       id: id,
       kind: 'manifest.package_name',
       path: path,

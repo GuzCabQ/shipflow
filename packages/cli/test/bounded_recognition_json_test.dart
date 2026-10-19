@@ -27,24 +27,28 @@ RecognitionReport inflated(String value, {int count = 1}) => RecognitionReport(
   ),
   candidates: const [],
   units: const [],
-  evidence: [
-    for (var i = 0; i < count; i++)
-      RecognitionEvidence(
-        id: 'e${i.toString().padLeft(4, '0')}',
-        kind: 'k',
-        path: 'p',
-        value: value,
-        fingerprint: 'f',
-      ),
-  ],
+  evidence: [for (var i = 0; i < count; i++) _evidence(i, value)],
   conflicts: const [],
   limitations: const [],
+  relations: const [],
+  contextSources: const [],
+  omissions: const [],
   proposal: RecognitionProposal(
     eligible: false,
     pluginIds: const [],
     actions: const [],
   ),
   effects: RecognitionEffects.none,
+);
+
+RecognitionEvidence _evidence(int index, String value) => RecognitionEvidence(
+  id: 'e${index.toString().padLeft(4, '0')}',
+  kind: 'k',
+  role: EvidenceRole.identity,
+  label: 'Nombre del paquete',
+  path: 'p',
+  value: value,
+  fingerprint: 'f',
 );
 
 void main() {
@@ -134,6 +138,9 @@ void main() {
         evidence: const [],
         conflicts: const [],
         limitations: const [],
+        relations: const [],
+        contextSources: const [],
+        omissions: const [],
         proposal: big.proposal,
         effects: RecognitionEffects.none,
       );

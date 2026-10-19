@@ -42,7 +42,9 @@ observeToolchainMarker(ScannedSource source, DerivedObservationBudget budget) {
   final kind = source.kind == SourceKind.fvmConfig
       ? EvidenceKind.fvm
       : EvidenceKind.flutterVersionFile;
-  budget.row([kind, source.path, declared, source.read.fingerprint]);
+  budget.row(
+    evidenceRowTexts(kind, source.path, declared, source.read.fingerprint),
+  );
   final evidence = EvidenceDraft(
     kind: kind,
     path: source.path,

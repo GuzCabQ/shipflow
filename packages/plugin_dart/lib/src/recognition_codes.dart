@@ -1,3 +1,5 @@
+import 'package:core/core.dart';
+
 /// Los códigos de las limitaciones que el reconocimiento puede informar.
 abstract final class LimitationCode {
   static const symlinkNotFollowed = 'symlink_not_followed';
@@ -34,3 +36,41 @@ abstract final class EvidenceKind {
   static const fvm = 'toolchain.fvm';
   static const flutterVersionFile = 'toolchain.flutter_version_file';
 }
+
+/// Qué sostiene cada tipo de evidencia y cómo nombrarlo ante una persona.
+/// La CLI agrupa por rol y muestra la etiqueta, sin interpretar el tipo.
+const _presentation = {
+  EvidenceKind.packageName: (EvidenceRole.identity, 'Nombre del paquete'),
+  EvidenceKind.flutterDependency: (
+    EvidenceRole.identity,
+    'Dependencia del SDK de Flutter',
+  ),
+  EvidenceKind.sdkConstraint: (
+    EvidenceRole.environment,
+    'Restricción declarada del SDK de Dart',
+  ),
+  EvidenceKind.flutterConstraint: (
+    EvidenceRole.environment,
+    'Restricción declarada de Flutter',
+  ),
+  EvidenceKind.fvm: (EvidenceRole.environment, 'Versión de Flutter en .fvmrc'),
+  EvidenceKind.flutterVersionFile: (
+    EvidenceRole.environment,
+    'Versión de Flutter en flutter-version.txt',
+  ),
+  EvidenceKind.pathDependency: (EvidenceRole.relation, 'Dependencia local'),
+  EvidenceKind.workspaceMember: (
+    EvidenceRole.relation,
+    'Miembro del workspace',
+  ),
+};
+
+/// El rol de [kind]; un tipo sin rol es un defecto de este plugin.
+EvidenceRole evidenceRoleOf(String kind) => _presentationOf(kind).$1;
+
+/// La etiqueta de [kind] para la vista humana.
+String evidenceLabelOf(String kind) => _presentationOf(kind).$2;
+
+(EvidenceRole, String) _presentationOf(String kind) =>
+    _presentation[kind] ??
+    (throw ArgumentError.value(kind, 'kind', 'tipo de evidencia sin rol'));

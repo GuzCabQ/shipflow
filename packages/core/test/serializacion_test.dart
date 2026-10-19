@@ -100,6 +100,18 @@ void main() {
             effects.toJson(),
             (j) => RecognitionEffects.fromJson(j).toJson(),
           ),
+          'RecognitionRelation': (
+            relation.toJson(),
+            (j) => RecognitionRelation.fromJson(j).toJson(),
+          ),
+          'ContextSource': (
+            contextSource.toJson(),
+            (j) => ContextSource.fromJson(j).toJson(),
+          ),
+          'RecognitionOmission': (
+            omission.toJson(),
+            (j) => RecognitionOmission.fromJson(j).toJson(),
+          ),
           'RecognitionContribution': (
             contribution.toJson(),
             (j) => RecognitionContribution.fromJson(j).toJson(),
@@ -142,11 +154,15 @@ void main() {
         'requestedRoot',
         'resolvedRoot',
         'repository',
+        'recognitionScope',
         'candidates',
         'units',
         'evidence',
         'conflicts',
         'limitations',
+        'relations',
+        'contextSources',
+        'omissions',
         'proposal',
         'effects',
       ]);

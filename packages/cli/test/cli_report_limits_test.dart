@@ -94,6 +94,8 @@ void main() {
             evidence: [
               for (var i = 0; i < 16385; i++)
                 RecognitionEvidence(
+                  role: EvidenceRole.identity,
+                  label: 'Nombre del paquete',
                   id: 'e$i',
                   kind: 'k',
                   path: 'p',
@@ -164,6 +166,8 @@ void main() {
             evidence: [
               for (var i = 0; i < 250; i++)
                 RecognitionEvidence(
+                  role: EvidenceRole.identity,
+                  label: 'Nombre del paquete',
                   id: 'e$i',
                   kind: 'k',
                   path: 'p',
