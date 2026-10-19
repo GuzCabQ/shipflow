@@ -21,6 +21,30 @@ void main() {
       expect(result.json['resolvedRoot'], process.root.path);
     });
 
+    test('la raíz de composición entrega el catálogo completo', () async {
+      process.place('pubspec.yaml', 'name: app\n');
+      process.place('CLAUDE.md', 'no se lee');
+      final result = await process.runSource(['init', '--dry-run', '--json']);
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(result.json['schemaVersion'], 2);
+      final sources = [
+        for (final s
+            in (result.json['contextSources']! as List<Object?>)
+                .cast<Map<String, Object?>>())
+          '${s['path']}:${s['entityType']}',
+      ];
+      expect(sources, [
+        '.github/workflows:missing',
+        '.gitlab-ci.yml:missing',
+        'AGENTS.md:missing',
+        'CLAUDE.md:file',
+        'Makefile:missing',
+        'README.md:missing',
+        'analysis_options.yaml:missing',
+        'docs:missing',
+      ]);
+    });
+
     test('una raíz vacía no es soportada', () async {
       final result = await process.runSource(['init', '--dry-run', '--json']);
       expect(result.exitCode, 65);
