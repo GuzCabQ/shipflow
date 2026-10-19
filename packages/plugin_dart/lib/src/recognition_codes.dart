@@ -18,6 +18,9 @@ abstract final class LimitationCode {
       'optional_description_unavailable';
   static const unsupportedResourceDeclaration =
       'unsupported_resource_declaration';
+  static const requiredPathExcluded = 'required_path_excluded';
+  static const requiredManifestMissing = 'required_manifest_missing';
+  static const unsupportedLocalReference = 'unsupported_local_reference';
 }
 
 /// Los códigos de los conflictos que el reconocimiento no resuelve.
@@ -27,6 +30,7 @@ abstract final class ConflictCode {
   static const flutterConstraintsDisjoint = 'flutter_constraints_disjoint';
   static const sdkConstraintsDisjoint = 'sdk_constraints_disjoint';
   static const duplicatePackageName = 'duplicate_package_name';
+  static const localDependencyNameMismatch = 'local_dependency_name_mismatch';
 }
 
 /// Los tipos de evidencia que el reconocimiento produce.

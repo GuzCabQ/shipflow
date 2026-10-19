@@ -28,7 +28,7 @@ void main() {
 
   test('un .. dentro de la raíz sigue dentro', () async {
     sandbox.directory('a');
-    sandbox.directory('b');
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
     expect(await limitationsFor('a/../b'), isEmpty);
   });
 
@@ -78,9 +78,10 @@ void main() {
     });
   });
 
+  // Dentro, pero sin un manifiesto que corrobore el destino.
   test('un sufijo bajo un archivo interior queda dentro', () async {
     sandbox.place('archivo', '');
-    expect(await limitationsFor('archivo/sub'), isEmpty);
+    expect(await limitationsFor('archivo/sub'), {'required_manifest_missing'});
   });
 
   test('la limitación nombra la dependencia que la causa', () async {
@@ -91,13 +92,16 @@ void main() {
     final contribution = await recognizeDartProject(sandbox.root);
     expect([for (final l in contribution.limitations) l.message]..sort(), [
       'la dependencia local «dependencies.x: ../x» sale de la raíz y no se '
-          'atraviesa',
+          'atraviesa; la relación queda sin corroborar y la propuesta no es '
+          'elegible. Para corroborarla, inspecciona una raíz que contenga '
+          'ambos paquetes.',
       'la dependencia local «dependencies.y: falta/../y» no se pudo resolver '
-          'y no se atraviesa',
+          'y no se atraviesa; la relación queda sin corroborar y la propuesta '
+          'no es elegible. Comprueba que la ruta exista y se pueda leer.',
     ]);
   });
 
   test('una ruta inexistente bajo la raíz queda dentro', () async {
-    expect(await limitationsFor('vendor/pkg'), isEmpty);
+    expect(await limitationsFor('vendor/pkg'), {'required_manifest_missing'});
   });
 }
