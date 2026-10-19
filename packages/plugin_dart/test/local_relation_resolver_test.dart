@@ -132,6 +132,48 @@ void main() {
         'unsupported_local_reference',
       ),
       (
+        'a workspace member that is the root itself',
+        'workspace:\n  - .\n',
+        () {},
+        'unsupported_local_reference',
+      ),
+      (
+        'a workspace member that is the root with a slash',
+        'workspace:\n  - ./\n',
+        () {},
+        'unsupported_local_reference',
+      ),
+      (
+        'a null workspace member',
+        'workspace:\n  - null\n',
+        () {},
+        'invalid_manifest',
+      ),
+      (
+        'a numeric workspace member',
+        'workspace:\n  - 456\n',
+        () {},
+        'invalid_manifest',
+      ),
+      (
+        'a numeric path',
+        'dependencies:\n  b: {path: 123}\n',
+        () {},
+        'invalid_manifest',
+      ),
+      (
+        'a null path',
+        'dependencies:\n  b: {path: null}\n',
+        () {},
+        'invalid_manifest',
+      ),
+      (
+        'a file in the middle of the path',
+        'dependencies:\n  b: {path: archivo/../packages/b}\n',
+        () => sandbox.place('archivo', 'regular'),
+        'path_dependency_unresolved',
+      ),
+      (
         'inside the baseline exclusion build',
         'dependencies:\n  c: {path: build/c}\n',
         () => sandbox.place('build/c/pubspec.yaml', 'name: c\n'),
@@ -145,6 +187,7 @@ void main() {
         final report = await recognize();
         expect(report.relations.single.status, RelationStatus.unresolved);
         expect(report.relations.single.targetUnitId, isNull);
+        expect(report.relations.single.evidenceIds, isNotEmpty);
         expect(blockingOf(report), contains(code));
         final diagnostic = report.limitations.firstWhere((l) => l.code == code);
         expect(diagnostic.path, 'pubspec.yaml');

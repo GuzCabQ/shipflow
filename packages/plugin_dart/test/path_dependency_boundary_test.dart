@@ -33,35 +33,25 @@ void main() {
     expect(await limitationsFor('a/../b'), isEmpty);
   });
 
-  test('un .. se aplica después de seguir el enlace que lo precede', () async {
+  test('un enlace detiene el trayecto antes de su destino', () async {
     Directory('${outside.path}/deep').createSync();
     Directory('${outside.path}/dep').createSync();
     Link('${sandbox.root.path}/vendor').createSync('${outside.path}/deep');
     expect(await limitationsFor('vendor/../dep'), {
-      'path_dependency_outside_root',
+      'unsupported_local_reference',
       'symlink_not_followed',
     });
   });
 
-  test('un enlace seguido de un tramo inexistente sale', () async {
-    Link('${sandbox.root.path}/vendor').createSync(outside.path);
-    expect(await limitationsFor('vendor/falta/pkg'), {
-      'path_dependency_outside_root',
-      'symlink_not_followed',
-    });
-  });
-
-  test('un .. después de un tramo inexistente no se resuelve', () async {
-    sandbox.directory('b');
-    expect(await limitationsFor('falta/../b'), {'path_dependency_unresolved'});
-  });
-
-  test('un enlace roto no se toma como pertenencia', () async {
-    Link('${sandbox.root.path}/vendor').createSync('${outside.path}/no-existe');
-    expect(await limitationsFor('vendor/pkg'), {
-      'path_dependency_unresolved',
-      'symlink_not_followed',
-    });
+  test('el destino de un enlace no cambia el resultado', () async {
+    final vendor = Link('${sandbox.root.path}/vendor')
+      ..createSync(outside.path);
+    final live = await limitationsFor('vendor/falta/pkg');
+    vendor
+      ..deleteSync()
+      ..createSync('${outside.path}/no-existe');
+    expect(await limitationsFor('vendor/falta/pkg'), live);
+    expect(live, {'unsupported_local_reference', 'symlink_not_followed'});
   });
 
   test(
@@ -92,10 +82,23 @@ void main() {
     });
   });
 
-  // Dentro, pero sin un manifiesto que corrobore el destino.
-  test('un sufijo bajo un archivo interior queda dentro', () async {
+  test('nada existe debajo de un archivo interior', () async {
     sandbox.place('archivo', '');
-    expect(await limitationsFor('archivo/sub'), {'required_manifest_missing'});
+    expect(await limitationsFor('archivo/sub'), {'path_dependency_unresolved'});
+  });
+
+  test('un .. no sube desde un archivo interior', () async {
+    sandbox.place('archivo', '');
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
+    expect(await limitationsFor('archivo/../b'), {
+      'path_dependency_unresolved',
+    });
+  });
+
+  test('un .. no sube desde una entidad especial', () async {
+    await Process.run('mkfifo', ['${sandbox.root.path}/fifo']);
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
+    expect(await limitationsFor('fifo/../b'), {'path_dependency_unresolved'});
   });
 
   test('la limitación nombra la dependencia que la causa', () async {

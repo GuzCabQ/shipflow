@@ -356,8 +356,12 @@ Cada dependencia `path:` de `dependencies`, `dev_dependencies` y
 `dependency_overrides`, y cada miembro de `workspace`, es una relación. Sólo se
 interpretan rutas literales: una vacía, con URI o con patrones es
 `unsupported_local_reference`, y un miembro del workspace tiene que ser relativo
-y descendiente. La ruta se resuelve tramo a tramo, como lo haría el sistema y
-siguiendo cada enlace antes del siguiente `..`, pero nada se atraviesa.
+y descendiente: `.` y `./` no lo son. Una ruta o un miembro que no es texto
+(`null`, un número) es `invalid_manifest`, y la relación se conserva sin
+resolver. La ruta se recorre tramo a tramo sin seguir enlaces y se detiene en
+la primera frontera: un enlace, la salida de la raíz, un árbol omitido o algo
+que no es un directorio. No se mira nada más allá, así que el resultado no
+depende del destino de un enlace ni de lo que haya fuera de la raíz.
 
 Una relación queda **corroborada** sólo si su destino es un paquete observado
 con manifiesto válido y nombre y, en una dependencia, con el mismo nombre que
@@ -367,8 +371,9 @@ compile ni resuelva sus dependencias. Si no, queda **sin resolver** y bloquea:
 | Causa | Código |
 |---|---|
 | El trayecto sale de la raíz, aunque vuelva a entrar | `path_dependency_outside_root` |
-| No se puede decidir: enlace roto, NUL, tramo sin permiso, `..` tras un tramo inexistente | `path_dependency_unresolved` |
-| Pasa por un enlace, o usa una forma no soportada | `unsupported_local_reference` |
+| No se puede decidir: NUL, tramo sin permiso, un tramo debajo de un archivo, `..` tras un tramo inexistente | `path_dependency_unresolved` |
+| Pasa por un enlace, roto o no, o usa una forma no soportada | `unsupported_local_reference` |
+| La ruta o el miembro no es texto | `invalid_manifest` |
 | Entra en un árbol omitido, aunque ese árbol sea un enlace | `required_path_excluded` |
 | El destino no existe o no tiene un manifiesto con nombre | `required_manifest_missing` |
 | El destino se llama distinto de lo declarado | conflicto `local_dependency_name_mismatch` |

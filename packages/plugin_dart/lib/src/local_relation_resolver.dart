@@ -80,7 +80,7 @@ final class _Resolver {
           RelationKind.localDependency,
           d.evidenceValue,
           d.truncated ? null : d.name,
-          d.truncated ? null : d.path,
+          d.truncated || !d.literal ? null : d.path,
           manifest.pathDependencies[i],
         ),
       );
@@ -92,7 +92,7 @@ final class _Resolver {
           RelationKind.workspaceMember,
           'workspace: ${member.text}',
           null,
-          member.truncated ? null : member.text,
+          member.truncated || !member.literal ? null : member.text,
           manifest.workspace[i],
         ),
       );
@@ -103,7 +103,8 @@ final class _Resolver {
     if (manifest.name case final name?) _targets[manifest.unitPath] = name;
   }
 
-  /// Un valor truncado ya bloquea en su manifiesto y no se interpreta.
+  /// Un valor truncado o que no es texto ya bloquea en su manifiesto y no
+  /// se interpreta.
   void resolve((ManifestEvidence, Declaration) declared) {
     final (manifest, declaration) = declared;
     final path = declaration.path;

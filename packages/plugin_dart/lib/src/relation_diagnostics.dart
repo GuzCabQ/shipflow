@@ -17,7 +17,8 @@ final class Declaration {
   /// evidencia se truncó.
   final String? name;
 
-  /// La ruta declarada; null si se truncó: entonces no se interpreta.
+  /// La ruta declarada; null si se truncó o no es texto: entonces no se
+  /// interpreta.
   final String? path;
   final EvidenceDraft evidence;
 }
@@ -30,11 +31,18 @@ String? unsupportedForm(RelationKind kind, String path) {
   if (path.isEmpty) return 'declara una ruta vacía';
   if (path.contains(':')) return 'declara una URI';
   if (_globCharacters.any(path.contains)) return 'declara un patrón';
-  if (kind == RelationKind.workspaceMember &&
-      (path.startsWith('/') || path.split('/').contains('..'))) {
+  if (kind == RelationKind.workspaceMember && !_descends(path)) {
     return 'no es un miembro relativo descendiente';
   }
   return null;
+}
+
+/// Si [path] es relativa y nombra algo debajo de su directorio: `.` y `./`
+/// son el directorio mismo.
+bool _descends(String path) {
+  if (path.startsWith('/')) return false;
+  final segments = path.split('/').where((s) => s.isNotEmpty && s != '.');
+  return segments.isNotEmpty && !segments.contains('..');
 }
 
 /// La limitación bloqueante que ubica una relación sin destino observable:

@@ -185,7 +185,7 @@ dependency_overrides:
       );
       for (final value in [
         observed.facts!.sdkConstraint!,
-        observed.facts!.workspace.single,
+        observed.facts!.workspace.single.shown,
       ]) {
         expect(value.truncated, isTrue);
         expect(utf8.encode(value.text).length, lessThanOrEqualTo(4096));

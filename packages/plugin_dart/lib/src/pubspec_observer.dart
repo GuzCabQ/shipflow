@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
+export 'manifest_facts.dart';
 export 'path_dependency_facts.dart';
 
 import 'derived_observation_budget.dart';
 import 'evidence_draft.dart';
+import 'manifest_facts.dart';
 import 'manifest_resources.dart';
 import 'observed_value.dart';
 import 'path_dependency_facts.dart';
@@ -22,47 +24,6 @@ const _pathDependencySections = [
   'dev_dependencies',
   'dependency_overrides',
 ];
-
-/// Sólo los hechos que el reconocimiento usa, nunca el árbol entero.
-final class ManifestFacts {
-  ManifestFacts({
-    required this.source,
-    required this.name,
-    required this.sdkConstraint,
-    required this.flutterConstraint,
-    required this.flutterDependency,
-    required List<PathDependencyFact> pathDependencies,
-    required List<ObservedValue> workspace,
-    this.description,
-    List<String> resourceDirectories = const [],
-  }) : pathDependencies = List.unmodifiable(pathDependencies),
-       workspace = List.unmodifiable(workspace),
-       resourceDirectories = List.unmodifiable(resourceDirectories);
-
-  final ScannedSource source;
-  final String? name;
-  final ObservedValue? sdkConstraint;
-  final ObservedValue? flutterConstraint;
-  final bool flutterDependency;
-  final List<PathDependencyFact> pathDependencies;
-  final List<ObservedValue> workspace;
-
-  /// Entera o ausente: una descripción que no cabe no se conserva.
-  final String? description;
-
-  /// Directorios literales bajo `assets/`, normalizados y con `/` final;
-  /// sólo los de un paquete que declara la dependencia del SDK Flutter.
-  final List<String> resourceDirectories;
-}
-
-final class ManifestObservation {
-  ManifestObservation(this.facts, List<RecognitionLimitation> limitations)
-    : limitations = List.unmodifiable(limitations);
-
-  /// Null si el manifiesto no se pudo leer como un mapa YAML.
-  final ManifestFacts? facts;
-  final List<RecognitionLimitation> limitations;
-}
 
 /// Los hechos de [source]. Cada uno que será evidencia se cobra a [budget]
 /// al extraerse, antes de retenerlo; las listas se recorren de a uno.
@@ -218,7 +179,7 @@ final class _Observer {
     return observed;
   }
 
-  List<ObservedValue> workspace(Object? node) {
+  List<WorkspaceMemberFact> workspace(Object? node) {
     if (node == null) return const [];
     if (node is! YamlList) {
       _invalid('«workspace» no es una lista');
@@ -226,11 +187,22 @@ final class _Observer {
     }
     return budget
         .admitEach(
-          node.map((item) => text(item, 'workspace')).nonNulls,
+          node.map(member),
           textsOf: (m) => _evidenceTexts(EvidenceKind.workspaceMember, m.text),
           build: (m) => m,
         )
         .toList();
+  }
+
+  /// Un miembro que no es texto se conserva como declaración fallida: se
+  /// muestra, bloquea y nunca se interpreta como ruta.
+  WorkspaceMemberFact member(Object? node) {
+    if (node is String) return WorkspaceMemberFact(text(node, 'workspace')!);
+    _invalid('«workspace» tiene un miembro que no es texto');
+    return WorkspaceMemberFact(
+      boundObservedValue(shownValue(node)),
+      literal: false,
+    );
   }
 
   List<PathDependencyFact> pathDependencies(Object? node, String section) {
@@ -251,8 +223,7 @@ final class _Observer {
                   e.key as String,
                   (e.value as YamlMap)['path'],
                 ),
-              )
-              .nonNulls,
+              ),
           textsOf: (d) =>
               _evidenceTexts(EvidenceKind.pathDependency, d.evidenceValue),
           build: (d) => d,
@@ -261,13 +232,13 @@ final class _Observer {
   }
 
   /// La dependencia, marcada como truncada si su evidencia
-  /// `<sección>.<nombre>: <ruta>` no cabe entera.
-  PathDependencyFact? _pathDependency(
-    String section,
-    String key,
-    Object? path,
-  ) {
-    if (path is! String) return _invalid('«$section.*.path» no es texto');
+  /// `<sección>.<nombre>: <ruta>` no cabe entera. Una ruta que no es texto
+  /// se conserva como declaración fallida.
+  PathDependencyFact _pathDependency(String section, String key, Object? path) {
+    if (path is! String) {
+      _invalid('«$section.*.path» no es texto');
+      return PathDependencyFact(section, key, shownValue(path), literal: false);
+    }
     final dependency = PathDependencyFact(section, key, path);
     if (dependency.truncated) {
       _limit(
