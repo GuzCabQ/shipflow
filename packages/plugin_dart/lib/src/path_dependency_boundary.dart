@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'path_probe.dart';
 import 'pubspec_observer.dart';
 
 enum PathDependencyPlacement { inside, outside, unresolved }
@@ -46,7 +47,7 @@ String? _resolve(String path) {
     if (missing) continue;
     if (FileSystemEntity.typeSync(current, followLinks: false) ==
         FileSystemEntityType.notFound) {
-      if (!_absent(current)) return null;
+      if (!isAbsentPath(current)) return null;
       missing = true;
       continue;
     }
@@ -57,19 +58,4 @@ String? _resolve(String path) {
     }
   }
   return current.isEmpty ? '/' : current;
-}
-
-/// ENOENT y ENOTDIR, iguales en macOS y Linux: no existe, o un tramo
-/// anterior es un archivo y nada puede existir debajo.
-const _absentErrors = {2, 20};
-
-/// Si [path] no existe de verdad. Un tramo que no se puede mirar, por
-/// permisos u otro motivo, no cuenta como inexistente.
-bool _absent(String path) {
-  try {
-    File(path).resolveSymbolicLinksSync();
-    return false;
-  } on FileSystemException catch (error) {
-    return _absentErrors.contains(error.osError?.errorCode);
-  }
 }

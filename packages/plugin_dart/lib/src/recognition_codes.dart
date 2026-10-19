@@ -14,6 +14,10 @@ abstract final class LimitationCode {
   static const pathDependencyOutsideRoot = 'path_dependency_outside_root';
   static const pathDependencyUnresolved = 'path_dependency_unresolved';
   static const observedValueTruncated = 'observed_value_truncated';
+  static const optionalDescriptionUnavailable =
+      'optional_description_unavailable';
+  static const unsupportedResourceDeclaration =
+      'unsupported_resource_declaration';
 }
 
 /// Los códigos de los conflictos que el reconocimiento no resuelve.
@@ -33,6 +37,8 @@ abstract final class EvidenceKind {
   static const flutterDependency = 'manifest.flutter_dependency';
   static const pathDependency = 'manifest.path_dependency';
   static const workspaceMember = 'manifest.workspace_member';
+  static const description = 'manifest.description';
+  static const resourceDirectory = 'manifest.resource_directory';
   static const fvm = 'toolchain.fvm';
   static const flutterVersionFile = 'toolchain.flutter_version_file';
 }
@@ -62,6 +68,11 @@ const _presentation = {
   EvidenceKind.workspaceMember: (
     EvidenceRole.relation,
     'Miembro del workspace',
+  ),
+  EvidenceKind.description: (EvidenceRole.description, 'Descripción declarada'),
+  EvidenceKind.resourceDirectory: (
+    EvidenceRole.resource,
+    'Directorio de recursos declarado',
   ),
 };
 

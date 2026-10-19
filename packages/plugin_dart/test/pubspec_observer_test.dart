@@ -228,4 +228,44 @@ dependency_overrides:
       expect(observed.limitations, isEmpty);
     });
   });
+
+  group('description is optional and never blocks', () {
+    test('a string description is kept as declared', () {
+      final observed = observeManifest(
+        manifest('name: app\ndescription: "Una app \\u001b[31m"\n'),
+      );
+      expect(observed.facts!.description, 'Una app \u001b[31m');
+      expect(observed.limitations, isEmpty);
+    });
+
+    test('an absent description is not informed', () {
+      final observed = observeManifest(manifest('name: app\n'));
+      expect(observed.facts!.description, isNull);
+      expect(observed.limitations, isEmpty);
+    });
+
+    for (final (name, value) in [
+      ('a non-string description', '[1, 2]'),
+      ('a description over 4096 bytes', 'ñ' * 2049),
+    ]) {
+      test('$name is omitted with a non-blocking limitation', () {
+        final observed = observeManifest(
+          manifest('name: app\ndescription: $value\n'),
+        );
+        expect(observed.facts!.description, isNull);
+        expect(observed.limitations.map((l) => '${l.code}:${l.blocking}'), [
+          'optional_description_unavailable:false',
+        ]);
+      });
+    }
+
+    test('exactly 4096 bytes is kept whole', () {
+      final value = 'ñ' * 2048;
+      final observed = observeManifest(
+        manifest('name: app\ndescription: $value\n'),
+      );
+      expect(observed.facts!.description, value);
+      expect(observed.limitations, isEmpty);
+    });
+  });
 }

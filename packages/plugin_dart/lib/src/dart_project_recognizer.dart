@@ -8,7 +8,7 @@ import 'manifest_evidence.dart';
 import 'observed_value.dart';
 import 'path_dependency_boundary.dart';
 import 'project_scanner.dart';
-import 'pubspec_observer.dart';
+import 'context_source_rule.dart';
 import 'recognition_codes.dart';
 import 'scan_limits.dart';
 import 'toolchain_observer.dart';
@@ -23,11 +23,20 @@ const _flutterPackage = 'flutter_package';
 /// herramientas, no resuelve dependencias y no consulta el SDK instalado.
 /// Lo que retiene se cobra a un único presupuesto de [reportLimits] antes de
 /// construirse; si no cabe, lanza [ReportLimitExceeded] y no devuelve nada.
+///
+/// [contextSources] es el catálogo de fuentes candidatas que la raíz de
+/// composición entrega: sólo se consultan sus metadatos.
 Future<RecognitionContribution> recognizeDartProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
   ReportLimits reportLimits = const ReportLimits(),
-}) => recognizeListing(root, limits: limits, reportLimits: reportLimits);
+  List<ContextSourceRule> contextSources = const [],
+}) => recognizeListing(
+  root,
+  limits: limits,
+  reportLimits: reportLimits,
+  contextSources: contextSources,
+);
 
 /// [recognizeDartProject] con el listado de directorios inyectable, para que
 /// las pruebas comprueben que el orden del sistema no cambia el resultado.
@@ -36,6 +45,7 @@ Future<RecognitionContribution> recognizeListing(
   ScanLimits limits = const ScanLimits(),
   ReportLimits reportLimits = const ReportLimits(),
   DirectoryLister list = listWithoutFollowing,
+  List<ContextSourceRule> contextSources = const [],
 }) async {
   final budget = DerivedObservationBudget(reportLimits);
   final scan = await scanProject(
@@ -43,38 +53,40 @@ Future<RecognitionContribution> recognizeListing(
     limits: limits,
     list: list,
     budget: budget,
+    contextSources: contextSources,
   );
-  final observed = _Observations(root, budget)
-    ..limitations.addAll(scan.limitations);
-  scan.sources.forEach(observed.add);
+  final observed = _Observations(root, budget, scan)
+    ..limitations.addAll(scan.limitations)
+    ..limitations.addAll(scan.manifestLimitations);
+  scan.manifests.forEach(observed.addManifest);
+  scan.sources
+      .where((s) => s.kind != SourceKind.manifest)
+      .forEach(observed.addMarker);
   return observed.contribution();
 }
 
 final class _Observations {
-  _Observations(this.root, this.budget);
+  _Observations(this.root, this.budget, this.scan);
 
   final Directory root;
   final DerivedObservationBudget budget;
+  final ScanResult scan;
   final manifests = <ManifestEvidence>[];
   final markers = <ToolchainMarker>[];
   final limitations = <RecognitionLimitation>[];
   final flutterConstraints = <ConstraintEvidence>[];
   final sdkConstraints = <ConstraintEvidence>[];
 
-  void add(ScannedSource source) {
-    if (source.kind != SourceKind.manifest) {
-      final (:marker, :limitation) = observeToolchainMarker(source, budget);
-      if (marker != null) markers.add(marker);
-      if (limitation != null) limitations.add(limitation);
-      return;
-    }
-    final observation = observeManifest(source, budget: budget);
-    limitations.addAll(observation.limitations);
-    if (observation.facts case final facts?) _addManifest(facts);
+  void addMarker(ScannedSource source) {
+    final (:marker, :limitation) = observeToolchainMarker(source, budget);
+    if (marker != null) markers.add(marker);
+    if (limitation != null) limitations.add(limitation);
   }
 
-  void _addManifest(ManifestFacts facts) {
-    final evidence = ManifestEvidence(facts);
+  /// Un manifiesto que el escáner ya analizó y cobró: aquí sólo se usan
+  /// sus hechos.
+  void addManifest(ManifestEvidence evidence) {
+    final facts = evidence.facts;
     manifests.add(evidence);
     _addConstraint(evidence.sdkConstraint, facts.sdkConstraint, sdkConstraints);
     _addConstraint(
@@ -125,21 +137,27 @@ final class _Observations {
       candidates: [?_candidate(idsOf)],
       units: _units(idsOf),
       evidence: [
-        for (final MapEntry(key: d, value: id) in ids.entries)
-          RecognitionEvidence(
-            id: id,
-            kind: d.kind,
-            role: evidenceRoleOf(d.kind),
-            label: evidenceLabelOf(d.kind),
-            path: d.path,
-            value: d.value,
-            fingerprint: d.fingerprint,
-          ),
+        for (final MapEntry(key: d, value: id) in ids.entries) _evidence(d, id),
       ],
       conflicts: _conflicts(ids),
       limitations: limitations,
+      contextSources: scan.contextSources,
+      omissions: _omissions(idsOf),
     );
   }
+
+  /// Las referencias de cada omisión se admiten al proyectarla; su fila ya
+  /// se cobró al encontrarla.
+  List<RecognitionOmission> _omissions(
+    List<String> Function(Iterable<EvidenceDraft>) idsOf,
+  ) => [
+    for (final o in scan.omissions)
+      RecognitionOmission(
+        path: o.path,
+        rule: o.rule,
+        evidenceIds: idsOf(o.evidence),
+      ),
+  ];
 
   /// Las posiciones de referencia ya se cobraron con cada borrador; aquí
   /// sólo los bytes de los IDs, que recién existen.
@@ -241,6 +259,18 @@ final class _Observations {
     );
   }
 }
+
+/// Una evidencia ya cobrada, con el ID que recién se le asignó.
+RecognitionEvidence _evidence(EvidenceDraft d, String id) =>
+    RecognitionEvidence(
+      id: id,
+      kind: d.kind,
+      role: evidenceRoleOf(d.kind),
+      label: evidenceLabelOf(d.kind),
+      path: d.path,
+      value: d.value,
+      fingerprint: d.fingerprint,
+    );
 
 /// Por qué la dependencia local [declared] no se atraviesa, o null si queda
 /// dentro. [declared] es su evidencia, `<sección>.<nombre>: <ruta>`, entera.

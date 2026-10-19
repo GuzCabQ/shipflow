@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
+export 'path_dependency_facts.dart';
+
 import 'derived_observation_budget.dart';
 import 'evidence_draft.dart';
+import 'manifest_resources.dart';
 import 'observed_value.dart';
+import 'path_dependency_facts.dart';
 import 'yaml_nesting_guard.dart';
 import 'project_scanner.dart';
 import 'recognition_codes.dart';
@@ -19,28 +23,6 @@ const _pathDependencySections = [
   'dependency_overrides',
 ];
 
-final class PathDependencyFact {
-  const PathDependencyFact(this.section, this.name, this.path);
-
-  final String section;
-  final String name;
-
-  /// Tal como la declara el manifiesto, relativa a su directorio o absoluta.
-  final String path;
-
-  /// Cómo se muestra como evidencia, acotada.
-  String get evidenceValue => _observed.text;
-
-  /// Si la evidencia no cabe entera: entonces la ruta no se interpreta.
-  bool get truncated => _observed.truncated;
-
-  ObservedValue get _observed =>
-      boundObservedValue(describePathDependency(section, name, path));
-}
-
-String describePathDependency(String section, String name, String path) =>
-    '$section.$name: $path';
-
 /// Sólo los hechos que el reconocimiento usa, nunca el árbol entero.
 final class ManifestFacts {
   ManifestFacts({
@@ -51,8 +33,11 @@ final class ManifestFacts {
     required this.flutterDependency,
     required List<PathDependencyFact> pathDependencies,
     required List<ObservedValue> workspace,
+    this.description,
+    List<String> resourceDirectories = const [],
   }) : pathDependencies = List.unmodifiable(pathDependencies),
-       workspace = List.unmodifiable(workspace);
+       workspace = List.unmodifiable(workspace),
+       resourceDirectories = List.unmodifiable(resourceDirectories);
 
   final ScannedSource source;
   final String? name;
@@ -61,6 +46,13 @@ final class ManifestFacts {
   final bool flutterDependency;
   final List<PathDependencyFact> pathDependencies;
   final List<ObservedValue> workspace;
+
+  /// Entera o ausente: una descripción que no cabe no se conserva.
+  final String? description;
+
+  /// Directorios literales bajo `assets/`, normalizados y con `/` final;
+  /// sólo los de un paquete que declara la dependencia del SDK Flutter.
+  final List<String> resourceDirectories;
 }
 
 final class ManifestObservation {
@@ -103,6 +95,7 @@ final class _Observer {
   /// Los hechos de [document], cada uno cobrado al extraerse.
   ManifestFacts facts(YamlMap document) {
     final environment = map(document['environment'], 'environment');
+    final flutter = flutterDependency(document['dependencies']);
     return ManifestFacts(
       source: source,
       name: fact(EvidenceKind.packageName, document['name'], 'name')?.text,
@@ -116,13 +109,53 @@ final class _Observer {
         environment?['flutter'],
         'environment.flutter',
       ),
-      flutterDependency: flutterDependency(document['dependencies']),
+      flutterDependency: flutter,
       pathDependencies: [
         for (final section in _pathDependencySections)
           ...pathDependencies(document[section], section),
       ],
       workspace: workspace(document['workspace']),
+      description: description(document['description']),
+      resourceDirectories: flutter ? resources(document['flutter']) : const [],
     );
+  }
+
+  /// La descripción, cobrada como evidencia, o una limitación que no
+  /// bloquea: es opcional.
+  String? description(Object? node) {
+    final (:value, :problem) = declaredDescription(node);
+    if (problem != null) {
+      _limit(
+        LimitationCode.optionalDescriptionUnavailable,
+        '«description» $problem; se omite y no afecta el reconocimiento',
+        blocking: false,
+      );
+    }
+    if (value != null) {
+      budget.row(_evidenceTexts(EvidenceKind.description, value));
+    }
+    return value;
+  }
+
+  /// Los directorios de recursos admitidos, de a uno: cada uno se cobra
+  /// como evidencia y cada forma no soportada se informa sin bloquear.
+  List<String> resources(Object? flutter) => [
+    for (final entry in resourceEntries(flutter))
+      if (_admitResource(entry) case final path?) path,
+  ];
+
+  String? _admitResource(ResourceEntry entry) => switch (entry) {
+    ResourceDirectory(:final path) => _resourceDirectory(path),
+    UnsupportedResource(:final message) => _limit(
+      LimitationCode.unsupportedResourceDeclaration,
+      '$message; no concede exclusiones y el recorrido ordinario sigue',
+      blocking: false,
+    ),
+  };
+
+  String _resourceDirectory(String path) {
+    budget.row(_evidenceTexts(EvidenceKind.resourceDirectory, path));
+    return path;
   }
 
   /// Las partes de la evidencia de [value] que el reporte retendrá.
@@ -251,15 +284,16 @@ final class _Observer {
     return null;
   }
 
-  void _limit(String code, String message) {
+  Null _limit(String code, String message, {bool blocking = true}) {
     budget.row([code, message, source.path]);
     limitations.add(
       RecognitionLimitation(
         code: code,
         message: message,
         path: source.path,
-        blocking: true,
+        blocking: blocking,
       ),
     );
+    return null;
   }
 }
