@@ -6,6 +6,7 @@ export 'src/cli_command.dart'
     show
         CliCommand,
         RejectUsage,
+        ReportBudgetProfile,
         RunInitDryRun,
         ShowHelp,
         ShowVersion,
