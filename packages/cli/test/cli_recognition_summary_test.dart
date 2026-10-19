@@ -19,16 +19,31 @@ void main() {
       );
     });
 
-    test('10 conflictos se listan y los demás se cuentan', () {
-      List<RecognitionConflict> conflicts(int n) => [
-        for (var i = 0; i < n; i++)
-          RecognitionConflict(
-            code: 'c${i.toString().padLeft(2, '0')}',
-            message: 'conflicto $i',
-            evidenceIds: const ['e0000'],
-          ),
-      ];
-      expect(human(wide(conflicts: conflicts(10))), isNot(contains('Hay ')));
+    List<RecognitionConflict> conflicts(int n) => [
+      for (var i = 0; i < n; i++)
+        RecognitionConflict(
+          code: 'c${i.toString().padLeft(2, '0')}',
+          message: 'conflicto $i',
+          evidenceIds: const ['e0000'],
+        ),
+    ];
+
+    test('10 conflictos se listan enteros', () {
+      final payload = human(wide(conflicts: conflicts(10)));
+      for (var i = 0; i < 10; i++) {
+        expect(payload, contains('  - conflicto $i · fuentes:'));
+      }
+      expect(payload, isNot(contains('Hay ')));
+    });
+
+    test('el conflicto 11 se cuenta, no se lista', () {
+      final payload = human(wide(conflicts: conflicts(11)));
+      expect(payload, contains('  - conflicto 9 · fuentes:'));
+      expect(payload, isNot(contains('conflicto 10 ')));
+      expect(
+        payload,
+        contains('  Hay 1 conflicto adicional; consulta la salida JSON.\n'),
+      );
       expect(
         human(wide(conflicts: conflicts(12))),
         contains('  Hay 2 conflictos adicionales; consulta la salida JSON.\n'),
@@ -60,8 +75,9 @@ void main() {
     expect(payload, contains(r'a\nb\u{202e}c\x1b[2J'));
     expect(payload, isNot(contains('\u202E')));
     expect(payload, isNot(contains('\x1b')));
-    expect(payload, contains('${'x' * 200}…'));
-    expect(payload, isNot(contains('x' * 300)));
+    final name = report(unitName: 'x' * 300);
+    final line = human(name).split('\n').firstWhere((l) => l.contains('x'));
+    expect(line, '  ${'x' * 240}… · packages/b');
   });
 
   test('ninguna variante afirma persistencia, salud ni IDs internos', () {

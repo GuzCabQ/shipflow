@@ -27,9 +27,23 @@ Future<RecognitionContribution> recognizeDartProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
   ReportLimits reportLimits = const ReportLimits(),
+}) => recognizeListing(root, limits: limits, reportLimits: reportLimits);
+
+/// [recognizeDartProject] con el listado de directorios inyectable, para que
+/// las pruebas comprueben que el orden del sistema no cambia el resultado.
+Future<RecognitionContribution> recognizeListing(
+  Directory root, {
+  ScanLimits limits = const ScanLimits(),
+  ReportLimits reportLimits = const ReportLimits(),
+  DirectoryLister list = listWithoutFollowing,
 }) async {
   final budget = DerivedObservationBudget(reportLimits);
-  final scan = await scanProject(root, limits: limits, budget: budget);
+  final scan = await scanProject(
+    root,
+    limits: limits,
+    list: list,
+    budget: budget,
+  );
   final observed = _Observations(root, budget)
     ..limitations.addAll(scan.limitations);
   scan.sources.forEach(observed.add);
@@ -71,7 +85,8 @@ final class _Observations {
     for (final dependency in facts.pathDependencies) {
       if (dependency.truncated) continue;
       final placement = placePathDependency(root, facts, dependency);
-      if (_placementProblem(placement) case (final code, final message)?) {
+      final problem = _placementProblem(placement, dependency.evidenceValue);
+      if (problem case (final code, final message)?) {
         budget.row([code, message, facts.source.path]);
         limitations.add(
           RecognitionLimitation(
@@ -222,16 +237,19 @@ final class _Observations {
   }
 }
 
-/// Por qué una dependencia local no se atraviesa, o null si queda dentro.
-(String, String)? _placementProblem(PathDependencyPlacement placement) =>
-    switch (placement) {
-      PathDependencyPlacement.inside => null,
-      PathDependencyPlacement.outside => (
-        LimitationCode.pathDependencyOutsideRoot,
-        'una dependencia local sale de la raíz y no se atraviesa',
-      ),
-      PathDependencyPlacement.unresolved => (
-        LimitationCode.pathDependencyUnresolved,
-        'una dependencia local no se pudo resolver y no se atraviesa',
-      ),
-    };
+/// Por qué la dependencia local [declared] no se atraviesa, o null si queda
+/// dentro. [declared] es su evidencia, `<sección>.<nombre>: <ruta>`, entera.
+(String, String)? _placementProblem(
+  PathDependencyPlacement placement,
+  String declared,
+) => switch (placement) {
+  PathDependencyPlacement.inside => null,
+  PathDependencyPlacement.outside => (
+    LimitationCode.pathDependencyOutsideRoot,
+    'la dependencia local «$declared» sale de la raíz y no se atraviesa',
+  ),
+  PathDependencyPlacement.unresolved => (
+    LimitationCode.pathDependencyUnresolved,
+    'la dependencia local «$declared» no se pudo resolver y no se atraviesa',
+  ),
+};

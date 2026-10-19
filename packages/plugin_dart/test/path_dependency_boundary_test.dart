@@ -78,6 +78,25 @@ void main() {
     });
   });
 
+  test('un sufijo bajo un archivo interior queda dentro', () async {
+    sandbox.place('archivo', '');
+    expect(await limitationsFor('archivo/sub'), isEmpty);
+  });
+
+  test('la limitación nombra la dependencia que la causa', () async {
+    sandbox.place(
+      'pubspec.yaml',
+      'name: a\ndependencies:\n  x: {path: ../x}\n  y: {path: falta/../y}\n',
+    );
+    final contribution = await recognizeDartProject(sandbox.root);
+    expect([for (final l in contribution.limitations) l.message]..sort(), [
+      'la dependencia local «dependencies.x: ../x» sale de la raíz y no se '
+          'atraviesa',
+      'la dependencia local «dependencies.y: falta/../y» no se pudo resolver '
+          'y no se atraviesa',
+    ]);
+  });
+
   test('una ruta inexistente bajo la raíz queda dentro', () async {
     expect(await limitationsFor('vendor/pkg'), isEmpty);
   });

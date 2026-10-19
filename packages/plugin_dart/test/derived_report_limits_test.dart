@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
-import 'package:plugin_dart/plugin_dart.dart';
+import 'package:plugin_dart/src/dart_project_recognizer.dart';
 import 'package:plugin_dart/src/derived_observation_budget.dart';
+import 'package:plugin_dart/src/project_scanner.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';
@@ -191,34 +192,32 @@ environment:
     );
   });
 
-  test('el orden de creación no cambia la cota alcanzada', () async {
-    final dimensions = <ReportLimitDimension>[];
-    for (final order in [
-      ['a', 'b', 'c'],
-      ['c', 'b', 'a'],
-    ]) {
-      final root = await Directory.systemTemp.createTemp('shipflow-orden-');
-      addTearDown(() => root.delete(recursive: true));
-      for (final name in order) {
-        File('${root.path}/$name/pubspec.yaml')
-          ..parent.createSync()
-          ..writeAsStringSync('name: ${name * 300}\n');
-      }
-      try {
-        await recognizeDartProject(
-          Directory(root.resolveSymbolicLinksSync()),
-          reportLimits: const ReportLimits(
-            maxDerivedItems: 7,
-            maxDerivedTextBytes: 700,
-          ),
-        );
-        fail('debía exceder');
-      } on ReportLimitExceeded catch (e) {
-        dimensions.add(e.dimension);
-      }
-    }
-    expect(dimensions.toSet(), hasLength(1));
-  });
+  test(
+    'el orden en que el sistema lista no cambia la cota alcanzada',
+    () async {
+      // a pesa en texto (cinco miembros de 4000 bytes) y b en elementos
+      // (sesenta miembros cortos): si b se recorriera primero se agotarían los
+      // elementos; recorriendo en orden de ruta, a va primero y se agota el
+      // texto, liste como liste el sistema.
+      sandbox.place(
+        'a/pubspec.yaml',
+        'name: a\nworkspace:\n${'  - ${'w' * 4000}\n' * 5}',
+      );
+      sandbox.place('b/pubspec.yaml', 'name: b\nworkspace:\n${'  - m\n' * 60}');
+      final dimensions = [
+        await _exceededDimension(sandbox.root, listWithoutFollowing),
+        await _exceededDimension(sandbox.root, (directory) async* {
+          yield* Stream.fromIterable(
+            (await listWithoutFollowing(directory).toList()).reversed,
+          );
+        }),
+      ];
+      expect(dimensions, [
+        ReportLimitDimension.textBytes,
+        ReportLimitDimension.textBytes,
+      ]);
+    },
+  );
 }
 
 /// Lo que la propuesta de un reconocimiento Dart agrega en bytes.
@@ -245,3 +244,23 @@ RecognitionReport _assemble(
   contributions: [contribution],
   limits: limits,
 );
+
+/// La cota que corta el reconocimiento de [root] cuando se lista con [list].
+Future<ReportLimitDimension> _exceededDimension(
+  Directory root,
+  DirectoryLister list,
+) async {
+  try {
+    await recognizeListing(
+      root,
+      reportLimits: const ReportLimits(
+        maxDerivedItems: 50,
+        maxDerivedTextBytes: 20000,
+      ),
+      list: list,
+    );
+  } on ReportLimitExceeded catch (e) {
+    return e.dimension;
+  }
+  throw StateError('debía exceder');
+}

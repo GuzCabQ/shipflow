@@ -125,6 +125,8 @@ void main() {
       expect(sandbox.received, [real]);
     });
 
+    // Inyección: el ejecutable no puede probar este caso. Con el cwd borrado
+    // o inaccesible, el runtime de Dart sale con 255 antes de llegar a main.
     test('invalid_cwd_is_not_rescued', () async {
       final valid = directory('valida').path;
       final response = await sandbox.run(

@@ -59,7 +59,9 @@ String? _resolve(String path) {
   return current.isEmpty ? '/' : current;
 }
 
-const _noSuchEntry = 2; // ENOENT, igual en macOS y Linux.
+/// ENOENT y ENOTDIR, iguales en macOS y Linux: no existe, o un tramo
+/// anterior es un archivo y nada puede existir debajo.
+const _absentErrors = {2, 20};
 
 /// Si [path] no existe de verdad. Un tramo que no se puede mirar, por
 /// permisos u otro motivo, no cuenta como inexistente.
@@ -68,6 +70,6 @@ bool _absent(String path) {
     File(path).resolveSymbolicLinksSync();
     return false;
   } on FileSystemException catch (error) {
-    return error.osError?.errorCode == _noSuchEntry;
+    return _absentErrors.contains(error.osError?.errorCode);
   }
 }

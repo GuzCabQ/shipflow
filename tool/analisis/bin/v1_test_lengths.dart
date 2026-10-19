@@ -115,7 +115,7 @@ final class _Bodies extends RecursiveAstVisitor<void> {
   @override
   void visitFunctionExpression(FunctionExpression node) {
     if (node.parent is! FunctionDeclaration) {
-      final invocation = node.thisOrAncestorOfType<MethodInvocation>();
+      final invocation = _invocationReceiving(node);
       final callee = invocation?.methodName.name ?? 'callback';
       _measure(
         '<$callee${_description(invocation)}>',
@@ -124,6 +124,16 @@ final class _Bodies extends RecursiveAstVisitor<void> {
       );
     }
     super.visitFunctionExpression(node);
+  }
+
+  /// La invocación de la que [node] es argumento directo, o null: una
+  /// clausura local dentro de un `group` no hereda su excepción.
+  MethodInvocation? _invocationReceiving(FunctionExpression node) {
+    final argument = node.parent is NamedExpression ? node.parent! : node;
+    final list = argument.parent;
+    return list is ArgumentList && list.parent is MethodInvocation
+        ? list.parent! as MethodInvocation
+        : null;
   }
 
   /// La descripción literal de un `group` o `test`, si la tiene.
