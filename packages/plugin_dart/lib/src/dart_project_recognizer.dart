@@ -173,11 +173,14 @@ final class _Observations {
     return [
       for (final MapEntry(key: name, value: drafts) in byName.entries)
         if (drafts.length > 1)
-          conflictDraft(budget, ConflictCode.duplicatePackageName, [
-            'el nombre de paquete «',
-            name,
-            '» aparece en ${drafts.length} manifiestos',
-          ], drafts),
+          admitConflict(
+            budget,
+            ConflictCode.duplicatePackageName,
+            'el nombre de paquete «$name» aparece en ${drafts.length} '
+            'manifiestos',
+            drafts,
+            evidenceOf: (d) => d,
+          ),
     ];
   }
 
@@ -185,10 +188,10 @@ final class _Observations {
   StackCandidate? _candidate(
     List<String> Function(Iterable<EvidenceDraft>) idsOf,
   ) {
-    final flutter = [
-      for (final m in manifests) ...m.flutterSignals,
-      for (final m in markers) m.evidence,
-    ];
+    // Perezosas: cada referencia se admite antes de recorrer la siguiente.
+    final flutter = manifests
+        .expand((m) => m.flutterSignals)
+        .followedBy(markers.map((m) => m.evidence));
     if (flutter.isNotEmpty) {
       budget.row(const ['flutter', 'Flutter', _pluginId]);
       return StackCandidate(
@@ -198,7 +201,7 @@ final class _Observations {
         evidenceIds: idsOf(flutter),
       );
     }
-    final names = [for (final m in manifests) ?m.name];
+    final names = manifests.map((m) => m.name).nonNulls;
     if (names.isEmpty) return null;
     budget.row(const ['dart', 'Dart', _pluginId]);
     return StackCandidate(

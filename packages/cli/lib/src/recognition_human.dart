@@ -9,8 +9,8 @@ const _maxFindings = 10;
 const _maxSources = 5;
 
 const _scope =
-    'No se comprobó si el proyecto compila, si sus pruebas pasan o si el SDK '
-    'está instalado.';
+    'No se comprobó si el proyecto compila, si sus pruebas pasan, si respeta '
+    'su arquitectura ni si el SDK está instalado.';
 const _effects =
     'No se modificó el proyecto. Shipflow no guardó este reporte ni creó un '
     'expediente.';

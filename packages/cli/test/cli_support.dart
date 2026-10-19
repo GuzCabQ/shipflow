@@ -34,7 +34,8 @@ const helpJson =
 const _initSummary =
     'Reconoce la raíz tecnológica y propone una inicialización sin aplicarla. '
     'Sólo inspecciona: no modifica el proyecto, no guarda el reporte ni crea '
-    'un expediente, y no comprueba si compila ni el SDK instalado.';
+    'un expediente, y no comprueba si compila, si pasan sus pruebas, su '
+    'arquitectura ni el SDK instalado.';
 
 const _budgetText =
     'Perfil del reporte de esta invocación: standard, el de omisión, o '

@@ -107,8 +107,7 @@ List<ConflictDraft> toolchainConflicts({
   required List<ConstraintEvidence> sdkConstraints,
   required DerivedObservationBudget budget,
 }) => [
-  if (markers.map((m) => m.version).toSet().length > 1)
-    _versionsDisagree(budget, markers),
+  if (_disagree(markers)) _versionsDisagree(budget, markers),
   for (final marker in markers)
     for (final constraint in flutterConstraints)
       if (!constraint.constraint.allows(marker.version))
@@ -121,31 +120,42 @@ List<ConflictDraft> toolchainConflicts({
   ?_disjoint(budget, ConflictCode.sdkConstraintsDisjoint, sdkConstraints),
 ];
 
+/// Si hay al menos dos versiones distintas, leyendo cada marcador una vez.
+bool _disagree(List<ToolchainMarker> markers) {
+  Version? first;
+  for (final marker in markers) {
+    if (first == null) {
+      first = marker.version;
+    } else if (marker.version != first) {
+      return true;
+    }
+  }
+  return false;
+}
+
 ConflictDraft _versionsDisagree(
   DerivedObservationBudget budget,
   List<ToolchainMarker> markers,
-) => conflictDraft(
+) => admitConflict(
   budget,
   ConflictCode.toolchainVersionsDisagree,
-  [
-    'los marcadores declaran versiones exactas distintas: ',
-    ..._listed([for (final m in markers) '${m.evidence.path} ${m.version}']),
-  ],
-  [for (final m in markers) m.evidence],
+  'los marcadores declaran versiones exactas distintas: ',
+  markers,
+  partOf: (m) => '${m.evidence.path} ${m.version}',
+  evidenceOf: (m) => m.evidence,
 );
 
 ConflictDraft _outsideConstraint(
   DerivedObservationBudget budget,
   ToolchainMarker marker,
   ConstraintEvidence constraint,
-) => conflictDraft(
+) => admitConflict(
   budget,
   ConflictCode.toolchainOutsideConstraint,
-  [
-    'la versión ${marker.version} de ${marker.evidence.path} no ',
-    'cumple ${constraint.constraint} de ${constraint.evidence.path}',
-  ],
+  'la versión ${marker.version} de ${marker.evidence.path} no cumple '
+  '${constraint.constraint} de ${constraint.evidence.path}',
   [marker.evidence, constraint.evidence],
+  evidenceOf: (e) => e,
 );
 
 ConflictDraft? _disjoint(
@@ -158,24 +168,15 @@ ConflictDraft? _disjoint(
       .map((c) => c.constraint)
       .reduce((a, b) => a.intersect(b));
   if (!common.isEmpty) return null;
-  return conflictDraft(
+  return admitConflict(
     budget,
     code,
-    [
-      'las restricciones no tienen ninguna versión en común: ',
-      ..._listed([
-        for (final c in constraints) '${c.constraint} (${c.evidence.path})',
-      ]),
-    ],
-    [for (final c in constraints) c.evidence],
+    'las restricciones no tienen ninguna versión en común: ',
+    constraints,
+    partOf: (c) => '${c.constraint} (${c.evidence.path})',
+    evidenceOf: (c) => c.evidence,
   );
 }
-
-/// [items] separados por `, `, como partes sueltas que se cobran antes de
-/// unirse.
-List<String> _listed(List<String> items) => [
-  for (final (index, item) in items.indexed) ...[if (index > 0) ', ', item],
-];
 
 RecognitionLimitation _blocking(
   DerivedObservationBudget budget,

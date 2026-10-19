@@ -6,8 +6,8 @@ import 'recognition_reports.dart';
 // Los textos esperados viven aquí, escritos a mano: no salen del renderer.
 const expectedHead = 'Shipflow · reconocimiento del proyecto\n';
 const expectedScope =
-    'No se comprobó si el proyecto compila, si sus pruebas pasan o si el SDK '
-    'está instalado.\n';
+    'No se comprobó si el proyecto compila, si sus pruebas pasan, si respeta '
+    'su arquitectura ni si el SDK está instalado.\n';
 const expectedEffects =
     'No se modificó el proyecto. Shipflow no guardó este reporte ni creó un '
     'expediente.\n';
