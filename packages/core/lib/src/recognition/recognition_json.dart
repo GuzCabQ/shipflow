@@ -11,3 +11,7 @@ List<T> readObjects<T>(
 List<String> readStrings(Object? json) => [
   for (final item in json! as List<Object?>) item! as String,
 ];
+
+/// Lee un objeto JSON con [read].
+T readObject<T>(Object? json, T Function(Map<String, Object?> json) read) =>
+    read(json! as Map<String, Object?>);

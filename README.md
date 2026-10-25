@@ -39,9 +39,10 @@ El ejecutable tiene dos superficies:
 
 - **V0**, identidad y distribución: ayuda, versión y respuestas JSON. Contrato en
   [`docs/CLI-V0.md`](docs/CLI-V0.md).
-- **V1**, `shipflow init --dry-run`: reconoce la tecnología, los paquetes, los
-  conflictos y las limitaciones de un proyecto Dart o Flutter **sin modificarlo
-  ni guardar nada**. Contrato en [`docs/CLI-V1.md`](docs/CLI-V1.md).
+- **V1**, `shipflow init --dry-run`: entrega una ficha de un proyecto Dart o
+  Flutter —identidad, paquetes y sus relaciones locales, entorno declarado,
+  fuentes candidatas, lo que no se recorrió y qué impide continuar— **sin
+  modificarlo ni guardar nada**. Contrato en [`docs/CLI-V1.md`](docs/CLI-V1.md).
 
 Shipflow todavía no inicializa proyectos, no persiste estado, no ejecuta agentes
 y no implementa `doctor`, `analyze`, `plan`, `implement`, `verify`, `review` ni

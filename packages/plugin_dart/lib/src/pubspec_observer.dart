@@ -3,8 +3,15 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
+export 'manifest_facts.dart';
+export 'path_dependency_facts.dart';
+
 import 'derived_observation_budget.dart';
+import 'evidence_draft.dart';
+import 'manifest_facts.dart';
+import 'manifest_resources.dart';
 import 'observed_value.dart';
+import 'path_dependency_facts.dart';
 import 'yaml_nesting_guard.dart';
 import 'project_scanner.dart';
 import 'recognition_codes.dart';
@@ -17,59 +24,6 @@ const _pathDependencySections = [
   'dev_dependencies',
   'dependency_overrides',
 ];
-
-final class PathDependencyFact {
-  const PathDependencyFact(this.section, this.name, this.path);
-
-  final String section;
-  final String name;
-
-  /// Tal como la declara el manifiesto, relativa a su directorio o absoluta.
-  final String path;
-
-  /// Cómo se muestra como evidencia, acotada.
-  String get evidenceValue => _observed.text;
-
-  /// Si la evidencia no cabe entera: entonces la ruta no se interpreta.
-  bool get truncated => _observed.truncated;
-
-  ObservedValue get _observed =>
-      boundObservedValue(describePathDependency(section, name, path));
-}
-
-String describePathDependency(String section, String name, String path) =>
-    '$section.$name: $path';
-
-/// Sólo los hechos que el reconocimiento usa, nunca el árbol entero.
-final class ManifestFacts {
-  ManifestFacts({
-    required this.source,
-    required this.name,
-    required this.sdkConstraint,
-    required this.flutterConstraint,
-    required this.flutterDependency,
-    required List<PathDependencyFact> pathDependencies,
-    required List<ObservedValue> workspace,
-  }) : pathDependencies = List.unmodifiable(pathDependencies),
-       workspace = List.unmodifiable(workspace);
-
-  final ScannedSource source;
-  final String? name;
-  final ObservedValue? sdkConstraint;
-  final ObservedValue? flutterConstraint;
-  final bool flutterDependency;
-  final List<PathDependencyFact> pathDependencies;
-  final List<ObservedValue> workspace;
-}
-
-final class ManifestObservation {
-  ManifestObservation(this.facts, List<RecognitionLimitation> limitations)
-    : limitations = List.unmodifiable(limitations);
-
-  /// Null si el manifiesto no se pudo leer como un mapa YAML.
-  final ManifestFacts? facts;
-  final List<RecognitionLimitation> limitations;
-}
 
 /// Los hechos de [source]. Cada uno que será evidencia se cobra a [budget]
 /// al extraerse, antes de retenerlo; las listas se recorren de a uno.
@@ -102,6 +56,7 @@ final class _Observer {
   /// Los hechos de [document], cada uno cobrado al extraerse.
   ManifestFacts facts(YamlMap document) {
     final environment = map(document['environment'], 'environment');
+    final flutter = flutterDependency(document['dependencies']);
     return ManifestFacts(
       source: source,
       name: fact(EvidenceKind.packageName, document['name'], 'name')?.text,
@@ -115,22 +70,58 @@ final class _Observer {
         environment?['flutter'],
         'environment.flutter',
       ),
-      flutterDependency: flutterDependency(document['dependencies']),
+      flutterDependency: flutter,
       pathDependencies: [
         for (final section in _pathDependencySections)
           ...pathDependencies(document[section], section),
       ],
       workspace: workspace(document['workspace']),
+      description: description(document['description']),
+      resourceDirectories: flutter ? resources(document['flutter']) : const [],
     );
   }
 
-  /// Las partes de la evidencia de [value] que el reporte retendrá.
-  List<String> _evidenceTexts(String kind, String value) => [
-    kind,
-    source.path,
-    value,
-    source.read.fingerprint,
+  /// La descripción, cobrada como evidencia, o una limitación que no
+  /// bloquea: es opcional.
+  String? description(Object? node) {
+    final (:value, :problem) = declaredDescription(node);
+    if (problem != null) {
+      _limit(
+        LimitationCode.optionalDescriptionUnavailable,
+        '«description» $problem; se omite y no afecta el reconocimiento',
+        blocking: false,
+      );
+    }
+    if (value != null) {
+      budget.row(_evidenceTexts(EvidenceKind.description, value));
+    }
+    return value;
+  }
+
+  /// Los directorios de recursos admitidos, de a uno: cada uno se cobra
+  /// como evidencia y cada forma no soportada se informa sin bloquear.
+  List<String> resources(Object? flutter) => [
+    for (final entry in resourceEntries(flutter))
+      if (_admitResource(entry) case final path?) path,
   ];
+
+  String? _admitResource(ResourceEntry entry) => switch (entry) {
+    ResourceDirectory(:final path) => _resourceDirectory(path),
+    UnsupportedResource(:final message) => _limit(
+      LimitationCode.unsupportedResourceDeclaration,
+      '$message; no concede exclusiones y el recorrido ordinario sigue',
+      blocking: false,
+    ),
+  };
+
+  String _resourceDirectory(String path) {
+    budget.row(_evidenceTexts(EvidenceKind.resourceDirectory, path));
+    return path;
+  }
+
+  /// Las partes de la evidencia de [value] que el reporte retendrá.
+  List<String> _evidenceTexts(String kind, String value) =>
+      evidenceRowTexts(kind, source.path, value, source.read.fingerprint);
 
   /// [node] como texto acotado y ya cobrado como evidencia de [kind].
   ObservedValue? fact(String kind, Object? node, String field) {
@@ -188,7 +179,7 @@ final class _Observer {
     return observed;
   }
 
-  List<ObservedValue> workspace(Object? node) {
+  List<WorkspaceMemberFact> workspace(Object? node) {
     if (node == null) return const [];
     if (node is! YamlList) {
       _invalid('«workspace» no es una lista');
@@ -196,11 +187,22 @@ final class _Observer {
     }
     return budget
         .admitEach(
-          node.map((item) => text(item, 'workspace')).nonNulls,
+          node.map(member),
           textsOf: (m) => _evidenceTexts(EvidenceKind.workspaceMember, m.text),
           build: (m) => m,
         )
         .toList();
+  }
+
+  /// Un miembro que no es texto se conserva como declaración fallida: se
+  /// muestra, bloquea y nunca se interpreta como ruta.
+  WorkspaceMemberFact member(Object? node) {
+    if (node is String) return WorkspaceMemberFact(text(node, 'workspace')!);
+    _invalid('«workspace» tiene un miembro que no es texto');
+    return WorkspaceMemberFact(
+      boundObservedValue(shownValue(node)),
+      literal: false,
+    );
   }
 
   List<PathDependencyFact> pathDependencies(Object? node, String section) {
@@ -221,8 +223,7 @@ final class _Observer {
                   e.key as String,
                   (e.value as YamlMap)['path'],
                 ),
-              )
-              .nonNulls,
+              ),
           textsOf: (d) =>
               _evidenceTexts(EvidenceKind.pathDependency, d.evidenceValue),
           build: (d) => d,
@@ -231,13 +232,13 @@ final class _Observer {
   }
 
   /// La dependencia, marcada como truncada si su evidencia
-  /// `<sección>.<nombre>: <ruta>` no cabe entera.
-  PathDependencyFact? _pathDependency(
-    String section,
-    String key,
-    Object? path,
-  ) {
-    if (path is! String) return _invalid('«$section.*.path» no es texto');
+  /// `<sección>.<nombre>: <ruta>` no cabe entera. Una ruta que no es texto
+  /// se conserva como declaración fallida.
+  PathDependencyFact _pathDependency(String section, String key, Object? path) {
+    if (path is! String) {
+      _invalid('«$section.*.path» no es texto');
+      return PathDependencyFact(section, key, shownValue(path), literal: false);
+    }
     final dependency = PathDependencyFact(section, key, path);
     if (dependency.truncated) {
       _limit(
@@ -254,15 +255,16 @@ final class _Observer {
     return null;
   }
 
-  void _limit(String code, String message) {
+  Null _limit(String code, String message, {bool blocking = true}) {
     budget.row([code, message, source.path]);
     limitations.add(
       RecognitionLimitation(
         code: code,
         message: message,
         path: source.path,
-        blocking: true,
+        blocking: blocking,
       ),
     );
+    return null;
   }
 }

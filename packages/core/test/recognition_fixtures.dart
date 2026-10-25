@@ -7,6 +7,8 @@ const evidence = RecognitionEvidence(
   kind: 'manifest.package_name',
   path: 'packages/app/manifest.yaml',
   value: 'app',
+  role: EvidenceRole.identity,
+  label: 'Nombre del paquete',
   fingerprint:
       'sha256:abababababababababababababababababababababababababababababababab',
 );
@@ -63,12 +65,40 @@ const effects = RecognitionEffects(
   networkRequests: 4,
 );
 
+final relation = RecognitionRelation(
+  id: 'r0001',
+  kind: RelationKind.localDependency,
+  fromPath: 'packages/app',
+  declaredName: 'app',
+  targetPath: 'packages/app',
+  targetUnitId: 'unit-app',
+  status: RelationStatus.corroborated,
+  evidenceIds: const ['e0001'],
+);
+
+final contextSource = ContextSource(
+  scopePath: 'packages/app',
+  path: 'packages/app/README.md',
+  kind: ContextSourceKind.documentation,
+  entityType: ContextEntityType.file,
+  reason: ContextReason.observed,
+);
+
+final omission = RecognitionOmission(
+  path: 'packages/app/assets',
+  rule: OmissionRule.declaredResource,
+  evidenceIds: const ['e0001'],
+);
+
 final contribution = RecognitionContribution(
   candidates: [candidate],
   units: [unit],
   evidence: const [evidence],
   conflicts: [conflict],
   limitations: const [limitation],
+  relations: [relation],
+  contextSources: [contextSource],
+  omissions: [omission],
 );
 
 final report = RecognitionReport(
@@ -81,6 +111,9 @@ final report = RecognitionReport(
   evidence: const [evidence],
   conflicts: [conflict],
   limitations: const [limitation],
+  relations: [relation],
+  contextSources: [contextSource],
+  omissions: [omission],
   proposal: proposal,
   effects: effects,
 );

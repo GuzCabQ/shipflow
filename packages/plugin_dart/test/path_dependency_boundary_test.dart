@@ -16,7 +16,8 @@ void main() {
   tearDown(() => outside.delete(recursive: true));
 
   /// Los códigos de limitación de una raíz cuyo manifiesto declara [path].
-  /// `build` es una exclusión conocida: un enlace ahí no limita por sí solo.
+  /// Un enlace en `vendor` limita también por sí solo: el escáner no lo
+  /// sigue.
   Future<Set<String>> limitationsFor(String path) async {
     sandbox.place(
       'pubspec.yaml',
@@ -28,35 +29,38 @@ void main() {
 
   test('un .. dentro de la raíz sigue dentro', () async {
     sandbox.directory('a');
-    sandbox.directory('b');
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
     expect(await limitationsFor('a/../b'), isEmpty);
   });
 
-  test('un .. se aplica después de seguir el enlace que lo precede', () async {
+  test('un enlace detiene el trayecto antes de su destino', () async {
     Directory('${outside.path}/deep').createSync();
     Directory('${outside.path}/dep').createSync();
-    Link('${sandbox.root.path}/build').createSync('${outside.path}/deep');
-    expect(await limitationsFor('build/../dep'), {
-      'path_dependency_outside_root',
+    Link('${sandbox.root.path}/vendor').createSync('${outside.path}/deep');
+    expect(await limitationsFor('vendor/../dep'), {
+      'unsupported_local_reference',
+      'symlink_not_followed',
     });
   });
 
-  test('un enlace seguido de un tramo inexistente sale', () async {
-    Link('${sandbox.root.path}/build').createSync(outside.path);
-    expect(await limitationsFor('build/falta/pkg'), {
-      'path_dependency_outside_root',
-    });
+  test('el destino de un enlace no cambia el resultado', () async {
+    final vendor = Link('${sandbox.root.path}/vendor')
+      ..createSync(outside.path);
+    final live = await limitationsFor('vendor/falta/pkg');
+    vendor
+      ..deleteSync()
+      ..createSync('${outside.path}/no-existe');
+    expect(await limitationsFor('vendor/falta/pkg'), live);
+    expect(live, {'unsupported_local_reference', 'symlink_not_followed'});
   });
 
-  test('un .. después de un tramo inexistente no se resuelve', () async {
-    sandbox.directory('b');
-    expect(await limitationsFor('falta/../b'), {'path_dependency_unresolved'});
-  });
-
-  test('un enlace roto no se toma como pertenencia', () async {
-    Link('${sandbox.root.path}/build').createSync('${outside.path}/no-existe');
-    expect(await limitationsFor('build/pkg'), {'path_dependency_unresolved'});
-  });
+  test(
+    'un enlace omitido por una exclusión no se resuelve para salir',
+    () async {
+      Link('${sandbox.root.path}/build').createSync(outside.path);
+      expect(await limitationsFor('build/../dep'), {'required_path_excluded'});
+    },
+  );
 
   test('un .. por encima de / se queda en /', () async {
     expect(await limitationsFor('/../..'), {'path_dependency_outside_root'});
@@ -78,9 +82,23 @@ void main() {
     });
   });
 
-  test('un sufijo bajo un archivo interior queda dentro', () async {
+  test('nada existe debajo de un archivo interior', () async {
     sandbox.place('archivo', '');
-    expect(await limitationsFor('archivo/sub'), isEmpty);
+    expect(await limitationsFor('archivo/sub'), {'path_dependency_unresolved'});
+  });
+
+  test('un .. no sube desde un archivo interior', () async {
+    sandbox.place('archivo', '');
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
+    expect(await limitationsFor('archivo/../b'), {
+      'path_dependency_unresolved',
+    });
+  });
+
+  test('un .. no sube desde una entidad especial', () async {
+    await Process.run('mkfifo', ['${sandbox.root.path}/fifo']);
+    sandbox.place('b/pubspec.yaml', 'name: x\n');
+    expect(await limitationsFor('fifo/../b'), {'path_dependency_unresolved'});
   });
 
   test('la limitación nombra la dependencia que la causa', () async {
@@ -91,13 +109,15 @@ void main() {
     final contribution = await recognizeDartProject(sandbox.root);
     expect([for (final l in contribution.limitations) l.message]..sort(), [
       'la dependencia local «dependencies.x: ../x» sale de la raíz y no se '
-          'atraviesa',
+          'atraviesa; queda sin corroborar y bloquea la propuesta. '
+          'Inspecciona una raíz que contenga ambos paquetes.',
       'la dependencia local «dependencies.y: falta/../y» no se pudo resolver '
-          'y no se atraviesa',
+          'y no se atraviesa; queda sin corroborar y bloquea la propuesta. '
+          'Comprueba que la ruta exista y se pueda leer.',
     ]);
   });
 
   test('una ruta inexistente bajo la raíz queda dentro', () async {
-    expect(await limitationsFor('vendor/pkg'), isEmpty);
+    expect(await limitationsFor('vendor/pkg'), {'required_manifest_missing'});
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'derived_observation_budget.dart';
+import 'recognition_codes.dart';
 
 /// Una evidencia antes de tener ID: los IDs dependen del orden de todas.
 final class EvidenceDraft {
@@ -16,6 +17,22 @@ final class EvidenceDraft {
   final String value;
   final String fingerprint;
 }
+
+/// Los textos que la evidencia de [kind] retendrá en el reporte, salvo su
+/// ID: los mismos que vuelve a contar el ensamblador.
+List<String> evidenceRowTexts(
+  String kind,
+  String path,
+  String value,
+  String fingerprint,
+) => [
+  kind,
+  evidenceRoleOf(kind).toWireName(),
+  evidenceLabelOf(kind),
+  path,
+  value,
+  fingerprint,
+];
 
 /// Un conflicto que todavía apunta a borradores, no a IDs. Se crea con
 /// [admitConflict], que lo admite antes de construir cada parte.

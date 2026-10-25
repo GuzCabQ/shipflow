@@ -69,9 +69,10 @@ void main() {
   });
 
   group('un manifiesto mínimo cobra exactamente lo que retiene', () {
-    // name «añ»: una evidencia (21 + 12 + 3 + 71 bytes, id 5), el candidato
-    // dart (4 + 4 + 11) y su referencia (5), la unidad u0001 (5 + 3 + 12 + 1)
-    // y su referencia (5): 5 elementos y 162 bytes.
+    // name «añ»: una evidencia (21 + 12 + 3 + 71 bytes, rol identity 8 y
+    // etiqueta 18, id 5), el candidato dart (4 + 4 + 11) y su referencia
+    // (5), la unidad u0001 (5 + 3 + 12 + 1) y su referencia (5): 5 elementos
+    // y 188 bytes. El ensamblador suma la propuesta y el alcance del reporte.
     setUp(() => sandbox.place('pubspec.yaml', 'name: añ\n'));
 
     test('5 elementos caben y 4 no', () async {
@@ -90,7 +91,7 @@ void main() {
       assemble(
         ReportLimits(
           maxDerivedItems: 7,
-          maxDerivedTextBytes: 162 + proposalBytes,
+          maxDerivedTextBytes: 188 + proposalBytes + _scopeBytes,
         ),
       );
       expect(
@@ -98,15 +99,17 @@ void main() {
         exceeds(ReportLimitDimension.items),
       );
       expect(
-        () => assemble(ReportLimits(maxDerivedTextBytes: 161 + proposalBytes)),
+        () => assemble(
+          ReportLimits(maxDerivedTextBytes: 187 + proposalBytes + _scopeBytes),
+        ),
         exceeds(ReportLimitDimension.textBytes),
       );
     });
 
-    test('162 bytes caben y 161 no', () async {
-      await recognize(const ReportLimits(maxDerivedTextBytes: 162));
+    test('188 bytes caben y 187 no', () async {
+      await recognize(const ReportLimits(maxDerivedTextBytes: 188));
       await expectLater(
-        recognize(const ReportLimits(maxDerivedTextBytes: 161)),
+        recognize(const ReportLimits(maxDerivedTextBytes: 187)),
         exceeds(ReportLimitDimension.textBytes),
       );
     });
@@ -264,3 +267,5 @@ Future<ReportLimitDimension> _exceededDimension(
   }
   throw StateError('debía exceder');
 }
+
+final _scopeBytes = utf8Length(declaredProjectRecognition);

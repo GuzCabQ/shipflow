@@ -2,56 +2,25 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import 'context_source_observer.dart';
+import 'context_source_rule.dart';
 import 'derived_observation_budget.dart';
+import 'manifest_evidence.dart';
+import 'pubspec_observer.dart';
 import 'recognition_codes.dart';
+import 'recognition_exclusions.dart';
+import 'scan_guard.dart';
 import 'scan_limits.dart';
+import 'scan_model.dart';
 import 'stable_file_reader.dart';
 
-/// Enumera un directorio sin seguir enlaces y a demanda, para que el
-/// recorrido deje de pedir entradas al agotar su presupuesto. Las pruebas lo
-/// sustituyen para provocar fallos que el sistema no reproduce a pedido.
-typedef DirectoryLister =
-    Stream<FileSystemEntity> Function(Directory directory);
-
-Stream<FileSystemEntity> listWithoutFollowing(Directory directory) =>
-    directory.list(followLinks: false);
-
-const _excludedDirectories = {
-  '.git',
-  '.dart_tool',
-  'build',
-  '.symlinks',
-  'Pods',
-  'node_modules',
-};
-
-const manifestFileName = 'pubspec.yaml';
-const fvmConfigFileName = '.fvmrc';
-const flutterVersionFileName = 'flutter-version.txt';
-
-enum SourceKind { manifest, fvmConfig, flutterVersionFile }
-
-/// Una fuente aceptada: estable, dentro de sus límites y sin parsear todavía.
-final class ScannedSource {
-  const ScannedSource(this.path, this.kind, this.read);
-
-  /// Relativa a la raíz.
-  final String path;
-  final SourceKind kind;
-  final StableSource read;
-}
-
-final class ScanResult {
-  ScanResult(List<ScannedSource> sources, List<RecognitionLimitation> found)
-    : sources = List.unmodifiable(sources),
-      limitations = List.unmodifiable(found);
-
-  final List<ScannedSource> sources;
-  final List<RecognitionLimitation> limitations;
-}
+export 'scan_model.dart';
 
 /// Recorre [root] en orden de ruta, sin seguir enlaces y dentro de
-/// [limits]. Lo que no pudo mirar queda como limitación bloqueante, cobrada
+/// [limits]. En cada directorio analiza primero su manifiesto, para saber
+/// qué árboles excluye antes de entrar en ellos; al final consulta los
+/// metadatos de [contextSources] en la raíz y en cada raíz de unidad. Lo que
+/// no pudo mirar queda como limitación bloqueante; todo lo retenido se cobra
 /// a [budget] antes de crearse.
 Future<ScanResult> scanProject(
   Directory root, {
@@ -59,37 +28,68 @@ Future<ScanResult> scanProject(
   DirectoryLister list = listWithoutFollowing,
   ByteReader readBytes = readBoundedBytes,
   DerivedObservationBudget? budget,
+  List<ContextSourceRule> contextSources = const [],
 }) async {
   final scan = _Scan(
-    root,
+    RootGuard(root),
     limits,
     list,
     readBytes,
     budget ?? DerivedObservationBudget(const ReportLimits()),
+    contextSources,
   );
   await scan.visit(root, 0);
-  return ScanResult(scan.sources, scan.limitations);
+  scan.observeContext();
+  return scan.result();
 }
 
 final class _Scan {
-  _Scan(this.root, this.limits, this.list, this.readBytes, this.budget)
-    : _authorizedRoot = _canonical(root.path);
+  _Scan(
+    this.guard,
+    this.limits,
+    this.list,
+    this.readBytes,
+    this.budget,
+    this.rules,
+  ) : _fileRules = {
+        for (final rule in rules)
+          if (!rule.expectsDirectory) rule.relativePath,
+      };
 
-  final Directory root;
-
-  /// La raíz real al empezar. Las rutas se comparan con ella y no con una
-  /// nueva resolución de [root], que otro proceso pudo cambiar por un enlace.
-  final String? _authorizedRoot;
+  final RootGuard guard;
   final ScanLimits limits;
   final DirectoryLister list;
   final ByteReader readBytes;
   final DerivedObservationBudget budget;
+  final List<ContextSourceRule> rules;
+  final Set<String> _fileRules;
   final sources = <ScannedSource>[];
   final limitations = <RecognitionLimitation>[];
+  final manifests = <ManifestEvidence>[];
+  final manifestLimitations = <RecognitionLimitation>[];
+  final omissions = <OmissionDraft>[];
+  final _exclusions = <String, OmissionDraft>{};
+  final _scopes = {'.'};
+  var _contextSources = <ContextSource>[];
   var _entries = 0;
   var _manifests = 0;
   var _sourceBytes = 0;
   var _stopped = false;
+
+  ScanResult result() => ScanResult(
+    sources: sources..sort((a, b) => a.path.compareTo(b.path)),
+    limitations: limitations,
+    manifests: manifests
+      ..sort((a, b) => a.facts.source.path.compareTo(b.facts.source.path)),
+    manifestLimitations: manifestLimitations,
+    omissions: omissions..sort((a, b) => a.path.compareTo(b.path)),
+    contextSources: _contextSources
+      ..sort(
+        (a, b) => a.scopePath == b.scopePath
+            ? a.path.compareTo(b.path)
+            : a.scopePath.compareTo(b.scopePath),
+      ),
+  );
 
   /// Pide a lo sumo una entrada más de las que caben: si el directorio no
   /// cabe entero se corta en él, porque qué entradas llegaron primero depende
@@ -99,7 +99,7 @@ final class _Scan {
     final room = limits.maxEntries - _entries;
     final children = await _list(directory, deep ? 1 : room + 1);
     if (children == null) return;
-    final why = depth == 0 ? null : _escaped(directory.path, _directory);
+    final why = depth == 0 ? null : guard.escapedDirectory(directory.path);
     if (why != null) return _block(why.code, why.message, directory.path);
     if (children.length > room) {
       return _stop('entradas', limits.maxEntries, directory.path);
@@ -113,9 +113,20 @@ final class _Scan {
         directory.path,
       );
     }
-    for (final child in children..sort(_byName)) {
+    await _visitChildren(children..sort(byName), depth + 1);
+  }
+
+  /// El manifiesto regular primero, y después el resto en orden de nombre.
+  Future<void> _visitChildren(
+    List<FileSystemEntity> children,
+    int depth,
+  ) async {
+    final manifest = children
+        .where((c) => c is File && nameOf(c.path) == manifestFileName)
+        .firstOrNull;
+    for (final child in [?manifest, ...children.where((c) => c != manifest)]) {
       if (_stopped) return;
-      await _visitEntity(child, depth + 1);
+      await _visitEntity(child, depth);
     }
   }
 
@@ -134,25 +145,43 @@ final class _Scan {
   }
 
   Future<void> _visitEntity(FileSystemEntity entity, int depth) async {
-    final name = _nameOf(entity.path);
-    if (entity is! File && _excludedDirectories.contains(name)) return;
+    final relative = guard.relative(entity.path);
+    if (entity is! File && baselineExclusions.contains(nameOf(relative))) {
+      return _omit(OmissionDraft(relative, OmissionRule.baselineExclusion, []));
+    }
     switch (entity) {
+      case Link() || Directory() when _exclusions[relative] != null:
+        _omit(_exclusions[relative]!);
+      case Link() when _optionalCandidate(relative):
+        return;
       case Link():
-        _block(LimitationCode.symlinkNotFollowed, _linkMessage, entity.path);
+        _block(LimitationCode.symlinkNotFollowed, linkMessage, entity.path);
       case Directory():
-        if (_escaped(entity.path, _directory) case final why?) {
+        if (guard.escapedDirectory(entity.path) case final why?) {
           return _block(why.code, why.message, entity.path);
         }
         await visit(entity, depth);
       case File():
-        final kind = _kindOf(name, depth);
+        final kind = _kindOf(nameOf(relative), depth);
         if (kind == null) return;
-        if (_escaped(entity.path, _file) case final why?) {
+        if (guard.escapedFile(entity.path) case final why?) {
           return _block(why.code, why.message, entity.path);
         }
         await _accept(entity, kind);
     }
   }
+
+  /// Un enlace con el nombre de un archivo opcional del catálogo, en una
+  /// raíz de unidad, no bloquea: se informa como fuente candidata.
+  bool _optionalCandidate(String relative) => _scopes.any(
+    (scope) => _fileRules.contains(
+      scope == '.'
+          ? relative
+          : relative.startsWith('$scope/')
+          ? relative.substring(scope.length + 1)
+          : null,
+    ),
+  );
 
   SourceKind? _kindOf(String name, int depth) => switch (name) {
     manifestFileName => SourceKind.manifest,
@@ -171,11 +200,11 @@ final class _Scan {
       maxBytes: isManifest ? limits.maxManifestBytes : limits.maxMarkerBytes,
       readBytes: _revalidatedRead,
     );
-    if (_escaped(file.path, _file) case final why?) {
+    if (guard.escapedFile(file.path) case final why?) {
       return _block(why.code, why.message, file.path);
     }
     if (read is StableSource) return _keep(file, kind, read);
-    final (code, message) = _rejection(read);
+    final (code, message) = rejectionOf(read);
     _block(code, message, file.path);
   }
 
@@ -184,67 +213,59 @@ final class _Scan {
       return _stop('bytes', limits.maxTotalSourceBytes, file.path);
     }
     _sourceBytes += read.size;
-    sources.add(ScannedSource(_relative(file.path), kind, read));
+    final source = ScannedSource(guard.relative(file.path), kind, read);
+    sources.add(source);
+    if (kind == SourceKind.manifest) _analyze(source);
   }
 
-  (String, String) _rejection(StableRead read) => switch (read) {
-    OversizedSource(:final size) => (
-      LimitationCode.sourceTooLarge,
-      'mide $size bytes y excede su máximo; no se leyó',
-    ),
-    UnstableSource() => (
-      LimitationCode.sourceChanged,
-      'cambió entre dos lecturas; la observación no es estable',
-    ),
-    UnreadableSource(:final reason) => (
-      LimitationCode.sourceUnreadable,
-      'no se pudo leer ($reason)',
-    ),
-    StableSource() => throw StateError('una fuente estable no se rechaza'),
-  };
+  /// Una sola vez: sus hechos sirven al reconocedor y sus exclusiones, al
+  /// resto del recorrido de este directorio. Sólo un paquete con nombre y
+  /// sin limitaciones bloqueantes concede exclusiones.
+  void _analyze(ScannedSource source) {
+    final observation = observeManifest(source, budget: budget);
+    manifestLimitations.addAll(observation.limitations);
+    final facts = observation.facts;
+    if (facts == null) return;
+    final evidence = ManifestEvidence(facts);
+    manifests.add(evidence);
+    if (facts.name == null) return;
+    _scopes.add(evidence.unitPath);
+    if (observation.limitations.every((l) => !l.blocking)) {
+      _exclusions.addAll(exclusionsOf(evidence));
+    }
+  }
+
+  /// Las fuentes candidatas, con las entradas que queden. Si el recorrido ya
+  /// se cortó, no hay presupuesto que consultar.
+  void observeContext() {
+    if (_stopped || rules.isEmpty) return;
+    final (:sources, :stoppedAt) = observeContextSources(
+      [..._scopes]..sort(),
+      rules,
+      ContextProbe(
+        root: guard.root,
+        maxDepth: limits.maxDepth,
+        omitted: (path) => omissions.any(
+          (o) => path == o.path || path.startsWith('${o.path}/'),
+        ),
+        consumeEntry: () => _entries < limits.maxEntries && ++_entries > 0,
+        budget: budget,
+      ),
+    );
+    _contextSources = sources;
+    if (stoppedAt != null) {
+      _stop('entradas', limits.maxEntries, '${guard.root.path}/$stoppedAt');
+    }
+  }
 
   /// Revalida antes de cada lectura, no sólo antes de la primera: abrir lo
   /// que ya no es la fuente enumerada podría leer fuera de la raíz o, con un
   /// FIFO, no volver nunca. El motivo exacto lo informa [_accept] después.
   Future<List<int>> _revalidatedRead(File file, int maxBytes) {
-    if (_escaped(file.path, _file) != null) {
+    if (guard.escapedFile(file.path) != null) {
       throw const FileSystemException('cambió antes de leerse');
     }
     return readBytes(file, maxBytes);
-  }
-
-  /// Por qué [path] ya no es lo que se enumeró: un [expected] sin enlaces
-  /// dentro de la raíz. Se comprueba antes y después de usarlo, porque entre
-  /// la enumeración y el uso otro proceso pudo cambiar un tramo por un enlace
-  /// y el sistema lo seguiría. Queda la ventana de cambiarlo y restaurarlo
-  /// entre ambas comprobaciones; en una fuente, además con lecturas iguales.
-  ({String code, String message})? _escaped(
-    String path,
-    FileSystemEntityType expected,
-  ) {
-    final type = FileSystemEntity.typeSync(path, followLinks: false);
-    if (type == FileSystemEntityType.link) {
-      return (code: LimitationCode.symlinkNotFollowed, message: _linkMessage);
-    }
-    if (type != expected) {
-      return expected == _file
-          ? (
-              code: LimitationCode.sourceUnreadable,
-              message: 'no es un archivo regular; no se abrió',
-            )
-          : (
-              code: LimitationCode.sourceChanged,
-              message: 'dejó de ser un directorio durante el recorrido',
-            );
-    }
-    if (_authorizedRoot != null &&
-        _canonical(path) == '$_authorizedRoot/${_relative(path)}') {
-      return null;
-    }
-    return (
-      code: LimitationCode.sourceChanged,
-      message: 'su ruta salió de la raíz durante el recorrido; no se usó',
-    );
   }
 
   void _stop(String what, int max, String path) {
@@ -256,8 +277,14 @@ final class _Scan {
     );
   }
 
+  /// Cobrada antes de crearse, como cada omisión.
+  void _omit(OmissionDraft draft) {
+    budget.row([draft.path, draft.rule.toWireName()]);
+    omissions.add(draft);
+  }
+
   void _block(String code, String message, String path) {
-    final relative = _relative(path);
+    final relative = guard.relative(path);
     budget.row([code, message, relative]);
     limitations.add(
       RecognitionLimitation(
@@ -268,27 +295,4 @@ final class _Scan {
       ),
     );
   }
-
-  String _relative(String path) {
-    final prefix = root.path.endsWith('/') ? root.path : '${root.path}/';
-    return path == root.path ? '.' : path.substring(prefix.length);
-  }
 }
-
-const _directory = FileSystemEntityType.directory;
-const _file = FileSystemEntityType.file;
-const _linkMessage = 'es un enlace simbólico y no se sigue';
-
-/// La ruta real de [path], o null si ya no se puede resolver.
-String? _canonical(String path) {
-  try {
-    return File(path).resolveSymbolicLinksSync();
-  } on FileSystemException {
-    return null;
-  }
-}
-
-String _nameOf(String path) => path.substring(path.lastIndexOf('/') + 1);
-
-int _byName(FileSystemEntity a, FileSystemEntity b) =>
-    _nameOf(a.path).compareTo(_nameOf(b.path));

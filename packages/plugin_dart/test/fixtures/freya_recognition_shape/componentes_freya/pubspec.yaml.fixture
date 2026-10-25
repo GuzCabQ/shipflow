@@ -1,0 +1,19 @@
+name: componentes_freya
+description: Storybook for Freya App
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  freya:
+    path: ../
+
+flutter:
+  assets:
+    - assets/analisis/ANALISIS.txt
+    - assets/images/
+    - assets/fonts/

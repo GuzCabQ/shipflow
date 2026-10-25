@@ -1,5 +1,9 @@
+import 'recognition_context.dart';
 import 'recognition_contribution.dart';
+import 'recognition_evidence.dart';
 import 'recognition_proposal.dart';
+import 'recognition_relations.dart';
+import 'recognition_report.dart';
 import 'report_budget.dart';
 
 /// Vuelve a contar, desde cero, todo lo que el reporte retendrá de [merged]
@@ -29,7 +33,7 @@ Iterable<(int, List<String>)> _rows(
   RecognitionProposal proposal,
 ) sync* {
   for (final e in merged.evidence) {
-    yield (1, [e.id, e.kind, e.path, e.value, e.fingerprint]);
+    yield (1, [e.id, ...evidenceTexts(e)]);
   }
   for (final c in merged.candidates) {
     yield (1, [c.id, c.displayName, c.pluginId]);
@@ -46,11 +50,61 @@ Iterable<(int, List<String>)> _rows(
   for (final l in merged.limitations) {
     yield (1, [l.code, l.message, ?l.path]);
   }
+  yield* _scopedRows(merged);
   for (final a in proposal.actions) {
     yield (1, [a.code, a.description]);
   }
   yield (0, proposal.pluginIds);
+  yield (0, const [declaredProjectRecognition]);
 }
+
+/// Relaciones, fuentes candidatas y omisiones, cada una con sus referencias.
+Iterable<(int, List<String>)> _scopedRows(
+  RecognitionContribution merged,
+) sync* {
+  for (final r in merged.relations) {
+    yield (1, relationTexts(r));
+    yield* _references(r.evidenceIds);
+  }
+  for (final s in merged.contextSources) {
+    yield (1, contextSourceTexts(s));
+  }
+  for (final o in merged.omissions) {
+    yield (1, [o.path, o.rule.toWireName()]);
+    yield* _references(o.evidenceIds);
+  }
+}
+
+/// Los textos que retiene una evidencia, salvo su ID, que se asigna aparte.
+List<String> evidenceTexts(RecognitionEvidence e) => [
+  e.kind,
+  e.role.toWireName(),
+  e.label,
+  e.path,
+  e.value,
+  e.fingerprint,
+];
+
+/// Los textos de la fila de una relación, sin sus referencias.
+List<String> relationTexts(RecognitionRelation r) => [
+  r.id,
+  r.kind.toWireName(),
+  r.fromPath,
+  ?r.declaredName,
+  ?r.targetPath,
+  ?r.targetUnitId,
+  r.status.toWireName(),
+];
+
+/// Los textos de la fila de una fuente candidata.
+List<String> contextSourceTexts(ContextSource s) => [
+  s.scopePath,
+  s.path,
+  s.kind.toWireName(),
+  s.entityType.toWireName(),
+  s.reason.toWireName(),
+  s.contentStatus,
+];
 
 /// Una posición por referencia, con los bytes de su ID.
 Iterable<(int, List<String>)> _references(List<String> ids) sync* {

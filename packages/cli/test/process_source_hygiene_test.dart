@@ -209,8 +209,19 @@ const _expectedImports = {
   'lib/src/recognition_human.dart': {
     'package:core/core.dart',
     'cli_command.dart',
-    'terminal_text.dart',
+    'recognition_human_context.dart',
+    'recognition_human_findings.dart',
+    'recognition_human_support.dart',
   },
+  'lib/src/recognition_human_context.dart': {
+    'package:core/core.dart',
+    'recognition_human_support.dart',
+  },
+  'lib/src/recognition_human_findings.dart': {
+    'package:core/core.dart',
+    'recognition_human_support.dart',
+  },
+  'lib/src/recognition_human_support.dart': {'terminal_text.dart'},
   'lib/src/recognition_presenter.dart': {
     'package:core/core.dart',
     'bounded_recognition_json.dart',

@@ -180,7 +180,7 @@ dependencies:
       expect(report.limitations.single.path, 'pubspec.yaml');
     });
 
-    test('un enlace dentro de la raíz que sale también bloquea', () async {
+    test('un enlace dentro de la raíz bloquea sin seguirlo', () async {
       final outside = await Directory.systemTemp.createTemp('shipflow-fuera-');
       addTearDown(() => outside.delete(recursive: true));
       Link('${sandbox.root.path}/vendor').createSync(outside.path);
@@ -190,8 +190,8 @@ dependencies:
       );
       final report = await recognize();
       expect(codesOf(report.limitations), [
-        'path_dependency_outside_root',
         'symlink_not_followed',
+        'unsupported_local_reference',
       ]);
     });
   });
