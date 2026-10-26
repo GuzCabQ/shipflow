@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:vcs/vcs.dart';
+
 import 'cli_command.dart';
+import 'context/context_prompt.dart';
 import 'cli_response.dart';
 import 'internal_failure.dart';
 import 'recognition_runner.dart';
@@ -14,6 +17,8 @@ Future<CliResponse> runCliAtProcessBoundary(
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
   String? logicalRootHint,
+  GitContextAdapter? git,
+  ContextPromptIO? prompt,
 }) async {
   CliCommand? command;
   try {
@@ -24,6 +29,8 @@ Future<CliResponse> runCliAtProcessBoundary(
       workingDirectory: workingDirectory,
       recognizeProject: recognizeProject,
       logicalRootHint: logicalRootHint,
+      git: git,
+      prompt: prompt,
     );
   } on Object {
     return internalFailure(json: command?.json ?? false);

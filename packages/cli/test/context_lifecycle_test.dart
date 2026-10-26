@@ -54,7 +54,7 @@ void main() {
         final before = box.snapshot();
         final again = await box.run(
           ContextOperation.init,
-          choose: () => fail('no debe preguntar'),
+          choose: (_) => fail('no debe preguntar'),
         );
         expect(again.outcome, ContextOutcome.unchanged);
         expect(again.exitCode, 0);

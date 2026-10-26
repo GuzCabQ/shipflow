@@ -39,7 +39,7 @@ void main() {
     final result = await box.run(
       ContextOperation.init,
       git: box.realGit,
-      choose: () async => null,
+      choose: (_) async => null,
     );
     expect(result.outcome, ContextOutcome.cancelled);
     expect(result.exitCode, 130);

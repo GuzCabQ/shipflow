@@ -6,6 +6,7 @@ const recognitionContract = 'declared-project-v2.1';
 /// Cada diagnóstico con su código de salida y su precedencia: gana el de
 /// menor número. 0 es un aviso que no cambia el resultado.
 const _catalog = <String, (int, int)>{
+  'invalid_root': (0, 66),
   'io_failure': (1, 74),
   'unexpected': (1, 70),
   'busy': (2, 75),
@@ -35,6 +36,7 @@ const _catalog = <String, (int, int)>{
   'git_absent': (9, 0),
   'git_unverified': (9, 0),
   'exclude_shared': (9, 0),
+  'detail_omitted': (9, 0),
 };
 
 /// El código de salida de [diagnostics]: el del de mayor precedencia.

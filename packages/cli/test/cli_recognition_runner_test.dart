@@ -100,8 +100,9 @@ void main() {
     for (final arguments in [
       ['--help'],
       ['--version', '--json'],
-      ['init'],
+      ['init', 'x'],
       ['init', '--help'],
+      ['doctor', '--help'],
       ['init', '--dry-run', '--bogus'],
       ['--json', 'init', '--dry-run'],
     ]) {

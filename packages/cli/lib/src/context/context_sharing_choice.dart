@@ -26,7 +26,15 @@ Future<SharingChoice?> chooseSharing(
     );
     return null;
   }
-  if (explicit != null) return explicit;
+  return explicit ?? _ask(o, request, parts);
+}
+
+/// Pregunta en la terminal, o pide la elección por flag si no la hay.
+Future<SharingChoice?> _ask(
+  ObservedContext o,
+  ContextRequest request,
+  ResultParts parts,
+) async {
   final ask = request.choose;
   if (ask == null) {
     parts.diagnostics.add(
@@ -38,7 +46,13 @@ Future<SharingChoice?> chooseSharing(
     );
     return null;
   }
-  final chosen = await ask();
+  final chosen = await ask(
+    SharingQuestion(
+      stacks: [for (final c in o.report.candidates) c.displayName],
+      units: o.report.units.length,
+      sharedExclude: o.git.linkedWorktree,
+    ),
+  );
   if (chosen == null) parts.cancelled = true;
   return chosen;
 }

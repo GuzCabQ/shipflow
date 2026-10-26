@@ -2,6 +2,12 @@
 // Fijarlo hace visible en la revisión toda dependencia nueva.
 
 const contextImports = {
+  'lib/src/context/bounded_context_json.dart': {
+    'dart:convert',
+    'package:core/core.dart',
+    'context_codec.dart',
+    'context_decisions.dart',
+  },
   'lib/src/context/canonical_json.dart': {'dart:convert'},
   'lib/src/context/context_assessment.dart': {
     'package:core/core.dart',
@@ -9,6 +15,23 @@ const contextImports = {
     'context_decisions.dart',
     'context_observation.dart',
     'state_layout.dart',
+  },
+  'lib/src/context/context_cli.dart': {
+    'dart:io',
+    'dart:math',
+    'package:core/core.dart',
+    'package:vcs/vcs.dart',
+    '../cli_command.dart',
+    '../cli_response.dart',
+    '../recognition_runner.dart',
+    'context_codec.dart',
+    'context_decisions.dart',
+    'context_presenter.dart',
+    'context_prompt.dart',
+    'context_request.dart',
+    'context_result.dart',
+    'context_service.dart',
+    'secure_context_store.dart',
   },
   'lib/src/context/context_codec.dart': {
     'dart:convert',
@@ -63,6 +86,19 @@ const contextImports = {
     'secure_context_store.dart',
     'state_layout.dart',
     'state_ownership.dart',
+  },
+  'lib/src/context/context_presenter.dart': {
+    'package:core/core.dart',
+    '../cli_response.dart',
+    '../terminal_text.dart',
+    'bounded_context_json.dart',
+    'state_layout.dart',
+  },
+  'lib/src/context/context_prompt.dart': {
+    'dart:io',
+    'package:core/core.dart',
+    '../terminal_text.dart',
+    'context_request.dart',
   },
   'lib/src/context/context_publication.dart': {
     'dart:math',

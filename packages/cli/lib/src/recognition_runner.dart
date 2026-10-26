@@ -7,6 +7,8 @@ import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
 import 'logical_root.dart';
+import 'context/context_cli.dart';
+import 'context/context_prompt.dart';
 import 'context/state_ownership.dart';
 import 'recognition_presenter.dart';
 
@@ -34,12 +36,16 @@ Future<CliResponse> runCli(
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
   String? logicalRootHint,
+  GitContextAdapter? git,
+  ContextPromptIO? prompt,
 }) => runCommand(
   parseCliCommand(arguments),
   version: version,
   workingDirectory: workingDirectory,
   recognizeProject: recognizeProject,
   logicalRootHint: logicalRootHint,
+  git: git,
+  prompt: prompt,
 );
 
 Future<CliResponse> runCommand(
@@ -48,8 +54,19 @@ Future<CliResponse> runCommand(
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
   String? logicalRootHint,
+  GitContextAdapter? git,
+  ContextPromptIO? prompt,
 }) async => switch (command) {
   final StaticCommand static => respondStatically(static, version: version),
+  final RunContext context => await runContextCommand(
+    context,
+    version: version,
+    workingDirectory: workingDirectory,
+    recognizeProject: recognizeProject,
+    logicalRootHint: logicalRootHint,
+    git: git,
+    prompt: prompt,
+  ),
   RunInitDryRun(:final json, :final budgetProfile) => presentRecognition(
     await recognizeRoot(
       workingDirectory,
@@ -90,7 +107,7 @@ Future<RecognitionReport> recognizeRoot(
   List<AuthorizedOmission>? authorizedOmissions,
 }) async {
   final requested = _absolutePath(workingDirectory);
-  final (:resolved, :problem) = await _inspectableRoot(requested);
+  final (:resolved, :problem) = await inspectableRoot(requested);
   if (problem != null) {
     return RecognitionReport.invalidRoot(
       requestedRoot: requested,
@@ -149,6 +166,9 @@ Future<RecognitionReport> _recognizeWithin(
   }
 }
 
+/// [directory] absoluto, o tal cual si el sistema ya no puede nombrarlo.
+String absolutePathOf(Directory directory) => _absolutePath(directory);
+
 String _absolutePath(Directory directory) {
   try {
     return directory.absolute.path;
@@ -158,7 +178,7 @@ String _absolutePath(Directory directory) {
 }
 
 /// La ruta canónica de [requested], o la limitación que impide inspeccionarla.
-Future<({String? resolved, RecognitionLimitation? problem})> _inspectableRoot(
+Future<({String? resolved, RecognitionLimitation? problem})> inspectableRoot(
   String requested,
 ) async {
   if (_typeProblem(requested) case final problem?) {

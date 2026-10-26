@@ -75,7 +75,7 @@ final class ServiceSandbox {
     Map<String, String>? git,
     ReportBudgetProfile profile = ReportBudgetProfile.standard,
     ContextStore Function(ContextStore real)? wrap,
-    Future<SharingChoice?> Function()? choose,
+    Future<SharingChoice?> Function(SharingQuestion question)? choose,
   }) async {
     final real = await SecureContextStore.open(root);
     try {

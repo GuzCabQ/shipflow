@@ -62,13 +62,11 @@ void main() {
   });
 
   group('uso inválido', () {
-    const missingDryRun =
-        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
-        'sólo inspecciona, sin modificar ni guardar el proyecto';
-
-    test('init solo explica que hace falta --dry-run', () {
-      expectInitError(['init'], missingDryRun);
-      expectInitError(['init', '--json'], missingDryRun);
+    // V2: `init` sin --dry-run ya no es uso inválido; es la incorporación
+    // persistente (context_cli_grammar_test cubre su gramática).
+    test('init solo es la incorporación persistente, no un error', () {
+      expect(parseCliCommand(['init']), isA<RunInit>());
+      expect(parseCliCommand(['init', '--json']), isA<RunInit>());
     });
 
     test('las opciones antes de init no son globales', () {
@@ -123,7 +121,7 @@ void main() {
     });
 
     test('un error de init no pide reconocer', () {
-      expect(parseCliCommand(['init']), isA<StaticCommand>());
+      expect(parseCliCommand(['init', 'x']), isA<StaticCommand>());
       expect(parseCliCommand(['init', '--dry-run', 'x']), isA<StaticCommand>());
     });
   });
@@ -186,11 +184,6 @@ void main() {
       (
         ['init', '--report-budget=standard', '-h'],
         "'--report-budget=standard' y '-h' no se pueden combinar",
-      ),
-      (
-        ['init', '--report-budget=extended'],
-        'init requiere --dry-run: usa shipflow init --dry-run; esta versión '
-            'sólo inspecciona, sin modificar ni guardar el proyecto',
       ),
     ]) {
       test('$arguments: $reason', () => expectInitError(arguments, reason));

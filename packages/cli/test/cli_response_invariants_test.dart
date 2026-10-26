@@ -85,9 +85,19 @@ void main() {
     for (final (library, expected) in [
       (
         'cli_application.dart',
-        {'dart:convert', 'cli_command.dart', 'cli_response.dart'},
+        {
+          'dart:convert',
+          'cli_command.dart',
+          'cli_help.dart',
+          'cli_response.dart',
+        },
       ),
-      ('cli_command.dart', {'terminal_text.dart'}),
+      ('cli_command.dart', {'package:core/core.dart', 'cli_grammar.dart'}),
+      (
+        'cli_grammar.dart',
+        {'package:core/core.dart', 'cli_command.dart', 'terminal_text.dart'},
+      ),
+      ('cli_help.dart', {'cli_command.dart'}),
       ('terminal_text.dart', <String>{}),
     ]) {
       final uri = await Isolate.resolvePackageUri(
