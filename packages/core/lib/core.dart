@@ -9,6 +9,7 @@ export 'src/context/context_validation.dart';
 export 'src/context/local_settings.dart';
 export 'src/context/portable_recognition.dart';
 export 'src/context/project_context.dart';
+export 'src/entorno.dart';
 export 'src/recognition/authorized_omission.dart';
 export 'src/recognition/recognition_assembler.dart';
 export 'src/recognition/recognition_context.dart';
