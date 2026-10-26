@@ -8,8 +8,9 @@ import 'context_decisions.dart';
 import 'context_observation.dart';
 import 'secure_context_store.dart';
 
-/// El nombre del exclude dentro del directorio `info` de administración.
-const excludeName = 'exclude';
+/// El exclude relativo al directorio común de administración Git, al que
+/// se llega sin seguir enlaces.
+const excludeName = 'info/exclude';
 
 /// Un cambio del exclude común ya calculado, con su directorio anclado.
 final class ExcludeChange {
@@ -40,6 +41,8 @@ final class PublicationPlan {
   PublicationPlan({
     required this.operationId,
     required this.operation,
+    required this.projectId,
+    required this.choice,
     required this.settings,
     required this.observed,
     this.project,
@@ -48,12 +51,14 @@ final class PublicationPlan {
 
   final String operationId;
   final TransactionOperation operation;
-  final LocalSettings settings;
+  final String projectId;
+  final SharingChoice choice;
+
+  /// La configuración nueva, o null si esta operación no la toca.
+  final LocalSettings? settings;
   final ObservedContext observed;
   final ProjectContext? project;
   final ExcludeChange? exclude;
-
-  SharingChoice get choice => settings.choice;
 }
 
 /// El ID del bloque propio: SHA-256 del prefix Git en UTF-8.
@@ -113,32 +118,62 @@ Future<ExcludeChange?> excludeChangeFor(
   Future<ContextStore> Function(Directory) openAdministration,
 ) async {
   final path = o.git.excludePath;
-  final prefix = o.git.binding?.prefix;
-  if (choice == SharingChoice.pending || path == null || prefix == null) {
+  final binding = o.git.binding;
+  if (choice == SharingChoice.pending || path == null || binding == null) {
     return null;
   }
-  final admin = await openAdministration(File(path).parent);
-  final before = await admin.readRelative(
-    excludeName,
-    maxBytes: maxExcludeBytes,
-  );
-  final blockId = blockIdOf(prefix);
-  final patch = planExclude(
-    prefix: prefix,
-    choice: choice,
-    existing: before,
-    blockId: blockId,
-    ownedBlock: _recorded(o.settings.value, prefix, blockId, before),
-  );
+  final admin = await openAdministration(Directory(binding.commonDir));
+  final (:before, :safe) = await _readExclude(admin, path, binding);
+  if (!safe) return _refused(admin, path, binding.prefix);
+  final blockId = blockIdOf(binding.prefix);
   return ExcludeChange(
     admin: admin,
     path: path,
     before: before,
-    patch: patch,
+    patch: planExclude(
+      prefix: binding.prefix,
+      choice: choice,
+      existing: before,
+      blockId: blockId,
+      ownedBlock: _recorded(o.settings.value, binding.prefix, blockId, before),
+    ),
     blockId: blockId,
-    prefix: prefix,
+    prefix: binding.prefix,
   );
 }
+
+/// Los bytes del exclude, sólo si es exactamente `<commonDir>/info/exclude`
+/// y se llega a él sin enlaces.
+Future<({List<int>? before, bool safe})> _readExclude(
+  ContextStore admin,
+  String path,
+  GitBinding binding,
+) async {
+  if (path != '${binding.commonDir}/$excludeName') {
+    return (before: null, safe: false);
+  }
+  try {
+    final bytes = await admin.readRelative(
+      excludeName,
+      maxBytes: maxExcludeBytes,
+    );
+    return (before: bytes, safe: true);
+  } on ContextStoreFailure {
+    return (before: null, safe: false);
+  }
+}
+
+/// Un exclude fuera de la administración o alcanzado por un enlace: no se
+/// lee ni se escribe.
+ExcludeChange _refused(ContextStore admin, String path, String prefix) =>
+    ExcludeChange(
+      admin: admin,
+      path: path,
+      before: null,
+      patch: const ManagedExcludePatch.refused('exclude_unsafe'),
+      blockId: blockIdOf(prefix),
+      prefix: prefix,
+    );
 
 String? _recorded(
   LocalSettings? settings,

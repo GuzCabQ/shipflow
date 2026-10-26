@@ -29,7 +29,13 @@ Future<StateOwnership> inspectStateOwnership(Directory root) async {
   if (layout case StateOwnership ownership) return ownership;
   final observed = layout as ObservedLayout;
   if (observed.entries.isEmpty) return StateOwnership(StateOwnershipKind.empty);
-  final store = await SecureContextStore.open(root);
+  final SecureContextStore store;
+  try {
+    store = await SecureContextStore.open(root);
+  } on ContextStoreFailure {
+    // Sin almacén anclado no se puede acreditar la propiedad.
+    return StateOwnership(StateOwnershipKind.invalid, [stateDirectory]);
+  }
   try {
     return await _classify(store, observed);
   } finally {

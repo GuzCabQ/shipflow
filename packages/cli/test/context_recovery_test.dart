@@ -150,4 +150,102 @@ void main() {
     );
     expect(recover.effects.filesReplaced, ['shipflow/project.json']);
   });
+
+  test(
+    'I2: own temporaries of an interrupted publish are recovered too',
+    () async {
+      await crashAfter(4);
+      final op = Directory(
+        box.path('shipflow/local/staging'),
+      ).listSync().single;
+      final name = op.path.split('/').last;
+      for (final temp in [
+        'shipflow/.project.json.0123456789abcdef.tmp',
+        'shipflow/..gitignore.0123456789abcdef.tmp',
+        'shipflow/local/.settings.json.0123456789abcdef.tmp',
+        'shipflow/local/staging/$name/.settings.after.json.0123456789abcdef.tmp',
+      ]) {
+        box.file(temp, 'a medias');
+      }
+      final recover = await box.run(ContextOperation.recover);
+      expect(
+        recover.outcome,
+        ContextOutcome.recovered,
+        reason: '${codes(recover)}',
+      );
+      expect(recover.effects.filesRemoved, hasLength(4));
+      final doctor = await box.run(ContextOperation.doctor);
+      expect(doctor.exitCode, 0, reason: '${codes(doctor)}');
+    },
+  );
+
+  test(
+    'I2: a foreign folder does not claim there is nothing pending',
+    () async {
+      box.file('shipflow/main.go', 'package main\n');
+      final doctor = await box.run(ContextOperation.doctor);
+      final check = doctor.checks.firstWhere(
+        (c) => c.id == ContextCheckId.transactionState,
+      );
+      expect(check.status, ContextCheckStatus.notChecked);
+    },
+  );
+
+  test(
+    'I3: recover without a journal over an intact context is unchanged',
+    () async {
+      await box.run(ContextOperation.init);
+      final before = box.snapshot();
+      final recover = await box.run(ContextOperation.recover);
+      expect(recover.exitCode, 0, reason: '${codes(recover)}');
+      expect(recover.outcome, ContextOutcome.unchanged);
+      expect(recover.contextState, ContextState.present);
+      expect(recover.freshness, ContextFreshness.current);
+      expect(recover.context, isNotNull);
+      expect(box.snapshot(), before);
+    },
+  );
+
+  test(
+    'M4: recovery does not claim a modality it cannot corroborate',
+    () async {
+      box.gitInit();
+      // Muere al actualizar el journal, con el contexto ya publicado.
+      await crashAfter(7, sharing: SharingChoice.local, git: true);
+      box.file('.gitignore', '!shipflow/\n!shipflow/project.json\n');
+      final recover = await box.run(ContextOperation.recover, git: box.realGit);
+      expect(recover.exitCode, 65, reason: '${codes(recover)}');
+      expect(codes(recover), contains('sharing_conflict'));
+    },
+  );
+
+  test(
+    'M5: a revert that cannot restore settings keeps them, never deletes',
+    () async {
+      await box.run(ContextOperation.init);
+      box.gitInit();
+      box.file('packages/b/pubspec.yaml', 'name: b\n');
+      // journal, staging de proyecto y settings, settings: muere en previous.
+      await expectLater(
+        box.run(
+          ContextOperation.refresh,
+          sharing: SharingChoice.share,
+          git: box.realGit,
+          wrap: (r) => CrashingStore(r, 5),
+        ),
+        throwsA(isA<SimulatedCrash>()),
+      );
+      final settings = File(box.path('shipflow/local/settings.json'));
+      final applied = settings.readAsBytesSync();
+      final staged = Directory(
+        box.path('shipflow/local/staging'),
+      ).listSync().single;
+      File('${staged.path}/settings.before.json').deleteSync();
+      box.file('packages/c/pubspec.yaml', 'name: c\n');
+      final recover = await box.run(ContextOperation.recover, git: box.realGit);
+      expect(recover.exitCode, 75, reason: '${codes(recover)}');
+      expect(settings.readAsBytesSync(), applied);
+      expect(journal(), isTrue);
+    },
+  );
 }

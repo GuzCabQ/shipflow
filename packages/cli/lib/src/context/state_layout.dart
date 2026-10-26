@@ -25,8 +25,18 @@ const _stagedNames = {
   'settings.after.json',
 };
 final _temporary = RegExp(
-  r'^(?:local/)?\.(?:project|settings|transaction|previous)\.json\.[0-9a-f]{16}\.tmp$',
+  r'^(?:local/(?:staging/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}'
+  r'-[0-9a-f]{12}/)?)?\.(?:project\.json|settings\.json|transaction\.json|'
+  r'previous\.json|\.gitignore|settings\.before\.json|settings\.after\.json)'
+  r'\.[0-9a-f]{16}\.tmp$',
 );
+
+/// Si [path], relativa a la raíz, tiene la forma de un temporal de una
+/// publicación propia. La forma no prueba propiedad: sólo un journal válido
+/// autoriza a retirarlo.
+bool isOwnTemporary(String path) =>
+    path.startsWith('$stateDirectory/') &&
+    _temporary.hasMatch(path.substring(stateDirectory.length + 1));
 
 /// Qué hay en `shipflow/` respecto del contrato V2.
 enum StateOwnershipKind {

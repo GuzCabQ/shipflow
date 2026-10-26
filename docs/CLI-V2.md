@@ -13,7 +13,7 @@ observado en reglas.
 |---|---|
 | `shipflow init --dry-run [--json] [--report-budget=…]` | Inspecciona sin escribir, preguntar, lanzar procesos ni usar la red (V1). |
 | `shipflow init [--sharing=share\|local] [--json] [--report-budget=…]` | Primera incorporación; si ya hay contexto, lo comprueba y no cambia observaciones. |
-| `shipflow init --refresh [--sharing=share\|local] [--json] [--report-budget=…]` | Reemplaza el contexto por lo observado ahora, si es elegible; conserva su identidad. |
+| `shipflow init --refresh [--sharing=share\|local] [--json] [--report-budget=…]` | Reemplaza el contexto por lo observado ahora, si es elegible; conserva su identidad y, sin `--sharing`, la elección local tal cual. |
 | `shipflow init --recover [--json] [--report-budget=…]` | Termina o deshace sólo una operación propia interrumpida. |
 | `shipflow doctor [--json] [--report-budget=…]` | Consulta el contexto guardado y explica la siguiente acción. Sólo lee. |
 
@@ -41,9 +41,10 @@ Todo vive bajo `shipflow/`, en la carpeta desde la que se ejecuta:
 
 `project.json` no lleva rutas absolutas, Git ni efectos: se puede copiar o
 clonar a otra ubicación y `doctor` lo vuelve a leer y a comprobar allí, sin la
-configuración local. Su `projectId` es un UUID opaco. No se busca un contexto en
-carpetas superiores: desde una subcarpeta de un proyecto inicializado, init pide
-operar desde su raíz.
+configuración local. Su `projectId` es un UUID opaco. No se adopta un contexto
+de carpetas superiores: desde una subcarpeta de un repositorio Git que ya tiene
+`shipflow/project.json` más arriba, sin pasar de su raíz, init pide operar
+desde allí (`65` `ancestor_context`). Sin Git no se busca.
 
 Una carpeta `shipflow` con contenido de otra herramienta no se oculta ni se
 sobrescribe: el reconocimiento la inspecciona como cualquier otra y init informa
@@ -74,7 +75,9 @@ queda guardada y no se vuelve a preguntar.
 - **local** agrega un bloque propio y delimitado al exclude local de Git
   (resuelto con `git rev-parse --git-path info/exclude`), y comprueba que
   excluye de verdad antes de hacer visible el contexto. Preserva las reglas
-  ajenas, byte a byte. No quita del índice un archivo ya seguido: en ese caso
+  ajenas, byte a byte, y los permisos del archivo. Si el exclude o su carpeta
+  `info` son un enlace, o el exclude queda fuera de la administración del
+  repositorio, no se sigue ni se modifica: la elección local no se aplica. No quita del índice un archivo ya seguido: en ese caso
   termina con `65` `already_tracked`. En copias de trabajo vinculadas, ese
   exclude es común: la regla alcanza la misma ruta en las otras copias del
   repositorio en el equipo, y un cambio hecho desde otra copia se informa sin
@@ -119,8 +122,10 @@ comprobar las huellas de lo que leyó y las fuentes; si cambiaron, `75`
 `concurrent_change`. Después escribe el registro de la operación, prepara los
 archivos, aplica el exclude si corresponde, y publica la configuración, la copia
 anterior y el contexto, cada uno con archivo temporal, `fsync` y renombrado
-sobre la versión esperada. Ningún destino se trunca ni se abre siguiendo un
-enlace.
+sobre la versión esperada, con los permisos del archivo que reemplaza. Ningún
+destino se trunca ni se abre siguiendo un enlace. Si la elección local se tomó
+para otro repositorio o ubicación, refresh no la revincula: pide confirmarla
+(`65` `binding_changed`).
 
 Si el proceso se interrumpe, init y doctor lo informan (`75`) y
 `init --recover` compara los bytes de cada destino con las huellas registradas:
@@ -130,9 +135,18 @@ decisión manual (`75` `recovery_conflict`). Un resto anterior al primer registr
 no se adopta por su nombre: init y `--recover` responden `65`
 `bootstrap_unverified` y piden mover esa carpeta como respaldo.
 
+`--recover` sin una operación pendiente y con un contexto íntegro responde sin
+cambios (`0`).
+
 La garantía cubre la interrupción del proceso y errores de entrada y salida con
 un sistema de archivos funcional. No cubre la pérdida física del disco, un
 corte de energía ni a quien edita los archivos saltándose la coordinación.
+
+## Plataformas
+
+Linux x64 y macOS ARM64. En Linux, la escritura usa `fstat` y `fstatat` de la
+libc (glibc 2.33 o posterior); sin ellos, init y doctor terminan con `74` y la
+inspección `--dry-run` sigue funcionando.
 
 ## Códigos de salida
 

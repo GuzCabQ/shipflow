@@ -43,10 +43,13 @@ final class RecoveryTargets {
 
   Future<void> acquire() async {
     final excludeTarget = _target(TransactionResource.exclude);
-    final excludePath = o.git.excludePath;
+    final binding = o.git.binding;
     if (excludeTarget != null) {
-      if (excludePath == null) throw const ContextStoreFailure('io');
-      _admin = await openAdministration(File(excludePath).parent);
+      if (binding == null ||
+          o.git.excludePath != '${binding.commonDir}/$excludeName') {
+        throw const ContextStoreFailure('io');
+      }
+      _admin = await openAdministration(Directory(binding.commonDir));
     }
     _lease = await store.acquirePublication([
       store.contextLock(),
@@ -225,34 +228,33 @@ final class RecoveryTargets {
   }
 
   /// Deshace settings y exclude propios que ya estén en su versión
-  /// preparada; el contexto publicado nunca se revierte.
-  Future<void> revert() async {
-    final settings = _target(TransactionResource.settings);
-    if (settings != null &&
-        await _hash(TransactionResource.settings) == settings.after) {
-      final before = journal.staging.settingsBefore;
-      final bytes = before == null ? null : _staged[before];
-      if (bytes != null) {
-        await store.publishRelative(
-          settingsPath,
-          bytes,
-          expectedSha256: settings.after,
-        );
-      } else {
-        await store.removeRelative(
-          settingsPath,
-          expectedSha256: settings.after!,
-        );
-      }
+  /// preparada; el contexto publicado nunca se revierte. False si alguno no
+  /// se puede llevar exactamente a su versión anterior: entonces no se toca
+  /// y la operación queda para reconciliarla a mano.
+  Future<bool> revert() async =>
+      await _revertSettings() && await _revertExclude();
+
+  Future<bool> _revertSettings() async {
+    final t = _target(TransactionResource.settings);
+    if (t == null || await _hash(TransactionResource.settings) != t.after) {
+      return true;
     }
-    await _revertExclude();
+    final staged = journal.staging.settingsBefore;
+    final bytes = staged == null ? null : _staged[staged];
+    if (bytes != null && hashOf(bytes) == t.before) {
+      await store.publishRelative(settingsPath, bytes, expectedSha256: t.after);
+      return true;
+    }
+    if (t.before != null) return false;
+    await store.removeRelative(settingsPath, expectedSha256: t.after!);
+    return true;
   }
 
-  Future<void> _revertExclude() async {
+  Future<bool> _revertExclude() async {
     final t = _target(TransactionResource.exclude);
-    if (t == null) return;
+    if (t == null) return true;
     final now = await _current(TransactionResource.exclude);
-    if (now == null || hashOf(now) != t.after) return;
+    if (now == null || hashOf(now) != t.after) return true;
     final patch = _patch(now, forward: false);
     if (t.before == null && (patch == null || patch.isEmpty)) {
       await _admin!.removeRelative(excludeName, expectedSha256: t.after!);
@@ -262,12 +264,22 @@ final class RecoveryTargets {
         patch,
         expectedSha256: t.after,
       );
+    } else {
+      return false;
     }
     effects.excludeModified = true;
+    return true;
   }
 
-  /// Retira el staging propio, su directorio y el journal.
+  /// Retira el staging propio, los temporales de publicaciones que este
+  /// journal acredita, su directorio y el journal.
   Future<void> cleanup() async {
+    for (final path in o.ownership.findings.where(isOwnTemporary)) {
+      final bytes = await store.readRelative(path, maxBytes: maxProjectBytes);
+      if (bytes == null) continue;
+      await store.removeRelative(path, expectedSha256: hashOf(bytes));
+      effects.filesRemoved.add(path);
+    }
     for (final MapEntry(key: path, value: bytes) in _staged.entries) {
       await store.removeRelative(
         '$_shipflow$path',

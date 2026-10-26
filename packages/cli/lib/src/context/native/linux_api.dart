@@ -44,6 +44,7 @@ final class LinuxX64Abi implements PosixAbi {
     final data = ByteData.sublistView(buffer);
     return (
       type: fileTypeOf(data.getUint32(24, Endian.little)),
+      permissions: data.getUint32(24, Endian.little) & 4095,
       size: data.getInt64(48, Endian.little),
       device: data.getUint64(0, Endian.little),
       inode: data.getUint64(8, Endian.little),

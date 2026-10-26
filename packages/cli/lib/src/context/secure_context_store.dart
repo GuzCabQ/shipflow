@@ -171,13 +171,24 @@ final class SecureContextStore implements ContextStore {
         _posix.close(fd);
         return null;
       }
-      if (entry == null) {
-        storeGuard(() => _posix.mkdirat(fd, segment, _directoryMode));
+      if (entry == null && _made(fd, segment)) {
         created?.add(segments.sublist(0, index + 1).join('/'));
       }
       fd = _descend(fd, segment);
     }
     return fd;
+  }
+
+  /// Crea [segment]; false si otro proceso lo creó entre la consulta y la
+  /// creación, que entonces se abre y se comprueba como cualquier otro.
+  bool _made(int fd, String segment) {
+    try {
+      _posix.mkdirat(fd, segment, _directoryMode);
+      return true;
+    } on PosixError catch (e) {
+      if (e.kind == PosixErrorKind.exists) return false;
+      throw storeGuard<Never>(() => throw e);
+    }
   }
 
   int _descend(int fd, String segment) {

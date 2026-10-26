@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart' show maxExcludeBytes;
 
@@ -17,13 +19,15 @@ final class TransactionSteps {
     : _projectBytes = plan.project == null
           ? null
           : const ContextCodec().encodeProject(plan.project!),
-      _settingsBytes = const ContextCodec().encodeSettings(plan.settings);
+      _settingsBytes = plan.settings == null
+          ? null
+          : const ContextCodec().encodeSettings(plan.settings!);
 
   final PublicationPlan plan;
   final ContextStore store;
   final EffectsLog effects;
   final List<int>? _projectBytes;
-  final List<int> _settingsBytes;
+  final List<int>? _settingsBytes;
   final _transient = <String>[];
   String? _journalHash;
 
@@ -31,8 +35,11 @@ final class TransactionSteps {
   String get _op => plan.operationId;
   bool get journalWritten => _journalHash != null;
 
-  bool get _settingsChange =>
-      !_o.settings.present || hashOf(_settingsBytes) != _o.settings.sha256;
+  bool get _settingsChange {
+    final bytes = _settingsBytes;
+    return bytes != null &&
+        (!_o.settings.present || hashOf(bytes) != _o.settings.sha256);
+  }
 
   Future<void> scaffold() async {
     effects.directoriesCreated.addAll(
@@ -70,7 +77,7 @@ final class TransactionSteps {
 
   ContextTransaction _journal(TransactionPhase phase) => ContextTransaction(
     operationId: _op,
-    projectId: plan.settings.projectId,
+    projectId: plan.projectId,
     operation: plan.operation,
     choice: plan.choice,
     phase: phase,
@@ -101,7 +108,7 @@ final class TransactionSteps {
       TransactionTarget(
         resource: TransactionResource.settings,
         before: _o.settings.sha256,
-        after: hashOf(_settingsBytes),
+        after: hashOf(_settingsBytes!),
       ),
     if (plan.exclude case final e? when e.patch.changed)
       TransactionTarget(
@@ -146,6 +153,10 @@ final class TransactionSteps {
 
   Future<void> publishExclude() async {
     final e = plan.exclude!;
+    final created = await e.admin.createDirectory('info');
+    effects.directoriesCreated.addAll([
+      for (final dir in created) '${File(e.path).parent.parent.path}/$dir',
+    ]);
     await e.admin.publishRelative(
       excludeName,
       e.patch.after!,
@@ -173,7 +184,7 @@ final class TransactionSteps {
     if (!_settingsChange) return;
     await store.publishRelative(
       settingsPath,
-      _settingsBytes,
+      _settingsBytes!,
       expectedSha256: _o.settings.sha256,
     );
     effects.published(settingsPath, existed: _o.settings.present);

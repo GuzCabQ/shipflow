@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cli/src/context/native/posix_api.dart';
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
@@ -125,4 +126,33 @@ void main() {
       );
     });
   });
+
+  test(
+    'M1: a directory another process just created is not an I/O error',
+    () async {
+      final store = await box.open(
+        api: RacingMkdir(() {
+          Directory(box.path('shipflow')).createSync();
+        }),
+      );
+      expect(await store.createDirectory('shipflow/local'), ['shipflow/local']);
+    },
+  );
+}
+
+/// Otro proceso crea el directorio justo antes de que este lo intente.
+final class RacingMkdir extends NativePosix {
+  RacingMkdir(this.race) : super(currentPosixAbi());
+
+  final void Function() race;
+  var _raced = false;
+
+  @override
+  void mkdirat(int dirFd, String name, int mode) {
+    if (!_raced) {
+      _raced = true;
+      race();
+    }
+    super.mkdirat(dirFd, name, mode);
+  }
 }

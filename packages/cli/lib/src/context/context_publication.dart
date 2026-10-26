@@ -45,9 +45,10 @@ String? fingerprintAt(NativePosix posix, int dirFd, String name) {
 
 /// Publica [bytes] como [name] de [dirFd] sólo si su versión actual tiene
 /// la huella [expected] (null: ausente). Escribe un temporal propio en el
-/// mismo directorio, lo confirma con fsync y lo renombra: nunca abre el
-/// destino para escribir, así que un enlace o un hardlink colocados allí no
-/// reciben bytes. Si falla después de crear el temporal, lo retira.
+/// mismo directorio, con los permisos del destino que reemplaza, lo
+/// confirma con fsync y lo renombra: nunca abre el destino para escribir,
+/// así que un enlace o un hardlink colocados allí no reciben bytes. Si falla
+/// después de crear el temporal, lo retira.
 void publishAt(
   NativePosix posix,
   int dirFd,
@@ -58,12 +59,14 @@ void publishAt(
   if (fingerprintAt(posix, dirFd, name) != expected) {
     throw const ContextStoreFailure('concurrent_change');
   }
+  final mode = expected == null
+      ? _fileMode
+      : storeGuard(() => posix.lstatAt(dirFd, name))?.permissions ?? _fileMode;
   final temporary = '.$name.${_nonce()}.tmp';
-  final fd = storeGuard(
-    () => posix.createExclusive(dirFd, temporary, _fileMode),
-  );
+  final fd = storeGuard(() => posix.createExclusive(dirFd, temporary, mode));
   try {
     try {
+      if (expected != null) storeGuard(() => posix.fchmod(fd, mode));
       storeGuard(() => posix.writeAll(fd, bytes));
       storeGuard(() => posix.fsync(fd));
     } finally {

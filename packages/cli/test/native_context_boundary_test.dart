@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cli/src/context/native/posix_api.dart';
 import 'package:test/test.dart';
@@ -65,6 +66,7 @@ void main() {
     expect(native.size, system.size);
     expect(native.inode, system.inode);
     expect(native.device, system.device);
+    expect(native.permissions, system.mode & 4095);
   });
 
   test('lstatAt names directories, links and absences without following', () {
@@ -130,7 +132,55 @@ void main() {
     addTearDown(() => posix.close(again));
     expect(posix.read(again, 300000), bytes);
   });
+
+  test('M7: a libc without a required symbol is an unsupported platform', () {
+    expect(
+      () => NativePosix(_MissingSymbol(currentPosixAbi())),
+      throwsA(_kind(PosixErrorKind.unsupported)),
+    );
+  });
 }
 
 Matcher _kind(PosixErrorKind kind) =>
     isA<PosixError>().having((e) => e.kind, 'kind', kind);
+
+/// El ABI de esta plataforma con un símbolo de errno que no existe, como un
+/// glibc sin las funciones que el almacén necesita.
+final class _MissingSymbol implements PosixAbi {
+  _MissingSymbol(this.real);
+
+  final PosixAbi real;
+
+  @override
+  String get errnoSymbol => 'shipflow_no_existe';
+  @override
+  String get name => real.name;
+  @override
+  int get readOnly => real.readOnly;
+  @override
+  int get writeOnly => real.writeOnly;
+  @override
+  int get readWrite => real.readWrite;
+  @override
+  int get create => real.create;
+  @override
+  int get exclusive => real.exclusive;
+  @override
+  int get nonBlocking => real.nonBlocking;
+  @override
+  int get directory => real.directory;
+  @override
+  int get noFollow => real.noFollow;
+  @override
+  int get closeOnExec => real.closeOnExec;
+  @override
+  int get atCurrentDirectory => real.atCurrentDirectory;
+  @override
+  int get atSymlinkNoFollow => real.atSymlinkNoFollow;
+  @override
+  int get atRemoveDirectory => real.atRemoveDirectory;
+  @override
+  NativeStat readStat(Uint8List buffer) => real.readStat(buffer);
+  @override
+  PosixErrorKind kindOf(int errno) => real.kindOf(errno);
+}

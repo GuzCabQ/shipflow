@@ -48,6 +48,11 @@ final class PosixBindings {
     'fstatat',
     isLeaf: true,
   );
+  late final int Function(int, int) fchmod = _libc
+      .lookupFunction<Int32 Function(Int32, Uint32), int Function(int, int)>(
+        'fchmod',
+        isLeaf: true,
+      );
   late final PathCall mkdirAt = _path('mkdirat');
   late final PathCall unlinkAt = _path('unlinkat');
   late final RenameAt renameAt = _libc.lookupFunction<RenameAtNative, RenameAt>(
@@ -74,6 +79,28 @@ final class PosixBindings {
         Void Function(Pointer<Uint8>),
         void Function(Pointer<Uint8>)
       >('free', isLeaf: true);
+
+  /// Busca todos los símbolos ya: errno nunca se lee después de un
+  /// `dlsym`, y una libc sin alguno falla antes de cualquier efecto.
+  void resolveAll() {
+    for (final Object _ in [
+      openAt,
+      close,
+      fsync,
+      fchmod,
+      read,
+      write,
+      fstat,
+      fstatAt,
+      mkdirAt,
+      unlinkAt,
+      renameAt,
+      flock,
+      errno,
+      malloc,
+      free,
+    ]) {}
+  }
 
   FdCall _fd(String name) =>
       _libc.lookupFunction<Int32 Function(Int32), FdCall>(name, isLeaf: true);

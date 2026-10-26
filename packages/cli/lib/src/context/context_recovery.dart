@@ -63,19 +63,19 @@ ResultParts _parts(ObservedContext o) => ResultParts(
 );
 
 void _withoutJournal(ObservedContext o, ResultParts parts) {
+  if (o.journal.present) return parts.diagnostics.add(_journalInvalid());
   final (:state, :diagnostics) = stateOf(o);
-  if (o.journal.present) {
-    parts.diagnostics.add(
-      diagnostic(
-        'journal_invalid',
-        'El registro de la operación no cumple su formato; se conserva para '
-            'reconciliarlo a mano.',
-        transactionPath,
-      ),
-    );
-    return;
+  parts
+    ..state = state
+    ..success = ContextOutcome.unchanged
+    ..diagnostics.addAll(diagnostics);
+  if (state == ContextState.present) {
+    final (:freshness, diagnostics: fresh) = freshnessOf(o, state);
+    parts
+      ..freshness = freshness
+      ..context = o.project.value?.recognition
+      ..diagnostics.addAll(fresh);
   }
-  parts.diagnostics.addAll(diagnostics);
   if (state == ContextState.absent && diagnostics.isEmpty) {
     parts.diagnostics.add(
       diagnostic('not_initialized', 'No hay una operación ni un contexto.'),
@@ -83,6 +83,13 @@ void _withoutJournal(ObservedContext o, ResultParts parts) {
     parts.actions.add(firstInitAction);
   }
 }
+
+ContextDiagnostic _journalInvalid() => diagnostic(
+  'journal_invalid',
+  'El registro de la operación no cumple su formato; se conserva para '
+      'reconciliarlo a mano.',
+  transactionPath,
+);
 
 Future<void> _recover(
   RecoveryTargets t,
@@ -109,7 +116,7 @@ Future<void> _recover(
   final candidate = t.candidate();
   if (candidate == null ||
       digestOf(candidate.recognition) != _currentDigest(o)) {
-    await t.revert();
+    if (!await t.revert()) return _conflict(parts);
     await t.cleanup();
     return _aborted(t, parts);
   }
@@ -131,12 +138,9 @@ Future<void> _finishPublished(
   if (!await t.applyRemaining()) return _conflict(parts);
   await t.cleanup();
   final published = t.publishedProject();
-  _present(
-    parts,
-    published,
-    git: await _verify(t, o, git, budget),
-    choice: t.choice,
-  );
+  final check = await _verify(t, o, git, budget);
+  _present(parts, published, git: check, choice: t.choice);
+  parts.diagnostics.addAll(_uncorroborated(check, t.choice));
   if (published != null && published.observationDigest != _currentDigest(o)) {
     parts.diagnostics.add(
       diagnostic('context_stale', 'Lo observado cambió durante la operación.'),
@@ -155,8 +159,13 @@ Future<void> _finishPending(
 ) async {
   if (!await t.applyExclude()) return _conflict(parts);
   final check = await _verify(t, o, git, budget);
+  if (_uncorroborated(check, t.choice).isNotEmpty &&
+      check.effective != SharingEffective.conflict) {
+    parts.diagnostics.addAll(_uncorroborated(check, t.choice));
+    return;
+  }
   if (check.effective == SharingEffective.conflict) {
-    await t.revert();
+    if (!await t.revert()) return _conflict(parts);
     await t.cleanup();
     parts.diagnostics.add(sharingConflict(check));
     return;
@@ -165,6 +174,23 @@ Future<void> _finishPending(
   await t.cleanup();
   _present(parts, candidate, git: check, choice: t.choice);
 }
+
+/// Lo que impide afirmar la modalidad del journal: un conflicto, o no poder
+/// comprobar una elección que no está pendiente.
+List<ContextDiagnostic> _uncorroborated(
+  SharingCheck check,
+  SharingChoice choice,
+) => switch (check.effective) {
+  SharingEffective.conflict => [sharingConflict(check)],
+  SharingEffective.unverified when choice != SharingChoice.pending => [
+    diagnostic(
+      'git_unavailable',
+      'No se pudo comprobar la elección con Git; la operación queda '
+          'pendiente hasta poder corroborarla.',
+    ),
+  ],
+  _ => const [],
+};
 
 Future<SharingCheck> _verify(
   RecoveryTargets t,
@@ -214,6 +240,7 @@ void _aborted(RecoveryTargets t, ResultParts parts) {
 void _conflict(ResultParts parts) => parts.diagnostics.add(
   diagnostic(
     'recovery_conflict',
-    'El exclude cambió desde la operación; se conserva para reconciliarlo.',
+    'Un archivo propio no se puede llevar exactamente a su versión anterior '
+        'ni a la preparada; se conserva todo para reconciliarlo a mano.',
   ),
 );

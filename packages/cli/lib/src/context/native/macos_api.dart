@@ -43,6 +43,7 @@ final class MacosArm64Abi implements PosixAbi {
     final data = ByteData.sublistView(buffer);
     return (
       type: fileTypeOf(data.getUint16(4, Endian.little)),
+      permissions: data.getUint16(4, Endian.little) & 4095,
       size: data.getInt64(96, Endian.little),
       device: data.getInt32(0, Endian.little),
       inode: data.getUint64(8, Endian.little),

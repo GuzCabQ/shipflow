@@ -159,6 +159,23 @@ void main() {
     );
   });
 
+  test(
+    'M2: a stale init with another choice proposes refresh with it',
+    () async {
+      await box.run(ContextOperation.init);
+      box.file('packages/b/pubspec.yaml', 'name: b\n');
+      final init = await box.run(
+        ContextOperation.init,
+        sharing: SharingChoice.share,
+      );
+      expect(init.exitCode, 65);
+      expect(init.nextActions.single.arguments, [
+        '--refresh',
+        '--sharing=share',
+      ]);
+    },
+  );
+
   group('extendedContextDoesNotRaiseObservationBudget', () {
     test(
       'a context saved under extended is unverified under standard',

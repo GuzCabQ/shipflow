@@ -34,7 +34,13 @@ final class PosixError implements Exception {
 enum NativeFileType { regular, directory, link, other }
 
 /// Lo que un `stat` dice de una entrada, sin seguir enlaces.
-typedef NativeStat = ({NativeFileType type, int size, int device, int inode});
+typedef NativeStat = ({
+  NativeFileType type,
+  int size,
+  int device,
+  int inode,
+  int permissions,
+});
 
 /// Las constantes y el layout de `struct stat` de una plataforma. Se
 /// comprueban en pruebas nativas de cada una, no se deducen de otra.
@@ -79,7 +85,13 @@ const _chunk = 65536;
 /// No es final: las pruebas la extienden para inyectar fallos con el mismo
 /// contrato que el adapter real.
 class NativePosix {
-  NativePosix(this.abi) : _c = PosixBindings(abi.errnoSymbol);
+  NativePosix(this.abi) : _c = PosixBindings(abi.errnoSymbol) {
+    try {
+      _c.resolveAll();
+    } on ArgumentError {
+      throw const PosixError(PosixErrorKind.unsupported, 0);
+    }
+  }
 
   final PosixAbi abi;
   final PosixBindings _c;
@@ -144,6 +156,9 @@ class NativePosix {
   );
 
   void close(int fd) => _check(_c.close(fd));
+
+  /// Fija los permisos de [fd] sin depender del umask.
+  void fchmod(int fd, int mode) => _check(_c.fchmod(fd, mode));
 
   void fsync(int fd) => _retrying(() => _c.fsync(fd));
 

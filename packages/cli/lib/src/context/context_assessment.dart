@@ -205,10 +205,10 @@ _verified(
       ],
     );
   }
-  if (_rebound(o)) {
+  if (reboundSettings(o)) {
     return (
       sharing: sharing(SharingEffective.conflict),
-      diagnostics: [_bindingChanged()],
+      diagnostics: [bindingChanged()],
     );
   }
   final check = await git.verifySharing(o.git, o.choice, budget: budget);
@@ -221,7 +221,7 @@ _verified(
 }
 
 /// Si la elección guardada se vinculó a otro repositorio o prefijo.
-bool _rebound(ObservedContext o) {
+bool reboundSettings(ObservedContext o) {
   final saved = o.settings.value?.binding;
   final now = o.git.binding;
   return saved != null &&
@@ -231,7 +231,7 @@ bool _rebound(ObservedContext o) {
           saved.prefix != now.prefix);
 }
 
-ContextDiagnostic _bindingChanged() => diagnostic(
+ContextDiagnostic bindingChanged() => diagnostic(
   'binding_changed',
   'La elección se tomó para otro repositorio o ubicación; hay que '
       'confirmarla y el repositorio anterior no se edita.',

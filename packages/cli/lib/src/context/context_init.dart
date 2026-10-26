@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
@@ -7,14 +5,11 @@ import 'context_assessment.dart';
 import 'context_decisions.dart';
 import 'context_doctor.dart';
 import 'context_observation.dart';
-import 'context_publication_plan.dart';
+import 'context_init_publication.dart';
 import 'context_request.dart';
 import 'context_result.dart';
 import 'context_service.dart';
 import 'context_sharing_choice.dart';
-import 'context_transaction_runner.dart';
-import 'state_layout.dart';
-import 'state_ownership.dart';
 
 /// Una invocación de init o de init --refresh: decide con lo observado,
 /// antes de cualquier efecto, y publica sólo si todo lo permite.
@@ -60,12 +55,31 @@ final class InitSession {
         await (_refresh ? _refreshPresent() : _present());
       }
     }
-    parts.actions.addAll(nextActionsFor(parts.diagnostics, o));
+    parts.actions.addAll([
+      for (final action in nextActionsFor(parts.diagnostics, o))
+        _withChoice(action),
+    ]);
     if (_has('choice_required')) parts.actions.addAll(sharingActions());
     return resultOf(parts, effects.freeze(budget.started));
   }
 
   bool _has(String code) => parts.diagnostics.any((d) => d.code == code);
+
+  /// Refresh conserva la elección guardada; si se pidió otra, la acción
+  /// propuesta la lleva.
+  ContextNextAction _withChoice(ContextNextAction action) {
+    final wanted = request.sharing;
+    if (wanted == null ||
+        wanted == o.choice ||
+        action.arguments.join() != '--refresh') {
+      return action;
+    }
+    return initAction(
+      ['--refresh', '--sharing=${wanted.toWireName()}'],
+      action.purpose,
+      '${action.effect} Aplica también la elección pedida.',
+    );
+  }
 
   Future<void> _notInitialized() async => parts.diagnostics.add(
     diagnostic(
@@ -91,14 +105,15 @@ final class InitSession {
     if (current == null) return _ineligible();
     final choice = await chooseSharing(o, request, parts);
     if (choice == null || !precheckSharing(o, choice, parts)) return;
-    await _publish(
+    await publishFor(this, (
       projectId: service.newId(),
       revision: 1,
       current: current,
       choice: choice,
       operation: TransactionOperation.init,
       success: ContextOutcome.initialized,
-    );
+      keepSharing: false,
+    ));
   }
 
   /// Init sobre un contexto guardado: verifica, nunca actualiza
@@ -112,9 +127,7 @@ final class InitSession {
     if (freshness != ContextFreshness.current) return;
     final wanted = await _wantedChoice();
     if (wanted == null) return;
-    if (wanted == o.choice && request.sharing == null) {
-      return _keepSharing();
-    }
+    if (wanted == o.choice && await _sharingInForce()) return;
     if (!precheckSharing(o, wanted, parts)) return;
     await _publishSharing(wanted);
   }
@@ -129,7 +142,23 @@ final class InitSession {
     return chooseSharing(o, request, parts);
   }
 
-  Future<void> _keepSharing() async {
+  /// La elección guardada, comprobada ahora. Sin flag se informa tal cual,
+  /// aunque no esté aplicada: nunca se alterna sola. Con el mismo flag sólo
+  /// se republica si no está en vigor.
+  Future<bool> _sharingInForce() async {
+    final (:sharing, :diagnostics) = await sharingOf(o, service.git, budget);
+    final inForce =
+        sharing.effective != SharingEffective.conflict &&
+        sharing.effective != SharingEffective.unverified;
+    if (request.sharing != null && !inForce) return false;
+    parts
+      ..sharing = sharing
+      ..diagnostics.addAll(diagnostics);
+    return true;
+  }
+
+  /// La modalidad guardada, comprobada y reportada sin cambiarla.
+  Future<void> reportSharing() async {
     final (:sharing, :diagnostics) = await sharingOf(o, service.git, budget);
     parts
       ..sharing = sharing
@@ -146,13 +175,15 @@ final class InitSession {
     final same =
         saved.observationDigest == digestOf(current) &&
         saved.producer.recognitionContract == recognitionContract;
+    final keep = request.sharing == null;
+    if (keep && _rebound()) return;
     final choice = request.sharing ?? o.choice;
-    if (request.sharing != null && !precheckSharing(o, choice, parts)) return;
+    if (!keep && !precheckSharing(o, choice, parts)) return;
     if (same && choice == o.choice) {
       parts.freshness = ContextFreshness.current;
-      return _keepSharing();
+      return reportSharing();
     }
-    await _publish(
+    await publishFor(this, (
       projectId: saved.projectId,
       revision: same ? saved.revision : saved.revision + 1,
       current: same ? null : current,
@@ -161,7 +192,15 @@ final class InitSession {
           ? TransactionOperation.sharing
           : TransactionOperation.refresh,
       success: ContextOutcome.refreshed,
-    );
+      keepSharing: keep,
+    ));
+  }
+
+  /// Una elección local vinculada a otro repositorio no se revincula sola.
+  bool _rebound() {
+    if (!o.gitUsable || !reboundSettings(o)) return false;
+    parts.diagnostics.add(bindingChanged());
+    return true;
   }
 
   void _ineligible() {
@@ -176,108 +215,13 @@ final class InitSession {
     );
   }
 
-  Future<void> _publishSharing(SharingChoice choice) => _publish(
+  Future<void> _publishSharing(SharingChoice choice) => publishFor(this, (
     projectId: o.project.value!.projectId,
     revision: o.project.value!.revision,
     current: null,
     choice: choice,
     operation: TransactionOperation.sharing,
     success: ContextOutcome.initialized,
-  );
-
-  Future<void> _publish({
-    required String projectId,
-    required int revision,
-    required PortableRecognition? current,
-    required SharingChoice choice,
-    required TransactionOperation operation,
-    required ContextOutcome success,
-  }) async {
-    final exclude = await excludeChangeFor(
-      o,
-      choice,
-      service.openAdministration,
-    );
-    if (exclude?.patch.problem case final problem?) {
-      parts.diagnostics.add(excludeProblem(problem));
-      return;
-    }
-    final project = current == null
-        ? null
-        : candidateFor(
-            projectId: projectId,
-            revision: revision,
-            version: service.version,
-            current: current,
-            pluginIds: o.report.proposal.pluginIds,
-            now: service.now(),
-          );
-    final plan = PublicationPlan(
-      operationId: service.newId(),
-      operation: operation,
-      settings: settingsFor(projectId, choice, o.git, exclude),
-      observed: o,
-      project: project,
-      exclude: exclude,
-    );
-    await _run(plan, success);
-  }
-
-  Future<void> _run(PublicationPlan plan, ContextOutcome success) async {
-    final result = await runTransaction(
-      plan: plan,
-      store: service.store,
-      git: service.git,
-      budget: budget,
-      effects: effects,
-      sourcesUnchanged: () => _sourcesUnchanged(plan.project),
-    );
-    parts.diagnostics.addAll(result.diagnostics);
-    if (result.journalLeft) parts.state = ContextState.recoveryRequired;
-    if (!result.ok) return;
-    final context = plan.project?.recognition ?? o.project.value?.recognition;
-    parts
-      ..state = ContextState.present
-      ..freshness = ContextFreshness.current
-      ..context = context
-      ..success = success
-      ..sharing = ContextSharing(
-        choice: plan.choice,
-        gitState: o.git.state,
-        effective: result.sharing ?? SharingEffective.pending,
-      );
-    if (!o.gitUsable) parts.diagnostics.add(gitWarning(o.git));
-  }
-
-  Future<bool> _sourcesUnchanged(ProjectContext? candidate) async {
-    if (candidate == null) return true;
-    final report = await service.recognize(
-      request.profile,
-      authorizedStateOmissions(await inspectStateOwnership(service.root)),
-    );
-    try {
-      return digestOf(projectRecognition(report)) ==
-          candidate.observationDigest;
-    } on ContextFormatException {
-      return false;
-    }
-  }
-}
-
-/// Un `shipflow/project.json` en una carpeta ancestro, sólo por metadatos:
-/// hasta la raíz Git, o a lo sumo 32 niveles sin Git.
-String? ancestorContext(Directory root, GitObservation git) {
-  final top = git.binding?.repositoryRoot;
-  var dir = root.parent;
-  for (var level = 0; level < 32 && dir.path != root.path; level++) {
-    if (top != null && !'${root.path}/'.startsWith('$top/')) break;
-    final candidate = '${dir.path}/$projectPath';
-    if (FileSystemEntity.typeSync(candidate, followLinks: false) ==
-        FileSystemEntityType.file) {
-      return candidate;
-    }
-    if (dir.path == top || dir.parent.path == dir.path) break;
-    dir = dir.parent;
-  }
-  return null;
+    keepSharing: false,
+  ));
 }

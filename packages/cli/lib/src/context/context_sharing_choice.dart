@@ -105,17 +105,23 @@ bool _ownBlock(ObservedContext o, IgnoreMatch rule) {
       rule.pattern == excludePattern(prefix);
 }
 
-ContextDiagnostic excludeProblem(String problem) =>
-    diagnostic('sharing_conflict', switch (problem) {
-      'path_not_representable' =>
-        'La ruta del proyecto no se puede expresar sin ambigüedad en una regla '
-            'de exclusión; elige compartir.',
-      'exclude_too_large' =>
-        'El exclude local supera el máximo admitido; no se modifica.',
-      _ =>
-        'El bloque propio del exclude está dañado o repetido; no se repara a '
-            'ciegas.',
-    });
+ContextDiagnostic excludeProblem(String problem) => diagnostic(
+  'sharing_conflict',
+  switch (problem) {
+    'path_not_representable' =>
+      'La ruta del proyecto no se puede expresar sin ambigüedad en una regla '
+          'de exclusión; elige compartir.',
+    'exclude_unsafe' =>
+      'El exclude local de Git es un enlace o está fuera de la administración '
+          'del repositorio; no se sigue ni se modifica. Elige compartir o '
+          'reemplázalo por un archivo.',
+    'exclude_too_large' =>
+      'El exclude local supera el máximo admitido; no se modifica.',
+    _ =>
+      'El bloque propio del exclude está dañado o repetido; no se repara a '
+          'ciegas.',
+  },
+);
 
 /// El aviso de un registro guardado sin Git utilizable.
 ContextDiagnostic gitWarning(GitObservation git) =>

@@ -85,7 +85,7 @@ List<ContextCheck> checksOf(ResultParts p) {
     _presence(p, _check),
     _integrity(p, _check),
     _compatibility(p, _check),
-    _transaction(p, _check),
+    _transaction(p, codes, _check),
     _freshness(p, _check),
     _sharing(p, codes, _check),
   ];
@@ -114,7 +114,15 @@ ContextCheck _presence(ResultParts p, _Check check) {
   );
 }
 
-ContextCheck _transaction(ResultParts p, _Check check) {
+ContextCheck _transaction(ResultParts p, Set<String> codes, _Check check) {
+  if (codes.contains('state_occupied')) {
+    return check(
+      ContextCheckId.transactionState,
+      ContextCheckStatus.notChecked,
+      'not_checked',
+      'La carpeta no es de Shipflow: no se leyeron sus documentos.',
+    );
+  }
   final pending = p.state == ContextState.recoveryRequired;
   return check(
     ContextCheckId.transactionState,

@@ -168,4 +168,76 @@ void main() {
       isFalse,
     );
   });
+
+  test('C1: repeating the same explicit choice changes nothing', () async {
+    for (final choice in [SharingChoice.share, SharingChoice.local]) {
+      final again = ServiceSandbox.create()
+        ..project()
+        ..gitInit();
+      addTearDown(again.dispose);
+      await again.run(
+        ContextOperation.init,
+        git: again.realGit,
+        sharing: choice,
+      );
+      final before = again.snapshot();
+      final result = await again.run(
+        ContextOperation.init,
+        git: again.realGit,
+        sharing: choice,
+      );
+      expect(result.exitCode, 0, reason: '$choice ${codes(result)}');
+      expect(result.outcome, ContextOutcome.unchanged);
+      expect(again.snapshot(), before);
+    }
+  });
+
+  test(
+    'I1: refresh without --sharing keeps local settings when Git is gone',
+    () async {
+      await box.run(
+        ContextOperation.init,
+        git: box.realGit,
+        sharing: SharingChoice.local,
+      );
+      final settings = File(box.path('shipflow/local/settings.json'));
+      final before = settings.readAsBytesSync();
+      final excludeBefore = exclude().readAsBytesSync();
+      box.file('packages/b/pubspec.yaml', 'name: b\n');
+      final result = await box.run(ContextOperation.refresh);
+      expect(
+        result.outcome,
+        ContextOutcome.refreshed,
+        reason: '${codes(result)}',
+      );
+      expect(settings.readAsBytesSync(), before);
+      expect(exclude().readAsBytesSync(), excludeBefore);
+    },
+  );
+
+  test(
+    'I1: a copy bound to another repository is not rebound by refresh',
+    () async {
+      await box.run(
+        ContextOperation.init,
+        git: box.realGit,
+        sharing: SharingChoice.local,
+      );
+      final copy = Directory('${box.base.path}/copia')..createSync();
+      Process.runSync('cp', ['-R', '${box.root.path}/.', copy.path]);
+      Directory('${copy.path}/.git').deleteSync(recursive: true);
+      final other = ServiceSandbox.at(box.base, copy)..gitInit();
+      other.file('packages/b/pubspec.yaml', 'name: b\n');
+      final before = other.snapshot();
+      final result = await other.run(
+        ContextOperation.refresh,
+        git: box.realGit,
+      );
+      expect(result.exitCode, 65, reason: '${codes(result)}');
+      expect(codes(result), contains('binding_changed'));
+      final after = other.snapshot()
+        ..removeWhere((k, _) => k.startsWith('.git/'));
+      expect(after, before..removeWhere((k, _) => k.startsWith('.git/')));
+    },
+  );
 }

@@ -215,4 +215,22 @@ void main() {
       expect(bytes, hasLength(10));
     });
   });
+
+  test(
+    'I4: a replaced file keeps its permissions, despite the umask',
+    () async {
+      for (final mode in ['600', '664']) {
+        box.file('shipflow/project.json', 'viejo');
+        await Process.run('chmod', [mode, box.path('shipflow/project.json')]);
+        final store = await box.open();
+        await store.publishRelative(
+          'shipflow/project.json',
+          utf8.encode('nuevo'),
+          expectedSha256: hashOf(utf8.encode('viejo')),
+        );
+        final stat = File(box.path('shipflow/project.json')).statSync();
+        expect((stat.mode & 511).toRadixString(8), mode);
+      }
+    },
+  );
 }
