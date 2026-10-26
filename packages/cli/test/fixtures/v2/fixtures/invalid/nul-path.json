@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "shipflow.project-context",
+  "projectId": "12345678-1234-4234-8234-123456789abc",
+  "root": ".",
+  "revision": 1,
+  "producer": {
+    "version": "0.0.0-fixture",
+    "recognitionContract": "declared-project-v2.1",
+    "pluginIds": [
+      "plugin_example"
+    ]
+  },
+  "observedAt": "2026-10-25T00:00:00Z",
+  "recognition": {
+    "status": "recognized",
+    "recognitionScope": "declared_project_recognition",
+    "candidates": [
+      {
+        "id": "example",
+        "displayName": "Example",
+        "pluginId": "plugin_example",
+        "evidenceIds": [
+          "e0001"
+        ]
+      }
+    ],
+    "units": [
+      {
+        "id": "u0001",
+        "name": "example",
+        "kind": "package",
+        "path": "nested\u0000name",
+        "evidenceIds": [
+          "e0001"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "e0001",
+        "kind": "name",
+        "role": "identity",
+        "label": "Name",
+        "path": "manifest.example",
+        "value": "example",
+        "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "conflicts": [],
+    "limitations": [],
+    "relations": [],
+    "contextSources": [],
+    "omissions": [
+      {
+        "path": "shipflow",
+        "rule": "tool_state",
+        "evidenceIds": []
+      }
+    ]
+  },
+  "observationDigest": "4b7167f7c23efe6c1da8bb536d7aa4e8c476c32eab3472f15d04b0da0dafe4b0"
+}

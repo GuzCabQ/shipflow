@@ -201,6 +201,36 @@ const _expectedImports = {
     'recognition_runner.dart',
   },
   'lib/src/cli_response.dart': <String>{},
+  'lib/src/context/canonical_json.dart': {'dart:convert'},
+  'lib/src/context/context_codec.dart': {
+    'dart:convert',
+    'package:core/core.dart',
+    'package:crypto/crypto.dart',
+    'canonical_json.dart',
+    'context_document_shape.dart',
+    'context_recognition_shape.dart',
+    'context_response_shape.dart',
+    'strict_json.dart',
+  },
+  'lib/src/context/context_document_shape.dart': {
+    'package:core/core.dart',
+    'context_recognition_shape.dart',
+    'context_shape.dart',
+  },
+  'lib/src/context/context_recognition_shape.dart': {
+    'package:core/core.dart',
+    'context_shape.dart',
+  },
+  'lib/src/context/context_response_shape.dart': {
+    'package:core/core.dart',
+    'context_recognition_shape.dart',
+    'context_shape.dart',
+  },
+  'lib/src/context/context_shape.dart': {'package:core/core.dart'},
+  'lib/src/context/strict_json.dart': {
+    'dart:convert',
+    'package:core/core.dart',
+  },
   'lib/src/logical_root.dart': {'dart:convert', 'dart:io'},
   'lib/src/internal_failure.dart': {
     'cli_application.dart',

@@ -1,6 +1,9 @@
 import 'recognition_enums.dart';
 import 'recognition_json.dart';
 
+/// La única ruta que puede omitirse como estado propio de Shipflow.
+const toolStatePath = 'shipflow';
+
 /// Un árbol que no se recorrió por una regla de alcance. No cuenta archivos
 /// ni afirma que lo de adentro sea generado, seguro o irrelevante.
 final class RecognitionOmission {
@@ -9,7 +12,15 @@ final class RecognitionOmission {
     required this.rule,
     required List<String> evidenceIds,
   }) : evidenceIds = List.unmodifiable(evidenceIds) {
-    if (rule != OmissionRule.baselineExclusion && evidenceIds.isEmpty) {
+    if (rule == OmissionRule.toolState) {
+      if (path != toolStatePath || evidenceIds.isNotEmpty) {
+        throw ArgumentError.value(
+          path,
+          'path',
+          'el estado propio sólo omite «$toolStatePath», sin evidencia',
+        );
+      }
+    } else if (rule != OmissionRule.baselineExclusion && evidenceIds.isEmpty) {
       throw ArgumentError.value(
         path,
         'evidenceIds',

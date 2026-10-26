@@ -26,6 +26,7 @@ void main() {
         'baseline_exclusion',
         'temporary_directory',
         'declared_resource',
+        'tool_state',
       ]);
     });
 

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
+import 'context_fixtures.dart' as context;
+import 'context_serialization_fixtures.dart';
 import 'recognition_fixtures.dart';
 
 void main() {
@@ -119,6 +121,74 @@ void main() {
           'RecognitionReport': (
             report.toJson(),
             (j) => RecognitionReport.fromJson(j).toJson(),
+          ),
+          'ContextProducer': (
+            context.projectContext().producer.toJson(),
+            (j) => ContextProducer.fromJson(j).toJson(),
+          ),
+          'ProjectContext': (
+            context.projectContext().toJson(),
+            (j) => ProjectContext.fromJson(j).toJson(),
+          ),
+          'PortableRecognition': (
+            context.PortableParts().build().toJson(),
+            (j) => PortableRecognition.fromJson(j).toJson(),
+          ),
+          'GitBinding': (
+            binding.toJson(),
+            (j) => GitBinding.fromJson(j).toJson(),
+          ),
+          'ManagedExcludeRecord': (
+            managedExclude.toJson(),
+            (j) => ManagedExcludeRecord.fromJson(j).toJson(),
+          ),
+          'LocalSettings': (
+            settings.toJson(),
+            (j) => LocalSettings.fromJson(j).toJson(),
+          ),
+          'TransactionTarget': (
+            target.toJson(),
+            (j) => TransactionTarget.fromJson(j).toJson(),
+          ),
+          'TransactionStaging': (
+            staging.toJson(),
+            (j) => TransactionStaging.fromJson(j).toJson(),
+          ),
+          'TransactionExclude': (
+            exclude.toJson(),
+            (j) => TransactionExclude.fromJson(j).toJson(),
+          ),
+          'ContextTransaction': (
+            journal.toJson(),
+            (j) => ContextTransaction.fromJson(j).toJson(),
+          ),
+          'ContextSharing': (
+            sharing.toJson(),
+            (j) => ContextSharing.fromJson(j).toJson(),
+          ),
+          'ContextCheck': (
+            check.toJson(),
+            (j) => ContextCheck.fromJson(j).toJson(),
+          ),
+          'ContextDiagnostic': (
+            diagnostic.toJson(),
+            (j) => ContextDiagnostic.fromJson(j).toJson(),
+          ),
+          'ContextEffects': (
+            contextEffects.toJson(),
+            (j) => ContextEffects.fromJson(j).toJson(),
+          ),
+          'ContextNextAction': (
+            nextAction.toJson(),
+            (j) => ContextNextAction.fromJson(j).toJson(),
+          ),
+          'ContextFormatException': (
+            formatError.toJson(),
+            (j) => ContextFormatException.fromJson(j).toJson(),
+          ),
+          'ContextOperationResult': (
+            operationResult.toJson(),
+            (j) => ContextOperationResult.fromJson(j).toJson(),
           ),
         };
     for (final MapEntry(key: name, value: (json, rebuild)) in cases.entries) {

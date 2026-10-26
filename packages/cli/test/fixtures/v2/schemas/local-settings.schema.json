@@ -1,0 +1,1507 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shipflow.invalid/schemas/v2/local-settings.schema.json",
+  "$ref": "#/$defs/settings",
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "pluginId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "pluginId",
+        "evidenceIds"
+      ],
+      "additionalProperties": false
+    },
+    "unit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "path",
+        "evidenceIds"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "identity",
+            "environment",
+            "description",
+            "relation",
+            "resource"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "value": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "role",
+        "label",
+        "path",
+        "value",
+        "fingerprint"
+      ],
+      "additionalProperties": false
+    },
+    "conflict": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "evidenceIds"
+      ],
+      "additionalProperties": false
+    },
+    "limitation": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocking": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "path",
+        "blocking"
+      ],
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "local_dependency",
+            "workspace_member"
+          ]
+        },
+        "fromPath": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "declaredName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetPath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetUnitId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "corroborated",
+            "unresolved"
+          ]
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "fromPath",
+        "declaredName",
+        "targetPath",
+        "targetUnitId",
+        "status",
+        "evidenceIds"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "corroborated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "targetPath": {
+                "type": "string",
+                "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+              },
+              "targetUnitId": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "scopePath": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "kind": {
+          "enum": [
+            "documentation",
+            "instructions",
+            "analysis_configuration",
+            "task_configuration",
+            "ci_configuration"
+          ]
+        },
+        "entityType": {
+          "enum": [
+            "file",
+            "directory",
+            "link",
+            "special",
+            "missing",
+            "unavailable"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "observed",
+            "not_found",
+            "access_failed",
+            "ancestor_link",
+            "excluded"
+          ]
+        },
+        "contentStatus": {
+          "const": "not_inspected"
+        }
+      },
+      "required": [
+        "scopePath",
+        "path",
+        "kind",
+        "entityType",
+        "reason",
+        "contentStatus"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "observed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "entityType": {
+                "enum": [
+                  "file",
+                  "directory",
+                  "link",
+                  "special"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "not_found"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "entityType": {
+                "const": "missing"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "access_failed",
+                  "ancestor_link",
+                  "excluded"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "entityType": {
+                "const": "unavailable"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "omission": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+        },
+        "rule": {
+          "enum": [
+            "baseline_exclusion",
+            "temporary_directory",
+            "declared_resource",
+            "tool_state"
+          ]
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "path",
+        "rule",
+        "evidenceIds"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "rule": {
+                "const": "tool_state"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "path": {
+                "const": "shipflow"
+              },
+              "evidenceIds": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rule": {
+                "enum": [
+                  "temporary_directory",
+                  "declared_resource"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidenceIds": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "recognition": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "recognized"
+        },
+        "recognitionScope": {
+          "const": "declared_project_recognition"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidate"
+          },
+          "maxItems": 18432
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unit"
+          },
+          "maxItems": 18432
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 18432
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          },
+          "maxItems": 18432
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/limitation"
+          },
+          "maxItems": 18432
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          },
+          "maxItems": 18432
+        },
+        "contextSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "maxItems": 18432
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/omission"
+          },
+          "maxItems": 18432
+        }
+      },
+      "required": [
+        "status",
+        "recognitionScope",
+        "candidates",
+        "units",
+        "evidence",
+        "conflicts",
+        "limitations",
+        "relations",
+        "contextSources",
+        "omissions"
+      ],
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "kind": {
+          "const": "shipflow.project-context"
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "root": {
+          "const": "."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "producer": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "recognitionContract": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "pluginIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "version",
+            "recognitionContract",
+            "pluginIds"
+          ],
+          "additionalProperties": false
+        },
+        "observedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+        },
+        "recognition": {
+          "$ref": "#/$defs/recognition"
+        },
+        "observationDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "projectId",
+        "root",
+        "revision",
+        "producer",
+        "observedAt",
+        "recognition",
+        "observationDigest"
+      ],
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "repositoryRoot": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gitDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commonDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repositoryRoot",
+        "gitDir",
+        "commonDir",
+        "prefix"
+      ],
+      "additionalProperties": false
+    },
+    "managedExclude": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "blockId",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "choice": {
+          "enum": [
+            "share",
+            "local",
+            "pending"
+          ]
+        },
+        "binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "managedExclude": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/managedExclude"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "projectId",
+        "choice",
+        "binding",
+        "applied",
+        "managedExclude"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "applied": {
+                "const": false
+              },
+              "managedExclude": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "choice": {
+                "const": "local"
+              },
+              "applied": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "binding": {
+                "$ref": "#/$defs/binding"
+              },
+              "managedExclude": {
+                "$ref": "#/$defs/managedExclude"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "enum": [
+            "project",
+            "settings",
+            "exclude"
+          ]
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "resource",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "journal": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "operationId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "operation": {
+          "enum": [
+            "init",
+            "refresh",
+            "sharing"
+          ]
+        },
+        "choice": {
+          "enum": [
+            "share",
+            "local",
+            "pending"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "prepared",
+            "sharing_applied",
+            "context_published",
+            "completed",
+            "aborting"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/target"
+          },
+          "minItems": 1,
+          "maxItems": 3
+        },
+        "staging": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "settingsBefore": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "settingsAfter": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?![\\s\\S]*\\\\)(?![\\s\\S]*\\u0000)(?![\\s\\S]*(?:^|/)\\.\\.(?:/|$))(?![\\s\\S]*(?:^|/)\\.(?:/|$))(?![\\s\\S]*//)(?![\\s\\S]*\\/$)[\\s\\S]+)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "project",
+            "settingsBefore",
+            "settingsAfter"
+          ],
+          "additionalProperties": false
+        },
+        "exclude": {
+          "type": "object",
+          "properties": {
+            "blockId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "beforeBlock": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "afterBlock": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "blockId",
+            "beforeBlock",
+            "afterBlock"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "operationId",
+        "projectId",
+        "operation",
+        "choice",
+        "phase",
+        "targets",
+        "staging",
+        "exclude"
+      ],
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "context_presence",
+            "context_integrity",
+            "producer_compatibility",
+            "transaction_state",
+            "recognition_freshness",
+            "sharing_state"
+          ]
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_checked"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "code",
+        "scope",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "enum": [
+            "init",
+            "doctor"
+          ]
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "arguments",
+        "purpose",
+        "effect"
+      ],
+      "additionalProperties": false
+    },
+    "effects": {
+      "type": "object",
+      "properties": {
+        "filesCreated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filesReplaced": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filesRemoved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "directoriesCreated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "processesStarted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "excludeModified": {
+          "type": "boolean"
+        },
+        "networkRequests": {
+          "const": 0
+        }
+      },
+      "required": [
+        "filesCreated",
+        "filesReplaced",
+        "filesRemoved",
+        "directoriesCreated",
+        "processesStarted",
+        "excludeModified",
+        "networkRequests"
+      ],
+      "additionalProperties": false
+    },
+    "sharing": {
+      "type": "object",
+      "properties": {
+        "choice": {
+          "enum": [
+            "share",
+            "local",
+            "pending"
+          ]
+        },
+        "gitState": {
+          "enum": [
+            "available",
+            "not_installed",
+            "not_repository",
+            "unavailable",
+            "not_checked"
+          ]
+        },
+        "effective": {
+          "enum": [
+            "share_ready",
+            "local_excluded",
+            "pending",
+            "unverified",
+            "conflict"
+          ]
+        }
+      },
+      "required": [
+        "choice",
+        "gitState",
+        "effective"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 3
+        },
+        "command": {
+          "enum": [
+            "init",
+            "doctor"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "init",
+            "refresh",
+            "recover",
+            "doctor"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "initialized",
+            "unchanged",
+            "refreshed",
+            "recovered",
+            "available",
+            "needs_attention",
+            "cancelled",
+            "failed"
+          ]
+        },
+        "exitCode": {
+          "enum": [
+            0,
+            64,
+            65,
+            66,
+            70,
+            74,
+            75,
+            130
+          ]
+        },
+        "contextState": {
+          "enum": [
+            "absent",
+            "present",
+            "invalid",
+            "incompatible",
+            "recovery_required"
+          ]
+        },
+        "freshness": {
+          "enum": [
+            "current",
+            "stale",
+            "unverified",
+            "not_applicable"
+          ]
+        },
+        "sharing": {
+          "$ref": "#/$defs/sharing"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          },
+          "maxItems": 6
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/recognition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effects": {
+          "$ref": "#/$defs/effects"
+        },
+        "nextActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "command",
+        "operation",
+        "outcome",
+        "exitCode",
+        "contextState",
+        "freshness",
+        "sharing",
+        "checks",
+        "diagnostics",
+        "context",
+        "effects",
+        "nextActions"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "doctor"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "const": "doctor"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "command": {
+                "const": "init"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "enum": [
+                  "init",
+                  "refresh",
+                  "recover"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "dryRun": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "recognized",
+            "ambiguous",
+            "unsupported",
+            "invalid_root"
+          ]
+        },
+        "recognitionScope": {
+          "const": "declared_project_recognition"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidate"
+          },
+          "maxItems": 18432
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unit"
+          },
+          "maxItems": 18432
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 18432
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          },
+          "maxItems": 18432
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/limitation"
+          },
+          "maxItems": 18432
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          },
+          "maxItems": 18432
+        },
+        "contextSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "maxItems": 18432
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/omission"
+          },
+          "maxItems": 18432
+        },
+        "schemaVersion": {
+          "const": 3
+        },
+        "type": {
+          "const": "init_dry_run"
+        },
+        "command": {
+          "const": "init"
+        },
+        "operation": {
+          "const": "dry_run"
+        },
+        "exitCode": {
+          "enum": [
+            0,
+            65,
+            66
+          ]
+        },
+        "requestedRoot": {
+          "type": "string"
+        },
+        "resolvedRoot": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "detected",
+                "absent",
+                "indeterminate"
+              ]
+            },
+            "root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "relation": {
+              "enum": [
+                "same",
+                "ancestor",
+                "none"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "root",
+            "relation"
+          ],
+          "additionalProperties": false
+        },
+        "proposal": {
+          "type": "object",
+          "properties": {
+            "eligible": {
+              "type": "boolean"
+            },
+            "pluginIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "description"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "eligible",
+            "pluginIds",
+            "actions"
+          ],
+          "additionalProperties": false
+        },
+        "effects": {
+          "type": "object",
+          "properties": {
+            "filesWritten": {
+              "const": 0
+            },
+            "directoriesCreated": {
+              "const": 0
+            },
+            "processesStarted": {
+              "const": 0
+            },
+            "networkRequests": {
+              "const": 0
+            }
+          },
+          "required": [
+            "filesWritten",
+            "directoriesCreated",
+            "processesStarted",
+            "networkRequests"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "status",
+        "recognitionScope",
+        "candidates",
+        "units",
+        "evidence",
+        "conflicts",
+        "limitations",
+        "relations",
+        "contextSources",
+        "omissions",
+        "schemaVersion",
+        "type",
+        "command",
+        "operation",
+        "exitCode",
+        "requestedRoot",
+        "resolvedRoot",
+        "repository",
+        "proposal",
+        "effects"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

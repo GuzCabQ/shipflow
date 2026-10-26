@@ -157,7 +157,11 @@ enum ContextReason {
 enum OmissionRule {
   baselineExclusion('baseline_exclusion'),
   temporaryDirectory('temporary_directory'),
-  declaredResource('declared_resource');
+  declaredResource('declared_resource'),
+
+  /// El estado propio de Shipflow, una exclusión de política: no afirma que
+  /// el directorio exista.
+  toolState('tool_state');
 
   const OmissionRule(this._wireName);
 
