@@ -7,4 +7,6 @@
 # falla, y una declaración que quedó vieja —porque el archivo se borró o dejó
 # de estar huérfano— también. Una lista que solo se agranda deja de proteger.
 #
-# Hoy está vacía, y eso es el estado correcto.
+# Hoy tiene una sola entrada, y su motivo va al lado.
+
+packages/cli/test/support/context_process.dart  # proceso hijo: context_lock_process_test lo lanza por ruta para tener un dueño de lease vivo en otro proceso; no se importa
