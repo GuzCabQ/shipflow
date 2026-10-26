@@ -43,10 +43,13 @@ El ejecutable tiene dos superficies:
   Flutter —identidad, paquetes y sus relaciones locales, entorno declarado,
   fuentes candidatas, lo que no se recorrió y qué impide continuar— **sin
   modificarlo ni guardar nada**. Contrato en [`docs/CLI-V1.md`](docs/CLI-V1.md).
+- **V2**, `shipflow init` y `shipflow doctor`: guarda ese contexto una vez en
+  `shipflow/project.json`, lo comprueba al volver, lo actualiza con
+  `init --refresh` y recupera una operación interrumpida con `init --recover`.
+  Contrato en [`docs/CLI-V2.md`](docs/CLI-V2.md).
 
-Shipflow todavía no inicializa proyectos, no persiste estado, no ejecuta agentes
-y no implementa `doctor`, `analyze`, `plan`, `implement`, `verify`, `review` ni
-`ship`. Los paquetes sin uso en V1 (`agents`, `forge`, `orchestration`, `rules`)
+Shipflow todavía no ejecuta agentes ni implementa `analyze`, `plan`,
+`implement`, `verify`, `review` ni `ship`. Los paquetes sin uso en V1 (`agents`, `forge`, `orchestration`, `rules`)
 son reservas declaradas.
 
 Las preguntas de diseño sin responder y los puntos ciegos conocidos del arnés
@@ -78,6 +81,15 @@ Desde la carpeta de un proyecto Dart o Flutter:
 shipflow init --dry-run                           # resumen legible
 shipflow init --dry-run --json                    # el reporte completo, una línea JSON
 shipflow init --dry-run --report-budget=extended  # admite un reporte mayor
+```
+
+Para guardar el contexto y volver a él:
+
+```bash
+shipflow init                          # primera incorporación; pregunta cómo conservarlo
+shipflow init --sharing=share --json   # sin preguntar
+shipflow doctor                        # ¿sigue vigente? sólo lee
+shipflow init --refresh                # actualizarlo con lo observado ahora
 ```
 
 El resumen dice qué se reconoció, qué impide continuar, qué no se comprobó
