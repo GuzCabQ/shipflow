@@ -133,4 +133,21 @@ void main() {
     }
     expect(box.snapshot(), before);
   });
+
+  test('recovery never reports a write it did not need', () async {
+    await box.run(ContextOperation.init);
+    box.file('packages/b/pubspec.yaml', 'name: b\n');
+    // journal, staging y previous.json: muere al publicar el contexto.
+    await expectLater(
+      box.run(ContextOperation.refresh, wrap: (r) => CrashingStore(r, 3)),
+      throwsA(isA<SimulatedCrash>()),
+    );
+    final recover = await box.run(ContextOperation.recover);
+    expect(
+      recover.outcome,
+      ContextOutcome.recovered,
+      reason: '${codes(recover)}',
+    );
+    expect(recover.effects.filesReplaced, ['shipflow/project.json']);
+  });
 }

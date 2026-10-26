@@ -215,6 +215,7 @@ final class RecoveryTargets {
       previousPath,
       maxBytes: maxProjectBytes,
     );
+    if (previous != null && hashOf(previous) == hashOf(old)) return;
     await store.publishRelative(
       previousPath,
       old,

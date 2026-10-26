@@ -16,20 +16,23 @@ void main() {
   setUp(() => box = ServiceSandbox.create());
   tearDown(() => box.dispose());
 
-  Future<String> human(List<String> arguments, {Directory? at}) async =>
-      (await runCli(
-        arguments,
-        version: '0.0.0-prueba',
-        workingDirectory: at ?? box.root,
-        recognizeProject:
-            (root, {required reportLimits, required authorizedOmissions}) =>
-                recognizeDartProject(
-                  root,
-                  reportLimits: reportLimits,
-                  authorizedOmissions: authorizedOmissions,
-                ),
-        git: GitContextAdapter(parentEnvironment: box.noGit),
-      )).payload;
+  Future<String> human(
+    List<String> arguments, {
+    Directory? at,
+    Map<String, String>? git,
+  }) async => (await runCli(
+    arguments,
+    version: '0.0.0-prueba',
+    workingDirectory: at ?? box.root,
+    recognizeProject:
+        (root, {required reportLimits, required authorizedOmissions}) =>
+            recognizeDartProject(
+              root,
+              reportLimits: reportLimits,
+              authorizedOmissions: authorizedOmissions,
+            ),
+    git: GitContextAdapter(parentEnvironment: git ?? box.noGit),
+  )).payload;
 
   test('first init, return and change read in plain words', () async {
     box.project();
@@ -82,5 +85,22 @@ void main() {
     final first = await human(['init']);
     expect(first, contains('No se comprobó si el proyecto compila'));
     expect(first, isNot(contains('analyze')));
+  });
+
+  test('the headline names the cause, not a generic failure', () async {
+    box.project();
+    box.gitInit();
+    final pending = await human(['init'], git: box.realGit);
+    expect(pending, contains('\nFalta elegir cómo conservarlo\n'));
+    box.file('shipflow/main.go', 'package main\n');
+    final occupied = await human(['init']);
+    expect(occupied, contains('\nLa carpeta shipflow tiene contenido ajeno\n'));
+  });
+
+  test('the description is the one of the root package', () async {
+    box.file('pubspec.yaml', 'name: app\ndescription: raíz\n');
+    box.file('packages/a/pubspec.yaml', 'name: a\ndescription: anidado\n');
+    final first = await human(['init']);
+    expect(first, contains('Descripción: «raíz»'));
   });
 }
