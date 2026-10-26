@@ -52,6 +52,7 @@ abstract interface class PosixAbi {
   int get closeOnExec;
   int get atCurrentDirectory;
   int get atSymlinkNoFollow;
+  int get atRemoveDirectory;
 
   /// El tipo, tamaño, dispositivo e inodo de un `struct stat` en [buffer].
   NativeStat readStat(Uint8List buffer);
@@ -172,6 +173,10 @@ class NativePosix {
 
   void unlinkat(int dirFd, String name) =>
       _named(name, (n) => _c.unlinkAt(dirFd, n, 0));
+
+  /// Retira el directorio vacío [name]; uno con contenido no se toca.
+  void rmdirat(int dirFd, String name) =>
+      _named(name, (n) => _c.unlinkAt(dirFd, n, abi.atRemoveDirectory));
 
   /// Toma el lock exclusivo sin esperar; false si otro lo tiene.
   bool tryLock(int fd) {

@@ -32,6 +32,8 @@ final class MacosArm64Abi implements PosixAbi {
   @override
   int get atCurrentDirectory => -2;
   @override
+  int get atRemoveDirectory => 0x0080;
+  @override
   int get atSymlinkNoFollow => 0x0020;
 
   /// `st_dev` int32 en 0, `st_mode` uint16 en 4, `st_ino` uint64 en 8 y

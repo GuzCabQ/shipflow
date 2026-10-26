@@ -12,6 +12,35 @@ final class ContextStoreFailure implements Exception {
   String toString() => 'ContextStoreFailure($code)';
 }
 
+/// Lo que el coordinador necesita de un almacén anclado. La implementación
+/// de producción es `SecureContextStore`; las pruebas la envuelven para
+/// simular la muerte del proceso entre dos escrituras, con el mismo
+/// contrato.
+abstract interface class ContextStore {
+  Future<List<int>?> readRelative(String path, {required int maxBytes});
+
+  Future<void> publishRelative(
+    String path,
+    List<int> bytes, {
+    required String? expectedSha256,
+  });
+
+  Future<void> removeRelative(String path, {required String expectedSha256});
+
+  Future<List<String>> createDirectory(String path);
+
+  /// Retira el directorio [path] si está vacío; si no existe, nada.
+  Future<void> removeDirectory(String path);
+
+  ContextResource contextLock();
+
+  ContextResource directoryLock();
+
+  Future<ContextLease> acquirePublication(List<ContextResource> resources);
+
+  Future<void> close();
+}
+
 /// [body], con cada [PosixError] traducido a su [ContextStoreFailure].
 T storeGuard<T>(T Function() body) {
   try {

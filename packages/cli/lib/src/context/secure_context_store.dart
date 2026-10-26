@@ -7,7 +7,7 @@ import 'context_publication.dart';
 import 'native/posix_api.dart';
 
 export 'context_handles.dart'
-    show ContextLease, ContextResource, ContextStoreFailure;
+    show ContextLease, ContextResource, ContextStore, ContextStoreFailure;
 
 /// El archivo de lock estable del contexto, relativo a la raíz.
 const contextLockPath = 'shipflow/local/locks/context.lock';
@@ -17,7 +17,7 @@ const _directoryMode = 493;
 /// esa raíz y tramo a tramo sin seguir enlaces: una sustitución entre una
 /// comprobación y una apertura no lleva a un destino ajeno. Sólo opera
 /// archivos regulares y directorios; nunca crea nada al leer.
-final class SecureContextStore {
+final class SecureContextStore implements ContextStore {
   SecureContextStore._(this._posix, this._rootFd);
 
   /// Ancla [root], un directorio absoluto canónico, abriéndolo desde `/`
@@ -48,6 +48,7 @@ final class SecureContextStore {
 
   /// Los bytes de [path], hasta `maxBytes + 1` para que quien los lea pueda
   /// rechazar un exceso sin materializarlo; null si no existe.
+  @override
   Future<List<int>?> readRelative(String path, {required int maxBytes}) async {
     final (parent, name) = _split(path);
     final dir = _walk(parent, create: false);
@@ -57,6 +58,7 @@ final class SecureContextStore {
 
   /// Publica [bytes] en [path] si la versión actual tiene [expectedSha256]
   /// (null: ausente). Su directorio ya debe existir.
+  @override
   Future<void> publishRelative(
     String path,
     List<int> bytes, {
@@ -69,6 +71,7 @@ final class SecureContextStore {
   }
 
   /// Retira [path] si su versión actual tiene [expectedSha256].
+  @override
   Future<void> removeRelative(
     String path, {
     required String expectedSha256,
@@ -81,6 +84,7 @@ final class SecureContextStore {
   }
 
   /// Crea [path] y los directorios que le falten; devuelve los creados.
+  @override
   Future<List<String>> createDirectory(String path) async {
     _validate(path);
     final created = <String>[];
@@ -89,7 +93,23 @@ final class SecureContextStore {
     return created;
   }
 
+  @override
+  Future<void> removeDirectory(String path) async {
+    final (parent, name) = _split(path);
+    final dir = _walk(parent, create: false);
+    if (dir == null) return;
+    _using(dir, () {
+      final entry = _posix.lstatAt(dir, name);
+      if (entry == null) return;
+      if (entry.type != NativeFileType.directory) {
+        throw const ContextStoreFailure('unsafe_path');
+      }
+      _posix.rmdirat(dir, name);
+    });
+  }
+
   /// El lock del contexto, abierto sin truncar. Su directorio debe existir.
+  @override
   ContextResource contextLock() => ContextResource('context', () {
     final (parent, name) = _split(contextLockPath);
     final dir =
@@ -106,13 +126,16 @@ final class SecureContextStore {
 
   /// El directorio anclado mismo como recurso: para el exclude común, sin
   /// crear un archivo de lock en la administración de Git.
+  @override
   ContextResource directoryLock() =>
       ContextResource('directory', () => _posix.openDirectory(_fd, '.'));
 
+  @override
   Future<ContextLease> acquirePublication(
     List<ContextResource> resources,
   ) async => acquireResources(_posix, resources);
 
+  @override
   Future<void> close() async {
     final fd = _rootFd;
     _rootFd = null;

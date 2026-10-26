@@ -13,7 +13,6 @@ import 'strict_json.dart';
 const maxProjectBytes = 4194304;
 const maxSettingsBytes = 16384;
 const maxTransactionBytes = 65536;
-const maxExcludeBytes = 1048576;
 const maxResponseBytes = 4194304;
 
 /// Lee y escribe los documentos del contexto persistente. Cada lectura es

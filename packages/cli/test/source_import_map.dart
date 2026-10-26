@@ -1,6 +1,8 @@
 // Lo que cada archivo de `lib` y `bin` del CLI puede importar o exportar.
 // Fijarlo hace visible en la revisión toda dependencia nueva.
 
+import 'source_import_map_context.dart';
+
 /// Cada archivo de `lib` y `bin` con lo que importa o exporta.
 const expectedImports = {
   'bin/shipflow.dart': {
@@ -9,7 +11,6 @@ const expectedImports = {
     'package:plugin_dart/plugin_dart.dart',
   },
   'lib/cli.dart': {
-    'src/bounded_recognition_json.dart',
     'src/build_version.dart',
     'src/cli_application.dart',
     'src/cli_command.dart',
@@ -17,6 +18,7 @@ const expectedImports = {
     'src/cli_process_boundary.dart',
     'src/cli_response.dart',
     'src/logical_root.dart',
+    'src/bounded_recognition_json.dart',
     'src/recognition_presenter.dart',
     'src/recognition_runner.dart',
   },
@@ -46,82 +48,11 @@ const expectedImports = {
     'recognition_runner.dart',
   },
   'lib/src/cli_response.dart': <String>{},
-  'lib/src/context/state_layout.dart': {'dart:io', 'package:core/core.dart'},
-  'lib/src/context/state_ownership.dart': {
-    'dart:convert',
-    'dart:io',
-    'package:core/core.dart',
-    'context_codec.dart',
-    'secure_context_store.dart',
-    'state_layout.dart',
-  },
-  'lib/src/context/secure_context_store.dart': {
-    'dart:io',
-    'package:core/core.dart',
-    'context_handles.dart',
-    'context_publication.dart',
-    'native/posix_api.dart',
-  },
-  'lib/src/context/native/posix_bindings.dart': {'dart:ffi'},
-  'lib/src/context/native/posix_api.dart': {
-    'dart:convert',
-    'dart:ffi',
-    'dart:typed_data',
-    'linux_api.dart',
-    'macos_api.dart',
-    'posix_bindings.dart',
-  },
-  'lib/src/context/native/macos_api.dart': {
-    'dart:typed_data',
-    'posix_api.dart',
-  },
-  'lib/src/context/native/linux_api.dart': {
-    'dart:typed_data',
-    'macos_api.dart',
-    'posix_api.dart',
-  },
-  'lib/src/context/context_publication.dart': {
-    'dart:math',
-    'package:crypto/crypto.dart',
-    'context_handles.dart',
-    'native/posix_api.dart',
-  },
-  'lib/src/context/context_handles.dart': {'native/posix_api.dart'},
-  'lib/src/context/canonical_json.dart': {'dart:convert'},
-  'lib/src/context/context_codec.dart': {
-    'dart:convert',
-    'package:core/core.dart',
-    'package:crypto/crypto.dart',
-    'canonical_json.dart',
-    'context_document_shape.dart',
-    'context_recognition_shape.dart',
-    'context_response_shape.dart',
-    'strict_json.dart',
-  },
-  'lib/src/context/context_document_shape.dart': {
-    'package:core/core.dart',
-    'context_recognition_shape.dart',
-    'context_shape.dart',
-  },
-  'lib/src/context/context_recognition_shape.dart': {
-    'package:core/core.dart',
-    'context_shape.dart',
-  },
-  'lib/src/context/context_response_shape.dart': {
-    'package:core/core.dart',
-    'context_recognition_shape.dart',
-    'context_shape.dart',
-  },
-  'lib/src/context/context_shape.dart': {'package:core/core.dart'},
-  'lib/src/context/strict_json.dart': {
-    'dart:convert',
-    'package:core/core.dart',
-  },
-  'lib/src/logical_root.dart': {'dart:convert', 'dart:io'},
   'lib/src/internal_failure.dart': {
     'cli_application.dart',
     'cli_response.dart',
   },
+  'lib/src/logical_root.dart': {'dart:convert', 'dart:io'},
   'lib/src/recognition_human.dart': {
     'package:core/core.dart',
     'cli_command.dart',
@@ -157,4 +88,5 @@ const expectedImports = {
     'recognition_presenter.dart',
   },
   'lib/src/terminal_text.dart': <String>{},
+  ...contextImports,
 };

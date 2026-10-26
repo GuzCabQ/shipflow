@@ -33,6 +33,8 @@ final class LinuxX64Abi implements PosixAbi {
   @override
   int get atCurrentDirectory => -100;
   @override
+  int get atRemoveDirectory => 0x0200;
+  @override
   int get atSymlinkNoFollow => 0x0100;
 
   /// `st_dev` uint64 en 0, `st_ino` uint64 en 8, `st_mode` uint32 en 24 y
