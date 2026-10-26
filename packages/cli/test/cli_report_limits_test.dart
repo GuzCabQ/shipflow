@@ -13,15 +13,20 @@ void main() {
   setUp(seen.clear);
 
   RecognitionContributor recording([RecognitionContributor? then]) =>
-      (root, {required reportLimits}) {
+      (root, {required reportLimits, required authorizedOmissions}) {
         seen.add(reportLimits);
-        return (then ?? sandbox.contribute)(root, reportLimits: reportLimits);
+        return (then ?? sandbox.contribute)(
+          root,
+          reportLimits: reportLimits,
+          authorizedOmissions: authorizedOmissions,
+        );
       };
 
-  RecognitionContributor exceeding(ReportLimitDimension dimension) =>
-      recording((_, {required reportLimits}) async {
-        throw ReportLimitExceeded(dimension);
-      });
+  RecognitionContributor exceeding(ReportLimitDimension dimension) => recording(
+    (_, {required reportLimits, required authorizedOmissions}) async {
+      throw ReportLimitExceeded(dimension);
+    },
+  );
 
   Future<Map<String, Object?>> run(
     List<String> extra,
@@ -72,7 +77,7 @@ void main() {
       ]) {
         expect(json[list], isEmpty, reason: list);
       }
-      expect(json['schemaVersion'], 2);
+      expect(json['schemaVersion'], 3);
       final limitation = (json['limitations']! as List).single as Map;
       expect(limitation['code'], 'report_limit_reached');
       expect(limitation['blocking'], isTrue);
@@ -94,29 +99,7 @@ void main() {
     });
 
     test('lo que el ensamblador cuenta también corta', () async {
-      final json = await run(
-        [],
-        recording((_, {required reportLimits}) async {
-          return RecognitionContribution(
-            candidates: const [],
-            units: const [],
-            evidence: [
-              for (var i = 0; i < 16385; i++)
-                RecognitionEvidence(
-                  role: EvidenceRole.identity,
-                  label: 'Nombre del paquete',
-                  id: 'e$i',
-                  kind: 'k',
-                  path: 'p',
-                  value: 'v',
-                  fingerprint: 'f',
-                ),
-            ],
-            conflicts: const [],
-            limitations: const [],
-          );
-        }),
-      );
+      final json = await run([], recording(_overflowingEvidence));
       expect(
         ((json['limitations']! as List).single as Map)['code'],
         'report_limit_reached',
@@ -127,26 +110,10 @@ void main() {
   test('un límite de lectura conserva lo observado', () async {
     final json = await run(
       [],
-      recording((root, {required reportLimits}) async {
-        final normal = await sandbox.contribute(
-          root,
-          reportLimits: reportLimits,
-        );
-        return RecognitionContribution(
-          candidates: normal.candidates,
-          units: normal.units,
-          evidence: normal.evidence,
-          conflicts: const [],
-          limitations: const [
-            RecognitionLimitation(
-              code: 'scan_limit_reached',
-              message: 'se alcanzó el máximo',
-              path: 'x',
-              blocking: true,
-            ),
-          ],
-        );
-      }),
+      recording(
+        (root, {required reportLimits, required authorizedOmissions}) =>
+            _withReadLimit(sandbox, root, reportLimits, authorizedOmissions),
+      ),
     );
     expect(json['status'], 'ambiguous');
     expect(json['evidence'], hasLength(1));
@@ -157,8 +124,9 @@ void main() {
     await expectLater(
       sandbox.run(
         ['init', '--dry-run'],
-        contributor: (_, {required reportLimits}) =>
-            Future.error(StateError('defecto')),
+        contributor:
+            (_, {required reportLimits, required authorizedOmissions}) =>
+                Future.error(StateError('defecto')),
       ),
       throwsStateError,
     );
@@ -167,27 +135,30 @@ void main() {
   group('un JSON que los escapes inflan', () {
     // 250 valores de 4000 controles: caben en las cotas derivadas (1 MB de
     // texto), pero escapados son unos 6 MB de JSON.
-    RecognitionContributor inflating() =>
-        recording((_, {required reportLimits}) async {
-          return RecognitionContribution(
-            candidates: const [],
-            units: const [],
-            evidence: [
-              for (var i = 0; i < 250; i++)
-                RecognitionEvidence(
-                  role: EvidenceRole.identity,
-                  label: 'Nombre del paquete',
-                  id: 'e$i',
-                  kind: 'k',
-                  path: 'p',
-                  value: '\x01' * 4000,
-                  fingerprint: 'f',
-                ),
-            ],
-            conflicts: const [],
-            limitations: const [],
-          );
-        });
+    RecognitionContributor inflating() => recording((
+      _, {
+      required reportLimits,
+      required authorizedOmissions,
+    }) async {
+      return RecognitionContribution(
+        candidates: const [],
+        units: const [],
+        evidence: [
+          for (var i = 0; i < 250; i++)
+            RecognitionEvidence(
+              role: EvidenceRole.identity,
+              label: 'Nombre del paquete',
+              id: 'e$i',
+              kind: 'k',
+              path: 'p',
+              value: '\x01' * 4000,
+              fingerprint: 'f',
+            ),
+        ],
+        conflicts: const [],
+        limitations: const [],
+      );
+    });
 
     test('corta igual en JSON y en la vista humana', () async {
       final json = await run([], inflating());
@@ -209,4 +180,56 @@ void main() {
       expect(message, contains('del perfil ampliado'));
     });
   });
+}
+
+/// Más evidencia de la que el ensamblador admite con el perfil normal.
+Future<RecognitionContribution> _overflowingEvidence(
+  Directory _, {
+  required ReportLimits reportLimits,
+  required List<AuthorizedOmission> authorizedOmissions,
+}) async => RecognitionContribution(
+  candidates: const [],
+  units: const [],
+  evidence: [
+    for (var i = 0; i < 16385; i++)
+      RecognitionEvidence(
+        role: EvidenceRole.identity,
+        label: 'Nombre del paquete',
+        id: 'e$i',
+        kind: 'k',
+        path: 'p',
+        value: 'v',
+        fingerprint: 'f',
+      ),
+  ],
+  conflicts: const [],
+  limitations: const [],
+);
+
+/// Lo normal del sandbox con una limitación de lectura bloqueante.
+Future<RecognitionContribution> _withReadLimit(
+  RunnerSandbox sandbox,
+  Directory root,
+  ReportLimits reportLimits,
+  List<AuthorizedOmission> authorizedOmissions,
+) async {
+  final normal = await sandbox.contribute(
+    root,
+    reportLimits: reportLimits,
+    authorizedOmissions: authorizedOmissions,
+  );
+  return RecognitionContribution(
+    candidates: normal.candidates,
+    units: normal.units,
+    evidence: normal.evidence,
+    conflicts: const [],
+    limitations: const [
+      RecognitionLimitation(
+        code: 'scan_limit_reached',
+        message: 'se alcanzó el máximo',
+        path: 'x',
+        blocking: true,
+      ),
+    ],
+  );
 }

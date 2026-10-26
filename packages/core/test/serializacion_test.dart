@@ -122,6 +122,13 @@ void main() {
             report.toJson(),
             (j) => RecognitionReport.fromJson(j).toJson(),
           ),
+          'AuthorizedOmission': (
+            AuthorizedOmission(
+              relativePath: 'shipflow',
+              rule: OmissionRule.toolState,
+            ).toJson(),
+            (j) => AuthorizedOmission.fromJson(j).toJson(),
+          ),
           'ContextProducer': (
             context.projectContext().producer.toJson(),
             (j) => ContextProducer.fromJson(j).toJson(),

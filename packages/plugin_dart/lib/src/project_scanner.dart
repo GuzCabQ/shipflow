@@ -21,7 +21,8 @@ export 'scan_model.dart';
 /// qué árboles excluye antes de entrar en ellos; al final consulta los
 /// metadatos de [contextSources] en la raíz y en cada raíz de unidad. Lo que
 /// no pudo mirar queda como limitación bloqueante; todo lo retenido se cobra
-/// a [budget] antes de crearse.
+/// a [budget] antes de crearse. Cada [authorizedOmissions] queda omitido
+/// desde el principio, exista o no, y nunca se lista.
 Future<ScanResult> scanProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
@@ -29,6 +30,7 @@ Future<ScanResult> scanProject(
   ByteReader readBytes = readBoundedBytes,
   DerivedObservationBudget? budget,
   List<ContextSourceRule> contextSources = const [],
+  List<AuthorizedOmission> authorizedOmissions = const [],
 }) async {
   final scan = _Scan(
     RootGuard(root),
@@ -38,6 +40,7 @@ Future<ScanResult> scanProject(
     budget ?? DerivedObservationBudget(const ReportLimits()),
     contextSources,
   );
+  authorizedOmissions.forEach(scan.authorize);
   await scan.visit(root, 0);
   scan.observeContext();
   return scan.result();
@@ -69,6 +72,7 @@ final class _Scan {
   final manifestLimitations = <RecognitionLimitation>[];
   final omissions = <OmissionDraft>[];
   final _exclusions = <String, OmissionDraft>{};
+  final _authorized = <String>{};
   final _scopes = {'.'};
   var _contextSources = <ContextSource>[];
   var _entries = 0;
@@ -83,12 +87,7 @@ final class _Scan {
       ..sort((a, b) => a.facts.source.path.compareTo(b.facts.source.path)),
     manifestLimitations: manifestLimitations,
     omissions: omissions..sort((a, b) => a.path.compareTo(b.path)),
-    contextSources: _contextSources
-      ..sort(
-        (a, b) => a.scopePath == b.scopePath
-            ? a.path.compareTo(b.path)
-            : a.scopePath.compareTo(b.scopePath),
-      ),
+    contextSources: _contextSources..sort(compareContextSources),
   );
 
   /// Pide a lo sumo una entrada más de las que caben: si el directorio no
@@ -144,8 +143,15 @@ final class _Scan {
     }
   }
 
+  /// La omisión de política de [omission], cobrada una sola vez.
+  void authorize(AuthorizedOmission omission) {
+    _authorized.add(omission.relativePath);
+    _omit(OmissionDraft(omission.relativePath, omission.rule, []));
+  }
+
   Future<void> _visitEntity(FileSystemEntity entity, int depth) async {
     final relative = guard.relative(entity.path);
+    if (_authorized.contains(relative)) return;
     if (entity is! File && baselineExclusions.contains(nameOf(relative))) {
       return _omit(OmissionDraft(relative, OmissionRule.baselineExclusion, []));
     }
@@ -162,7 +168,7 @@ final class _Scan {
         }
         await visit(entity, depth);
       case File():
-        final kind = _kindOf(nameOf(relative), depth);
+        final kind = sourceKindOf(nameOf(relative), depth);
         if (kind == null) return;
         if (guard.escapedFile(entity.path) case final why?) {
           return _block(why.code, why.message, entity.path);
@@ -182,13 +188,6 @@ final class _Scan {
           : null,
     ),
   );
-
-  SourceKind? _kindOf(String name, int depth) => switch (name) {
-    manifestFileName => SourceKind.manifest,
-    fvmConfigFileName when depth == 1 => SourceKind.fvmConfig,
-    flutterVersionFileName when depth == 1 => SourceKind.flutterVersionFile,
-    _ => null,
-  };
 
   Future<void> _accept(File file, SourceKind kind) async {
     final isManifest = kind == SourceKind.manifest;

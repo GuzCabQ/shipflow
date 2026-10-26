@@ -54,11 +54,14 @@ Future<void> main(List<String> arguments) async {
       arguments,
       version: buildVersion,
       workingDirectory: currentWorkingDirectory(),
-      recognizeProject: (root, {required reportLimits}) => recognizeDartProject(
-        root,
-        reportLimits: reportLimits,
-        contextSources: _contextSources,
-      ),
+      recognizeProject:
+          (root, {required reportLimits, required authorizedOmissions}) =>
+              recognizeDartProject(
+                root,
+                reportLimits: reportLimits,
+                contextSources: _contextSources,
+                authorizedOmissions: authorizedOmissions,
+              ),
       logicalRootHint: Platform.environment['PWD'],
     ),
     standardOut: stdout,

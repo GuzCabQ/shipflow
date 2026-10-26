@@ -27,6 +27,8 @@ void main() {
       expect(body.keys, [
         'schemaVersion',
         'type',
+        'command',
+        'operation',
         'status',
         'requestedRoot',
         'resolvedRoot',
@@ -44,8 +46,10 @@ void main() {
         'effects',
         'exitCode',
       ]);
-      expect(body['schemaVersion'], 2);
+      expect(body['schemaVersion'], 3);
       expect(body['type'], 'init_dry_run');
+      expect(body['command'], 'init');
+      expect(body['operation'], 'dry_run');
     });
 
     test('proyecta repositorio, unidades y candidatos con sus campos', () {

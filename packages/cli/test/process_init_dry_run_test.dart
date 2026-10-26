@@ -26,7 +26,7 @@ void main() {
       process.place('CLAUDE.md', 'no se lee');
       final result = await process.runSource(['init', '--dry-run', '--json']);
       expect(result.exitCode, 0, reason: result.stderr);
-      expect(result.json['schemaVersion'], 2);
+      expect(result.json['schemaVersion'], 3);
       final sources = [
         for (final s
             in (result.json['contextSources']! as List<Object?>)

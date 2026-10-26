@@ -7,6 +7,7 @@ import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
 import 'logical_root.dart';
+import 'context/state_ownership.dart';
 import 'recognition_presenter.dart';
 
 const _rootNotFound = 'root_not_found';
@@ -19,6 +20,7 @@ typedef RecognitionContributor =
     Future<RecognitionContribution> Function(
       Directory root, {
       required ReportLimits reportLimits,
+      required List<AuthorizedOmission> authorizedOmissions,
     });
 
 /// Responde [arguments]. Un fallo de programación sale tal cual, con su
@@ -77,11 +79,15 @@ Directory currentWorkingDirectory() {
 ///
 /// Si la producción o el ensamblado exceden [budgetProfile], el inventario
 /// se descarta por un reporte compacto; cualquier otro error sale tal cual.
+///
+/// El estado propio se omite sólo si [inspectStateOwnership] lo acredita,
+/// salvo que quien llama ya lo haya decidido en [authorizedOmissions].
 Future<RecognitionReport> recognizeRoot(
   Directory workingDirectory,
   RecognitionContributor recognizeProject, {
   String? logicalRootHint,
   ReportBudgetProfile budgetProfile = ReportBudgetProfile.standard,
+  List<AuthorizedOmission>? authorizedOmissions,
 }) async {
   final requested = _absolutePath(workingDirectory);
   final (:resolved, :problem) = await _inspectableRoot(requested);
@@ -102,6 +108,9 @@ Future<RecognitionReport> recognizeRoot(
     repository: await inspectRepositoryContext(root),
     recognizeProject: recognizeProject,
     budgetProfile: budgetProfile,
+    authorizedOmissions:
+        authorizedOmissions ??
+        authorizedStateOmissions(await inspectStateOwnership(root)),
   );
 }
 
@@ -112,6 +121,7 @@ Future<RecognitionReport> _recognizeWithin(
   required RepositoryContext repository,
   required RecognitionContributor recognizeProject,
   required ReportBudgetProfile budgetProfile,
+  required List<AuthorizedOmission> authorizedOmissions,
 }) async {
   final limits = reportLimitsOf(budgetProfile);
   try {
@@ -119,7 +129,13 @@ Future<RecognitionReport> _recognizeWithin(
       requestedRoot: requestedRoot,
       resolvedRoot: root.path,
       repository: repository,
-      contributions: [await recognizeProject(root, reportLimits: limits)],
+      contributions: [
+        await recognizeProject(
+          root,
+          reportLimits: limits,
+          authorizedOmissions: authorizedOmissions,
+        ),
+      ],
       limits: limits,
     );
   } on ReportLimitExceeded catch (exceeded) {

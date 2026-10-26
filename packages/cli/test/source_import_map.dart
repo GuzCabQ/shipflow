@@ -46,6 +46,15 @@ const expectedImports = {
     'recognition_runner.dart',
   },
   'lib/src/cli_response.dart': <String>{},
+  'lib/src/context/state_layout.dart': {'dart:io', 'package:core/core.dart'},
+  'lib/src/context/state_ownership.dart': {
+    'dart:convert',
+    'dart:io',
+    'package:core/core.dart',
+    'context_codec.dart',
+    'secure_context_store.dart',
+    'state_layout.dart',
+  },
   'lib/src/context/secure_context_store.dart': {
     'dart:io',
     'package:core/core.dart',
@@ -144,6 +153,7 @@ const expectedImports = {
     'cli_command.dart',
     'cli_response.dart',
     'logical_root.dart',
+    'context/state_ownership.dart',
     'recognition_presenter.dart',
   },
   'lib/src/terminal_text.dart': <String>{},

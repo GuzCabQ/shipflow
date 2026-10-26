@@ -215,7 +215,7 @@ String? _omitted(OmissionRule rule, List<String> paths) {
     OmissionRule.baselineExclusion => 'exclusión fija',
     OmissionRule.temporaryDirectory => 'directorio temporal',
     OmissionRule.declaredResource => 'recurso declarado',
-    OmissionRule.toolState => 'estado propio de Shipflow',
+    OmissionRule.toolState => 'estado propio de Shipflow, exista o no',
   };
   final rest = paths.length - _maxOmittedPaths;
   return '    $label (${paths.length}): '

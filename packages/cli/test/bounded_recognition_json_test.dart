@@ -9,7 +9,7 @@ import 'recognition_reports.dart';
 /// La respuesta JSON completa que jsonEncode escribiría para [report].
 String referenceJson(RecognitionReport report) {
   final exitCode = report.status == RecognitionStatus.recognized ? 0 : 65;
-  return '${jsonEncode({'schemaVersion': 2, 'type': 'init_dry_run', ...report.toJson(), 'exitCode': exitCode})}\n';
+  return '${jsonEncode({'schemaVersion': 3, 'type': 'init_dry_run', 'command': 'init', 'operation': 'dry_run', ...report.toJson(), 'exitCode': exitCode})}\n';
 }
 
 int bytesOf(String text) => utf8.encode(text).length;
