@@ -73,7 +73,7 @@ List<String> _declaredLines(
   return [
     'Dependencias declaradas (la declaración no prueba uso):',
     for (final l in declared.take(_maxRelations))
-      '  ${safe(l.label)} (declarada en ${safe(l.sourcePath)}) — '
+      '  ${safe(l.label)} (evidencia: ${safe(l.sourcePath)}) — '
           '${reached.contains(l.targetUnitId) ? 'con referencias comprobadas hacia esa unidad' : 'sin referencias comprobadas hacia esa unidad en lo inspeccionado'}',
   ];
 }

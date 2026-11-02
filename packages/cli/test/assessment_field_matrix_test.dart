@@ -78,8 +78,8 @@ const _implemented = {
     'publishedPartialExit65IsNotComplete',
   ),
   'outputFailureAfterCommitPreservesEffects': (
-    'cli/test/assessment_presenter_test.dart',
-    'an oversized JSON is compact with its true effects',
+    'cli/test/assessment_review_fixes_test.dart',
+    'I1: a failure after the commit still says it was saved',
   ),
   'partialReobservationHasNoDisappearanceCounts': (
     'cli/test/assessment_service_test.dart',

@@ -50,18 +50,27 @@ final class AssessmentRecovery {
 /// republicar; en la anterior, con candidato válido y fuentes vigentes, se
 /// publica; con fuentes cambiadas se aborta; en otra versión es conflicto.
 /// Sin journal, sólo se retiran [candidates] completos y propios de
-/// [projectId]; nunca se adoptan.
+/// [projectId]; nunca se adoptan, y [temporaries] los vuelven un conflicto.
 Future<AssessmentRecovery> recoverAssessment(
   AssessmentStore assessments, {
   required String projectId,
   required List<String> candidates,
   required Future<void> Function(AssessmentDocument candidate) revalidate,
+  List<String> temporaries = const [],
 }) async {
   final store = assessments.store;
   await store.createDirectory('shipflow/local/locks');
   final lease = await store.acquirePublication([store.contextLock()]);
   try {
     final journal = await assessments.readJournal();
+    if (journal == null && temporaries.isNotEmpty) {
+      // Un temporal sin journal no se puede acreditar: no se retira ni se
+      // declara ajeno, se informa para reconciliarlo a mano.
+      return AssessmentRecovery(
+        AssessmentRecoveryOutcome.conflict,
+        kept: temporaries,
+      );
+    }
     if (journal == null) {
       return _leftovers(assessments, projectId, candidates);
     }

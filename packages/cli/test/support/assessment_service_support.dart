@@ -56,6 +56,9 @@ dependencies:
   AssessmentObserver Function(AssessmentObserver real)? observerWrap;
   AssessmentLimits Function(AssessmentProfile)? limitsFor;
 
+  /// Una envoltura del almacén del servicio, para provocar fallos.
+  ContextStore Function(ContextStore real)? storeWrap;
+
   String path(String relative) => box.path(relative);
   File get document => File(path(assessmentPath));
 
@@ -67,7 +70,8 @@ dependencies:
     bool previous = false,
     AssessmentProfile profile = AssessmentProfile.standard,
   }) async {
-    final store = await SecureContextStore.open(box.root);
+    final real = await SecureContextStore.open(box.root);
+    final store = storeWrap?.call(real) ?? real;
     try {
       return await _service(store).run(
         AssessmentRequest(
@@ -77,7 +81,7 @@ dependencies:
         ),
       );
     } finally {
-      await store.close();
+      await real.close();
     }
   }
 
@@ -152,5 +156,37 @@ Future<void> interruptPublication(AssessServiceBox box) async {
     );
   } finally {
     await real.close();
+  }
+}
+
+/// Un almacén real cuya escritura número [failAt] y las siguientes fallan
+/// con I/O, como un disco que se llena: el proceso sigue vivo.
+final class FailingStore extends CrashingStore {
+  FailingStore(ContextStore real, this.failAt) : super(real, 1 << 30);
+
+  final int failAt;
+  var _count = 0;
+
+  void _fail() {
+    if (++_count >= failAt) throw const ContextStoreFailure('io');
+  }
+
+  @override
+  Future<void> publishRelative(
+    String path,
+    List<int> bytes, {
+    required String? expectedSha256,
+  }) async {
+    _fail();
+    await super.publishRelative(path, bytes, expectedSha256: expectedSha256);
+  }
+
+  @override
+  Future<void> removeRelative(
+    String path, {
+    required String expectedSha256,
+  }) async {
+    _fail();
+    await super.removeRelative(path, expectedSha256: expectedSha256);
   }
 }

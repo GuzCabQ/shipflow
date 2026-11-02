@@ -15,7 +15,9 @@ const assessmentMessages = <String, String>{
       'Un archivo propio no coincide con ninguna versión esperada: se '
       'conserva todo para reconciliarlo a mano.',
   'assessment_invalid':
-      'shipflow/assessment.json no cumple su formato: se conserva sin usarlo.',
+      'shipflow/assessment.json no cumple su formato y no se usa ni se '
+      'sobrescribe: muévelo fuera de shipflow como respaldo y vuelve a '
+      'ejecutar assess.',
   'assessment_context_mismatch':
       'El levantamiento cita este contexto, pero sus unidades o vínculos no '
       'corresponden: no se usa.',

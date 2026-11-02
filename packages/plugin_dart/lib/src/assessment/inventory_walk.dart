@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
@@ -86,7 +87,8 @@ final class InventoryWalk {
     for (final child in children..sort(byName)) {
       final name = nameOf(child.path);
       final path = relative == '.' ? name : '$relative/$name';
-      if (!isAssessmentPath(path)) {
+      if (!isAssessmentPath(path) ||
+          utf8.encode(path).length > maxAssessmentTextBytes) {
         complete = false;
         diagnostics.add('path_not_representable', relative);
         continue;

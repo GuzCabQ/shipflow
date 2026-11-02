@@ -60,6 +60,9 @@ Future<StateOwnership> _classify(
   if (!await _ownGitignore(store, layout)) {
     return StateOwnership(StateOwnershipKind.foreign, [gitignorePath]);
   }
+  // Un levantamiento que no valida no invalida el contexto: assess lo
+  // informa y lo conserva; init y doctor siguen sobre project.json.
+  if (valid.contains(projectPath)) invalid.remove(assessmentDocumentPath);
   if (invalid.isNotEmpty) {
     return StateOwnership(StateOwnershipKind.invalid, invalid);
   }

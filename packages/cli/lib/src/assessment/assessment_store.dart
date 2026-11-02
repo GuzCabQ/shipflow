@@ -16,6 +16,18 @@ final class AssessmentAbort implements Exception {
   String toString() => 'AssessmentAbort($code)';
 }
 
+/// Un fallo del almacén después del rename: el documento nuevo ya está
+/// publicado aunque su journal o su limpieza no terminaron.
+final class AssessmentCommitFailure implements Exception {
+  const AssessmentCommitFailure(this.code, this.publication);
+
+  final String code;
+  final AssessmentPublication publication;
+
+  @override
+  String toString() => 'AssessmentCommitFailure($code)';
+}
+
 /// El documento leído con sus bytes, o su ausencia.
 final class AssessmentRead {
   const AssessmentRead(this.document, this.sha256);
@@ -109,14 +121,35 @@ final class AssessmentStore {
       );
       await _stage(journal, bytes);
       await _withAbortCleanup(journal, revalidate);
-      await commit(journal, bytes);
-      return AssessmentPublication(
+      AssessmentPublication done(bool published) => AssessmentPublication(
         created: [...created, if (expectedSha256 == null) assessmentPath],
         replaced: [if (expectedSha256 != null) assessmentPath],
-        published: await hashOf(assessmentPath) == journal.after,
+        published: published,
       );
+      await _committed(journal, bytes, done);
+      return done(await hashOf(assessmentPath) == journal.after);
     } finally {
       await lease.release();
+    }
+  }
+
+  /// [commit]; si falla después del rename, lo dice como publicado.
+  Future<void> _committed(
+    AssessmentTransaction journal,
+    List<int> bytes,
+    AssessmentPublication Function(bool published) done,
+  ) async {
+    try {
+      await commit(journal, bytes);
+    } on ContextStoreFailure catch (failure) {
+      String? now;
+      try {
+        now = await hashOf(assessmentPath);
+      } on ContextStoreFailure {
+        now = null;
+      }
+      if (now != journal.after) rethrow;
+      throw AssessmentCommitFailure(failure.code, done(true));
     }
   }
 

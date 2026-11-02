@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:core/core.dart';
 
 import 'source_inventory.dart';
@@ -50,7 +52,20 @@ final class LocalReferenceResolver {
   /// La unidad dueña de una fuente inventariada.
   String ownerOf(String path) => _owners[path]!;
 
+  /// [_target] acotado: un literal o una ruta que no caben en el texto
+  /// controlado de 4.096 bytes quedan sin resolver, sin etiqueta.
   ReferenceTarget resolve(String sourcePath, String unitPath, String? uri) {
+    if (uri != null && utf8.encode(uri).length > maxAssessmentTextBytes) {
+      return const ReferenceTarget.unresolved('unsafe_uri');
+    }
+    final target = _target(sourcePath, unitPath, uri);
+    final label = target.label;
+    return label != null && utf8.encode(label).length > maxAssessmentTextBytes
+        ? const ReferenceTarget.unresolved('unsafe_uri')
+        : target;
+  }
+
+  ReferenceTarget _target(String sourcePath, String unitPath, String? uri) {
     if (uri == null) return const ReferenceTarget.unresolved('uri_not_literal');
     if (uri.isEmpty || _unsafe.hasMatch(uri)) {
       return const ReferenceTarget.unresolved('unsafe_uri');

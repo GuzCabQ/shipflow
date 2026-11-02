@@ -89,17 +89,34 @@ Future<AssessmentSnapshot?> _observe(
       observedAt: observedAtOf(s.now()),
     );
     verifyIdentities(snapshot);
-    validateAssessmentContext(snapshot, s.basisOf(cited.context));
   } on ContextFormatException {
     draft.add('unexpected');
     return null;
   }
+  if (!_corresponds(s, cited, snapshot, draft)) return null;
   final size = utf8.encode(canonicalAssessmentJson(snapshot.toJson())).length;
   if (size > limits.maxSnapshotBytes) {
     draft.add('assessment_limit');
     return null;
   }
   return snapshot;
+}
+
+/// Si lo sellado corresponde al contexto citado; si no, algo cambió
+/// después del preflight, que no es un defecto de Shipflow.
+bool _corresponds(
+  AssessmentService s,
+  CitedContext cited,
+  AssessmentSnapshot snapshot,
+  AssessmentDraft draft,
+) {
+  try {
+    validateAssessmentContext(snapshot, s.basisOf(cited.context));
+    return true;
+  } on ContextFormatException {
+    draft.add('source_changed');
+    return false;
+  }
 }
 
 AssessmentProducer _producer(AssessmentService s) => AssessmentProducer(
@@ -154,13 +171,29 @@ Future<AssessmentPublication?> _attempt(
     return await publish();
   } on AssessmentAbort catch (abort) {
     draft.add(abortCode(abort.code));
-  } on ContextFormatException {
-    draft.add('assessment_limit');
+  } on AssessmentCommitFailure catch (failure) {
+    _committedWithFailure(draft, failure);
+    if (await _journalLeft(s.store)) draft.add('assessment_recovery_pending');
+  } on ContextFormatException catch (rejected) {
+    draft.add(rejected.code == 'too_large' ? 'assessment_limit' : 'unexpected');
   } on ContextStoreFailure catch (failure) {
     draft.add(storeCode(failure));
     if (await _journalLeft(s.store)) draft.add('assessment_recovery_pending');
   }
   return null;
+}
+
+/// Publicado aunque falló después: los efectos son verdaderos.
+void _committedWithFailure(
+  AssessmentDraft draft,
+  AssessmentCommitFailure failure,
+) {
+  draft
+    ..outcome = AssessmentOutcome.failed
+    ..created.addAll(failure.publication.created)
+    ..replaced.addAll(failure.publication.replaced)
+    ..published = failure.publication.published
+    ..add(failure.code == 'busy' ? 'busy' : 'io_failure');
 }
 
 Future<bool> _journalLeft(ContextStore store) async {

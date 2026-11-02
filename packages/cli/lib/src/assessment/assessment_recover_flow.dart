@@ -55,6 +55,9 @@ Future<AssessmentRecovery?> _run(
       AssessmentStore(s.store),
       projectId: cited.context.projectId,
       candidates: layout is ObservedLayout ? layout.assessmentCandidates : [],
+      temporaries: layout is ObservedLayout
+          ? layout.assessmentTemporaries
+          : const [],
       revalidate: (candidate) => _stillValid(s, r, cited, candidate.current),
     );
   } on ContextFormatException {
