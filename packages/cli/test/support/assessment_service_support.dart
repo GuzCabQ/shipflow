@@ -56,6 +56,10 @@ dependencies:
   AssessmentObserver Function(AssessmentObserver real)? observerWrap;
   AssessmentLimits Function(AssessmentProfile)? limitsFor;
 
+  /// Una envoltura de la relectura de insumos sin parser, para provocar
+  /// cambios durante una consulta o una revalidación.
+  AssessmentInputObserver Function(AssessmentInputObserver real)? inputsWrap;
+
   /// Una envoltura del almacén del servicio, para provocar fallos.
   ContextStore Function(ContextStore real)? storeWrap;
 
@@ -99,7 +103,7 @@ dependencies:
       root: box.root,
       store: store,
       observe: observerWrap?.call(counted) ?? counted,
-      observeInputs: observeDartInputs,
+      observeInputs: inputsWrap?.call(observeDartInputs) ?? observeDartInputs,
       basisOf: projectDartAssessmentContext,
       doctor: (profile) => box.run(
         ContextOperation.doctor,

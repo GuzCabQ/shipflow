@@ -156,7 +156,11 @@ Future<void> _publish(
       revalidate: () => unchangedSources(s, r, cited, snapshot),
     );
   });
-  if (publication == null) return;
+  if (publication == null) {
+    // Publicado aunque algo falló después: también se informa lo retirado.
+    if (draft.published) _history(draft, previous, snapshot);
+    return;
+  }
   draft
     ..created.addAll(publication.created)
     ..replaced.addAll(publication.replaced)

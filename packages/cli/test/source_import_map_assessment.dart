@@ -134,13 +134,17 @@ const assessmentImports = {
   },
   'lib/src/assessment/assessment_show_flow.dart': {
     'package:core/core.dart',
+    '../context/secure_context_store.dart',
     '../context/state_ownership.dart',
+    'assessment_codec.dart',
     'assessment_decisions.dart',
     'assessment_draft.dart',
     'assessment_freshness.dart',
     'assessment_observe_flow.dart',
     'assessment_preflight.dart',
+    'assessment_revalidation.dart',
     'assessment_service.dart',
+    'assessment_store.dart',
   },
   'lib/src/assessment/assessment_snapshot_builder.dart': {
     'package:core/core.dart',

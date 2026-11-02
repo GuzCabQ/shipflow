@@ -60,8 +60,6 @@ Future<AssessmentRecovery?> _run(
           : const [],
       revalidate: (candidate) => _stillValid(s, r, cited, candidate.current),
     );
-  } on AssessmentCommitFailure catch (failure) {
-    await reportCommitFailure(s.store, draft, failure);
   } on ContextFormatException {
     draft.add('recovery_conflict', examples: [assessmentJournalPath]);
   } on ContextStoreFailure catch (failure) {
@@ -86,18 +84,16 @@ Future<void> _stillValid(
   await unchangedSources(s, r, cited, candidate);
 }
 
-/// El resultado de [recovery]: efectos verdaderos y, si queda un
-/// levantamiento, el vigente; una publicación parcial recuperada no es 0.
+/// El resultado de [recovery]: efectos verdaderos, también si algo falló
+/// después del rename, y el levantamiento que quedó; una publicación
+/// parcial recuperada no es 0.
 Future<void> _report(
   AssessmentService s,
   AssessmentRecovery recovery,
   AssessmentDraft draft,
 ) async {
-  draft
-    ..created.addAll(recovery.created)
-    ..removed.addAll(recovery.removed)
-    ..replaced.addAll(recovery.replaced)
-    ..published = recovery.published;
+  final failure = recovery.failure;
+  await _effects(s, recovery, draft);
   switch (recovery.outcome) {
     case AssessmentRecoveryOutcome.conflict:
       draft.add('recovery_conflict', examples: recovery.kept);
@@ -113,15 +109,61 @@ Future<void> _report(
         ..outcome = AssessmentOutcome.recovered
         ..add('recovery_aborted');
     case _:
-      draft.outcome = AssessmentOutcome.recovered;
+      if (failure == null) draft.outcome = AssessmentOutcome.recovered;
   }
-  await _presentCurrent(s, draft);
+  final document = recovery.document;
+  if (document == null) return _presentCurrent(s, draft);
+  _present(draft, document.current);
+  _retired(draft, document);
 }
 
-/// El levantamiento que quedó tras recuperar; uno parcial no es 0.
+/// Los efectos de [recovery]; con un fallo tras el rename, los del commit,
+/// su diagnóstico y la recuperación pendiente.
+Future<void> _effects(
+  AssessmentService s,
+  AssessmentRecovery recovery,
+  AssessmentDraft draft,
+) async {
+  final failure = recovery.failure;
+  if (failure != null) return reportCommitFailure(s.store, draft, failure);
+  draft
+    ..created.addAll(recovery.created)
+    ..removed.addAll(recovery.removed)
+    ..replaced.addAll(recovery.replaced)
+    ..published = recovery.published;
+}
+
+/// La revisión que [published] dejó de conservar. Assess siempre guarda
+/// previous desde la revisión 2, así que la tercera en adelante retira la
+/// de dos atrás. La informa también una limpieza: quien hizo el rename
+/// pudo morir sin informarla.
+void _retired(AssessmentDraft draft, AssessmentDocument published) {
+  if (published.revision < 3) return;
+  draft
+    ..retiredRevision = published.revision - 2
+    ..add('revision_retired');
+}
+
+/// El levantamiento que quedó tras abortar o retirar restos, leído de
+/// nuevo; si esa lectura falla, el diagnóstico conserva los efectos.
 Future<void> _presentCurrent(AssessmentService s, AssessmentDraft draft) async {
-  final current = (await AssessmentStore(s.store).read()).document?.current;
-  if (current == null) return;
+  final AssessmentDocument? document;
+  try {
+    document = (await AssessmentStore(s.store).read()).document;
+  } on ContextFormatException {
+    draft.add('assessment_invalid', examples: [assessmentDocumentPath]);
+    return;
+  } on AssessmentAbort catch (abort) {
+    draft.add(abortCode(abort.code));
+    return;
+  } on ContextStoreFailure catch (failure) {
+    draft.add(storeCode(failure));
+    return;
+  }
+  if (document != null) _present(draft, document.current);
+}
+
+void _present(AssessmentDraft draft, AssessmentSnapshot current) {
   draft
     ..present(current)
     ..actions.add(showAction);

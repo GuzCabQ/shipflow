@@ -126,31 +126,47 @@ final class AssessmentStore {
         replaced: [if (expectedSha256 != null) assessmentPath],
         published: published,
       );
-      await commitReported(journal, bytes, done);
-      return done(await hashOf(assessmentPath) == journal.after);
+      return await commitReported(journal, bytes, done);
     } finally {
       await lease.release();
     }
   }
 
-  /// [commit]; si falla después del rename, lo dice como publicado con
-  /// [AssessmentCommitFailure] y los efectos de [done].
-  Future<void> commitReported(
+  /// El reemplazo atómico con CAS y, ya publicado, el journal publicado y
+  /// la limpieza. Sólo con el lock tomado y el documento todavía en su
+  /// versión anterior. El rename con CAS demuestra la publicación: no se
+  /// vuelve a leer el documento, que otro proceso pudo sustituir después.
+  /// Un fallo antes de demostrar el rename se propaga; cualquiera después
+  /// sale como [AssessmentCommitFailure] con los efectos de [done].
+  Future<AssessmentPublication> commitReported(
     AssessmentTransaction journal,
     List<int> bytes,
     AssessmentPublication Function(bool published) done,
   ) async {
     try {
-      await commit(journal, bytes);
+      await store.publishRelative(
+        assessmentPath,
+        bytes,
+        expectedSha256: journal.before,
+      );
     } on ContextStoreFailure catch (failure) {
-      String? now;
-      try {
-        now = await hashOf(assessmentPath);
-      } on ContextStoreFailure {
-        now = null;
-      }
-      if (now != journal.after) rethrow;
+      if (!await _holds(journal.after)) rethrow;
       throw AssessmentCommitFailure(failure.code, done(true));
+    }
+    try {
+      await _settle(journal);
+      return done(true);
+    } on ContextStoreFailure catch (failure) {
+      throw AssessmentCommitFailure(failure.code, done(true));
+    }
+  }
+
+  /// Si el documento tiene [sha256]; una lectura fallida no lo demuestra.
+  Future<bool> _holds(String sha256) async {
+    try {
+      return await hashOf(assessmentPath) == sha256;
+    } on ContextStoreFailure {
+      return false;
     }
   }
 
@@ -192,14 +208,8 @@ final class AssessmentStore {
     }
   }
 
-  /// El reemplazo atómico con CAS, el journal publicado y la limpieza.
-  /// Sólo con el lock tomado y el documento todavía en su versión anterior.
-  Future<void> commit(AssessmentTransaction journal, List<int> bytes) async {
-    await store.publishRelative(
-      assessmentPath,
-      bytes,
-      expectedSha256: journal.before,
-    );
+  /// Tras el rename: el journal publicado y la limpieza de lo propio.
+  Future<void> _settle(AssessmentTransaction journal) async {
     final prepared = await hashOf(assessmentJournalPath);
     await store.publishRelative(
       assessmentJournalPath,

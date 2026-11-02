@@ -84,7 +84,10 @@ versionarse; con `local` lo excluye la misma regla que a `shipflow/`.
 
 **Retención.** Se conservan la revisión vigente y la anterior. Publicar una
 tercera informa `retiredRevision`: las más antiguas requieren Git o un
-respaldo. Repetir `assess` sin cambios no escribe ni cambia fechas.
+respaldo. Lo informa la operación que publica, sea `assess` o
+`assess --recover`, también si algo falla después del rename y también la
+recuperación que sólo limpia una publicación ya hecha, porque quien hizo el
+rename pudo morir sin informarlo. Repetir `assess` sin cambios no escribe ni cambia fechas.
 
 ## Vigencia
 
@@ -105,7 +108,10 @@ modificados y borrados.
 el mismo `project.json` comprueba que le corresponda (65 si no); si cita
 otro, avisa que ese vínculo no se volvió a comprobar. Un archivo propio que
 no se puede acreditar, como un journal ilegible, se informa junto a la
-evidencia (65), nunca como una consulta limpia.
+evidencia (65), nunca como una consulta limpia. Al terminar, `--show` vuelve
+a comprobar los bytes de `project.json` y del documento consultado; si
+cambiaron consulta una vez más, y si siguen cambiando responde
+`concurrent_change` (75), nunca **current**.
 
 Si el contexto citado cambió, el levantamiento sigue consultable como
 obsoleto, sin reenlazarlo a las unidades nuevas. Con la misma huella, sus
@@ -144,16 +150,18 @@ comparado con su huella anterior. Un cambio antes de ese punto cancela con
 **75** y conserva lo anterior; también una fuente sellada que ya no se pudo
 volver a leer, porque sin un cambio demostrado no equivale a confirmada.
 Repetir `assess` sin cambios de snapshot también revalida antes de decir
-**current**. Si algo falla después del rename, la respuesta conserva que se
-guardó.
+**current**. El rename con CAS demuestra la publicación: si algo falla
+después, la respuesta conserva que se guardó (74), y una recuperación
+presenta el documento que validó con el lock, sin volver a leerlo.
 
 `assess --recover` limpia sin republicar si el documento ya tiene su versión
 preparada; si conserva la anterior y el candidato es el preparado, vuelve a
 leer el contexto bajo el lock y publica cuando el contexto y las fuentes se
 confirman iguales, y aborta conservando lo anterior si no. Un journal o un
 candidato de otro proyecto, o que no corresponde al contexto que cita, es un
-conflicto (**75**) que se conserva. Un documento que no es ninguna de las dos versiones es un
-conflicto (**75**) que no se toca. Sin journal, sólo retira un candidato
+conflicto (**75**) que se conserva, igual que un journal de assess junto a
+uno de `init` activo. Un documento que no es ninguna de las dos versiones es
+un conflicto (**75**) que no se toca. Sin journal, sólo retira un candidato
 completo del mismo proyecto; nunca lo adopta. `init --recover` no recupera
 publicaciones de assess: las remite a `assess --recover`, y dos operaciones
 sin terminar son un conflicto.

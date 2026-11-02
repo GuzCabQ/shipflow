@@ -36,6 +36,8 @@ final class AssessmentRecovery {
     this.replaced = const [],
     this.published = false,
     this.kept = const [],
+    this.document,
+    this.failure,
   });
 
   final AssessmentRecoveryOutcome outcome;
@@ -46,6 +48,14 @@ final class AssessmentRecovery {
 
   /// Restos que no se pudieron acreditar y no se tocaron.
   final List<String> kept;
+
+  /// El documento que esta recuperación publicó o cuya limpieza cerró,
+  /// validado con el lock tomado: lo que se informa no se vuelve a leer
+  /// de un archivo que otro proceso pudo sustituir después.
+  final AssessmentDocument? document;
+
+  /// El fallo que siguió a un rename hecho: lo publicado sigue publicado.
+  final AssessmentCommitFailure? failure;
 }
 
 /// Termina o aborta sólo una publicación propia demostrable, bajo el lock
@@ -55,8 +65,8 @@ final class AssessmentRecovery {
 /// Un journal de otro proyecto que [projectId], o junto a una operación de
 /// init activa, es un conflicto que conserva todo. Sin journal, sólo se retiran [candidates]
 /// completos y propios de [projectId]; nunca se adoptan, y [temporaries]
-/// los vuelven un conflicto. Un fallo después del rename sale como
-/// [AssessmentCommitFailure], con lo publicado.
+/// los vuelven un conflicto. Un fallo después del rename no se propaga:
+/// queda en [AssessmentRecovery.failure], con lo publicado.
 Future<AssessmentRecovery> recoverAssessment(
   AssessmentStore assessments, {
   required String projectId,
@@ -113,12 +123,14 @@ Future<AssessmentRecovery> _withJournal(
   AssessmentTransaction journal,
   Future<void> Function(AssessmentDocument) revalidate,
 ) async {
-  final now = await assessments.hashOf(assessmentPath);
+  final bytes = await assessments.bytesOf(assessmentPath);
+  final now = bytes == null ? null : sha256Of(bytes);
   if (now == journal.after) {
     final removed = await assessments.cleanup(journal);
     return AssessmentRecovery(
       AssessmentRecoveryOutcome.cleaned,
       removed: removed,
+      document: decodeAssessment(bytes!),
     );
   }
   if (now != journal.before) {
@@ -150,7 +162,7 @@ Future<AssessmentRecovery> _finish(
       removed: removed,
     );
   }
-  return _commit(assessments, journal, candidate.$2);
+  return _commit(assessments, journal, candidate);
 }
 
 /// El commit del candidato con sus efectos verdaderos: creado si no había
@@ -158,23 +170,31 @@ Future<AssessmentRecovery> _finish(
 Future<AssessmentRecovery> _commit(
   AssessmentStore assessments,
   AssessmentTransaction journal,
-  List<int> bytes,
+  (AssessmentDocument, List<int>) candidate,
 ) async {
   AssessmentPublication done(bool published) => AssessmentPublication(
     created: [if (journal.before == null) assessmentPath],
     replaced: [if (journal.before != null) assessmentPath],
     published: published,
   );
-  await assessments.commitReported(journal, bytes, done);
-  final publication = done(
-    await assessments.hashOf(assessmentPath) == journal.after,
-  );
-  return AssessmentRecovery(
+  AssessmentRecovery recovered(
+    AssessmentPublication publication, [
+    AssessmentCommitFailure? failure,
+  ]) => AssessmentRecovery(
     AssessmentRecoveryOutcome.published,
     created: publication.created,
     replaced: publication.replaced,
     published: publication.published,
+    document: candidate.$1,
+    failure: failure,
   );
+  try {
+    return recovered(
+      await assessments.commitReported(journal, candidate.$2, done),
+    );
+  } on AssessmentCommitFailure catch (failure) {
+    return recovered(failure.publication, failure);
+  }
 }
 
 /// El candidato del journal, sólo si sus bytes tienen la huella preparada,
