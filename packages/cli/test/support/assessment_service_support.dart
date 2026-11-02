@@ -131,23 +131,32 @@ List<String> actionArgs(AssessmentResult r) => [
   for (final a in r.nextActions) a.argv.join(' '),
 ];
 
-/// Una publicación real que muere después de staging y journal.
-Future<void> interruptPublication(AssessServiceBox box) async {
-  final bytes = box.document.readAsBytesSync();
-  final saved = decodeAssessment(bytes);
+/// Una publicación real que muere después de staging y journal; con
+/// [projectId], la de otro proyecto, y con [first], la primera (sin
+/// documento anterior).
+Future<void> interruptPublication(
+  AssessServiceBox box, {
+  String? projectId,
+  bool first = false,
+}) async {
+  final saved = decodeAssessment(box.document.readAsBytesSync());
+  if (first) box.document.deleteSync();
   final candidate = AssessmentDocument(
-    projectId: saved.projectId,
-    revision: saved.revision + 1,
+    projectId: projectId ?? saved.projectId,
+    revision: first ? 1 : saved.revision + 1,
     current: saved.current,
-    previous: saved.current,
+    previous: first ? null : saved.current,
   );
+  final bytes = box.document.existsSync()
+      ? box.document.readAsBytesSync()
+      : null;
   final real = await SecureContextStore.open(box.box.root);
   try {
     await expectLater(
       AssessmentStore(CrashingStore(real, 2)).publish(
         candidate,
         operationId: '44444444-4444-4444-8444-444444444444',
-        expectedSha256: sha256Of(bytes),
+        expectedSha256: bytes == null ? null : sha256Of(bytes),
         baseContextDigest: saved.current.contextDigest,
         preconditions: () async {},
         revalidate: () async {},

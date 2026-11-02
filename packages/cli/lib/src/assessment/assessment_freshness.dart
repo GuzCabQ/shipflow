@@ -85,6 +85,12 @@ AssessmentFreshnessCheck _unverified(List<String> paths) => (
   ],
 );
 
+String _key(AssessmentInput i) => '${i.kind.toWireName()}\u0000${i.path}';
+
+/// Un directorio que no se terminó de listar: el inventario quedó cortado.
+bool _cut(AssessmentInput i) =>
+    i.kind == AssessmentInputKind.directory && _unsealed.contains(i.state);
+
 /// Las rutas cuyo sellado difiere de forma demostrable: la misma entrada
 /// leída a ambos lados con otra huella u otro estado y, sólo si los dos
 /// inventarios están completos, las altas y las bajas.
@@ -92,12 +98,9 @@ List<String> changedInputs(
   List<AssessmentInput> before,
   List<AssessmentInput> now,
 ) {
-  String key(AssessmentInput i) => '${i.kind.toWireName()}\u0000${i.path}';
-  final old = {for (final i in before) key(i): i};
-  final current = {for (final i in now) key(i): i};
-  bool cut(AssessmentInput i) =>
-      i.kind == AssessmentInputKind.directory && _unsealed.contains(i.state);
-  final complete = !now.any(cut) && !before.any(cut);
+  final old = {for (final i in before) _key(i): i};
+  final current = {for (final i in now) _key(i): i};
+  final complete = !now.any(_cut) && !before.any(_cut);
   final changed = <String>{};
   for (final MapEntry(:key, :value) in current.entries) {
     final was = old[key];
@@ -115,4 +118,33 @@ List<String> changedInputs(
     ]);
   }
   return changed.toList()..sort();
+}
+
+/// Las rutas que [changedInputs] no pudo cotejar: una entrada sellada al
+/// observar que ahora no se lee o que un inventario cortado ya no alcanza,
+/// y cada corte nuevo, que impide descartar altas. Sin cambio demostrado
+/// no basta para publicar: esto también tiene que estar vacío. Lo que ya
+/// no se selló al observar sigue siendo una laguna del snapshot, no esto.
+List<String> uncheckedInputs(
+  List<AssessmentInput> before,
+  List<AssessmentInput> now,
+) {
+  final current = {for (final i in now) _key(i): i};
+  final cutBefore = {
+    for (final i in before)
+      if (_cut(i)) _key(i),
+  };
+  final cutNow = now.any(_cut);
+  final unchecked = <String>{
+    for (final i in now)
+      if (_cut(i) && !cutBefore.contains(_key(i))) i.path,
+  };
+  for (final i in before) {
+    if (_unsealed.contains(i.state)) continue;
+    final again = current[_key(i)];
+    if (again == null ? cutNow : _unsealed.contains(again.state)) {
+      unchecked.add(i.path);
+    }
+  }
+  return unchecked.toList()..sort();
 }

@@ -2,22 +2,22 @@ import 'dart:convert';
 
 import 'package:core/core.dart';
 
-import '../context/context_codec.dart';
 import '../context/secure_context_store.dart';
 import '../context/state_layout.dart';
 import '../context/state_ownership.dart';
 import 'assessment_codec.dart';
 import 'assessment_decisions.dart';
 import 'assessment_draft.dart';
-import 'assessment_freshness.dart';
 import 'assessment_preflight.dart';
+import 'assessment_revalidation.dart';
 import 'assessment_service.dart';
 import 'assessment_snapshot_builder.dart';
 import 'assessment_store.dart';
 
 /// `assess`: preflight V2, observación con el detector, admisión del
 /// snapshot y publicación revalidada. Sin cambios de snapshot no escribe ni
-/// rota; un cambio antes del commit cancela con 75 y conserva lo anterior.
+/// rota, pero tampoco afirma vigencia sin revalidar; un cambio antes del
+/// commit cancela con 75 y conserva lo anterior.
 Future<AssessmentResult> observeAssessmentFlow(
   AssessmentService s,
   AssessmentRequest r,
@@ -36,7 +36,8 @@ Future<AssessmentResult> observeAssessmentFlow(
   if (snapshot == null) return draft.build();
   final saved = existing?.document?.current;
   if (saved != null && saved.snapshotId == snapshot.snapshotId) {
-    _present(draft, saved, AssessmentOutcome.unchanged);
+    await _attempt(s, draft, () => unchangedSources(s, r, cited, snapshot));
+    if (!draft.stopped) _present(draft, saved, AssessmentOutcome.unchanged);
     return draft.build();
   }
   await _publish(s, r, cited, existing, snapshot, draft);
@@ -79,6 +80,10 @@ Future<AssessmentSnapshot?> _observe(
 ) async {
   final limits = s.limits(r.profile);
   final observation = await s.observe(s.root, cited.context, limits);
+  if (observation.files.length > maxAssessmentFiles) {
+    draft.add('assessment_limit');
+    return null;
+  }
   final AssessmentSnapshot snapshot;
   try {
     snapshot = assembleSnapshot(
@@ -160,40 +165,52 @@ Future<void> _publish(
   _history(draft, previous, snapshot);
 }
 
-/// [publish], con cada aborto o fallo del almacén como su diagnóstico; un
-/// journal que quedó se informa como recuperación pendiente.
-Future<AssessmentPublication?> _attempt(
+/// [run] (una publicación o una revalidación), con cada aborto o fallo
+/// del almacén como su diagnóstico.
+Future<T?> _attempt<T>(
   AssessmentService s,
   AssessmentDraft draft,
-  Future<AssessmentPublication> Function() publish,
+  Future<T> Function() run,
 ) async {
   try {
-    return await publish();
+    return await run();
   } on AssessmentAbort catch (abort) {
     draft.add(abortCode(abort.code));
   } on AssessmentCommitFailure catch (failure) {
-    _committedWithFailure(draft, failure);
-    if (await _journalLeft(s.store)) draft.add('assessment_recovery_pending');
+    await reportCommitFailure(s.store, draft, failure);
   } on ContextFormatException catch (rejected) {
     draft.add(rejected.code == 'too_large' ? 'assessment_limit' : 'unexpected');
   } on ContextStoreFailure catch (failure) {
-    draft.add(storeCode(failure));
-    if (await _journalLeft(s.store)) draft.add('assessment_recovery_pending');
+    await reportStoreFailure(s.store, draft, failure);
   }
   return null;
 }
 
-/// Publicado aunque falló después: los efectos son verdaderos.
-void _committedWithFailure(
+/// Publicado aunque falló después: los efectos son verdaderos y el journal
+/// que quedó es una recuperación pendiente.
+Future<void> reportCommitFailure(
+  ContextStore store,
   AssessmentDraft draft,
   AssessmentCommitFailure failure,
-) {
+) async {
   draft
     ..outcome = AssessmentOutcome.failed
     ..created.addAll(failure.publication.created)
     ..replaced.addAll(failure.publication.replaced)
     ..published = failure.publication.published
     ..add(failure.code == 'busy' ? 'busy' : 'io_failure');
+  if (await _journalLeft(store)) draft.add('assessment_recovery_pending');
+}
+
+/// Un fallo del almacén sin publicación; el journal que quedó es una
+/// recuperación pendiente.
+Future<void> reportStoreFailure(
+  ContextStore store,
+  AssessmentDraft draft,
+  ContextStoreFailure failure,
+) async {
+  draft.add(storeCode(failure));
+  if (await _journalLeft(store)) draft.add('assessment_recovery_pending');
 }
 
 Future<bool> _journalLeft(ContextStore store) async {
@@ -248,40 +265,6 @@ bool hasUnsealedInputs(AssessmentSnapshot snapshot) => snapshot.inputs.any(
       i.state == AssessmentInputState.unreadable ||
       i.state == AssessmentInputState.limit,
 );
-
-/// El contexto citado sigue con sus bytes y no hay una operación de init
-/// sin terminar.
-Future<void> unchangedContext(ContextStore store, CitedContext cited) async {
-  final bytes = await store.readRelative(
-    projectPath,
-    maxBytes: maxProjectBytes,
-  );
-  if (bytes == null || sha256Of(bytes) != cited.digest) {
-    throw const AssessmentAbort('concurrent_change');
-  }
-  if (await store.readRelative(transactionPath, maxBytes: 1) != null) {
-    throw const AssessmentAbort('context_recovery_pending');
-  }
-}
-
-/// Las fuentes vuelven a sellarse igual que en [snapshot]; si no, el
-/// origen cambió durante la operación.
-Future<void> unchangedSources(
-  AssessmentService s,
-  AssessmentRequest r,
-  CitedContext cited,
-  AssessmentSnapshot snapshot,
-) async {
-  await unchangedContext(s.store, cited);
-  final now = await s.observeInputs(s.root, cited.context, s.limits(r.profile));
-  final before = [
-    for (final i in snapshot.inputs)
-      if (i.kind != AssessmentInputKind.context) i,
-  ];
-  if (changedInputs(before, now).isNotEmpty) {
-    throw const AssessmentAbort('source_changed');
-  }
-}
 
 String abortCode(String code) => switch (code) {
   'recovery_pending' => 'assessment_recovery_pending',

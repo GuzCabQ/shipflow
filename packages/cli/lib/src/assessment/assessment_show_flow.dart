@@ -10,7 +10,10 @@ import 'assessment_service.dart';
 
 /// `assess --show`: muestra el levantamiento guardado y comprueba su
 /// vigencia volviendo a sellar sus insumos, sin detector ni escrituras. Con
-/// `--previous`, la revisión anterior como historia, sin certificarla.
+/// `--previous`, la revisión anterior como historia, sin certificarla pero
+/// con su correspondencia al contexto cuando cita el mismo. Un estado
+/// propio que no se puede acreditar se muestra junto a la evidencia, nunca
+/// como una consulta limpia.
 Future<AssessmentResult> showAssessmentFlow(
   AssessmentService s,
   AssessmentRequest r,
@@ -30,9 +33,12 @@ Future<AssessmentResult> showAssessmentFlow(
     draft.add('assessment_absent');
     return draft.build();
   }
+  if (ownership.kind == StateOwnershipKind.invalid) {
+    draft.add('state_invalid', examples: ownership.findings);
+  }
   if (ownership.assessmentJournal) draft.add('assessment_recovery_pending');
   return r.previous
-      ? _previous(draft, document)
+      ? _previous(s, cited, draft, document)
       : _current(s, r, cited, document.current, draft);
 }
 
@@ -58,12 +64,18 @@ bool _bound(
   }
 }
 
-AssessmentResult _previous(AssessmentDraft draft, AssessmentDocument doc) {
+AssessmentResult _previous(
+  AssessmentService s,
+  CitedContext cited,
+  AssessmentDraft draft,
+  AssessmentDocument doc,
+) {
   final previous = doc.previous;
   if (previous == null) {
     draft.add('previous_absent');
     return draft.build();
   }
+  if (!_bound(s, cited, previous, draft)) return draft.build();
   draft
     ..outcome = AssessmentOutcome.shown
     ..present(previous)

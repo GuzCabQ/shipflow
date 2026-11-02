@@ -11,6 +11,10 @@ const maxAssessmentResponseBytes = 64 * _mebibyte + 64 * _kibibyte;
 const maxAssessmentJournalBytes = 64 * _kibibyte;
 const maxAssessmentJsonDepth = 64;
 
+/// Los archivos de un snapshot: caben los del perfil extended. Una
+/// observación con más no se puede guardar entera en ningún perfil.
+const maxAssessmentFiles = 16384;
+
 /// Cada ruta o texto controlado, en bytes UTF-8.
 const maxAssessmentTextBytes = 4096;
 const maxAssessmentIdLength = 128;

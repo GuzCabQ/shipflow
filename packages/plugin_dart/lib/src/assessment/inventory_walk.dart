@@ -150,7 +150,9 @@ final class InventoryWalk {
       diagnostics.add('outside_units', path);
       return 'f';
     }
-    candidates.add((path, owner));
+    // Una más que el contenedor basta para saber que no cabe entero: no se
+    // retienen filas que nunca se podrían guardar.
+    if (candidates.length <= maxAssessmentFiles) candidates.add((path, owner));
     return 's';
   }
 

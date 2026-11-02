@@ -6,10 +6,10 @@ import '../context/state_ownership.dart';
 import 'assessment_codec.dart';
 import 'assessment_decisions.dart';
 import 'assessment_draft.dart';
-import 'assessment_freshness.dart';
 import 'assessment_observe_flow.dart';
 import 'assessment_preflight.dart';
 import 'assessment_recovery.dart';
+import 'assessment_revalidation.dart';
 import 'assessment_service.dart';
 import 'assessment_store.dart';
 
@@ -60,15 +60,19 @@ Future<AssessmentRecovery?> _run(
           : const [],
       revalidate: (candidate) => _stillValid(s, r, cited, candidate.current),
     );
+  } on AssessmentCommitFailure catch (failure) {
+    await reportCommitFailure(s.store, draft, failure);
   } on ContextFormatException {
     draft.add('recovery_conflict', examples: [assessmentJournalPath]);
   } on ContextStoreFailure catch (failure) {
-    draft.add(storeCode(failure));
+    await reportStoreFailure(s.store, draft, failure);
   }
   return null;
 }
 
-/// El candidato sigue citando este contexto y sus fuentes no cambiaron.
+/// Bajo el lock: el candidato cita este contexto, que se vuelve a leer, le
+/// corresponde exactamente (si no, no es propio: conflicto) y sus fuentes
+/// se confirman ahora.
 Future<void> _stillValid(
   AssessmentService s,
   AssessmentRequest r,
@@ -78,14 +82,8 @@ Future<void> _stillValid(
   if (candidate.contextDigest != cited.digest) {
     throw const AssessmentAbort('source_changed');
   }
-  final now = await s.observeInputs(s.root, cited.context, s.limits(r.profile));
-  final before = [
-    for (final i in candidate.inputs)
-      if (i.kind != AssessmentInputKind.context) i,
-  ];
-  if (changedInputs(before, now).isNotEmpty) {
-    throw const AssessmentAbort('source_changed');
-  }
+  validateAssessmentContext(candidate, s.basisOf(cited.context));
+  await unchangedSources(s, r, cited, candidate);
 }
 
 /// El resultado de [recovery]: efectos verdaderos y, si queda un
@@ -96,6 +94,7 @@ Future<void> _report(
   AssessmentDraft draft,
 ) async {
   draft
+    ..created.addAll(recovery.created)
     ..removed.addAll(recovery.removed)
     ..replaced.addAll(recovery.replaced)
     ..published = recovery.published;

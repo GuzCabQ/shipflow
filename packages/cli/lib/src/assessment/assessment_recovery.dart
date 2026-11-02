@@ -30,6 +30,7 @@ enum AssessmentRecoveryOutcome {
 final class AssessmentRecovery {
   AssessmentRecovery(
     this.outcome, {
+    this.created = const [],
     this.removed = const [],
     this.replaced = const [],
     this.published = false,
@@ -37,6 +38,7 @@ final class AssessmentRecovery {
   });
 
   final AssessmentRecoveryOutcome outcome;
+  final List<String> created;
   final List<String> removed;
   final List<String> replaced;
   final bool published;
@@ -49,8 +51,11 @@ final class AssessmentRecovery {
 /// del contexto: el documento en su versión preparada se limpia sin
 /// republicar; en la anterior, con candidato válido y fuentes vigentes, se
 /// publica; con fuentes cambiadas se aborta; en otra versión es conflicto.
-/// Sin journal, sólo se retiran [candidates] completos y propios de
-/// [projectId]; nunca se adoptan, y [temporaries] los vuelven un conflicto.
+/// Un journal de otro proyecto que [projectId] es un conflicto: los hashes
+/// no acreditan pertenencia. Sin journal, sólo se retiran [candidates]
+/// completos y propios de [projectId]; nunca se adoptan, y [temporaries]
+/// los vuelven un conflicto. Un fallo después del rename sale como
+/// [AssessmentCommitFailure], con lo publicado.
 Future<AssessmentRecovery> recoverAssessment(
   AssessmentStore assessments, {
   required String projectId,
@@ -73,6 +78,12 @@ Future<AssessmentRecovery> recoverAssessment(
     }
     if (journal == null) {
       return _leftovers(assessments, projectId, candidates);
+    }
+    if (journal.projectId != projectId) {
+      return AssessmentRecovery(
+        AssessmentRecoveryOutcome.conflict,
+        kept: [assessmentJournalPath, journal.candidatePath],
+      );
     }
     return await _withJournal(assessments, journal, revalidate);
   } finally {
@@ -122,11 +133,30 @@ Future<AssessmentRecovery> _finish(
       removed: removed,
     );
   }
-  await assessments.commit(journal, candidate.$2);
+  return _commit(assessments, journal, candidate.$2);
+}
+
+/// El commit del candidato con sus efectos verdaderos: creado si no había
+/// documento y reemplazado si lo había, también si algo falla después.
+Future<AssessmentRecovery> _commit(
+  AssessmentStore assessments,
+  AssessmentTransaction journal,
+  List<int> bytes,
+) async {
+  AssessmentPublication done(bool published) => AssessmentPublication(
+    created: [if (journal.before == null) assessmentPath],
+    replaced: [if (journal.before != null) assessmentPath],
+    published: published,
+  );
+  await assessments.commitReported(journal, bytes, done);
+  final publication = done(
+    await assessments.hashOf(assessmentPath) == journal.after,
+  );
   return AssessmentRecovery(
     AssessmentRecoveryOutcome.published,
-    replaced: [if (journal.before != null) assessmentPath],
-    published: await assessments.hashOf(assessmentPath) == journal.after,
+    created: publication.created,
+    replaced: publication.replaced,
+    published: publication.published,
   );
 }
 

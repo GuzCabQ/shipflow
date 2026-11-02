@@ -67,7 +67,7 @@ const _snapshotKeys = {
 const _collections = <(String, int, void Function(Object?, String))>[
   ('units', 4096, _unit),
   ('inputs', 400000, _input),
-  ('files', 16384, _file),
+  ('files', maxAssessmentFiles, _file),
   ('claims', 131072, _claim),
   ('witnesses', 5, _witness),
   ('contextLinks', 18432, _link),

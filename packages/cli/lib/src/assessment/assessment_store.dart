@@ -126,15 +126,16 @@ final class AssessmentStore {
         replaced: [if (expectedSha256 != null) assessmentPath],
         published: published,
       );
-      await _committed(journal, bytes, done);
+      await commitReported(journal, bytes, done);
       return done(await hashOf(assessmentPath) == journal.after);
     } finally {
       await lease.release();
     }
   }
 
-  /// [commit]; si falla después del rename, lo dice como publicado.
-  Future<void> _committed(
+  /// [commit]; si falla después del rename, lo dice como publicado con
+  /// [AssessmentCommitFailure] y los efectos de [done].
+  Future<void> commitReported(
     AssessmentTransaction journal,
     List<int> bytes,
     AssessmentPublication Function(bool published) done,

@@ -52,8 +52,10 @@ operación terminan con **64** antes de leer nada.
   diagnóstico del parser, o con UTF-8 inválido, no aporta referencias y queda
   como fallido: nunca como «sin referencias».
 - **Condicionales.** Se conservan la base (`fallback`) y cada rama
-  (`conditional`) con su condición en forma segura; una condición que no se
-  puede representar queda `unknown`, sin su valor.
+  (`conditional`) con su condición en forma segura: una variable con puntos
+  o su comparación con `"true"` o `"false"`. Cualquier otro valor comparado
+  puede ser un dato privado del código: esa rama queda `unknown`, sin el
+  valor.
 
 | Referencia | Resolución |
 |---|---|
@@ -99,6 +101,12 @@ modificados y borrados.
   es **unverified**, nunca **current**;
 - un inventario cortado ahora no cuenta como desaparición.
 
+`--show --previous` no certifica vigencia, pero si la revisión anterior cita
+el mismo `project.json` comprueba que le corresponda (65 si no); si cita
+otro, avisa que ese vínculo no se volvió a comprobar. Un archivo propio que
+no se puede acreditar, como un journal ilegible, se informa junto a la
+evidencia (65), nunca como una consulta limpia.
+
 Si el contexto citado cambió, el levantamiento sigue consultable como
 obsoleto, sin reenlazarlo a las unidades nuevas. Con la misma huella, sus
 unidades y vínculos tienen que corresponder exactamente al contexto: una
@@ -133,12 +141,18 @@ vuelve a validar el candidato entero, se escribe en staging, se publica el
 journal con las huellas antes y después del documento, se vuelven a sellar
 las fuentes y sólo entonces se reemplaza el documento con un rename atómico
 comparado con su huella anterior. Un cambio antes de ese punto cancela con
-**75** y conserva lo anterior.
+**75** y conserva lo anterior; también una fuente sellada que ya no se pudo
+volver a leer, porque sin un cambio demostrado no equivale a confirmada.
+Repetir `assess` sin cambios de snapshot también revalida antes de decir
+**current**. Si algo falla después del rename, la respuesta conserva que se
+guardó.
 
 `assess --recover` limpia sin republicar si el documento ya tiene su versión
-preparada; si conserva la anterior y el candidato es el preparado, publica
-cuando las fuentes siguen iguales y aborta conservando lo anterior si
-cambiaron. Un documento que no es ninguna de las dos versiones es un
+preparada; si conserva la anterior y el candidato es el preparado, vuelve a
+leer el contexto bajo el lock y publica cuando el contexto y las fuentes se
+confirman iguales, y aborta conservando lo anterior si no. Un journal o un
+candidato de otro proyecto, o que no corresponde al contexto que cita, es un
+conflicto (**75**) que se conserva. Un documento que no es ninguna de las dos versiones es un
 conflicto (**75**) que no se toca. Sin journal, sólo retira un candidato
 completo del mismo proyecto; nunca lo adopta. `init --recover` no recupera
 publicaciones de assess: las remite a `assess --recover`, y dos operaciones
@@ -160,7 +174,9 @@ sin terminar son un conflicto.
 
 Superar un presupuesto de recorrido, conteo o tiempo deja cobertura parcial
 con lo admitido; las referencias de un archivo se admiten enteras o ninguna.
-Un snapshot que no cabe no se publica (65, `assessment_limit`).
+Un snapshot que no cabe no se publica (65, `assessment_limit`); tampoco un
+proyecto con más de 16.384 fuentes elegibles, que excede lo que el archivo
+puede guardar en cualquier perfil.
 
 ## Códigos de salida
 
