@@ -50,7 +50,8 @@ String? fingerprintAt(NativePosix posix, int dirFd, String name) {
 /// mismo directorio, con los permisos del destino que reemplaza, lo
 /// confirma con fsync y lo renombra: nunca abre el destino para escribir,
 /// así que un enlace o un hardlink colocados allí no reciben bytes. Si falla
-/// después de crear el temporal, lo retira.
+/// después de crear el temporal, lo retira; si falla la confirmación
+/// posterior al rename, el error dice que el reemplazo ya ocurrió.
 void publishAt(
   NativePosix posix,
   int dirFd,
@@ -79,7 +80,11 @@ void publishAt(
     _discard(posix, dirFd, temporary);
     rethrow;
   }
-  storeGuard(() => posix.fsync(dirFd));
+  try {
+    storeGuard(() => posix.fsync(dirFd));
+  } on ContextStoreFailure catch (failure) {
+    throw ContextStoreFailure(failure.code, replaced: true);
+  }
 }
 
 /// Retira [name] de [dirFd] sólo si su versión actual tiene [expected].

@@ -4,6 +4,7 @@ import 'package:cli/src/assessment/assessment_codec.dart';
 import 'package:cli/src/assessment/assessment_service.dart';
 import 'package:cli/src/assessment/assessment_store.dart';
 import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/context/native/posix_api.dart';
 import 'package:cli/src/context/secure_context_store.dart';
 import 'package:core/core.dart';
 import 'package:plugin_dart/plugin_dart.dart';
@@ -63,6 +64,9 @@ dependencies:
   /// Una envoltura del almacén del servicio, para provocar fallos.
   ContextStore Function(ContextStore real)? storeWrap;
 
+  /// Las llamadas POSIX del almacén real, para provocar fallos nativos.
+  NativePosix? posix;
+
   String path(String relative) => box.path(relative);
   File get document => File(path(assessmentPath));
 
@@ -74,7 +78,7 @@ dependencies:
     bool previous = false,
     AssessmentProfile profile = AssessmentProfile.standard,
   }) async {
-    final real = await SecureContextStore.open(box.root);
+    final real = await SecureContextStore.open(box.root, api: posix);
     final store = storeWrap?.call(real) ?? real;
     try {
       return await _service(store).run(

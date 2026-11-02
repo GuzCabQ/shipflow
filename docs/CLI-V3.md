@@ -151,7 +151,8 @@ comparado con su huella anterior. Un cambio antes de ese punto cancela con
 volver a leer, porque sin un cambio demostrado no equivale a confirmada.
 Repetir `assess` sin cambios de snapshot también revalida antes de decir
 **current**. El rename con CAS demuestra la publicación: si algo falla
-después, la respuesta conserva que se guardó (74), y una recuperación
+después, incluida la confirmación del propio rename en disco, la respuesta
+conserva que se guardó (74) sin depender de volver a leer el documento, y una recuperación
 presenta el documento que validó con el lock, sin volver a leerlo.
 
 `assess --recover` limpia sin republicar si el documento ya tiene su versión

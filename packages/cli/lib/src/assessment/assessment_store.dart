@@ -136,8 +136,9 @@ final class AssessmentStore {
   /// la limpieza. Sólo con el lock tomado y el documento todavía en su
   /// versión anterior. El rename con CAS demuestra la publicación: no se
   /// vuelve a leer el documento, que otro proceso pudo sustituir después.
-  /// Un fallo antes de demostrar el rename se propaga; cualquiera después
-  /// sale como [AssessmentCommitFailure] con los efectos de [done].
+  /// Un fallo antes de demostrar el rename se propaga; cualquiera después,
+  /// incluida la confirmación del propio rename, sale como
+  /// [AssessmentCommitFailure] con los efectos de [done].
   Future<AssessmentPublication> commitReported(
     AssessmentTransaction journal,
     List<int> bytes,
@@ -150,7 +151,9 @@ final class AssessmentStore {
         expectedSha256: journal.before,
       );
     } on ContextStoreFailure catch (failure) {
-      if (!await _holds(journal.after)) rethrow;
+      // El primitivo sabe si el rename ocurrió; releer sólo hace falta
+      // cuando no lo dice, y una relectura fallida no lo desmiente.
+      if (!failure.replaced && !await _holds(journal.after)) rethrow;
       throw AssessmentCommitFailure(failure.code, done(true));
     }
     try {

@@ -4,9 +4,13 @@ import 'native/posix_api.dart';
 /// `busy`, `concurrent_change`, `unsafe_path`, `io` o
 /// `unsupported_platform`. Nunca sigue a un efecto parcial no informado.
 final class ContextStoreFailure implements Exception {
-  const ContextStoreFailure(this.code);
+  const ContextStoreFailure(this.code, {this.replaced = false});
 
   final String code;
+
+  /// Si el rename que reemplaza el destino ya ocurrió: lo que falló fue la
+  /// confirmación posterior, así que el reemplazo es un efecto conocido.
+  final bool replaced;
 
   @override
   String toString() => 'ContextStoreFailure($code)';
@@ -19,6 +23,10 @@ final class ContextStoreFailure implements Exception {
 abstract interface class ContextStore {
   Future<List<int>?> readRelative(String path, {required int maxBytes});
 
+  /// Reemplaza [path] con [bytes] si su versión actual tiene
+  /// [expectedSha256]. Un fallo después de reemplazarlo lleva
+  /// [ContextStoreFailure.replaced]: quien llama no tiene otra forma segura
+  /// de saberlo si también falla releer.
   Future<void> publishRelative(
     String path,
     List<int> bytes, {
