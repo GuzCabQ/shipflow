@@ -11,6 +11,16 @@ const assessmentImports = {
     'assessment_response_shape.dart',
     'assessment_shape.dart',
   },
+  'lib/src/assessment/assessment_recovery.dart': {
+    'package:core/core.dart',
+    'assessment_codec.dart',
+    'assessment_store.dart',
+  },
+  'lib/src/assessment/assessment_store.dart': {
+    'package:core/core.dart',
+    '../context/secure_context_store.dart',
+    'assessment_codec.dart',
+  },
   'lib/src/assessment/assessment_journal_shape.dart': {
     'package:core/core.dart',
     '../context/context_shape.dart',

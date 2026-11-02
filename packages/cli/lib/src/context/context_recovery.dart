@@ -25,6 +25,11 @@ Future<ContextOperationResult> recoverContext({
   final effects = EffectsLog();
   final parts = _parts(o);
   final journal = o.journal.value;
+  if (o.ownership.assessmentJournal) {
+    if (journal == null) _withoutJournal(o, parts);
+    parts.diagnostics.add(assessmentPending(bothActive: journal != null));
+    return resultOf(parts, effects.freeze(budget.started));
+  }
   if (journal == null) {
     _withoutJournal(o, parts);
     return resultOf(parts, effects.freeze(budget.started));
@@ -83,6 +88,22 @@ void _withoutJournal(ObservedContext o, ResultParts parts) {
     parts.actions.add(firstInitAction);
   }
 }
+
+/// Una publicación de assess sin terminar: init no la recupera. Con las dos
+/// activas no se adivina un orden.
+ContextDiagnostic assessmentPending({required bool bothActive}) => bothActive
+    ? diagnostic(
+        'recovery_conflict',
+        'Hay una operación de init y otra de assess sin terminar; no se '
+            'adivina su orden: reconcílialas a mano.',
+        assessmentTransactionPath,
+      )
+    : diagnostic(
+        'recovery_pending',
+        'La operación sin terminar es de assess: la termina «shipflow '
+            'assess --recover».',
+        assessmentTransactionPath,
+      );
 
 ContextDiagnostic _journalInvalid() => diagnostic(
   'journal_invalid',

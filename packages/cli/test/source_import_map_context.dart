@@ -251,6 +251,7 @@ const contextImports = {
     'dart:convert',
     'dart:io',
     'package:core/core.dart',
+    '../assessment/assessment_codec.dart',
     'context_codec.dart',
     'secure_context_store.dart',
     'state_layout.dart',
