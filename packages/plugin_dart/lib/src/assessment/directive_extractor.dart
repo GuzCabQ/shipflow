@@ -134,18 +134,21 @@ ExtractedAlternative _alternative(Configuration node, LineInfo lines) {
 }
 
 final _identifier = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
-final _value = RegExp(r'^[A-Za-z0-9_.-]{1,64}$');
+
+/// Los únicos valores comparados que se conservan: cualquier otro literal
+/// puede ser un dato privado del código y no viaja al archivo portable.
+const _booleans = {'true', 'false'};
 
 /// La condición como variable con puntos y, si la tiene, su comparación
-/// con un valor simple; null si alguna parte no es representable sin
-/// copiar un valor arbitrario.
+/// booleana; null si alguna parte no es representable sin copiar un valor
+/// arbitrario.
 String? _condition(Configuration node) {
   final name = _dotted(node.name);
   if (!name.split('.').every(_identifier.hasMatch)) return null;
   final value = node.value;
   if (value == null) return name;
   final text = value.stringValue;
-  return text != null && _value.hasMatch(text) ? '$name == "$text"' : null;
+  return _booleans.contains(text) ? '$name == "$text"' : null;
 }
 
 /// Los identificadores de [name] unidos por puntos: sus tokens incluyen los

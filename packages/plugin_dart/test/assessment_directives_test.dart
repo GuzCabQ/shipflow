@@ -72,6 +72,19 @@ import 'base.dart' if (flag == "a b;rm") 'otro.dart';
     expect(directive.alternatives.single.uri, 'otro.dart');
   });
 
+  test('only a boolean comparison keeps its compared value', () {
+    final directive = directivesOf('''
+import 'base.dart'
+    if (env.secret == "PRIVATE_TEST_VALUE_123") 'a.dart'
+    if (env.mode == "release") 'b.dart'
+    if (env.flag == "false") 'c.dart';
+''').single;
+    expect(
+      [for (final a in directive.alternatives) (a.conditionText, a.uri)],
+      [(null, 'a.dart'), (null, 'b.dart'), ('env.flag == "false"', 'c.dart')],
+    );
+  });
+
   test('deferred, prefixes and combinators do not change the reference', () {
     final found = directivesOf('''
 import 'a.dart' deferred as diferida show Algo hide Otro;
