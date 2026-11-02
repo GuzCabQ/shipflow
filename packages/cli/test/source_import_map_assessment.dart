@@ -109,6 +109,7 @@ const assessmentImports = {
   },
   'lib/src/assessment/assessment_recovery.dart': {
     'package:core/core.dart',
+    '../context/state_layout.dart',
     'assessment_codec.dart',
     'assessment_store.dart',
   },

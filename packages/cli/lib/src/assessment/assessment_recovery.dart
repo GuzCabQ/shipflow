@@ -1,5 +1,6 @@
 import 'package:core/core.dart';
 
+import '../context/state_layout.dart';
 import 'assessment_codec.dart';
 import 'assessment_store.dart';
 
@@ -51,8 +52,8 @@ final class AssessmentRecovery {
 /// del contexto: el documento en su versión preparada se limpia sin
 /// republicar; en la anterior, con candidato válido y fuentes vigentes, se
 /// publica; con fuentes cambiadas se aborta; en otra versión es conflicto.
-/// Un journal de otro proyecto que [projectId] es un conflicto: los hashes
-/// no acreditan pertenencia. Sin journal, sólo se retiran [candidates]
+/// Un journal de otro proyecto que [projectId], o junto a una operación de
+/// init activa, es un conflicto que conserva todo. Sin journal, sólo se retiran [candidates]
 /// completos y propios de [projectId]; nunca se adoptan, y [temporaries]
 /// los vuelven un conflicto. Un fallo después del rename sale como
 /// [AssessmentCommitFailure], con lo publicado.
@@ -79,16 +80,32 @@ Future<AssessmentRecovery> recoverAssessment(
     if (journal == null) {
       return _leftovers(assessments, projectId, candidates);
     }
-    if (journal.projectId != projectId) {
-      return AssessmentRecovery(
-        AssessmentRecoveryOutcome.conflict,
-        kept: [assessmentJournalPath, journal.candidatePath],
-      );
+    final kept = await _conflictOf(assessments, journal, projectId);
+    if (kept != null) {
+      return AssessmentRecovery(AssessmentRecoveryOutcome.conflict, kept: kept);
     }
     return await _withJournal(assessments, journal, revalidate);
   } finally {
     await lease.release();
   }
+}
+
+/// Lo que se conserva si [journal] no se puede decidir, ya con el lock:
+/// de otro proyecto (los hashes no acreditan pertenencia) o junto a un
+/// journal de init activo (dos transacciones no se ordenan adivinando).
+/// Null si es propio y el único.
+Future<List<String>?> _conflictOf(
+  AssessmentStore assessments,
+  AssessmentTransaction journal,
+  String projectId,
+) async {
+  final own = [assessmentJournalPath, journal.candidatePath];
+  if (journal.projectId != projectId) return own;
+  final init = await assessments.store.readRelative(
+    transactionPath,
+    maxBytes: 1,
+  );
+  return init == null ? null : [transactionPath, ...own];
 }
 
 Future<AssessmentRecovery> _withJournal(
