@@ -100,8 +100,8 @@ List<String> _actions(
   Findings findings,
 ) => switch (report.status) {
   RecognitionStatus.recognized => const [
-    '  La inspección terminó. Esta versión sólo entrega esta ficha: no '
-        'aplica la inicialización ni inicia tareas.',
+    '  La inspección terminó. Con --dry-run sólo se muestra esta ficha: no se '
+        'guarda el contexto ni se inician tareas.',
   ],
   RecognitionStatus.unsupported => const [
     '  Esta versión reconoce proyectos Dart y Flutter mediante sus '

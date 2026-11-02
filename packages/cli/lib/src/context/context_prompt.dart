@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:core/core.dart';
@@ -22,7 +23,17 @@ final class TerminalPromptIO implements ContextPromptIO {
   const TerminalPromptIO();
 
   @override
-  bool get interactive => stdin.hasTerminal && stdout.hasTerminal;
+  bool get interactive =>
+      (Platform.isLinux || Platform.isMacOS) &&
+      _isatty(0) == 1 &&
+      stdout.hasTerminal;
+
+  // Un dispositivo de caracteres como /dev/null no permite contestar.
+  static final _isatty = DynamicLibrary.process()
+      .lookupFunction<Int32 Function(Int32), int Function(int)>(
+        'isatty',
+        isLeaf: true,
+      );
 
   @override
   Future<String?> readLine() async => stdin.readLineSync();

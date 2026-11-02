@@ -43,8 +43,8 @@ const expectedDetail =
     'Para repetir la inspección con detalle estructurado:\n'
     '  shipflow init --dry-run --json\n';
 const expectedRecognizedNext =
-    '  La inspección terminó. Esta versión sólo entrega esta ficha: no '
-    'aplica la inicialización ni inicia tareas.\n';
+    '  La inspección terminó. Con --dry-run sólo se muestra esta ficha: no se '
+    'guarda el contexto ni se inician tareas.\n';
 const expectedLimitsNext =
     '  Revisa las causas indicadas; el reconocimiento está incompleto. Si una '
     'causa depende del alcance de esta versión y no del proyecto, esta '

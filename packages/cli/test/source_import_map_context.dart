@@ -103,6 +103,7 @@ const contextImports = {
     'state_layout.dart',
   },
   'lib/src/context/context_prompt.dart': {
+    'dart:ffi',
     'dart:io',
     'package:core/core.dart',
     '../terminal_text.dart',
