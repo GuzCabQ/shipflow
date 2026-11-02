@@ -85,10 +85,10 @@ Future<TransactionResult> _underLease(
   await steps.writeJournal(TransactionPhase.prepared);
   await steps.stage();
   final sharing = await _applySharing(steps, plan, git, budget);
-  if (sharing.effective == SharingEffective.conflict) {
+  if (_refused(sharing, plan) case final refused?) {
     await steps.revertExclude();
     await steps.cleanup();
-    return TransactionResult([sharingConflict(sharing)]);
+    return TransactionResult([refused]);
   }
   await steps.publishSettings();
   await steps.publishPrevious();
@@ -112,6 +112,17 @@ Future<SharingCheck> _applySharing(
   }
   return git.verifySharing(plan.observed.git, plan.choice, budget: budget);
 }
+
+/// Por qué no se publica con la modalidad comprobada: un conflicto, o un
+/// Git que respondió al observar y no al corroborar. Sin Git utilizable
+/// desde el principio, la elección queda tal cual y se avisa aparte.
+ContextDiagnostic? _refused(SharingCheck sharing, PublicationPlan plan) =>
+    switch (sharing.effective) {
+      SharingEffective.conflict => sharingConflict(sharing),
+      SharingEffective.unverified when plan.observed.gitUsable =>
+        uncorroborated(sharing),
+      _ => null,
+    };
 
 ContextDiagnostic _pending() => diagnostic(
   'recovery_pending',

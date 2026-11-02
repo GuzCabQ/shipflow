@@ -43,6 +43,23 @@ final class ServiceSandbox {
     'HOME': Platform.environment['HOME']!,
   };
 
+  /// Un Git que responde a la primera observación y falla desde la
+  /// segunda: la corroboración de la modalidad ya no lo alcanza.
+  Map<String, String> get gitFailingAfterObservation {
+    final dir = Directory('${base.path}/git-falla')..createSync();
+    final seen = '${dir.path}/visto';
+    File('${dir.path}/git').writeAsStringSync(
+      '#!/bin/sh\n'
+      'case " \$* " in *" --version "*)\n'
+      '  if [ -f "$seen" ]; then exit 128; fi\n'
+      '  : > "$seen" ;;\n'
+      'esac\n'
+      'exec /usr/bin/git "\$@"\n',
+    );
+    Process.runSync('/bin/chmod', ['+x', '${dir.path}/git']);
+    return {'PATH': dir.path, 'HOME': Platform.environment['HOME']!};
+  }
+
   String path(String relative) => '${root.path}/$relative';
 
   File file(String relative, String text) {

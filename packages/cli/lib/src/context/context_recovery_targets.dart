@@ -3,9 +3,10 @@ import 'dart:io';
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
-import 'context_codec.dart';
+import 'context_codec.dart' show maxProjectBytes;
 import 'context_observation.dart';
 import 'context_publication_plan.dart';
+import 'context_recovery_staging.dart';
 import 'context_result.dart';
 import 'secure_context_store.dart';
 import 'state_layout.dart';
@@ -21,7 +22,7 @@ final class RecoveryTargets {
     required this.store,
     required this.openAdministration,
     required this.effects,
-  });
+  }) : _staging = RecoveryStaging(journal);
 
   final ObservedContext o;
   final ContextTransaction journal;
@@ -30,7 +31,7 @@ final class RecoveryTargets {
   final EffectsLog effects;
   ContextStore? _admin;
   ContextLease? _lease;
-  final _staged = <String, List<int>>{};
+  final RecoveryStaging _staging;
 
   SharingChoice get choice => journal.choice;
 
@@ -55,19 +56,7 @@ final class RecoveryTargets {
       store.contextLock(),
       if (_admin case final admin?) admin.directoryLock(),
     ]);
-    await _readStaging();
-  }
-
-  Future<void> _readStaging() async {
-    final s = journal.staging;
-    for (final path in [s.project, s.settingsBefore, s.settingsAfter]) {
-      if (path == null) continue;
-      final bytes = await store.readRelative(
-        '$_shipflow$path',
-        maxBytes: maxProjectBytes,
-      );
-      if (bytes != null) _staged[path] = bytes;
-    }
+    await _staging.read(store);
   }
 
   Future<void> release() async {
@@ -117,31 +106,35 @@ final class RecoveryTargets {
     return t == null || await _hash(TransactionResource.project) == t.after;
   }
 
-  /// El candidato preparado, si su staging está y coincide con su huella.
-  ProjectContext? candidate() {
-    final path = journal.staging.project;
-    final bytes = path == null ? null : _staged[path];
-    final t = _target(TransactionResource.project);
-    if (bytes == null || t == null || hashOf(bytes) != t.after) return null;
-    try {
-      return const ContextCodec().decodeProject(bytes);
-    } on ContextFormatException {
-      return null;
+  /// Si cada destino que todavía no está en su versión preparada tiene con
+  /// qué llegar a ella: contexto y settings, su staging con la huella del
+  /// journal. El exclude se recompone y se comprueba al aplicarlo.
+  Future<bool> completable() async {
+    for (final t in journal.targets) {
+      if (t.resource == TransactionResource.exclude ||
+          await _hash(t.resource) == t.after) {
+        continue;
+      }
+      if (_prepared(t) == null) return false;
     }
+    return true;
   }
+
+  /// Los bytes preparados de [t], si su staging está y coincide.
+  List<int>? _prepared(TransactionTarget t) =>
+      _staging.matching(switch (t.resource) {
+        TransactionResource.project => journal.staging.project,
+        TransactionResource.settings => journal.staging.settingsAfter,
+        TransactionResource.exclude => null,
+      }, t.after);
+
+  /// El candidato preparado, si su staging está y coincide con su huella.
+  ProjectContext? candidate() =>
+      _staging.project(_target(TransactionResource.project)?.after);
 
   /// El contexto ya publicado, si es válido.
   ProjectContext? publishedProject() =>
-      o.project.value ?? candidate() ?? _decoded(o.project.bytes);
-
-  ProjectContext? _decoded(List<int>? bytes) {
-    if (bytes == null) return null;
-    try {
-      return const ContextCodec().decodeProject(bytes);
-    } on ContextFormatException {
-      return null;
-    }
-  }
+      o.project.value ?? candidate() ?? decodedProject(o.project.bytes);
 
   /// Lleva el exclude a su versión preparada; false si no se puede
   /// recomponer exactamente.
@@ -177,23 +170,16 @@ final class RecoveryTargets {
     ).after;
   }
 
-  /// Exclude, settings y contexto en su versión preparada.
+  /// Exclude, settings y contexto en su versión preparada; false si alguno
+  /// pendiente no tiene con qué llegar a ella.
   Future<bool> applyRemaining() async {
-    if (!await applyExclude()) return false;
-    await _applyFromStaging(
-      TransactionResource.settings,
-      settingsPath,
-      journal.staging.settingsAfter,
-    );
+    if (!await completable() || !await applyExclude()) return false;
+    await _applyFromStaging(TransactionResource.settings, settingsPath);
     final project = _target(TransactionResource.project);
     if (project != null &&
         await _hash(TransactionResource.project) == project.before) {
       await _keepPrevious(project);
-      await _applyFromStaging(
-        TransactionResource.project,
-        projectPath,
-        journal.staging.project,
-      );
+      await _applyFromStaging(TransactionResource.project, projectPath);
     }
     return true;
   }
@@ -201,13 +187,10 @@ final class RecoveryTargets {
   Future<void> _applyFromStaging(
     TransactionResource resource,
     String path,
-    String? staged,
   ) async {
     final t = _target(resource);
-    final bytes = staged == null ? null : _staged[staged];
-    if (t == null || bytes == null || hashOf(bytes) != t.after) return;
-    if (await _hash(resource) == t.after) return;
-    await store.publishRelative(path, bytes, expectedSha256: t.before);
+    if (t == null || await _hash(resource) == t.after) return;
+    await store.publishRelative(path, _prepared(t)!, expectedSha256: t.before);
     effects.published(path, existed: t.before != null);
   }
 
@@ -239,9 +222,8 @@ final class RecoveryTargets {
     if (t == null || await _hash(TransactionResource.settings) != t.after) {
       return true;
     }
-    final staged = journal.staging.settingsBefore;
-    final bytes = staged == null ? null : _staged[staged];
-    if (bytes != null && hashOf(bytes) == t.before) {
+    final bytes = _staging.matching(journal.staging.settingsBefore, t.before);
+    if (bytes != null) {
       await store.publishRelative(settingsPath, bytes, expectedSha256: t.after);
       return true;
     }
@@ -280,7 +262,7 @@ final class RecoveryTargets {
       await store.removeRelative(path, expectedSha256: hashOf(bytes));
       effects.filesRemoved.add(path);
     }
-    for (final MapEntry(key: path, value: bytes) in _staged.entries) {
+    for (final MapEntry(key: path, value: bytes) in _staging.files.entries) {
       await store.removeRelative(
         '$_shipflow$path',
         expectedSha256: hashOf(bytes),

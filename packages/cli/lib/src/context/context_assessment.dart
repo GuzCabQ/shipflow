@@ -107,11 +107,13 @@ ContextDiagnostic _invalid(ObservedContext o) {
   );
 }
 
-/// Si el contexto guardado coincide con lo observado ahora.
+/// Si el contexto guardado, o [saved] si se da, coincide con lo observado
+/// ahora.
 ({ContextFreshness freshness, List<ContextDiagnostic> diagnostics}) freshnessOf(
   ObservedContext o,
-  ContextState state,
-) {
+  ContextState state, {
+  ProjectContext? saved,
+}) {
   if (state != ContextState.present) {
     return (
       freshness: state == ContextState.incompatible
@@ -137,14 +139,14 @@ ContextDiagnostic _invalid(ObservedContext o) {
       ],
     );
   }
-  return _compared(o, current);
+  return _compared(saved ?? o.project.value!, current);
 }
 
 ({ContextFreshness freshness, List<ContextDiagnostic> diagnostics}) _compared(
-  ObservedContext o,
+  ProjectContext saved,
   PortableRecognition current,
 ) {
-  final same = o.project.value!.observationDigest == digestOf(current);
+  final same = saved.observationDigest == digestOf(current);
   return (
     freshness: same ? ContextFreshness.current : ContextFreshness.stale,
     diagnostics: [
@@ -216,9 +218,18 @@ _verified(
     sharing: sharing(check.effective),
     diagnostics: [
       if (check.effective == SharingEffective.conflict) sharingConflict(check),
+      if (check.effective == SharingEffective.unverified) uncorroborated(check),
     ],
   );
 }
+
+/// Git respondió al observar pero no al corroborar la elección: es un error,
+/// no ausencia, y la elección no se afirma aplicada.
+ContextDiagnostic uncorroborated(SharingCheck check) => diagnostic(
+  'git_unavailable',
+  'No se pudo comprobar la elección con Git (${check.code ?? 'sin '
+          'repositorio'}); no se afirma que esté aplicada.',
+);
 
 /// Si la elección guardada se vinculó a otro repositorio o prefijo.
 bool reboundSettings(ObservedContext o) {

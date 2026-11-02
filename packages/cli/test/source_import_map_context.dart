@@ -141,6 +141,13 @@ const contextImports = {
     'secure_context_store.dart',
     'state_layout.dart',
   },
+  'lib/src/context/context_recovery_staging.dart': {
+    'package:core/core.dart',
+    'context_codec.dart',
+    'context_observation.dart',
+    'secure_context_store.dart',
+    'state_layout.dart',
+  },
   'lib/src/context/context_recovery_targets.dart': {
     'dart:io',
     'package:core/core.dart',
@@ -148,6 +155,7 @@ const contextImports = {
     'context_codec.dart',
     'context_observation.dart',
     'context_publication_plan.dart',
+    'context_recovery_staging.dart',
     'context_result.dart',
     'secure_context_store.dart',
     'state_layout.dart',

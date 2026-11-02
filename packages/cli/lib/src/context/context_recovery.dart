@@ -110,6 +110,7 @@ Future<void> _recover(
     );
     return;
   }
+  if (!await t.completable()) return _incomplete(t, parts);
   if (await t.projectPublished()) {
     return _finishPublished(t, o, git, budget, parts);
   }
@@ -118,9 +119,31 @@ Future<void> _recover(
       digestOf(candidate.recognition) != _currentDigest(o)) {
     if (!await t.revert()) return _conflict(parts);
     await t.cleanup();
-    return _aborted(t, parts);
+    return _aborted(t, parts, _sourcesChanged);
   }
   await _finishPending(t, o, git, budget, parts, candidate);
+}
+
+const _sourcesChanged =
+    'Las fuentes cambiaron antes de publicar: se deshicieron los efectos '
+    'propios y se conservó lo que había.';
+
+/// Un destino pendiente sin su versión preparada: la operación no se puede
+/// terminar y se deshace. Un contexto ya publicado no se revierte, así que
+/// entonces queda para reconciliarlo a mano.
+Future<void> _incomplete(RecoveryTargets t, ResultParts parts) async {
+  final published = t.journal.targets.any(
+    (x) => x.resource == TransactionResource.project,
+  );
+  if (published && await t.projectPublished()) return _conflict(parts);
+  if (!await t.revert()) return _conflict(parts);
+  await t.cleanup();
+  _aborted(
+    t,
+    parts,
+    'La operación se interrumpió antes de preparar todos sus archivos: se '
+    'deshicieron los efectos propios y se conservó lo que había.',
+  );
 }
 
 String? _currentDigest(ObservedContext o) =>
@@ -141,12 +164,16 @@ Future<void> _finishPublished(
   final check = await _verify(t, o, git, budget);
   _present(parts, published, git: check, choice: t.choice);
   parts.diagnostics.addAll(_uncorroborated(check, t.choice));
-  if (published != null && published.observationDigest != _currentDigest(o)) {
-    parts.diagnostics.add(
-      diagnostic('context_stale', 'Lo observado cambió durante la operación.'),
-    );
-    parts.actions.add(refreshAction);
-  }
+  if (published == null) return;
+  final (:freshness, :diagnostics) = freshnessOf(
+    o,
+    ContextState.present,
+    saved: published,
+  );
+  parts
+    ..freshness = freshness
+    ..diagnostics.addAll(diagnostics);
+  if (freshness == ContextFreshness.stale) parts.actions.add(refreshAction);
 }
 
 Future<void> _finishPending(
@@ -220,22 +247,27 @@ void _present(
     );
 }
 
-void _aborted(RecoveryTargets t, ResultParts parts) {
-  final hadContext = t.journal.targets.any(
-    (TransactionTarget x) =>
-        x.resource == TransactionResource.project && x.before != null,
-  );
+void _aborted(RecoveryTargets t, ResultParts parts, String message) {
+  final hadContext =
+      t.o.project.present ||
+      t.journal.targets.any(
+        (TransactionTarget x) =>
+            x.resource == TransactionResource.project && x.before != null,
+      );
   parts
     ..state = hadContext ? ContextState.present : ContextState.absent
-    ..diagnostics.add(
-      diagnostic(
-        'recovery_aborted',
-        'Las fuentes cambiaron antes de publicar: se deshicieron los efectos '
-            'propios y se conservó lo que había.',
-      ),
-    )
-    ..actions.add(hadContext ? refreshAction : firstInitAction);
+    ..diagnostics.add(diagnostic('recovery_aborted', message))
+    ..actions.add(switch (t.journal.operation) {
+      TransactionOperation.sharing => _repeatSharing(t.choice),
+      _ => hadContext ? refreshAction : firstInitAction,
+    });
 }
+
+/// La misma elección otra vez, ahora sin la operación interrumpida.
+ContextNextAction _repeatSharing(SharingChoice choice) =>
+    sharingActions().firstWhere(
+      (a) => a.arguments.single == '--sharing=${choice.toWireName()}',
+    );
 
 void _conflict(ResultParts parts) => parts.diagnostics.add(
   diagnostic(
