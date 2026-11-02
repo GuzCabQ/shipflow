@@ -1,0 +1,37 @@
+[
+  {
+    "file": "valid-local.json",
+    "context": "v2-project.json",
+    "expected": "matched"
+  },
+  {
+    "file": "binding-foreign-unit.json",
+    "context": "v2-project.json",
+    "expected": "rejected"
+  },
+  {
+    "file": "binding-missing-recognition.json",
+    "context": "v2-project.json",
+    "expected": "rejected"
+  },
+  {
+    "file": "binding-invented-link.json",
+    "context": "v2-project.json",
+    "expected": "rejected"
+  },
+  {
+    "file": "binding-omitted-link.json",
+    "context": "v2-project.json",
+    "expected": "rejected"
+  },
+  {
+    "file": "binding-old-context.json",
+    "context": "v2-project.json",
+    "expected": "basis_unavailable"
+  },
+  {
+    "file": "binding-foreign-project.json",
+    "context": "v2-project.json",
+    "expected": "rejected"
+  }
+]

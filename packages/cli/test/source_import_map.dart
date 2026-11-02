@@ -1,6 +1,7 @@
 // Lo que cada archivo de `lib` y `bin` del CLI puede importar o exportar.
 // Fijarlo hace visible en la revisión toda dependencia nueva.
 
+import 'source_import_map_assessment.dart';
 import 'source_import_map_context.dart';
 
 /// Cada archivo de `lib` y `bin` con lo que importa o exporta.
@@ -99,5 +100,6 @@ const expectedImports = {
     'recognition_presenter.dart',
   },
   'lib/src/terminal_text.dart': <String>{},
+  ...assessmentImports,
   ...contextImports,
 };

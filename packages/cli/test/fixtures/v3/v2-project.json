@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "kind": "shipflow.project-context",
+  "projectId": "11111111-1111-4111-8111-111111111111",
+  "root": ".",
+  "revision": 1,
+  "producer": {
+    "version": "0.0.0-fixture",
+    "recognitionContract": "declared-project-v2.1",
+    "pluginIds": [
+      "plugin_dart"
+    ]
+  },
+  "observedAt": "2026-10-25T00:00:00Z",
+  "recognition": {
+    "status": "recognized",
+    "recognitionScope": "declared_project_recognition",
+    "candidates": [
+      {
+        "id": "example",
+        "displayName": "Example",
+        "pluginId": "plugin_dart",
+        "evidenceIds": [
+          "e0001"
+        ]
+      }
+    ],
+    "units": [
+      {
+        "id": "u0001",
+        "name": "example",
+        "kind": "package",
+        "path": ".",
+        "evidenceIds": [
+          "e0001"
+        ]
+      },
+      {
+        "id": "u0002",
+        "name": "widgets",
+        "kind": "package",
+        "path": "packages/widgets",
+        "evidenceIds": [
+          "e0002"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "e0001",
+        "kind": "name",
+        "role": "identity",
+        "label": "Name",
+        "path": "pubspec.yaml",
+        "value": "example",
+        "fingerprint": "15fcc3870625980bf58f15ba904736b4ffa1a84495a8f4f51d781e211016e743"
+      },
+      {
+        "id": "e0002",
+        "kind": "name",
+        "role": "identity",
+        "label": "Name",
+        "path": "packages/widgets/pubspec.yaml",
+        "value": "widgets",
+        "fingerprint": "0edce8315227624f357988b43f14471eaed2fa7ce5fdd149696dbfcd25a29472"
+      }
+    ],
+    "conflicts": [],
+    "limitations": [],
+    "relations": [],
+    "contextSources": [
+      {
+        "scopePath": ".",
+        "path": "README.md",
+        "kind": "documentation",
+        "entityType": "file",
+        "reason": "observed",
+        "contentStatus": "not_inspected"
+      }
+    ],
+    "omissions": [
+      {
+        "path": "shipflow",
+        "rule": "tool_state",
+        "evidenceIds": []
+      }
+    ]
+  },
+  "observationDigest": "9c17823b552a59be21d85db6a6c3bdeaf1fc823de7344020f0064f5405a8ab01"
+}

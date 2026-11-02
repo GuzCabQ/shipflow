@@ -1,6 +1,20 @@
 /// core — los tipos neutrales del reconocimiento y del contexto persistente.
 library;
 
+export 'src/assessment/assessment_claims.dart';
+export 'src/assessment/assessment_context.dart';
+export 'src/assessment/assessment_derivation.dart';
+export 'src/assessment/assessment_enums.dart';
+export 'src/assessment/assessment_identity.dart';
+export 'src/assessment/assessment_limits.dart';
+export 'src/assessment/assessment_projection.dart';
+export 'src/assessment/assessment_result.dart';
+export 'src/assessment/assessment_snapshot.dart';
+export 'src/assessment/assessment_sources.dart';
+export 'src/assessment/assessment_transaction.dart';
+export 'src/assessment/assessment_validation.dart'
+    show assessmentContextPath, deepestUnitPath;
+export 'src/assessment/assessment_witnesses.dart';
 export 'src/context/context_enums.dart';
 export 'src/context/context_operation_result.dart';
 export 'src/context/context_result_parts.dart';

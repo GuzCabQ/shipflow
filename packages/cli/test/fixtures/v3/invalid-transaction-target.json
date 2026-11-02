@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "shipflow.assessment-transaction",
+  "projectId": "11111111-1111-4111-8111-111111111111",
+  "operationId": "22222222-2222-4222-8222-222222222222",
+  "before": null,
+  "after": "23da9b446c75e25539dd6d0fb1cebaf694f31d2fae1a9d545caa0d73177de0c0",
+  "candidatePath": "shipflow/project.json",
+  "state": "prepared",
+  "baseContextDigest": "03a96e6318f48a2464456e960bcb254e1f37855fd564d4b0750bcc3fbcc61b7b",
+  "snapshotId": "8e334b5f9cdc97978c5c3850a7f37ca93af0de13d37c23863e2d6f3eef318e77"
+}

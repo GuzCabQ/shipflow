@@ -1,0 +1,1122 @@
+[
+  {
+    "field": "assessment-response.schema.json#/schemaVersion",
+    "consumer": "decodeAssessment",
+    "effect": "rechazar versión incompatible",
+    "test": "assessment_codec_test.dart: unknownVersionRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/kind",
+    "consumer": "decodeAssessment",
+    "effect": "discriminar contrato y rechazar otro documento",
+    "test": "assessment_codec_test.dart: wrongKindRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/command",
+    "consumer": "presentAssessment",
+    "effect": "identificar comando de respuesta",
+    "test": "assessment_grammar_test.dart: responseDiscriminants",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/operation",
+    "consumer": "AssessmentService / presentAssessment",
+    "effect": "distinguir generación, consulta y recuperación",
+    "test": "assessment_service_test.dart: operationsHaveDistinctEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/exitCode",
+    "consumer": "presentAssessment",
+    "effect": "salida de proceso independiente de cobertura/vigencia",
+    "test": "assessment_presenter_test.dart: historicalPartialExitZeroIsStillHistoricalPartial",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/outcome",
+    "consumer": "AssessmentService / presentAssessment",
+    "effect": "explicar resultado sin declarar salud global",
+    "test": "assessment_presenter_test.dart: outcomeDoesNotOverrideCoverage",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/freshness",
+    "consumer": "AssessmentService / presentAssessment",
+    "effect": "informar vigente/obsoleto/no verificable/histórico",
+    "test": "assessment_presenter_test.dart: freshnessNotDerivedFromExitCode",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/coverage",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "conservar cobertura independiente de publicación",
+    "test": "assessment_presenter_test.dart: publishedPartialExit65IsNotComplete",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/snapshot",
+    "consumer": "decodeAssessment / presentAssessment",
+    "effect": "validar snapshot o nulidad justificada; conservar todos sus ejes",
+    "test": "assessment_codec_test.dart: roundTripPreservesEvidenceAndLimits",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/created/*",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/replaced/*",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/removed/*",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/published",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/gitQueries",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/network",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/effects/productWrites",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "informar efectos reales y commit comprobado aun si falla salida",
+    "test": "assessment_presenter_test.dart: outputFailureAfterCommitPreservesEffects",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/nextActions/*/argv/*",
+    "consumer": "presentAssessment",
+    "effect": "argv seguro de comando disponible, propósito y efecto; nunca shell",
+    "test": "assessment_presenter_test.dart: nextActionsAreImplementedArgv",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/nextActions/*/purpose",
+    "consumer": "presentAssessment",
+    "effect": "argv seguro de comando disponible, propósito y efecto; nunca shell",
+    "test": "assessment_presenter_test.dart: nextActionsAreImplementedArgv",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/nextActions/*/effect",
+    "consumer": "presentAssessment",
+    "effect": "argv seguro de comando disponible, propósito y efecto; nunca shell",
+    "test": "assessment_presenter_test.dart: nextActionsAreImplementedArgv",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/comparison",
+    "consumer": "AssessmentService / presentAssessment",
+    "effect": "comparación sólo con misma base y cobertura completa; ausencia no autoriza retiro",
+    "test": "assessment_service_test.dart: partialReobservationHasNoDisappearanceCounts",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/retiredRevision",
+    "consumer": "AssessmentStore / presentAssessment",
+    "effect": "hacer visible revisión desplazada por retención",
+    "test": "assessment_store_test.dart: thirdPublicationReportsRetiredRevision",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/code",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /code",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/path",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /path",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/consequence",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /consequence",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/actionCode",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /actionCode",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/count",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /count",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/diagnostic/examples/*",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /examples/*",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/unit/id",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /id",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/unit/path",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /path",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/unit/label",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /label",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/input/path",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /path",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/input/kind",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /kind",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/input/state",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /state",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/input/sha256",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /sha256",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/input/reason",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /reason",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/id",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /id",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/path",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /path",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/unitId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /unitId",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/inputPath",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /inputPath",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/role",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /role",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/parseState",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /parseState",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/witnessId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /witnessId",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/file/editable",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /editable",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/id",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /id",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/witnessId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /witnessId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/sourceFileId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceFileId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/targetFileId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetFileId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/targetUnitId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetUnitId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/targetLabel",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetLabel",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/relation",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /relation",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/resolution",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /resolution",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/reason",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /reason",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/condition",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /condition",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/groupId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /groupId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/evidence/offset",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/offset",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/evidence/length",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/length",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/evidence/line",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/line",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/evidence/column",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/column",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/sourceMetadata/directive",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceMetadata/directive",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/claim/sourceMetadata/conditionText",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceMetadata/conditionText",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/id",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /id",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/capability",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /capability",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/producerVersion",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /producerVersion",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/state",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /state",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/expected",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /expected",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/processed",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /processed",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/failed",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /failed",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/witness/omitted",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /omitted",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/contextLink/kind",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /kind",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/contextLink/sourceId",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /sourceId",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/contextLink/sourcePath",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /sourcePath",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/contextLink/label",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /label",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/contextLink/targetUnitId",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /targetUnitId",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/snapshotId",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /snapshotId",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/observedAt",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /observedAt",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/producer/version",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/version",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/producer/contract",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/contract",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/producer/pluginId",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/pluginId",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/producer/parserVersion",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/parserVersion",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/contextDigest",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /contextDigest",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/profile",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /profile",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/coverage",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /coverage",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-response.schema.json#/$defs/snapshot/inventoryComplete",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /inventoryComplete",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/schemaVersion",
+    "consumer": "decodeAssessment",
+    "effect": "rechazar versión incompatible",
+    "test": "assessment_codec_test.dart: unknownVersionRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/kind",
+    "consumer": "decodeAssessment",
+    "effect": "discriminar contrato y rechazar otro documento",
+    "test": "assessment_codec_test.dart: wrongKindRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/projectId",
+    "consumer": "AssessmentService / AssessmentStore",
+    "effect": "bloquear identidad ajena antes de usar/publicar",
+    "test": "assessment_service_test.dart: foreignProjectIsBlocked",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/operationId",
+    "consumer": "AssessmentStore recovery",
+    "effect": "identificar operación y ruta propia de staging",
+    "test": "assessment_recovery_test.dart: transactionIdentityAndPaths",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/before",
+    "consumer": "AssessmentStore recovery",
+    "effect": "CAS contra bytes anteriores; null sólo sin previo",
+    "test": "assessment_recovery_test.dart: beforeAfterMismatchPreservesBytes",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/after",
+    "consumer": "AssessmentStore recovery",
+    "effect": "confirmar hash exacto del candidato publicado",
+    "test": "assessment_recovery_test.dart: beforeAfterMismatchPreservesBytes",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/candidatePath",
+    "consumer": "AssessmentStore recovery",
+    "effect": "recalcular ruta propia desde operationId; rechazar destino arbitrario",
+    "test": "assessment_recovery_test.dart: transactionIdentityAndPaths",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/state",
+    "consumer": "AssessmentStore recovery",
+    "effect": "distinguir preparado/publicado junto con bytes; no confiar sólo en bandera",
+    "test": "assessment_recovery_test.dart: crashBeforeAfterRename",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/baseContextDigest",
+    "consumer": "AssessmentStore recovery",
+    "effect": "revalidar contexto base antes de publicar",
+    "test": "assessment_recovery_test.dart: contextChangedBeforeRecovery",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment-transaction.schema.json#/snapshotId",
+    "consumer": "AssessmentStore recovery",
+    "effect": "candidato debe coincidir con snapshot declarado",
+    "test": "assessment_recovery_test.dart: candidateSnapshotMismatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/schemaVersion",
+    "consumer": "decodeAssessment",
+    "effect": "rechazar versión incompatible",
+    "test": "assessment_codec_test.dart: unknownVersionRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/kind",
+    "consumer": "decodeAssessment",
+    "effect": "discriminar contrato y rechazar otro documento",
+    "test": "assessment_codec_test.dart: wrongKindRejected",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/projectId",
+    "consumer": "AssessmentService / AssessmentStore",
+    "effect": "bloquear identidad ajena antes de usar/publicar",
+    "test": "assessment_service_test.dart: foreignProjectIsBlocked",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/revision",
+    "consumer": "AssessmentStore",
+    "effect": "ordenar publicación sin rotar en unchanged",
+    "test": "assessment_store_test.dart: revisionChangesOnlyOnPublication",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/previous",
+    "consumer": "AssessmentStore / AssessmentService",
+    "effect": "conservar historia exacta y consulta explícita",
+    "test": "assessment_store_test.dart: currentPreviousRemainExact",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/code",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /code",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/path",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /path",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/consequence",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /consequence",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/actionCode",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /actionCode",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/count",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /count",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/diagnostic/examples/*",
+    "consumer": "presentAssessment",
+    "effect": "código/consecuencia/acción traducidos; contador total y ejemplos acotados sin ocultar límites; campo /examples/*",
+    "test": "assessment_presenter_test.dart: diagnosticFieldsRemainVisible",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/unit/id",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /id",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/unit/path",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /path",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/unit/label",
+    "consumer": "validateAssessmentContext / projectAssessment",
+    "effect": "identidad técnica, pertenencia al contexto y etiqueta visible; campo /label",
+    "test": "assessment_context_test.dart: expectedUnitsExactlyMatch",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/input/path",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /path",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/input/kind",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /kind",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/input/state",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /state",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/input/sha256",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /sha256",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/input/reason",
+    "consumer": "observeDartInputs / checkAssessmentFreshness",
+    "effect": "cotejar universo, huellas y huecos sin parser; impedir current si no se verificó; campo /reason",
+    "test": "assessment_freshness_test.dart: additionsEditsDeletionsAndUnreadable",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/id",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /id",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/path",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /path",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/unitId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /unitId",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/inputPath",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /inputPath",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/role",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /role",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/parseState",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /parseState",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/witnessId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /witnessId",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/file/editable",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "propietario más profundo, fuente única y elegibilidad de claims; campo /editable",
+    "test": "assessment_contract_test.dart: fileOwnershipAndParsingEligibility",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/id",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /id",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/witnessId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /witnessId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/sourceFileId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceFileId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/targetFileId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetFileId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/targetUnitId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetUnitId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/targetLabel",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /targetLabel",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/relation",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /relation",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/resolution",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /resolution",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/reason",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /reason",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/condition",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /condition",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/groupId",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /groupId",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/evidence/offset",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/offset",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/evidence/length",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/length",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/evidence/line",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/line",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/evidence/column",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /evidence/column",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/sourceMetadata/directive",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceMetadata/directive",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/claim/sourceMetadata/conditionText",
+    "consumer": "validateAssessmentDocument / projectAssessment",
+    "effect": "origen/destino/condición/evidencia determinan conexión o irresolución; no autoridad normativa; campo /sourceMetadata/conditionText",
+    "test": "assessment_projection_test.dart: claimFieldsChangeProjectionOrReject",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/id",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /id",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/capability",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /capability",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/producerVersion",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /producerVersion",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/state",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /state",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/expected",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /expected",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/processed",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /processed",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/failed",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /failed",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/witness/omitted",
+    "consumer": "validateAssessmentDocument / presentAssessment",
+    "effect": "capacidad ejecutada, procedencia y conteos determinan cobertura; no inferir de exitCode; campo /omitted",
+    "test": "assessment_contract_test.dart: witnessCountsAndStateAreConsistent",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/contextLink/kind",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /kind",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/contextLink/sourceId",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /sourceId",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/contextLink/sourcePath",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /sourcePath",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/contextLink/label",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /label",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/contextLink/targetUnitId",
+    "consumer": "projectDartAssessmentContext / validateAssessmentContext / presentAssessment",
+    "effect": "correspondencia exacta con declaración/fuente candidata V2; no presentar como código observado; campo /targetUnitId",
+    "test": "assessment_context_projection_test.dart: contextLinksMatchOriginAndKind",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/snapshotId",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /snapshotId",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/observedAt",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /observedAt",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/producer/version",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/version",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/producer/contract",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/contract",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/producer/pluginId",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/pluginId",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/producer/parserVersion",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /producer/parserVersion",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/contextDigest",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /contextDigest",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/profile",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /profile",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/coverage",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /coverage",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  },
+  {
+    "field": "assessment.schema.json#/$defs/snapshot/inventoryComplete",
+    "consumer": "decodeAssessment / validateAssessmentDocument / checkAssessmentFreshness",
+    "effect": "perfil, productor, fecha y digest definen identidad/cobertura/historia y admisión; campo /inventoryComplete",
+    "test": "assessment_codec_test.dart: snapshotHeaderAndContractValidation",
+    "status": "assigned_not_executed"
+  }
+]

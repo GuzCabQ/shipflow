@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
+import 'assessment_serialization_fixtures.dart';
 import 'context_fixtures.dart' as context;
 import 'context_serialization_fixtures.dart';
 import 'recognition_fixtures.dart';
@@ -200,6 +201,43 @@ void main() {
         };
     for (final MapEntry(key: name, value: (json, rebuild)) in cases.entries) {
       test(name, () {
+        final encoded = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
+        expect(jsonEncode(rebuild(encoded)), jsonEncode(json));
+      });
+    }
+
+    // Los nombres van literales: el check de la frontera exige el caso de
+    // cada clase serializable de core por su nombre en este archivo.
+    final assessment = assessmentSerializationCases();
+    const assessmentNames = [
+      'AssessmentUnit',
+      'AssessmentInput',
+      'AssessmentFile',
+      'AssessmentProducer',
+      'AssessmentEvidence',
+      'AssessmentSourceMetadata',
+      'AssessmentClaim',
+      'AssessmentWitness',
+      'AssessmentContextLink',
+      'AssessmentDiagnostic',
+      'AssessmentSnapshot',
+      'AssessmentDocument',
+      'AssessmentLimits',
+      'AssessmentConnection',
+      'AssessmentComparison',
+      'AssessmentRecognitionInput',
+      'AssessmentContextBasis',
+      'AssessmentTransaction',
+      'AssessmentEffects',
+      'AssessmentNextAction',
+      'AssessmentResult',
+    ];
+    test('every assessment case has its literal name', () {
+      expect(assessment.keys.toSet(), assessmentNames.toSet());
+    });
+    for (final name in assessmentNames) {
+      test(name, () {
+        final (json, rebuild) = assessment[name]!;
         final encoded = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
         expect(jsonEncode(rebuild(encoded)), jsonEncode(json));
       });

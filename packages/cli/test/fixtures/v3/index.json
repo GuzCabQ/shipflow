@@ -1,0 +1,132 @@
+[
+  {
+    "file": "valid-local.json",
+    "schema": "assessment.schema.json",
+    "valid": true
+  },
+  {
+    "file": "invalid-dangling.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-false-complete.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-witness-count.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-local-no-target.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-parse-failed-claim.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-path-escape.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-date.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-digest.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "valid-partial.json",
+    "schema": "assessment.schema.json",
+    "valid": true
+  },
+  {
+    "file": "valid-response.json",
+    "schema": "assessment-response.schema.json",
+    "valid": true
+  },
+  {
+    "file": "valid-partial-response.json",
+    "schema": "assessment-response.schema.json",
+    "valid": true
+  },
+  {
+    "file": "valid-blocked-response.json",
+    "schema": "assessment-response.schema.json",
+    "valid": true
+  },
+  {
+    "file": "invalid-stale-success.json",
+    "schema": "assessment-response.schema.json",
+    "valid": false
+  },
+  {
+    "file": "valid-transaction.json",
+    "schema": "assessment-transaction.schema.json",
+    "valid": true
+  },
+  {
+    "file": "invalid-transaction-target.json",
+    "schema": "assessment-transaction.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-duplicate-key.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "valid-zero-references.json",
+    "schema": "assessment.schema.json",
+    "valid": true
+  },
+  {
+    "file": "valid-detector-not-run.json",
+    "schema": "assessment.schema.json",
+    "valid": true
+  },
+  {
+    "file": "invalid-omission-as-complete.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-witness-producer.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-file-input-path.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-context-input-digest.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-complete-with-omissions.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "invalid-duplicate-source-input.json",
+    "schema": "assessment.schema.json",
+    "valid": false
+  },
+  {
+    "file": "valid-historical-partial-response.json",
+    "schema": "assessment-response.schema.json",
+    "valid": true
+  }
+]

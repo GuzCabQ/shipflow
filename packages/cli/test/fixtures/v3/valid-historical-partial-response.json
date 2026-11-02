@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "kind": "shipflow.assessment-response",
+  "command": "assess",
+  "operation": "show",
+  "exitCode": 0,
+  "outcome": "shown",
+  "freshness": "historical",
+  "coverage": "partial",
+  "snapshot": {
+    "snapshotId": "36392b11bb08862299edd559b7efc30c8edb12907c85618ba660b7270ce75c49",
+    "observedAt": "2026-11-02T12:00:00Z",
+    "producer": {
+      "version": "0.3.0-spec",
+      "contract": "source-topology-v3.2",
+      "pluginId": "plugin_dart",
+      "parserVersion": "14.1.0"
+    },
+    "contextDigest": "03a96e6318f48a2464456e960bcb254e1f37855fd564d4b0750bcc3fbcc61b7b",
+    "profile": "standard",
+    "coverage": "partial",
+    "inventoryComplete": true,
+    "units": [
+      {
+        "id": "u_3fa63e99472a8217fc420eb75a9ec04cdcc5c2a033d25cf40a897c9c7708c5a7",
+        "path": ".",
+        "label": "example"
+      },
+      {
+        "id": "u_85b52d55e643a9e5dd0da1413ac7c06ad221ac4c7825355e414224c81d565ba5",
+        "path": "packages/widgets",
+        "label": "widgets"
+      }
+    ],
+    "inputs": [
+      {
+        "path": ".",
+        "kind": "directory",
+        "state": "listed",
+        "sha256": "4a7393436d887ee55a7bf42879698931fd174b938176d1ac2887d9e6d1e1192e",
+        "reason": null
+      },
+      {
+        "path": "lib/main.dart",
+        "kind": "source",
+        "state": "read",
+        "sha256": "88a4f0c975fc89b30dc4f01a2b8ff4185ed006af4bab5f9b726cfa6ab3c6b59a",
+        "reason": null
+      },
+      {
+        "path": "packages/widgets/lib/widget.dart",
+        "kind": "source",
+        "state": "read",
+        "sha256": "2894a9ceaee9a753d8f3bd4b2da8e41de5f346de193dc8e755c0120fdffc00b6",
+        "reason": null
+      },
+      {
+        "path": "packages/widgets/pubspec.yaml",
+        "kind": "recognition_source",
+        "state": "read",
+        "sha256": "0edce8315227624f357988b43f14471eaed2fa7ce5fdd149696dbfcd25a29472",
+        "reason": null
+      },
+      {
+        "path": "pubspec.yaml",
+        "kind": "recognition_source",
+        "state": "read",
+        "sha256": "15fcc3870625980bf58f15ba904736b4ffa1a84495a8f4f51d781e211016e743",
+        "reason": null
+      },
+      {
+        "path": "shipflow/project.json",
+        "kind": "context",
+        "state": "read",
+        "sha256": "03a96e6318f48a2464456e960bcb254e1f37855fd564d4b0750bcc3fbcc61b7b",
+        "reason": null
+      }
+    ],
+    "files": [
+      {
+        "id": "f_22177776e10aab7ee7cb846ec8541764d434af7b087b89eea5a8de252a27c2df",
+        "path": "lib/main.dart",
+        "unitId": "u_3fa63e99472a8217fc420eb75a9ec04cdcc5c2a033d25cf40a897c9c7708c5a7",
+        "inputPath": "lib/main.dart",
+        "role": "source",
+        "parseState": "parsed",
+        "witnessId": "source_references",
+        "editable": "unknown"
+      },
+      {
+        "id": "f_bbb27f23a035731ab28d35e73be24527a98ce9276bd7b76ad03888ea1f82d7a3",
+        "path": "packages/widgets/lib/widget.dart",
+        "unitId": "u_85b52d55e643a9e5dd0da1413ac7c06ad221ac4c7825355e414224c81d565ba5",
+        "inputPath": "packages/widgets/lib/widget.dart",
+        "role": "source",
+        "parseState": "parsed",
+        "witnessId": "source_references",
+        "editable": "unknown"
+      }
+    ],
+    "claims": [
+      {
+        "id": "c_5f6142a1448a682af8ef1ae8f3e9c1b7dd050760144559f9bb4a90327bdcaa9c",
+        "witnessId": "source_references",
+        "sourceFileId": "f_22177776e10aab7ee7cb846ec8541764d434af7b087b89eea5a8de252a27c2df",
+        "targetFileId": null,
+        "targetUnitId": null,
+        "targetLabel": null,
+        "relation": "source_reference",
+        "resolution": "unresolved",
+        "reason": "target_unreadable",
+        "condition": "always",
+        "groupId": "g_166fa53716c46474a3f94c2ad9509eec6aac5c3d29c1765f8175911595c10281",
+        "evidence": {
+          "offset": 0,
+          "length": 45,
+          "line": 1,
+          "column": 1
+        },
+        "sourceMetadata": {
+          "directive": "import",
+          "conditionText": null
+        }
+      }
+    ],
+    "witnesses": [
+      {
+        "id": "context_candidates",
+        "capability": "context_candidates",
+        "producerVersion": "source-topology-v3.2",
+        "state": "complete",
+        "expected": 1,
+        "processed": 1,
+        "failed": 0,
+        "omitted": 0
+      },
+      {
+        "id": "local_resolution",
+        "capability": "local_resolution",
+        "producerVersion": "source-topology-v3.2",
+        "state": "partial",
+        "expected": 1,
+        "processed": 0,
+        "failed": 0,
+        "omitted": 1
+      },
+      {
+        "id": "source_inventory",
+        "capability": "source_inventory",
+        "producerVersion": "source-topology-v3.2",
+        "state": "complete",
+        "expected": 6,
+        "processed": 6,
+        "failed": 0,
+        "omitted": 0
+      },
+      {
+        "id": "source_references",
+        "capability": "source_references",
+        "producerVersion": "source-topology-v3.2",
+        "state": "complete",
+        "expected": 2,
+        "processed": 2,
+        "failed": 0,
+        "omitted": 0
+      },
+      {
+        "id": "test_inventory",
+        "capability": "test_inventory",
+        "producerVersion": "source-topology-v3.2",
+        "state": "complete",
+        "expected": 2,
+        "processed": 2,
+        "failed": 0,
+        "omitted": 0
+      }
+    ],
+    "contextLinks": [
+      {
+        "kind": "candidate_source",
+        "sourceId": "s_53bc605579846cd1bedff599a6f3eac66977d5a075145278c90bc5f84e72e111",
+        "sourcePath": "README.md",
+        "label": "documentation",
+        "targetUnitId": null
+      }
+    ],
+    "diagnostics": []
+  },
+  "diagnostics": [],
+  "effects": {
+    "created": [],
+    "replaced": [],
+    "removed": [],
+    "published": false,
+    "gitQueries": 0,
+    "network": 0,
+    "productWrites": 0
+  },
+  "nextActions": [
+    {
+      "argv": [
+        "shipflow",
+        "assess",
+        "--show"
+      ],
+      "purpose": "inspect_saved",
+      "effect": "read_only"
+    }
+  ],
+  "comparison": null,
+  "retiredRevision": null
+}
