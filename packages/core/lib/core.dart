@@ -7,6 +7,7 @@ export 'src/assessment/assessment_derivation.dart';
 export 'src/assessment/assessment_enums.dart';
 export 'src/assessment/assessment_identity.dart';
 export 'src/assessment/assessment_limits.dart';
+export 'src/assessment/assessment_observation.dart';
 export 'src/assessment/assessment_projection.dart';
 export 'src/assessment/assessment_result.dart';
 export 'src/assessment/assessment_snapshot.dart';

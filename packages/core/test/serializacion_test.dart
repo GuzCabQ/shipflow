@@ -223,6 +223,8 @@ void main() {
       'AssessmentSnapshot',
       'AssessmentDocument',
       'AssessmentLimits',
+      'AssessmentObservation',
+      'AssessmentMetrics',
       'AssessmentConnection',
       'AssessmentComparison',
       'AssessmentRecognitionInput',

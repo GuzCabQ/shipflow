@@ -122,22 +122,19 @@ Map<String, SerializationCase> _derivedCases(AssessmentSnapshot snapshot) => {
     projectAssessment(snapshot).single.toJson(),
     (j) => AssessmentConnection.fromJson(j).toJson(),
   ),
+  'AssessmentObservation': (
+    _observation(snapshot).toJson(),
+    (j) => AssessmentObservation.fromJson(j).toJson(),
+  ),
+  'AssessmentMetrics': (
+    _metrics.toJson(),
+    (j) => AssessmentMetrics.fromJson(j).toJson(),
+  ),
   'AssessmentComparison': (
     _comparison.toJson(),
     (j) => AssessmentComparison.fromJson(j).toJson(),
   ),
-  'AssessmentTransaction': (
-    AssessmentTransaction(
-      projectId: assessmentProjectId,
-      operationId: '22222222-2222-4222-8222-222222222222',
-      before: hashOf('1'),
-      after: hashOf('2'),
-      state: AssessmentTransactionState.published,
-      baseContextDigest: contextHash,
-      snapshotId: hashOf('a'),
-    ).toJson(),
-    (j) => AssessmentTransaction.fromJson(j).toJson(),
-  ),
+  ..._journalCases(),
 };
 
 const _comparison = AssessmentComparison(
@@ -192,3 +189,37 @@ AssessmentResult _result(
   comparison: _comparison,
   retiredRevision: 1,
 );
+
+const _metrics = AssessmentMetrics(
+  entries: 9,
+  sourceBytes: 120,
+  parsedFiles: 2,
+  elapsedMillis: 7,
+);
+
+AssessmentObservation _observation(AssessmentSnapshot s) =>
+    AssessmentObservation(
+      inventoryComplete: s.inventoryComplete,
+      units: s.units,
+      inputs: s.inputs,
+      files: s.files,
+      claims: s.claims,
+      contextLinks: s.contextLinks,
+      diagnostics: s.diagnostics,
+      metrics: _metrics,
+    );
+
+Map<String, SerializationCase> _journalCases() => {
+  'AssessmentTransaction': (
+    AssessmentTransaction(
+      projectId: assessmentProjectId,
+      operationId: '22222222-2222-4222-8222-222222222222',
+      before: hashOf('1'),
+      after: hashOf('2'),
+      state: AssessmentTransactionState.published,
+      baseContextDigest: contextHash,
+      snapshotId: hashOf('a'),
+    ).toJson(),
+    (j) => AssessmentTransaction.fromJson(j).toJson(),
+  ),
+};
