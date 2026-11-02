@@ -101,7 +101,11 @@ Future<void> _report(
       draft.add('recovery_conflict', examples: recovery.kept);
       return;
     case AssessmentRecoveryOutcome.nothing:
-      draft.outcome = AssessmentOutcome.unchanged;
+      // Nada que recuperar no hereda el código del levantamiento guardado.
+      draft
+        ..outcome = AssessmentOutcome.unchanged
+        ..actions.add(showAction);
+      return;
     case AssessmentRecoveryOutcome.aborted:
       draft
         ..outcome = AssessmentOutcome.recovered

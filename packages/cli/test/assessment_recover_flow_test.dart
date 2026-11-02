@@ -82,4 +82,22 @@ void main() {
     expect(diagnosticCodes(recovered), contains('recovery_aborted'));
     expect(box.document.readAsBytesSync(), bytes);
   });
+
+  test(
+    'nothing to recover is 0 even over a partial saved assessment',
+    () async {
+      box.box.file('lib/roto.dart', 'class {');
+      expect(
+        (await box.run(AssessmentOperation.observe)).coverage,
+        AssessmentCoverage.partial,
+      );
+      final result = await recover();
+      expect(
+        (result.outcome, result.exitCode),
+        (AssessmentOutcome.unchanged, 0),
+      );
+      expect(result.snapshot, isNull);
+      expect(actionArgs(result), contains('shipflow assess --show'));
+    },
+  );
 }

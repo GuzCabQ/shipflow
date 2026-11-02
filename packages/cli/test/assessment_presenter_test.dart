@@ -37,7 +37,8 @@ void main() {
     test('both views come from the same result', () {
       final human = humanAssessment(saved, root: '/r');
       expect(human, startsWith('Levantamiento guardado\n'));
-      expect(human, contains('app → widgets: 1 referencias'));
+      expect(human, contains('app → widgets: 1 referencia\n'));
+      expect(human, isNot(contains('(always)')));
       expect(
         human,
         contains('lib/main.dart:1:1 → packages/widgets/lib/widget.dart'),
@@ -87,6 +88,13 @@ void main() {
     final human = humanAssessment(result, root: '/r');
     expect(human, startsWith('Levantamiento anterior parcial (histórico)'));
     expect(human, contains('no se certifica vigente'));
+  });
+
+  test('counts read as words, not as wire values', () async {
+    final local = await loadAssessmentFixture('valid-zero-references.json');
+    final human = humanAssessment(_shown(local.current), root: '/r');
+    expect(human, contains('Pruebas presentes: ningún archivo'));
+    expect(human, contains('Referencias: ninguna en total'));
   });
 
   test('S3: a declared-only dependency is never shown as observed', () async {

@@ -20,8 +20,8 @@ List<String> snapshotLines(AssessmentSnapshot s) {
     ..._connectionLines(s, between, labels),
     ..._declaredLines(s, between, labels),
     _referenceLine(s),
-    'Pruebas presentes: ${_tests(s)} archivos, reconocidos por su ruta; no '
-        'se ejecutaron.',
+    'Pruebas presentes: ${counted(_tests(s), 'archivo', 'archivos')}, '
+        'reconocidos por su ruta; no se ejecutaron.',
     ..._candidateLines(s),
     ..._coverageLines(s),
   ];
@@ -44,7 +44,8 @@ List<String> _connectionLines(
     'Conexiones comprobadas entre unidades (${between.length}):',
     for (final c in between.take(_maxRelations)) ...[
       '  ${safe(labels[c.sourceUnitId]!)} → ${safe(labels[c.targetUnitId]!)}'
-          ': ${c.claimIds.length} referencias (${c.condition.toWireName()})',
+          ': ${counted(c.claimIds.length, 'referencia', 'referencias')}'
+          '${_condition(c.condition)}',
       '    p. ej. ${_evidence(claims[c.claimIds.first]!, files)}',
     ],
     if (between.length > _maxRelations)
@@ -80,7 +81,8 @@ List<String> _declaredLines(
 String _referenceLine(AssessmentSnapshot s) {
   int count(AssessmentResolution r) =>
       s.claims.where((c) => c.resolution == r).length;
-  return 'Referencias: ${s.claims.length} en total; '
+  final total = s.claims.isEmpty ? 'ninguna' : '${s.claims.length}';
+  return 'Referencias: $total en total; '
       '${count(AssessmentResolution.external)} externas, sin comprobar que '
       'existan; ${count(AssessmentResolution.unresolved)} sin resolver.';
 }
@@ -115,6 +117,21 @@ List<String> _coverageLines(AssessmentSnapshot s) {
           '${d.examples.isEmpty ? '' : ' (p. ej. ${d.examples.map(safe).join(', ')})'}',
   ];
 }
+
+/// [count] con su sustantivo: ningún, uno o varios.
+String counted(int count, String singular, String plural) => switch (count) {
+  0 => 'ningún $singular',
+  1 => '1 $singular',
+  _ => '$count $plural',
+};
+
+/// Cuándo aplican las referencias de una conexión, en palabras.
+String _condition(AssessmentCondition condition) => switch (condition) {
+  AssessmentCondition.always => '',
+  AssessmentCondition.conditional => ', condicionales',
+  AssessmentCondition.fallback => ', base de alternativas condicionales',
+  AssessmentCondition.unknown => ', con una condición no representable',
+};
 
 String _list(List<String> items, int max) => [
   ...items.take(max),
