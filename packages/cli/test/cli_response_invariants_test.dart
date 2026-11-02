@@ -82,24 +82,7 @@ void main() {
   });
 
   test('la evaluación no importa entrada y salida del SDK', () async {
-    for (final (library, expected) in [
-      (
-        'cli_application.dart',
-        {
-          'dart:convert',
-          'cli_command.dart',
-          'cli_help.dart',
-          'cli_response.dart',
-        },
-      ),
-      ('cli_command.dart', {'package:core/core.dart', 'cli_grammar.dart'}),
-      (
-        'cli_grammar.dart',
-        {'package:core/core.dart', 'cli_command.dart', 'terminal_text.dart'},
-      ),
-      ('cli_help.dart', {'cli_command.dart'}),
-      ('terminal_text.dart', <String>{}),
-    ]) {
+    for (final (library, expected) in _evaluationImports) {
       final uri = await Isolate.resolvePackageUri(
         Uri.parse('package:cli/src/$library'),
       );
@@ -112,3 +95,25 @@ void main() {
     }
   });
 }
+
+/// Lo que cada biblioteca de la evaluación estática puede importar.
+const _evaluationImports = <(String, Set<String>)>[
+  (
+    'cli_application.dart',
+    {'dart:convert', 'cli_command.dart', 'cli_help.dart', 'cli_response.dart'},
+  ),
+  (
+    'cli_command.dart',
+    {'package:core/core.dart', 'assessment_grammar.dart', 'cli_grammar.dart'},
+  ),
+  (
+    'assessment_grammar.dart',
+    {'package:core/core.dart', 'cli_command.dart', 'cli_grammar.dart'},
+  ),
+  (
+    'cli_grammar.dart',
+    {'package:core/core.dart', 'cli_command.dart', 'terminal_text.dart'},
+  ),
+  ('cli_help.dart', {'cli_command.dart'}),
+  ('terminal_text.dart', <String>{}),
+];

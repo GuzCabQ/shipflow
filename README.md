@@ -47,6 +47,12 @@ El ejecutable tiene dos superficies:
   `shipflow/project.json`, lo comprueba al volver, lo actualiza con
   `init --refresh` y recupera una operación interrumpida con `init --recover`.
   Contrato en [`docs/CLI-V2.md`](docs/CLI-V2.md).
+- **V3**, `shipflow assess`: observa las referencias del código
+  (`import`, `export`, `part`), las distingue de las dependencias sólo
+  declaradas y guarda un levantamiento con su evidencia, cobertura y límites
+  en `shipflow/assessment.json`, consultable con `--show`, que comprueba su
+  vigencia sin volver a analizar. Contrato en
+  [`docs/CLI-V3.md`](docs/CLI-V3.md).
 
 Shipflow todavía no ejecuta agentes ni implementa `analyze`, `plan`,
 `implement`, `verify`, `review` ni `ship`. Los paquetes sin uso en V1 (`agents`, `forge`, `orchestration`, `rules`)
@@ -90,6 +96,15 @@ shipflow init                          # primera incorporación; pregunta cómo 
 shipflow init --sharing=share --json   # sin preguntar
 shipflow doctor                        # ¿sigue vigente? sólo lee
 shipflow init --refresh                # actualizarlo con lo observado ahora
+```
+
+Para observar las referencias del código y volver a ellas:
+
+```bash
+shipflow assess                        # observa y guarda una revisión nueva
+shipflow assess --show                 # la guardada, y si sigue vigente; no analiza
+shipflow assess --show --previous      # la anterior, como historia
+shipflow assess --recover              # termina una publicación interrumpida
 ```
 
 El resumen dice qué se reconoció, qué impide continuar, qué no se comprobó

@@ -15,6 +15,15 @@ ReportBudgetProfile? _budgetProfileOf(String argument) => ReportBudgetProfile
 bool _isBudget(String argument) =>
     argument == reportBudgetFlag || argument.startsWith('$reportBudgetFlag=');
 
+/// Si [argument] es la opción de perfil, con cualquier valor.
+bool isBudgetOption(String argument) => _isBudget(argument);
+
+/// Si [argument] es la opción de perfil con un valor admitido.
+bool isValidBudgetOption(String argument) => _budgetProfileOf(argument) != null;
+
+/// [argument] acotado y entre comillas, para un mensaje de uso.
+String reflectArgument(String argument) => _reflect(argument);
+
 /// El perfil de [options], o el de omisión.
 ReportBudgetProfile budgetProfileIn(List<String> options) =>
     options.map(_budgetProfileOf).nonNulls.firstOrNull ??

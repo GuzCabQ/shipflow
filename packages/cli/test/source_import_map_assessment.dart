@@ -2,6 +2,20 @@
 
 const assessmentImports = {
   'lib/src/assessment/assessment_binding.dart': {'package:core/core.dart'},
+  'lib/src/assessment/assessment_cli.dart': {
+    'dart:io',
+    'package:core/core.dart',
+    'package:vcs/vcs.dart',
+    '../cli_command.dart',
+    '../cli_response.dart',
+    '../context/context_cli.dart',
+    '../context/context_request.dart',
+    '../context/secure_context_store.dart',
+    '../recognition_runner.dart',
+    'assessment_draft.dart',
+    'assessment_presenter.dart',
+    'assessment_service.dart',
+  },
   'lib/src/assessment/assessment_codec.dart': {
     'dart:convert',
     'package:core/core.dart',
@@ -22,6 +36,18 @@ const assessmentImports = {
     '../context/secure_context_store.dart',
     'assessment_decisions.dart',
   },
+  'lib/src/assessment/assessment_human.dart': {
+    'package:core/core.dart',
+    '../terminal_text.dart',
+    'assessment_human_snapshot.dart',
+    'assessment_human_text.dart',
+  },
+  'lib/src/assessment/assessment_human_snapshot.dart': {
+    'package:core/core.dart',
+    'assessment_human.dart',
+    'assessment_human_text.dart',
+  },
+  'lib/src/assessment/assessment_human_text.dart': <String>{},
   'lib/src/assessment/assessment_journal_shape.dart': {
     'package:core/core.dart',
     '../context/context_shape.dart',
@@ -49,6 +75,12 @@ const assessmentImports = {
     '../context/state_layout.dart',
     'assessment_codec.dart',
     'assessment_draft.dart',
+  },
+  'lib/src/assessment/assessment_presenter.dart': {
+    'dart:convert',
+    'package:core/core.dart',
+    '../cli_response.dart',
+    'assessment_human.dart',
   },
   'lib/src/assessment/assessment_recover_flow.dart': {
     'package:core/core.dart',

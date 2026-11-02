@@ -17,6 +17,12 @@ const _initUsages = [
   'shipflow init --recover [--json] $_budgetText',
 ];
 const _doctorUsage = 'shipflow doctor [--json] $_budgetText';
+const _assessUsages = [
+  'shipflow assess [--json] $_budgetText',
+  'shipflow assess --show [--json] $_budgetText',
+  'shipflow assess --show --previous [--json] $_budgetText',
+  'shipflow assess --recover [--json] $_budgetText',
+];
 
 const helpCommands = [
   (
@@ -26,6 +32,12 @@ const helpCommands = [
   (
     name: doctorCommand,
     text: 'Consulta el contexto guardado sin modificar nada.',
+  ),
+  (
+    name: assessCommand,
+    text:
+        'Observa las referencias del código y guarda o consulta su '
+        'levantamiento.',
   ),
 ];
 
@@ -56,6 +68,7 @@ const rootHelp = (
     'shipflow --version [--json]',
     ..._initUsages,
     _doctorUsage,
+    ..._assessUsages,
   ],
   options: [
     _helpOption,
@@ -121,4 +134,42 @@ const doctorHelp = (
   usage: [_doctorUsage],
   options: [_helpOption, _jsonOption, _budgetOption],
   command: doctorCommand,
+);
+
+const assessHelp = (
+  summary:
+      'Observa las referencias del código (import, export y part) y guarda '
+      'un levantamiento en shipflow/assessment.json, separado del contexto '
+      'de shipflow/project.json, con su evidencia, su cobertura y sus '
+      'límites. Consultarlo comprueba si sigue vigente sin volver a '
+      'analizar. Guardar no certifica la salud del proyecto: no ejecuta '
+      'pruebas ni analiza llamadas, y no ejecuta git add, commit ni push.',
+  usage: _assessUsages,
+  options: [
+    _helpOption,
+    (
+      flags: [showFlag],
+      column: showFlag,
+      text:
+          'Muestra el levantamiento guardado y comprueba su vigencia, sin '
+          'analizar ni escribir.',
+    ),
+    (
+      flags: [previousFlag],
+      column: previousFlag,
+      text:
+          'Con --show, la revisión anterior como historia: no se certifica '
+          'vigente.',
+    ),
+    (
+      flags: [recoverFlag],
+      column: recoverFlag,
+      text:
+          'Termina o deshace una publicación propia interrumpida; no repara '
+          'archivos dañados ni ajenos.',
+    ),
+    _jsonOption,
+    _budgetOption,
+  ],
+  command: assessCommand,
 );

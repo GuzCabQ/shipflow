@@ -14,6 +14,12 @@ const _jsonText = 'Emite una única respuesta JSON; nunca pregunta.';
 const _initCommandText =
     'Inicializa el contexto del proyecto o comprueba el guardado.';
 const _doctorCommandText = 'Consulta el contexto guardado sin modificar nada.';
+const _assessCommandText =
+    'Observa las referencias del código y guarda o consulta su levantamiento.';
+const _assess = 'shipflow assess [--json] $_budget';
+const _assessShow = 'shipflow assess --show [--json] $_budget';
+const _assessPrevious = 'shipflow assess --show --previous [--json] $_budget';
+const _assessRecover = 'shipflow assess --recover [--json] $_budget';
 
 const helpText =
     'Shipflow supervisa cambios de software verificables y recuperables.\n'
@@ -26,10 +32,15 @@ const helpText =
     '  $_refreshUsage\n'
     '  $_recoverUsage\n'
     '  shipflow doctor [--json] $_budget\n'
+    '  $_assess\n'
+    '  $_assessShow\n'
+    '  $_assessPrevious\n'
+    '  $_assessRecover\n'
     '\n'
     'Comandos:\n'
     '  init        $_initCommandText\n'
     '  doctor      $_doctorCommandText\n'
+    '  assess      $_assessCommandText\n'
     '\n'
     'Opciones:\n'
     '  -h, --help  Muestra esta ayuda.\n'
@@ -40,9 +51,12 @@ const helpJson =
     '{"schemaVersion":1,"type":"help","name":"shipflow","usage":['
     '"shipflow [--help] [--json]","shipflow --version [--json]",'
     '"$_dryRunUsage","$_initUsage","$_refreshUsage",'
-    '"$_recoverUsage","shipflow doctor [--json] $_budget"],"commands":['
+    '"$_recoverUsage","shipflow doctor [--json] $_budget",'
+    '"$_assess","$_assessShow","$_assessPrevious",'
+    '"$_assessRecover"],"commands":['
     '{"name":"init","description":"$_initCommandText"},'
-    '{"name":"doctor","description":"$_doctorCommandText"}],"options":['
+    '{"name":"doctor","description":"$_doctorCommandText"},'
+    '{"name":"assess","description":"$_assessCommandText"}],"options":['
     '{"flags":["-h","--help"],"description":"Muestra esta ayuda."},'
     '{"flags":["--version"],"description":"Muestra la versión del '
     'ejecutable."},{"flags":["--json"],"description":"$_jsonText"}],'

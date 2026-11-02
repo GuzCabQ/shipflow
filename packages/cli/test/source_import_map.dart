@@ -12,6 +12,7 @@ const expectedImports = {
     'package:plugin_dart/plugin_dart.dart',
   },
   'lib/cli.dart': {
+    'src/assessment/assessment_cli.dart',
     'src/build_version.dart',
     'src/cli_application.dart',
     'src/cli_command.dart',
@@ -35,7 +36,16 @@ const expectedImports = {
     'cli_help.dart',
     'cli_response.dart',
   },
-  'lib/src/cli_command.dart': {'package:core/core.dart', 'cli_grammar.dart'},
+  'lib/src/assessment_grammar.dart': {
+    'package:core/core.dart',
+    'cli_command.dart',
+    'cli_grammar.dart',
+  },
+  'lib/src/cli_command.dart': {
+    'package:core/core.dart',
+    'assessment_grammar.dart',
+    'cli_grammar.dart',
+  },
   'lib/src/cli_emitter.dart': {
     'dart:convert',
     'dart:io',
@@ -51,6 +61,7 @@ const expectedImports = {
   'lib/src/cli_process_boundary.dart': {
     'dart:io',
     'package:vcs/vcs.dart',
+    'assessment/assessment_cli.dart',
     'cli_command.dart',
     'context/context_prompt.dart',
     'cli_response.dart',
@@ -90,6 +101,7 @@ const expectedImports = {
     'dart:io',
     'package:core/core.dart',
     'package:vcs/vcs.dart',
+    'assessment/assessment_cli.dart',
     'cli_application.dart',
     'cli_command.dart',
     'cli_response.dart',

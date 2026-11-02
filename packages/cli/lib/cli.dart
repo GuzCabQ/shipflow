@@ -1,11 +1,13 @@
 library;
 
+export 'src/assessment/assessment_cli.dart' show AssessmentPlugin;
 export 'src/build_version.dart';
 export 'src/cli_application.dart' show respondStatically;
 export 'src/cli_command.dart'
     show
         CliCommand,
         RejectUsage,
+        RunAssessment,
         ReportBudgetProfile,
         RunContext,
         RunDoctor,

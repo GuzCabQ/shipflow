@@ -72,4 +72,14 @@ void main() {
     expect(diagnosticCodes(both), contains('recovery_conflict'));
     expect(File(box.path(assessmentJournalPath)).existsSync(), isTrue);
   });
+
+  test('contextChangedBeforeRecovery aborts and keeps the previous', () async {
+    final bytes = box.document.readAsBytesSync();
+    await interruptPublication(box);
+    box.box.file('packages/widgets/pubspec.yaml', 'name: widgets\n# r2\n');
+    expect((await box.v2(ContextOperation.refresh)).exitCode, 0);
+    final recovered = await recover();
+    expect(diagnosticCodes(recovered), contains('recovery_aborted'));
+    expect(box.document.readAsBytesSync(), bytes);
+  });
 }
