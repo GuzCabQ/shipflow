@@ -44,16 +44,70 @@ void main() {
       expect(treeSnapshot(process.root), before);
     });
   }
+
+  for (final (delay, changeIgnore, expected) in [
+    (21, false, 0),
+    (0, true, 65),
+  ]) {
+    test(
+      changeIgnore
+          ? 'sharing rechecks ignore rules changed while choosing'
+          : 'waiting longer than the Git budget still initializes',
+      () async {
+        process.place('pubspec.yaml', 'name: app\n');
+        final git = Process.runSync('git', [
+          'init',
+          '-q',
+        ], workingDirectory: process.root.path);
+        expect(git.exitCode, 0, reason: '${git.stderr}');
+        final observed = await _runTerminal(
+          process,
+          'tty',
+          'tty',
+          answer: '1',
+          delaySeconds: delay,
+          changeIgnore: changeIgnore,
+        );
+        expect(observed['exit'], expected, reason: '$observed');
+        expect(observed['stderr'], isEmpty);
+        final project = File('${process.root.path}/shipflow/project.json');
+        final settings = File(
+          '${process.root.path}/shipflow/local/settings.json',
+        );
+        expect(project.existsSync(), !changeIgnore);
+        expect(settings.existsSync(), !changeIgnore);
+        if (changeIgnore) {
+          expect(observed['stdout'], contains('ignore'));
+        } else {
+          final saved = jsonDecode(settings.readAsStringSync()) as Map;
+          expect(saved['choice'], 'share');
+        }
+      },
+    );
+  }
 }
 
 Future<Map<String, Object?>> _runTerminal(
   InitProcessSandbox process,
   String input,
-  String output,
-) async {
+  String output, {
+  String answer = 'q',
+  int delaySeconds = 0,
+  bool changeIgnore = false,
+}) async {
   final result = await Process.run(
     '/usr/bin/python3',
-    ['-I', '-c', _terminalRun, process.binary, input, output],
+    [
+      '-I',
+      '-c',
+      _terminalRun,
+      process.binary,
+      input,
+      output,
+      answer,
+      '$delaySeconds',
+      '$changeIgnore',
+    ],
     workingDirectory: process.root.path,
     environment: {
       'HOME': process.home.path,
@@ -67,8 +121,8 @@ Future<Map<String, Object?>> _runTerminal(
 }
 
 const _terminalRun =
-    r'''import errno, fcntl, json, os, pty, struct, subprocess, sys, tempfile, termios, threading
-binary, input_kind, output_kind = sys.argv[1:]
+    r'''import errno, fcntl, json, os, pty, struct, subprocess, sys, tempfile, termios, threading, time
+binary, input_kind, output_kind, answer, delay, change_ignore = sys.argv[1:]
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
 with open(os.devnull, 'rb+') as null, tempfile.TemporaryFile() as file:
@@ -78,6 +132,7 @@ with open(os.devnull, 'rb+') as null, tempfile.TemporaryFile() as file:
                              stdout=outputs[output_kind], stderr=subprocess.PIPE)
     os.close(slave)
     chunks = []
+    prompted = threading.Event()
     def drain():
         while True:
             try:
@@ -89,10 +144,21 @@ with open(os.devnull, 'rb+') as null, tempfile.TemporaryFile() as file:
             if not chunk:
                 break
             chunks.append(chunk)
+            if b'Elige 1, 2, ? o q:' in b''.join(chunks):
+                prompted.set()
     reader = threading.Thread(target=drain, daemon=True)
     reader.start()
     if input_kind == 'tty':
-        os.write(master, b'q\n')
+        if output_kind == 'tty':
+            if not prompted.wait(timeout=15):
+                child.kill()
+                child.communicate()
+                raise AssertionError('sharing prompt not observed')
+            if change_ignore == 'true':
+                with open('.gitignore', 'w') as ignore:
+                    ignore.write('/shipflow/\n')
+            time.sleep(int(delay))
+        os.write(master, (answer + '\n').encode())
     try:
         out, err = child.communicate(timeout=15)
     except subprocess.TimeoutExpired:
