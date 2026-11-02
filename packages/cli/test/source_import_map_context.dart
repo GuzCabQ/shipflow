@@ -111,6 +111,7 @@ const contextImports = {
   },
   'lib/src/context/context_publication.dart': {
     'dart:math',
+    'package:core/core.dart',
     'package:crypto/crypto.dart',
     'context_handles.dart',
     'native/posix_api.dart',

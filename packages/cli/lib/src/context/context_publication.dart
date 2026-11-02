@@ -1,13 +1,15 @@
 import 'dart:math';
 
+import 'package:core/core.dart' show maxAssessmentDocumentBytes;
 import 'package:crypto/crypto.dart';
 
 import 'context_handles.dart';
 import 'native/posix_api.dart';
 
-/// El máximo que se lee de un destino para comparar su huella: más que
-/// cualquier documento admitido, así que uno mayor nunca coincide.
-const _maxFingerprintBytes = 16 * 1024 * 1024;
+/// El máximo que se lee de un destino para comparar su huella: el mayor
+/// documento admitido, el levantamiento con dos revisiones, así que uno
+/// mayor nunca coincide.
+const _maxFingerprintBytes = maxAssessmentDocumentBytes;
 const _fileMode = 420;
 
 /// Los bytes de la entrada regular [name] de [dirFd], hasta [max]; null si
