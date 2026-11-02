@@ -88,7 +88,8 @@ Future<AssessmentRecovery> recoverAssessment(
       );
     }
     if (journal == null) {
-      return _leftovers(assessments, projectId, candidates);
+      // Con await: el finally no suelta el lock hasta terminar de retirar.
+      return await _leftovers(assessments, projectId, candidates);
     }
     final kept = await _conflictOf(assessments, journal, projectId);
     if (kept != null) {
