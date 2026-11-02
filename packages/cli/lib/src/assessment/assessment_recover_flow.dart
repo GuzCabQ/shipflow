@@ -113,6 +113,11 @@ Future<void> _report(
     case _:
       draft.outcome = AssessmentOutcome.recovered;
   }
+  await _presentCurrent(s, draft);
+}
+
+/// El levantamiento que quedó tras recuperar; uno parcial no es 0.
+Future<void> _presentCurrent(AssessmentService s, AssessmentDraft draft) async {
   final current = (await AssessmentStore(s.store).read()).document?.current;
   if (current == null) return;
   draft

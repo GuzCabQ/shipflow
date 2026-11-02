@@ -55,30 +55,41 @@ void main() {
       final projectId = (await loadAssessmentFixture(
         'valid-local.json',
       )).projectId;
-      var expected = null as String?;
-      var previous = null as AssessmentSnapshot?;
-      for (final (revision, current) in [(1, first), (2, second), (3, third)]) {
-        final document = AssessmentDocument(
-          projectId: projectId,
-          revision: revision,
-          current: current,
-          previous: previous,
-        );
-        final publication = await box.publish(
-          document,
-          expected: expected,
-          operationId: '2222222$revision-2222-4222-8222-222222222222',
-        );
-        expect(publication.published, isTrue, reason: 'revisión $revision');
-        expect(
-          File(box.path(assessmentJournalPath)).existsSync(),
-          isFalse,
-          reason: 'revisión $revision',
-        );
-        expected = sha256Of(box.document.readAsBytesSync());
-        previous = current;
-      }
+      await publishInOrder(box, projectId, [first, second, third]);
       expect(box.document.lengthSync(), greaterThan(16 * 1024 * 1024));
     },
   );
+}
+
+/// Publica [snapshots] como revisiones sucesivas, cada una sobre la
+/// anterior, y comprueba que cada publicación terminó sin dejar journal.
+Future<void> publishInOrder(
+  AssessmentBox box,
+  String projectId,
+  List<AssessmentSnapshot> snapshots,
+) async {
+  var expected = null as String?;
+  var previous = null as AssessmentSnapshot?;
+  for (final (index, current) in snapshots.indexed) {
+    final revision = index + 1;
+    final document = AssessmentDocument(
+      projectId: projectId,
+      revision: revision,
+      current: current,
+      previous: previous,
+    );
+    final publication = await box.publish(
+      document,
+      expected: expected,
+      operationId: '2222222$revision-2222-4222-8222-222222222222',
+    );
+    expect(publication.published, isTrue, reason: 'revisión $revision');
+    expect(
+      File(box.path(assessmentJournalPath)).existsSync(),
+      isFalse,
+      reason: 'revisión $revision',
+    );
+    expected = sha256Of(box.document.readAsBytesSync());
+    previous = current;
+  }
 }
