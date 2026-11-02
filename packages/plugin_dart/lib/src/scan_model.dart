@@ -62,3 +62,18 @@ final class ScanResult {
   final List<OmissionDraft> omissions;
   final List<ContextSource> contextSources;
 }
+
+/// Las fuentes candidatas en orden de alcance y de ruta.
+int compareContextSources(ContextSource a, ContextSource b) =>
+    a.scopePath == b.scopePath
+    ? a.path.compareTo(b.path)
+    : a.scopePath.compareTo(b.scopePath);
+
+/// Qué fuente es un archivo llamado [name] a [depth] tramos de la raíz: los
+/// marcadores de toolchain sólo cuentan en la raíz misma.
+SourceKind? sourceKindOf(String name, int depth) => switch (name) {
+  manifestFileName => SourceKind.manifest,
+  fvmConfigFileName when depth == 1 => SourceKind.fvmConfig,
+  flutterVersionFileName when depth == 1 => SourceKind.flutterVersionFile,
+  _ => null,
+};

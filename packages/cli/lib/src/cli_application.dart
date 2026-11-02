@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'cli_command.dart';
+import 'cli_help.dart';
 import 'cli_response.dart';
 
 const cliName = 'shipflow';
@@ -8,77 +9,6 @@ const schemaVersion = 1;
 const successExitCode = 0;
 const invalidUsageExitCode = 64;
 const errorResponseType = 'error';
-
-typedef _Option = ({List<String> flags, String column, String text});
-typedef _Help = ({
-  String summary,
-  List<String> usage,
-  List<_Option> options,
-  String? command,
-});
-
-const _helpOption = (
-  flags: ['-h', '--help'],
-  column: '-h, --help',
-  text: 'Muestra esta ayuda.',
-);
-const _jsonOption = (
-  flags: [jsonFlag],
-  column: jsonFlag,
-  text: 'Emite una única respuesta JSON.',
-);
-const _initUsage =
-    'shipflow init --dry-run [--json] [--report-budget=standard|extended]';
-const _commands = [
-  (name: initCommand, text: 'Reconoce un proyecto sin modificarlo.'),
-];
-
-const _rootHelp = (
-  summary:
-      'Shipflow supervisa cambios de software verificables y recuperables.',
-  usage: [
-    'shipflow [--help] [--json]',
-    'shipflow --version [--json]',
-    _initUsage,
-  ],
-  options: [
-    _helpOption,
-    (
-      flags: [versionFlag],
-      column: versionFlag,
-      text: 'Muestra la versión del ejecutable.',
-    ),
-    _jsonOption,
-  ],
-  command: null,
-);
-
-const _initHelp = (
-  summary:
-      'Reconoce la raíz tecnológica y propone una inicialización sin aplicarla. '
-      'Sólo inspecciona: no modifica el proyecto, no guarda el reporte ni crea '
-      'un expediente, y no comprueba si compila, si pasan sus pruebas, su '
-      'arquitectura ni el SDK instalado.',
-  usage: [_initUsage],
-  options: [
-    _helpOption,
-    (
-      flags: [dryRunFlag],
-      column: dryRunFlag,
-      text: 'Inspecciona sin escribir ni ejecutar herramientas del proyecto.',
-    ),
-    _jsonOption,
-    (
-      flags: ['$reportBudgetFlag=standard', '$reportBudgetFlag=extended'],
-      column: '$reportBudgetFlag=standard|extended',
-      text:
-          'Perfil del reporte de esta invocación: standard, el de omisión, o '
-          'extended, que admite un reporte mayor y puede consumir más '
-          'recursos. No se guarda entre invocaciones.',
-    ),
-  ],
-  command: initCommand,
-);
 
 /// La respuesta completa de [command]; no lee nada más.
 CliResponse respondStatically(
@@ -103,9 +33,10 @@ CliResponse respondStatically(
   ),
 };
 
-_Help _helpOf(HelpTopic topic) => switch (topic) {
-  HelpTopic.root => _rootHelp,
-  HelpTopic.init => _initHelp,
+Help _helpOf(HelpTopic topic) => switch (topic) {
+  HelpTopic.root => rootHelp,
+  HelpTopic.init => initHelp,
+  HelpTopic.doctor => doctorHelp,
 };
 
 CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
@@ -118,9 +49,11 @@ CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
       'exitCode': invalidUsageExitCode,
     });
   }
-  final hint = topic == HelpTopic.init
-      ? 'shipflow init --help'
-      : 'shipflow --help';
+  final hint = switch (topic) {
+    HelpTopic.init => 'shipflow init --help',
+    HelpTopic.doctor => 'shipflow doctor --help',
+    HelpTopic.root => 'shipflow --help',
+  };
   return CliResponse(
     exitCode: invalidUsageExitCode,
     channel: CliOutputChannel.stderr,
@@ -128,7 +61,7 @@ CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
   );
 }
 
-CliResponse _help(_Help help, {required bool json}) => json
+CliResponse _help(Help help, {required bool json}) => json
     ? jsonResponse(successExitCode, {
         'schemaVersion': schemaVersion,
         'type': 'help',
@@ -137,7 +70,8 @@ CliResponse _help(_Help help, {required bool json}) => json
         'usage': help.usage,
         if (help.command == null)
           'commands': [
-            for (final c in _commands) {'name': c.name, 'description': c.text},
+            for (final c in helpCommands)
+              {'name': c.name, 'description': c.text},
           ],
         'options': [
           for (final o in help.options)
@@ -147,7 +81,7 @@ CliResponse _help(_Help help, {required bool json}) => json
       })
     : _success(_humanHelp(help));
 
-String _humanHelp(_Help help) {
+String _humanHelp(Help help) {
   final lines = [
     help.summary,
     '',
@@ -156,7 +90,7 @@ String _humanHelp(_Help help) {
     if (help.command == null) ...[
       '',
       'Comandos:',
-      for (final c in _commands) '  ${c.name.padRight(10)}  ${c.text}',
+      for (final c in helpCommands) '  ${c.name.padRight(10)}  ${c.text}',
     ],
     '',
     'Opciones:',
@@ -167,7 +101,7 @@ String _humanHelp(_Help help) {
 
 /// Una opción y su texto en la misma línea; si la opción no cabe en la
 /// columna, el texto va debajo, alineado con los demás.
-List<String> _optionLines(_Option option) => option.column.length <= 10
+List<String> _optionLines(HelpOption option) => option.column.length <= 10
     ? ['  ${option.column.padRight(10)}  ${option.text}']
     : ['  ${option.column}', '              ${option.text}'];
 

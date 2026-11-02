@@ -1,0 +1,110 @@
+[
+  {
+    "path": "fixtures/valid/project.json",
+    "schema": "project-context",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/valid/settings-pending.json",
+    "schema": "local-settings",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/valid/journal.json",
+    "schema": "transaction",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/valid/doctor-current.json",
+    "schema": "operation-response",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/valid/dry-run.json",
+    "schema": "recognition-dry-run",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/invalid/future-version.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/path-escape.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/unknown-field.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/digest-mismatch.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "semantic"
+  },
+  {
+    "path": "fixtures/invalid/missing-reference.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "semantic"
+  },
+  {
+    "path": "fixtures/invalid/duplicate-id.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "semantic"
+  },
+  {
+    "path": "fixtures/invalid/pending-applied.json",
+    "schema": "local-settings",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/journal-escape.json",
+    "schema": "transaction",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/doctor-mutation-operation.json",
+    "schema": "operation-response",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/doctor-write.json",
+    "schema": "operation-response",
+    "expected": "invalid",
+    "layer": "semantic"
+  },
+  {
+    "path": "fixtures/invalid/dry-run-process.json",
+    "schema": "recognition-dry-run",
+    "expected": "invalid",
+    "layer": "schema"
+  },
+  {
+    "path": "fixtures/invalid/duplicate-keys.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "parser"
+  },
+  {
+    "path": "fixtures/valid/newline-path.json",
+    "schema": "project-context",
+    "expected": "valid"
+  },
+  {
+    "path": "fixtures/invalid/nul-path.json",
+    "schema": "project-context",
+    "expected": "invalid",
+    "layer": "schema"
+  }
+]

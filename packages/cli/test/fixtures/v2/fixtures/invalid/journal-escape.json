@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "operationId": "87654321-1234-4234-8234-123456789abc",
+  "projectId": "12345678-1234-4234-8234-123456789abc",
+  "operation": "init",
+  "choice": "pending",
+  "phase": "prepared",
+  "targets": [
+    {
+      "resource": "project",
+      "before": null,
+      "after": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "staging": {
+    "project": "../project.json",
+    "settingsBefore": null,
+    "settingsAfter": null
+  },
+  "exclude": {
+    "blockId": null,
+    "beforeBlock": null,
+    "afterBlock": null
+  }
+}

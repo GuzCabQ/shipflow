@@ -26,16 +26,20 @@ const _flutterPackage = 'flutter_package';
 ///
 /// [contextSources] es el catálogo de fuentes candidatas que la raíz de
 /// composición entrega: sólo se consultan sus metadatos.
+/// [authorizedOmissions] son árboles que la raíz de composición ya
+/// comprobó como suyos: se omiten sin entrar, existan o no.
 Future<RecognitionContribution> recognizeDartProject(
   Directory root, {
   ScanLimits limits = const ScanLimits(),
   ReportLimits reportLimits = const ReportLimits(),
   List<ContextSourceRule> contextSources = const [],
+  List<AuthorizedOmission> authorizedOmissions = const [],
 }) => recognizeListing(
   root,
   limits: limits,
   reportLimits: reportLimits,
   contextSources: contextSources,
+  authorizedOmissions: authorizedOmissions,
 );
 
 /// [recognizeDartProject] con el listado de directorios inyectable, para que
@@ -46,6 +50,7 @@ Future<RecognitionContribution> recognizeListing(
   ReportLimits reportLimits = const ReportLimits(),
   DirectoryLister list = listWithoutFollowing,
   List<ContextSourceRule> contextSources = const [],
+  List<AuthorizedOmission> authorizedOmissions = const [],
 }) async {
   final budget = DerivedObservationBudget(reportLimits);
   final scan = await scanProject(
@@ -54,6 +59,7 @@ Future<RecognitionContribution> recognizeListing(
     list: list,
     budget: budget,
     contextSources: contextSources,
+    authorizedOmissions: authorizedOmissions,
   );
   final observed = _Observations(root, budget, scan)
     ..limitations.addAll(scan.limitations)

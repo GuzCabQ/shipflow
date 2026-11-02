@@ -53,14 +53,15 @@ void main() {
   test('sin candidatos no es soportada y sale con 65', () async {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
-      contributor: (_, {required reportLimits}) async =>
-          RecognitionContribution(
-            candidates: const [],
-            units: const [],
-            evidence: const [],
-            conflicts: const [],
-            limitations: const [],
-          ),
+      contributor:
+          (_, {required reportLimits, required authorizedOmissions}) async =>
+              RecognitionContribution(
+                candidates: const [],
+                units: const [],
+                evidence: const [],
+                conflicts: const [],
+                limitations: const [],
+              ),
     );
     expect(decode(response)['status'], 'unsupported');
     expect(response.exitCode, 65);
@@ -69,22 +70,27 @@ void main() {
   test('un conflicto es ambiguo y sale con 65', () async {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
-      contributor: (root, {required reportLimits}) async {
-        final base = await sandbox.contribute(root, reportLimits: reportLimits);
-        return RecognitionContribution(
-          candidates: base.candidates,
-          units: base.units,
-          evidence: base.evidence,
-          conflicts: [
-            RecognitionConflict(
-              code: 'c',
-              message: 'm',
-              evidenceIds: const ['e0001'],
-            ),
-          ],
-          limitations: const [],
-        );
-      },
+      contributor:
+          (root, {required reportLimits, required authorizedOmissions}) async {
+            final base = await sandbox.contribute(
+              root,
+              reportLimits: reportLimits,
+              authorizedOmissions: authorizedOmissions,
+            );
+            return RecognitionContribution(
+              candidates: base.candidates,
+              units: base.units,
+              evidence: base.evidence,
+              conflicts: [
+                RecognitionConflict(
+                  code: 'c',
+                  message: 'm',
+                  evidenceIds: const ['e0001'],
+                ),
+              ],
+              limitations: const [],
+            );
+          },
     );
     expect(decode(response)['status'], 'ambiguous');
     expect(response.exitCode, 65);
@@ -94,15 +100,17 @@ void main() {
     for (final arguments in [
       ['--help'],
       ['--version', '--json'],
-      ['init'],
+      ['init', 'x'],
       ['init', '--help'],
+      ['doctor', '--help'],
       ['init', '--dry-run', '--bogus'],
       ['--json', 'init', '--dry-run'],
     ]) {
       final response = await sandbox.run(
         arguments,
-        contributor: (_, {required reportLimits}) =>
-            fail('$arguments no debía reconocer'),
+        contributor:
+            (_, {required reportLimits, required authorizedOmissions}) =>
+                fail('$arguments no debía reconocer'),
       );
       expect(response.exitCode, anyOf(0, 64), reason: '$arguments');
     }

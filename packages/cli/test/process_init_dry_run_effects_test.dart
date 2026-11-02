@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import 'init_process_support.dart';
+import 'v2_fixtures.dart';
 
 void main() {
   final process = InitProcessSandbox()..register();
@@ -98,6 +99,27 @@ flutter:
       expect(process.temp.listSync(), isEmpty);
     });
   }
+
+  test(
+    'con un estado propio existente: cero efectos y la misma omisión',
+    () async {
+      process.place('pubspec.yaml', 'name: app\n');
+      final absent = await process.run(['init', '--dry-run', '--json']);
+      File('${process.root.path}/shipflow/project.json')
+        ..parent.createSync()
+        ..writeAsBytesSync(await v2Bytes('fixtures/valid/project.json'));
+      final before = treeSnapshot(process.root);
+      final owned = await process.run(['init', '--dry-run', '--json']);
+      expect(owned.exitCode, 0, reason: owned.stdout);
+      expect(owned.json['omissions'], absent.json['omissions']);
+      expect(owned.json['omissions'], [
+        {'path': 'shipflow', 'rule': 'tool_state', 'evidenceIds': <Object?>[]},
+      ]);
+      expect(treeSnapshot(process.root), before);
+      expect(process.home.listSync(), isEmpty);
+      expect(process.temp.listSync(), isEmpty);
+    },
+  );
 
   test('el enlace y la dependencia ajena no se atraviesan', () async {
     hostileProject();

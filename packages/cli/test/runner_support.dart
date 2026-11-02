@@ -26,6 +26,7 @@ final class RunnerSandbox {
   Future<RecognitionContribution> contribute(
     Directory directory, {
     required ReportLimits reportLimits,
+    required List<AuthorizedOmission> authorizedOmissions,
   }) async {
     received.add(directory.path);
     return sampleContribution();

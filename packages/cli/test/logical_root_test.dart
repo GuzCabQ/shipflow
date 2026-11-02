@@ -144,7 +144,7 @@ void main() {
       final (:alias, real: _) = aliased();
       for (final arguments in [
         ['--help'],
-        ['init'],
+        ['init', 'x'],
       ]) {
         await sandbox.run(arguments, logicalRootHint: alias);
       }

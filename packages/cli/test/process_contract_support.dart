@@ -27,7 +27,10 @@ const cases = <List<String>>[
   ['--inventada', '--json'],
   ['--json=true', '--version'],
   ['--'],
-  ['init'],
+  // V2: init solo opera sobre el contexto; con un posicional sigue siendo
+  // uso inválido sin inspección.
+  ['init', 'x'],
+  ['doctor', '--help'],
   ['línea\nnueva\x1b[2J'],
   ['--json', 'a b'],
 ];

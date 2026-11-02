@@ -204,6 +204,12 @@ reporte va a `stdout` en ambos formatos y `stderr` queda vacío.
 
 ## JSON
 
+> **Desde V2** esta respuesta lleva `schemaVersion: 3`, con `command: "init"` y
+> `operation: "dry_run"` después de `type`, y siempre la omisión `tool_state` de
+> `shipflow` cuando esa carpeta es estado propio o no existe; el resto de los
+> campos no cambia de significado. La versión 2 queda como contrato histórico de
+> V1. Ver [`CLI-V2.md`](CLI-V2.md).
+
 Una línea UTF-8 con **`schemaVersion: 2`**, `type: "init_dry_run"` y, en este
 orden, `status`, `requestedRoot`, `resolvedRoot`, `repository`,
 `recognitionScope`, `candidates`, `units`, `evidence`, `conflicts`,

@@ -7,6 +7,9 @@ import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
 import 'logical_root.dart';
+import 'context/context_cli.dart';
+import 'context/context_prompt.dart';
+import 'context/state_ownership.dart';
 import 'recognition_presenter.dart';
 
 const _rootNotFound = 'root_not_found';
@@ -19,6 +22,7 @@ typedef RecognitionContributor =
     Future<RecognitionContribution> Function(
       Directory root, {
       required ReportLimits reportLimits,
+      required List<AuthorizedOmission> authorizedOmissions,
     });
 
 /// Responde [arguments]. Un fallo de programación sale tal cual, con su
@@ -32,12 +36,16 @@ Future<CliResponse> runCli(
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
   String? logicalRootHint,
+  GitContextAdapter? git,
+  ContextPromptIO? prompt,
 }) => runCommand(
   parseCliCommand(arguments),
   version: version,
   workingDirectory: workingDirectory,
   recognizeProject: recognizeProject,
   logicalRootHint: logicalRootHint,
+  git: git,
+  prompt: prompt,
 );
 
 Future<CliResponse> runCommand(
@@ -46,8 +54,19 @@ Future<CliResponse> runCommand(
   required Directory workingDirectory,
   required RecognitionContributor recognizeProject,
   String? logicalRootHint,
+  GitContextAdapter? git,
+  ContextPromptIO? prompt,
 }) async => switch (command) {
   final StaticCommand static => respondStatically(static, version: version),
+  final RunContext context => await runContextCommand(
+    context,
+    version: version,
+    workingDirectory: workingDirectory,
+    recognizeProject: recognizeProject,
+    logicalRootHint: logicalRootHint,
+    git: git,
+    prompt: prompt,
+  ),
   RunInitDryRun(:final json, :final budgetProfile) => presentRecognition(
     await recognizeRoot(
       workingDirectory,
@@ -77,14 +96,18 @@ Directory currentWorkingDirectory() {
 ///
 /// Si la producción o el ensamblado exceden [budgetProfile], el inventario
 /// se descarta por un reporte compacto; cualquier otro error sale tal cual.
+///
+/// El estado propio se omite sólo si [inspectStateOwnership] lo acredita,
+/// salvo que quien llama ya lo haya decidido en [authorizedOmissions].
 Future<RecognitionReport> recognizeRoot(
   Directory workingDirectory,
   RecognitionContributor recognizeProject, {
   String? logicalRootHint,
   ReportBudgetProfile budgetProfile = ReportBudgetProfile.standard,
+  List<AuthorizedOmission>? authorizedOmissions,
 }) async {
   final requested = _absolutePath(workingDirectory);
-  final (:resolved, :problem) = await _inspectableRoot(requested);
+  final (:resolved, :problem) = await inspectableRoot(requested);
   if (problem != null) {
     return RecognitionReport.invalidRoot(
       requestedRoot: requested,
@@ -102,6 +125,9 @@ Future<RecognitionReport> recognizeRoot(
     repository: await inspectRepositoryContext(root),
     recognizeProject: recognizeProject,
     budgetProfile: budgetProfile,
+    authorizedOmissions:
+        authorizedOmissions ??
+        authorizedStateOmissions(await inspectStateOwnership(root)),
   );
 }
 
@@ -112,6 +138,7 @@ Future<RecognitionReport> _recognizeWithin(
   required RepositoryContext repository,
   required RecognitionContributor recognizeProject,
   required ReportBudgetProfile budgetProfile,
+  required List<AuthorizedOmission> authorizedOmissions,
 }) async {
   final limits = reportLimitsOf(budgetProfile);
   try {
@@ -119,7 +146,13 @@ Future<RecognitionReport> _recognizeWithin(
       requestedRoot: requestedRoot,
       resolvedRoot: root.path,
       repository: repository,
-      contributions: [await recognizeProject(root, reportLimits: limits)],
+      contributions: [
+        await recognizeProject(
+          root,
+          reportLimits: limits,
+          authorizedOmissions: authorizedOmissions,
+        ),
+      ],
       limits: limits,
     );
   } on ReportLimitExceeded catch (exceeded) {
@@ -133,6 +166,9 @@ Future<RecognitionReport> _recognizeWithin(
   }
 }
 
+/// [directory] absoluto, o tal cual si el sistema ya no puede nombrarlo.
+String absolutePathOf(Directory directory) => _absolutePath(directory);
+
 String _absolutePath(Directory directory) {
   try {
     return directory.absolute.path;
@@ -142,7 +178,7 @@ String _absolutePath(Directory directory) {
 }
 
 /// La ruta canónica de [requested], o la limitación que impide inspeccionarla.
-Future<({String? resolved, RecognitionLimitation? problem})> _inspectableRoot(
+Future<({String? resolved, RecognitionLimitation? problem})> inspectableRoot(
   String requested,
 ) async {
   if (_typeProblem(requested) case final problem?) {

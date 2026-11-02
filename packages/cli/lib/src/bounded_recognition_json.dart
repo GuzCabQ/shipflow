@@ -7,8 +7,10 @@ import 'cli_application.dart' show successExitCode;
 const _recognitionType = 'init_dry_run';
 
 /// La versión del JSON de `init --dry-run`, sólo de él: ayuda, versión y
-/// errores conservan la de V0. Un consumidor de la 1 debe rechazar la 2.
-const recognitionSchemaVersion = 2;
+/// errores conservan la de V0. La 3 agrega la omisión del estado propio y
+/// los discriminantes `command` y `operation`; la 2 queda como contrato
+/// histórico de V1, y un consumidor debe discriminar la versión.
+const recognitionSchemaVersion = 3;
 const _unrecognizedExitCode = 65;
 const _invalidRootExitCode = 66;
 
@@ -35,6 +37,8 @@ String? encodeRecognitionWithinLimit(
       ..add({
         'schemaVersion': recognitionSchemaVersion,
         'type': _recognitionType,
+        'command': 'init',
+        'operation': 'dry_run',
         ...report.toJson(),
         'exitCode': exitCode,
       })

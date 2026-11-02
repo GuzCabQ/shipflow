@@ -26,7 +26,7 @@ void main() {
       process.place('CLAUDE.md', 'no se lee');
       final result = await process.runSource(['init', '--dry-run', '--json']);
       expect(result.exitCode, 0, reason: result.stderr);
-      expect(result.json['schemaVersion'], 2);
+      expect(result.json['schemaVersion'], 3);
       final sources = [
         for (final s
             in (result.json['contextSources']! as List<Object?>)
@@ -115,11 +115,14 @@ void main() {
       expect(result.json['proposal'], containsPair('eligible', false));
     });
 
-    test('init sin --dry-run es uso inválido y no inspecciona', () async {
-      final result = await process.run(['init']);
+    // V2: `init` sin --dry-run es la incorporación persistente
+    // (process_context_commands_test); un posicional sigue siendo inválido.
+    test('init con un posicional es uso inválido y no inspecciona', () async {
+      final result = await process.run(['init', 'carpeta']);
       expect(result.exitCode, 64);
       expect(result.stdout, isEmpty);
-      expect(result.stderr, contains('--dry-run'));
+      expect(result.stderr, contains("argumento inesperado: 'carpeta'"));
+      expect(Directory('${process.root.path}/shipflow').existsSync(), isFalse);
       final json = await process.run(['init', '--bogus', '--json']);
       expect(json.exitCode, 64);
       expect(json.stderr, isEmpty);

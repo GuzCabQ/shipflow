@@ -70,7 +70,8 @@ void main() {
       });
     }
 
-    for (final positional in ['doctor', 'help', 'version', 'analyze']) {
+    // V2: doctor es un comando; analyze sigue sin existir.
+    for (final positional in ['help', 'version', 'analyze']) {
       test('$positional es un argumento posicional inesperado', () {
         expectHumanError([positional], "argumento inesperado: '$positional'");
       });

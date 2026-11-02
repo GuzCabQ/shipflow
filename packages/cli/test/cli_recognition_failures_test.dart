@@ -11,7 +11,7 @@ void main() {
     final response = await sandbox.run(
       ['init', '--dry-run', '--json'],
       workingDirectory: workingDirectory,
-      contributor: (_, {required reportLimits}) =>
+      contributor: (_, {required reportLimits, required authorizedOmissions}) =>
           fail('una raíz inválida no se reconoce'),
     );
     expect(response.exitCode, 66);
@@ -57,8 +57,9 @@ void main() {
       try {
         await sandbox.run(
           ['init', '--dry-run', '--json'],
-          contributor: (_, {required reportLimits}) =>
-              Future.error(defect, trace),
+          contributor:
+              (_, {required reportLimits, required authorizedOmissions}) =>
+                  Future.error(defect, trace),
         );
       } on Object catch (error, s) {
         thrown = error;

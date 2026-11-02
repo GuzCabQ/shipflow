@@ -82,7 +82,7 @@ void main() {
       expect(payload, contains('Identidad reconocida dentro del alcance'));
       expect(payload, contains('si sus recursos existen ni si el SDK'));
       expect(payload, contains('Shipflow no guardó este reporte'));
-      expect(payload, contains('Esta versión sólo entrega esta ficha'));
+      expect(payload, contains('Con --dry-run sólo se muestra esta ficha'));
       expect(payload, endsWith(expectedDetail));
       expect(payload, isNot(contains('doctor')));
     });

@@ -1,0 +1,72 @@
+{
+  "status": "recognized",
+  "recognitionScope": "declared_project_recognition",
+  "candidates": [
+    {
+      "id": "example",
+      "displayName": "Example",
+      "pluginId": "plugin_example",
+      "evidenceIds": [
+        "e0001"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "u0001",
+      "name": "example",
+      "kind": "package",
+      "path": ".",
+      "evidenceIds": [
+        "e0001"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "e0001",
+      "kind": "name",
+      "role": "identity",
+      "label": "Name",
+      "path": "manifest.example",
+      "value": "example",
+      "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "conflicts": [],
+  "limitations": [],
+  "relations": [],
+  "contextSources": [],
+  "omissions": [
+    {
+      "path": "shipflow",
+      "rule": "tool_state",
+      "evidenceIds": []
+    }
+  ],
+  "schemaVersion": 3,
+  "type": "init_dry_run",
+  "command": "init",
+  "operation": "dry_run",
+  "exitCode": 0,
+  "requestedRoot": "/example",
+  "resolvedRoot": "/example",
+  "repository": {
+    "status": "absent",
+    "root": null,
+    "relation": "none"
+  },
+  "proposal": {
+    "eligible": true,
+    "pluginIds": [
+      "plugin_example"
+    ],
+    "actions": []
+  },
+  "effects": {
+    "filesWritten": 0,
+    "directoriesCreated": 0,
+    "processesStarted": 0,
+    "networkRequests": 0
+  }
+}

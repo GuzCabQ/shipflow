@@ -1,15 +1,20 @@
-import 'terminal_text.dart';
+import 'package:core/core.dart';
+
+import 'cli_grammar.dart';
 
 const initCommand = 'init';
+const doctorCommand = 'doctor';
+const refreshFlag = '--refresh';
+const recoverFlag = '--recover';
+const sharingFlag = '--sharing';
 const jsonFlag = '--json';
 const versionFlag = '--version';
 const dryRunFlag = '--dry-run';
 const helpFlags = {'-h', '--help'};
 const reportBudgetFlag = '--report-budget';
-const _maxReflectedRunes = 160;
 
 /// De qué ayuda se trata, y adónde apunta un error de uso.
-enum HelpTopic { root, init }
+enum HelpTopic { root, init, doctor }
 
 /// Lo que los argumentos piden. El token exacto `--json` elige la respuesta
 /// estructurada aunque otro token sea inválido.
@@ -46,16 +51,6 @@ final class RejectUsage extends StaticCommand {
 /// se lee del entorno.
 enum ReportBudgetProfile { standard, extended }
 
-/// El perfil que nombra [argument] si es `--report-budget=<valor>` con un
-/// valor exacto; null si es esa opción con otro valor o sin él.
-ReportBudgetProfile? _budgetProfileOf(String argument) => ReportBudgetProfile
-    .values
-    .where((p) => argument == '$reportBudgetFlag=${p.name}')
-    .firstOrNull;
-
-bool _isBudget(String argument) =>
-    argument == reportBudgetFlag || argument.startsWith('$reportBudgetFlag=');
-
 final class RunInitDryRun extends CliCommand {
   const RunInitDryRun({
     required super.json,
@@ -65,14 +60,60 @@ final class RunInitDryRun extends CliCommand {
   final ReportBudgetProfile budgetProfile;
 }
 
-const _root = _Grammar({versionFlag, ...helpFlags});
-const _init = _Grammar({dryRunFlag, ...helpFlags}, acceptsBudget: true);
+/// Un comando que lee y, salvo doctor, publica el contexto persistente.
+sealed class RunContext extends CliCommand {
+  const RunContext({
+    required super.json,
+    this.budgetProfile = ReportBudgetProfile.standard,
+  });
+
+  final ReportBudgetProfile budgetProfile;
+}
+
+/// `init`: primera incorporación, o verificación del contexto guardado.
+final class RunInit extends RunContext {
+  const RunInit({required super.json, super.budgetProfile, this.sharing});
+
+  final SharingChoice? sharing;
+}
+
+/// `init --refresh`: reobserva y publica un reconocimiento elegible.
+final class RunInitRefresh extends RunContext {
+  const RunInitRefresh({
+    required super.json,
+    super.budgetProfile,
+    this.sharing,
+  });
+
+  final SharingChoice? sharing;
+}
+
+/// `init --recover`: termina o deshace una operación propia.
+final class RunInitRecover extends RunContext {
+  const RunInitRecover({required super.json, super.budgetProfile});
+}
+
+/// `doctor`: sólo lee y explica.
+final class RunDoctor extends RunContext {
+  const RunDoctor({required super.json, super.budgetProfile});
+}
+
+const _root = Grammar({versionFlag, ...helpFlags});
+const _init = Grammar(
+  {dryRunFlag, refreshFlag, recoverFlag, ...helpFlags},
+  acceptsBudget: true,
+  acceptsSharing: true,
+);
+const _doctor = Grammar(helpFlags, acceptsBudget: true);
 
 /// Decide el comando sólo a partir de [arguments]: no lee nada más.
 CliCommand parseCliCommand(List<String> arguments) {
   final json = arguments.contains(jsonFlag);
   if (arguments.isNotEmpty && arguments.first == initCommand) {
     return _parseInit(arguments.sublist(1), json: json);
+  }
+  if (arguments.isNotEmpty && arguments.first == doctorCommand) {
+    return _parseDoctor(arguments.sublist(1), json: json);
   }
   if (_root.firstProblem(arguments) case final problem?) {
     return RejectUsage(problem, HelpTopic.root, json: json);
@@ -88,88 +129,26 @@ CliCommand _parseInit(List<String> options, {required bool json}) {
   if (options.any(helpFlags.contains)) {
     return ShowHelp(HelpTopic.init, json: json);
   }
+  final profile = budgetProfileIn(options);
+  final sharing = sharingIn(options);
   if (options.contains(dryRunFlag)) {
-    return RunInitDryRun(
-      json: json,
-      budgetProfile:
-          options.map(_budgetProfileOf).nonNulls.firstOrNull ??
-          ReportBudgetProfile.standard,
-    );
+    return RunInitDryRun(json: json, budgetProfile: profile);
   }
-  return RejectUsage(
-    'init requiere $dryRunFlag: usa shipflow init $dryRunFlag; esta versión '
-    'sólo inspecciona, sin modificar ni guardar el proyecto',
-    HelpTopic.init,
-    json: json,
-  );
+  if (options.contains(refreshFlag)) {
+    return RunInitRefresh(json: json, budgetProfile: profile, sharing: sharing);
+  }
+  if (options.contains(recoverFlag)) {
+    return RunInitRecover(json: json, budgetProfile: profile);
+  }
+  return RunInit(json: json, budgetProfile: profile, sharing: sharing);
 }
 
-/// Opciones sin valor, cada una una vez, con a lo sumo una acción; el primer
-/// problema en el orden de los argumentos es el que se informa. Con
-/// [acceptsBudget] admite además una vez `--report-budget=<perfil>`, que no
-/// se combina con la ayuda.
-final class _Grammar {
-  const _Grammar(this.actions, {this.acceptsBudget = false});
-
-  final Set<String> actions;
-  final bool acceptsBudget;
-
-  String? firstProblem(List<String> arguments) {
-    final seen = <String>[];
-    for (final argument in arguments) {
-      final problem = _problemWith(argument, seen);
-      if (problem != null) return problem;
-      seen.add(argument);
-    }
-    return null;
+CliCommand _parseDoctor(List<String> options, {required bool json}) {
+  if (_doctor.firstProblem(options) case final problem?) {
+    return RejectUsage(problem, HelpTopic.doctor, json: json);
   }
-
-  String? _problemWith(String argument, List<String> seen) {
-    if (acceptsBudget && _isBudget(argument)) {
-      return _budgetProblem(argument, seen);
-    }
-    return _flagProblem(argument, seen);
+  if (options.any(helpFlags.contains)) {
+    return ShowHelp(HelpTopic.doctor, json: json);
   }
-
-  String? _budgetProblem(String argument, List<String> seen) {
-    if (_budgetProfileOf(argument) == null) {
-      return 'valor no admitido para $reportBudgetFlag: usa '
-          '$reportBudgetFlag=standard o $reportBudgetFlag=extended';
-    }
-    if (seen.any(_isBudget)) return "opción repetida: '$reportBudgetFlag'";
-    final help = seen.where(helpFlags.contains).firstOrNull;
-    if (help != null) {
-      return '${_reflect(help)} y ${_reflect(argument)} no se pueden combinar';
-    }
-    return null;
-  }
-
-  String? _flagProblem(String argument, List<String> seen) {
-    if (!actions.contains(argument) && argument != jsonFlag) {
-      return argument.startsWith('-')
-          ? 'opción desconocida: ${_reflect(argument)}'
-          : 'argumento inesperado: ${_reflect(argument)}';
-    }
-    if (seen.contains(argument)) {
-      return 'opción repetida: ${_reflect(argument)}';
-    }
-    for (final earlier in seen) {
-      if (helpFlags.contains(earlier) && helpFlags.contains(argument)) {
-        return '${_reflect(earlier)} y ${_reflect(argument)} '
-            'son la misma opción';
-      }
-      if (_isBudget(earlier) && helpFlags.contains(argument)) {
-        return '${_reflect(earlier)} y ${_reflect(argument)} '
-            'no se pueden combinar';
-      }
-      if (actions.contains(earlier) && actions.contains(argument)) {
-        return '${_reflect(earlier)} y ${_reflect(argument)} '
-            'no se pueden combinar';
-      }
-    }
-    return null;
-  }
+  return RunDoctor(json: json, budgetProfile: budgetProfileIn(options));
 }
-
-String _reflect(String argument) =>
-    "'${singleLine(argument, maxRunes: _maxReflectedRunes)}'";

@@ -1,6 +1,16 @@
-/// core — los tipos neutrales del reconocimiento de proyectos.
+/// core — los tipos neutrales del reconocimiento y del contexto persistente.
 library;
 
+export 'src/context/context_enums.dart';
+export 'src/context/context_operation_result.dart';
+export 'src/context/context_result_parts.dart';
+export 'src/context/context_transaction.dart';
+export 'src/context/context_validation.dart';
+export 'src/context/local_settings.dart';
+export 'src/context/portable_recognition.dart';
+export 'src/context/project_context.dart';
+export 'src/entorno.dart';
+export 'src/recognition/authorized_omission.dart';
 export 'src/recognition/recognition_assembler.dart';
 export 'src/recognition/recognition_context.dart';
 export 'src/recognition/recognition_contribution.dart';
