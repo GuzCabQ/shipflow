@@ -4,17 +4,18 @@ import 'dart:typed_data';
 
 import 'package:core/core.dart';
 
-/// El cupo de Git de una operación: a lo sumo 12 procesos y 20 segundos en
-/// total, compartidos por todas sus consultas.
+/// El cupo de Git de una operación: a lo sumo 12 procesos y 20 segundos
+/// de ejecución acumulada, compartidos por todas sus consultas. El tiempo
+/// entre consultas no consume el cupo.
 final class GitBudget {
   GitBudget({this.maxProcesses = 12, this.total = const Duration(seconds: 20)});
 
   final int maxProcesses;
   final Duration total;
-  final _clock = Stopwatch()..start();
+  var _elapsed = Duration.zero;
   var started = 0;
 
-  Duration get remaining => total - _clock.elapsed;
+  Duration get remaining => total - _elapsed;
 }
 
 /// Lo que devolvió una consulta, o por qué se cortó: `git_timeout`,
@@ -74,9 +75,9 @@ final class BoundedGitProcess {
       return const GitCommandResult.cut('git_budget');
     }
     budget.started++;
-    final Process process;
+    final clock = Stopwatch()..start();
     try {
-      process = await Process.start(
+      final process = await Process.start(
         executable,
         [..._globalOptions, ...args],
         workingDirectory: cwd.path,
@@ -86,10 +87,12 @@ final class BoundedGitProcess {
         ),
         includeParentEnvironment: false,
       );
+      return await _collect(process, input, deadline - clock.elapsed);
     } on ProcessException {
       return const GitCommandResult.cut('git_start');
+    } finally {
+      budget._elapsed += clock.elapsed;
     }
-    return _collect(process, input, deadline);
   }
 
   /// Lee hasta que el proceso termina y sus tuberías se cierran, nunca más
