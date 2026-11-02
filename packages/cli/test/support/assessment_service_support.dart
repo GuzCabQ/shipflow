@@ -17,8 +17,17 @@ import 'context_service_support.dart';
 final class AssessServiceBox {
   AssessServiceBox._(this.box);
 
-  static Future<AssessServiceBox> initialized({bool init = true}) async {
+  static Future<AssessServiceBox> initialized({
+    bool init = true,
+    Map<String, String>? files,
+  }) async {
     final box = ServiceSandbox.create();
+    if (files != null) {
+      files.forEach(box.file);
+      final assess = AssessServiceBox._(box);
+      if (init) await assess.v2(ContextOperation.init);
+      return assess;
+    }
     box.file('pubspec.yaml', '''
 name: app
 environment:
