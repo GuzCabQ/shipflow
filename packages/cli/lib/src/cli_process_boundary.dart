@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:vcs/vcs.dart';
 
+import 'assessment/assessment_cli.dart';
 import 'cli_command.dart';
 import 'context/context_prompt.dart';
 import 'cli_response.dart';
@@ -19,6 +20,7 @@ Future<CliResponse> runCliAtProcessBoundary(
   String? logicalRootHint,
   GitContextAdapter? git,
   ContextPromptIO? prompt,
+  AssessmentPlugin? assessment,
 }) async {
   CliCommand? command;
   try {
@@ -31,6 +33,7 @@ Future<CliResponse> runCliAtProcessBoundary(
       logicalRootHint: logicalRootHint,
       git: git,
       prompt: prompt,
+      assessment: assessment,
     );
   } on Object {
     return internalFailure(json: command?.json ?? false);

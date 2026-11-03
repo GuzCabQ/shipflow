@@ -1,9 +1,13 @@
 import 'package:core/core.dart';
 
+import 'assessment_grammar.dart';
 import 'cli_grammar.dart';
 
 const initCommand = 'init';
 const doctorCommand = 'doctor';
+const assessCommand = 'assess';
+const showFlag = '--show';
+const previousFlag = '--previous';
 const refreshFlag = '--refresh';
 const recoverFlag = '--recover';
 const sharingFlag = '--sharing';
@@ -14,7 +18,7 @@ const helpFlags = {'-h', '--help'};
 const reportBudgetFlag = '--report-budget';
 
 /// De qué ayuda se trata, y adónde apunta un error de uso.
-enum HelpTopic { root, init, doctor }
+enum HelpTopic { root, init, doctor, assess }
 
 /// Lo que los argumentos piden. El token exacto `--json` elige la respuesta
 /// estructurada aunque otro token sea inválido.
@@ -98,6 +102,23 @@ final class RunDoctor extends RunContext {
   const RunDoctor({required super.json, super.budgetProfile});
 }
 
+/// `assess`: genera, consulta, consulta la anterior o recupera. Nunca
+/// pregunta; `--json` sólo cambia la forma de la respuesta.
+final class RunAssessment extends CliCommand {
+  const RunAssessment({
+    required super.json,
+    required this.action,
+    this.previous = false,
+    this.budgetProfile = ReportBudgetProfile.standard,
+  });
+
+  final AssessmentOperation action;
+
+  /// Sólo con `--show`: la revisión anterior, como historia.
+  final bool previous;
+  final ReportBudgetProfile budgetProfile;
+}
+
 const _root = Grammar({versionFlag, ...helpFlags});
 const _init = Grammar(
   {dryRunFlag, refreshFlag, recoverFlag, ...helpFlags},
@@ -114,6 +135,9 @@ CliCommand parseCliCommand(List<String> arguments) {
   }
   if (arguments.isNotEmpty && arguments.first == doctorCommand) {
     return _parseDoctor(arguments.sublist(1), json: json);
+  }
+  if (arguments.isNotEmpty && arguments.first == assessCommand) {
+    return parseAssess(arguments.sublist(1), json: json);
   }
   if (_root.firstProblem(arguments) case final problem?) {
     return RejectUsage(problem, HelpTopic.root, json: json);

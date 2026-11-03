@@ -10,14 +10,24 @@ const settingsPath = 'shipflow/local/settings.json';
 const transactionPath = 'shipflow/local/transaction.json';
 const previousPath = 'shipflow/local/previous.json';
 
+/// El levantamiento portable y el journal de su publicación (V3).
+const assessmentDocumentPath = 'shipflow/assessment.json';
+const assessmentTransactionPath = 'shipflow/local/assessment-transaction.json';
+
 /// Los bytes exactos del `.gitignore` que genera init.
 const generatedGitignore =
     '# Local operational state; project.json remains shareable.\n/local/\n';
 
-/// Más entradas que éstas no pueden ser sólo el estado propio.
-const _maxStateEntries = 64;
+/// Más entradas que éstas no pueden ser sólo el estado propio: un staging
+/// activo por protocolo y temporales acotados.
+const _maxStateEntries = 128;
 
-const _directories = {'local', 'local/staging', 'local/locks'};
+const _directories = {
+  'local',
+  'local/staging',
+  'local/locks',
+  'local/assessment-staging',
+};
 const _lock = 'local/locks/context.lock';
 const _stagedNames = {
   'project.json',
@@ -30,6 +40,18 @@ final _temporary = RegExp(
   r'previous\.json|\.gitignore|settings\.before\.json|settings\.after\.json)'
   r'\.[0-9a-f]{16}\.tmp$',
 );
+
+final _assessmentTemporary = RegExp(
+  r'^(?:\.assessment\.json|local/\.assessment-transaction\.json|'
+  r'local/assessment-staging/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab]'
+  r'[0-9a-f]{3}-[0-9a-f]{12}/\.candidate\.json)\.[0-9a-f]{16}\.tmp$',
+);
+
+/// Si [path], relativa a la raíz, tiene la forma de un temporal de una
+/// publicación de assess. La forma no prueba propiedad.
+bool isAssessmentTemporary(String path) =>
+    path.startsWith('$stateDirectory/') &&
+    _assessmentTemporary.hasMatch(path.substring(stateDirectory.length + 1));
 
 /// Si [path], relativa a la raíz, tiene la forma de un temporal de una
 /// publicación propia. La forma no prueba propiedad: sólo un journal válido
@@ -62,11 +84,18 @@ enum StateOwnershipKind {
 
 /// La clasificación y las rutas, relativas a la raíz, que la justifican.
 final class StateOwnership {
-  StateOwnership(this.kind, [List<String> findings = const []])
-    : findings = List.unmodifiable(findings);
+  StateOwnership(
+    this.kind, [
+    List<String> findings = const [],
+    this.assessmentJournal = false,
+  ]) : findings = List.unmodifiable(findings);
 
   final StateOwnershipKind kind;
   final List<String> findings;
+
+  /// Si hay un journal de assess válido: sólo `assess --recover` lo
+  /// termina; init no lo recupera ni adivina un orden con el suyo.
+  final bool assessmentJournal;
 
   /// Sólo un estado propio comprobado, o su ausencia, se omite del
   /// reconocimiento: el nombre por sí solo no prueba propiedad.
@@ -78,10 +107,20 @@ final class StateOwnership {
   }.contains(kind);
 }
 
-enum DocumentKind { project, settings, transaction }
+enum DocumentKind {
+  project,
+  settings,
+  transaction,
+  assessment,
+  assessmentTransaction,
+}
 
 /// Qué documento es [path], relativa a la raíz.
-DocumentKind documentKindOf(String path) => path.endsWith('transaction.json')
+DocumentKind documentKindOf(String path) => path == assessmentDocumentPath
+    ? DocumentKind.assessment
+    : path == assessmentTransactionPath
+    ? DocumentKind.assessmentTransaction
+    : path.endsWith('transaction.json')
     ? DocumentKind.transaction
     : path.contains('settings')
     ? DocumentKind.settings
@@ -95,6 +134,11 @@ final class ObservedLayout {
   final documents = <String>[];
   final temporaries = <String>[];
   final staging = <String>[];
+
+  /// Temporales y candidatos de assess: sólo un journal de assess los
+  /// acredita, o un candidato completo y propio.
+  final assessmentTemporaries = <String>[];
+  final assessmentCandidates = <String>[];
   var hasGitignore = false;
 }
 
@@ -151,13 +195,16 @@ bool _place(ObservedLayout layout, String path, FileSystemEntityType type) {
   final file = type == FileSystemEntityType.file;
   final segments = path.split('/');
   if (directory) {
-    return _directories.contains(path) || _stagingDirectory(segments);
+    return _directories.contains(path) ||
+        _stagingDirectory(segments) ||
+        _assessmentStaging(segments);
   }
   if (!file) return false;
   final full = '$stateDirectory/$path';
   if (path == '.gitignore') return layout.hasGitignore = true;
   if (path == _lock) return true;
   if (_temporary.hasMatch(path)) return _add(layout.temporaries, full);
+  if (_placeAssessment(layout, path, segments)) return true;
   if (_stagingDirectory(segments.take(3).toList()) &&
       segments.length == 4 &&
       _stagedNames.contains(segments[3])) {
@@ -168,6 +215,8 @@ bool _place(ObservedLayout layout, String path, FileSystemEntityType type) {
         'local/settings.json',
         'local/transaction.json',
         'local/previous.json',
+        'assessment.json',
+        'local/assessment-transaction.json',
       }.contains(path) &&
       _add(layout.documents, full);
 }
@@ -176,6 +225,28 @@ bool _stagingDirectory(List<String> segments) =>
     segments.length == 3 &&
     segments[0] == 'local' &&
     segments[1] == 'staging' &&
+    isUuidV4(segments[2]);
+
+/// Anota un temporal o un candidato de assess; false si no es ninguno.
+bool _placeAssessment(
+  ObservedLayout layout,
+  String path,
+  List<String> segments,
+) {
+  final full = '$stateDirectory/$path';
+  if (_assessmentTemporary.hasMatch(path)) {
+    return _add(layout.assessmentTemporaries, full);
+  }
+  return _assessmentStaging(segments.take(3).toList()) &&
+      segments.length == 4 &&
+      segments[3] == 'candidate.json' &&
+      _add(layout.assessmentCandidates, full);
+}
+
+bool _assessmentStaging(List<String> segments) =>
+    segments.length == 3 &&
+    segments[0] == 'local' &&
+    segments[1] == 'assessment-staging' &&
     isUuidV4(segments[2]);
 
 bool _add(List<String> into, String path) {

@@ -1,13 +1,15 @@
 import 'dart:math';
 
+import 'package:core/core.dart' show maxAssessmentDocumentBytes;
 import 'package:crypto/crypto.dart';
 
 import 'context_handles.dart';
 import 'native/posix_api.dart';
 
-/// El máximo que se lee de un destino para comparar su huella: más que
-/// cualquier documento admitido, así que uno mayor nunca coincide.
-const _maxFingerprintBytes = 16 * 1024 * 1024;
+/// El máximo que se lee de un destino para comparar su huella: el mayor
+/// documento admitido, el levantamiento con dos revisiones, así que uno
+/// mayor nunca coincide.
+const _maxFingerprintBytes = maxAssessmentDocumentBytes;
 const _fileMode = 420;
 
 /// Los bytes de la entrada regular [name] de [dirFd], hasta [max]; null si
@@ -48,7 +50,8 @@ String? fingerprintAt(NativePosix posix, int dirFd, String name) {
 /// mismo directorio, con los permisos del destino que reemplaza, lo
 /// confirma con fsync y lo renombra: nunca abre el destino para escribir,
 /// así que un enlace o un hardlink colocados allí no reciben bytes. Si falla
-/// después de crear el temporal, lo retira.
+/// después de crear el temporal, lo retira; si falla la confirmación
+/// posterior al rename, el error dice que el reemplazo ya ocurrió.
 void publishAt(
   NativePosix posix,
   int dirFd,
@@ -77,7 +80,11 @@ void publishAt(
     _discard(posix, dirFd, temporary);
     rethrow;
   }
-  storeGuard(() => posix.fsync(dirFd));
+  try {
+    storeGuard(() => posix.fsync(dirFd));
+  } on ContextStoreFailure catch (failure) {
+    throw ContextStoreFailure(failure.code, replaced: true);
+  }
 }
 
 /// Retira [name] de [dirFd] sólo si su versión actual tiene [expected].

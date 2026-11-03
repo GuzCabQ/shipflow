@@ -41,7 +41,7 @@ Future<CliResponse> runContextCommand(
     return _failed(command, resolved, 'io_failure', failure.code);
   }
   try {
-    final result = await _service(
+    final result = await contextServiceFor(
       root,
       store,
       version: version,
@@ -55,7 +55,8 @@ Future<CliResponse> runContextCommand(
   }
 }
 
-ProjectContextService _service(
+/// El servicio de contexto de [root] como lo compone el CLI.
+ProjectContextService contextServiceFor(
   Directory root,
   ContextStore store, {
   required String version,

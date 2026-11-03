@@ -63,6 +63,16 @@ Future<void> main(List<String> arguments) async {
                 authorizedOmissions: authorizedOmissions,
               ),
       logicalRootHint: Platform.environment['PWD'],
+      assessment: (
+        observe: observeDartSources,
+        observeInputs: observeDartInputs,
+        basisOf: projectDartAssessmentContext,
+        producer: (
+          contract: assessmentContract,
+          pluginId: assessmentPluginId,
+          parserVersion: parserVersion,
+        ),
+      ),
     ),
     standardOut: stdout,
     standardError: stderr,

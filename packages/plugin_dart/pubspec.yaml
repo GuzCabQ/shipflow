@@ -9,6 +9,9 @@ environment:
 resolution: workspace
 
 dependencies:
+  # El detector sintáctico de assess, fijado: parseString y su AST públicos,
+  # sin resolver el SDK ni el package_config del proyecto observado.
+  analyzer: 14.1.0
   core:
     path: ../core
   crypto: ^3.0.7

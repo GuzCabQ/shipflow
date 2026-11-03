@@ -11,4 +11,5 @@ CliResponse evaluate(List<String> arguments, {required String version}) =>
       ),
       RunInitDryRun() => fail('$arguments pide reconocer el proyecto'),
       RunContext() => fail('$arguments pide operar sobre el contexto'),
+      RunAssessment() => fail('$arguments pide observar el código'),
     };

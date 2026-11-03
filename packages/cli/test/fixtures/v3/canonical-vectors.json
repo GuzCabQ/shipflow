@@ -1,0 +1,13 @@
+{
+  "notice": "Python sorts scalar Unicode; ASCII fixture order equals UTF-16. Supplementary-character vector below must use explicit UTF-16 ordering in Dart.",
+  "snapshotId": "6e99d6ca2d6c9f279733643942ffe457911428ab40f55b02bd76c53f7cd2e8b6",
+  "unitRootId": "u_3fa63e99472a8217fc420eb75a9ec04cdcc5c2a033d25cf40a897c9c7708c5a7",
+  "fileMainId": "f_22177776e10aab7ee7cb846ec8541764d434af7b087b89eea5a8de252a27c2df",
+  "unicodeKeysUtf16Order": [
+    "a",
+    "😀",
+    ""
+  ],
+  "unicodeCanonical": "{\"a\":1,\"😀\":2,\"\":3}",
+  "unicodeSha256": "8043baa23995777ba780997c1db8282dbe99a54db473636cd9ff149f37e4853e"
+}

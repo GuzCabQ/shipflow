@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
+import 'assessment/assessment_cli.dart';
 import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
@@ -38,6 +39,7 @@ Future<CliResponse> runCli(
   String? logicalRootHint,
   GitContextAdapter? git,
   ContextPromptIO? prompt,
+  AssessmentPlugin? assessment,
 }) => runCommand(
   parseCliCommand(arguments),
   version: version,
@@ -46,6 +48,7 @@ Future<CliResponse> runCli(
   logicalRootHint: logicalRootHint,
   git: git,
   prompt: prompt,
+  assessment: assessment,
 );
 
 Future<CliResponse> runCommand(
@@ -56,6 +59,7 @@ Future<CliResponse> runCommand(
   String? logicalRootHint,
   GitContextAdapter? git,
   ContextPromptIO? prompt,
+  AssessmentPlugin? assessment,
 }) async => switch (command) {
   final StaticCommand static => respondStatically(static, version: version),
   final RunContext context => await runContextCommand(
@@ -67,17 +71,39 @@ Future<CliResponse> runCommand(
     git: git,
     prompt: prompt,
   ),
-  RunInitDryRun(:final json, :final budgetProfile) => presentRecognition(
-    await recognizeRoot(
-      workingDirectory,
-      recognizeProject,
-      logicalRootHint: logicalRootHint,
-      budgetProfile: budgetProfile,
-    ),
-    json: json,
-    budgetProfile: budgetProfile,
+  final RunAssessment run => await runAssessmentCommand(
+    run,
+    version: version,
+    workingDirectory: workingDirectory,
+    recognizeProject: recognizeProject,
+    plugin: assessment,
+    logicalRootHint: logicalRootHint,
+    git: git,
+  ),
+  final RunInitDryRun dryRun => await _dryRun(
+    dryRun,
+    workingDirectory,
+    recognizeProject,
+    logicalRootHint,
   ),
 };
+
+/// `init --dry-run`: reconoce y presenta, sin escribir.
+Future<CliResponse> _dryRun(
+  RunInitDryRun command,
+  Directory workingDirectory,
+  RecognitionContributor recognizeProject,
+  String? logicalRootHint,
+) async => presentRecognition(
+  await recognizeRoot(
+    workingDirectory,
+    recognizeProject,
+    logicalRootHint: logicalRootHint,
+    budgetProfile: command.budgetProfile,
+  ),
+  json: command.json,
+  budgetProfile: command.budgetProfile,
+);
 
 /// El directorio actual, o `.` si el sistema ya no puede nombrarlo: entonces
 /// la raíz se informa inválida en vez de hacer caer al proceso.

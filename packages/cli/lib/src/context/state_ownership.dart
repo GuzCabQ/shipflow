@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
+import '../assessment/assessment_codec.dart';
 import 'context_codec.dart';
 import 'secure_context_store.dart';
 import 'state_layout.dart';
@@ -59,10 +60,53 @@ Future<StateOwnership> _classify(
   if (!await _ownGitignore(store, layout)) {
     return StateOwnership(StateOwnershipKind.foreign, [gitignorePath]);
   }
+  // Un levantamiento que no valida no invalida el contexto: assess lo
+  // informa y lo conserva; init y doctor siguen sobre project.json.
+  if (valid.contains(projectPath)) invalid.remove(assessmentDocumentPath);
   if (invalid.isNotEmpty) {
     return StateOwnership(StateOwnershipKind.invalid, invalid);
   }
-  return _decide(layout, valid);
+  final unproven = await _unprovenAssessment(store, layout, valid);
+  if (unproven.isNotEmpty) {
+    return StateOwnership(StateOwnershipKind.invalid, unproven);
+  }
+  final decided = _decide(layout, valid);
+  return StateOwnership(
+    decided.kind,
+    decided.findings,
+    valid.contains(assessmentTransactionPath),
+  );
+}
+
+/// Los restos de assess que no se pueden acreditar: sin su journal, un
+/// temporal nunca, y un candidato sólo si está completo y valida.
+Future<List<String>> _unprovenAssessment(
+  SecureContextStore store,
+  ObservedLayout layout,
+  Set<String> valid,
+) async {
+  if (valid.contains(assessmentTransactionPath)) return const [];
+  return [
+    ...layout.assessmentTemporaries,
+    for (final candidate in layout.assessmentCandidates)
+      if (!await _validCandidate(store, candidate)) candidate,
+  ];
+}
+
+Future<bool> _validCandidate(SecureContextStore store, String path) async {
+  try {
+    final bytes = await store.readRelative(
+      path,
+      maxBytes: maxAssessmentDocumentBytes,
+    );
+    if (bytes == null) return false;
+    decodeAssessment(bytes);
+    return true;
+  } on ContextFormatException {
+    return false;
+  } on ContextStoreFailure {
+    return false;
+  }
 }
 
 /// Bootstrap sin documentos ni restos; propio con contexto o journal
@@ -85,15 +129,25 @@ StateOwnership _decide(ObservedLayout layout, Set<String> valid) {
 Future<bool> _validDocument(SecureContextStore store, String path) async {
   const codec = ContextCodec();
   try {
-    final bytes = await store.readRelative(path, maxBytes: maxProjectBytes);
+    final kind = documentKindOf(path);
+    final bytes = await store.readRelative(
+      path,
+      maxBytes: kind == DocumentKind.assessment
+          ? maxAssessmentDocumentBytes
+          : maxProjectBytes,
+    );
     if (bytes == null) return false;
-    switch (documentKindOf(path)) {
+    switch (kind) {
       case DocumentKind.project:
         codec.decodeProject(bytes);
       case DocumentKind.settings:
         codec.decodeSettings(bytes);
       case DocumentKind.transaction:
         codec.decodeTransaction(bytes);
+      case DocumentKind.assessment:
+        decodeAssessment(bytes);
+      case DocumentKind.assessmentTransaction:
+        decodeAssessmentTransaction(bytes);
     }
     return true;
   } on ContextFormatException {
