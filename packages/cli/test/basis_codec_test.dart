@@ -48,6 +48,8 @@ const _expected = {
   'invalid-proposed-change-kind.json': 'invalid_schema',
   'invalid-proposed-after-publish.json': 'invalid_schema',
   'invalid-proposed-change-name.json': 'invalid_schema',
+  'invalid-proposed-already-applied.json': 'invalid_schema',
+  'invalid-proposed-discarded.json': 'invalid_schema',
 };
 
 Object decodeAs(String schema, List<int> bytes) => switch (schema) {

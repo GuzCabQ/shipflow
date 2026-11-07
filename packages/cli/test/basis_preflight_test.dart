@@ -109,8 +109,7 @@ void main() {
             expectedBasisDigest: expected,
             contextProjectDigest: context ?? env.contextDigest!,
             sourceReads: reads,
-            reader: BasisSourceReader(store),
-            limits: _limits,
+            sources: BasisSourceReader(store).session(_limits),
           ),
         );
       } finally {

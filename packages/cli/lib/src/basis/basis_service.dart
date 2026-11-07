@@ -43,6 +43,12 @@ final class BasisService {
 
   BasisStore get files => BasisStore(store, limits);
 
+  /// Las fuentes de la operación en curso: cada ruta se lee a lo sumo una
+  /// vez y todas las fases cobran del mismo presupuesto. Cada operación
+  /// empieza con una cuenta nueva.
+  BasisSourceSession get sources => _sources ??= reader.session(limits);
+  BasisSourceSession? _sources;
+
   Future<BasisResponse> prepare(BasisInput input) => _run(
     BasisOperation.prepare,
     (r) => prepareBasis(this, r, input, expectedDraftDigest: null),
@@ -84,6 +90,7 @@ final class BasisService {
     Future<void> Function(BasisReply reply) body,
   ) async {
     final reply = BasisReply(operation);
+    _sources = null;
     try {
       await body(reply);
     } on ContextStoreFailure catch (failure) {

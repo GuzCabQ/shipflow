@@ -31,8 +31,9 @@ Future<void> acceptBasis(BasisService s, BasisReply r, String digest) async {
   await files.locked(() => _accept(s, r, value, draft.bytesDigest!));
 }
 
-/// Una huella que no es el borrador actual: ya aplicada si la historia la
-/// contiene; si no, conflicto con el borrador que hay, o inexistente.
+/// Una huella que no es el borrador actual: ya aplicada si la historia de
+/// una base de este proyecto, con su contexto listo, la contiene; si no,
+/// conflicto con el borrador que hay, o inexistente.
 Future<void> _notThisDraft(
   BasisService s,
   BasisReply r,
@@ -41,6 +42,7 @@ Future<void> _notThisDraft(
   String digest,
 ) async {
   if (basis != null && eventOfDraft(basis, digest) != null) {
+    if (!await boundToProject(s, r, basis, null)) return;
     r
       ..outcome = BasisOutcome.alreadyApplied
       ..basisDigest = basis.digest
@@ -76,21 +78,23 @@ Future<void> _accept(
   if (!usable(r, basis, basisDocumentPath)) return;
   if (!await journalAbsent(s, r)) return;
   if (!await _stillTheDraft(s, r, basis.value, draft, draftFile)) return;
-  final failure = await recheck(s, draft, basis.value?.digest);
-  if (failure != null) {
-    r.add(failure.code, path: failure.path, message: failure.message);
-    if (_stale.contains(failure.code)) r.addAction(discardAction(draft.digest));
-    return;
-  }
+  final failure = await recheck(s, draft, basis.value?.digest, sources: false);
+  if (failure != null) return _refused(r, draft, failure);
   final candidate = buildCandidate(
     basis.value,
     draft,
     acceptedAt: basisTimestamp(s.now()),
     producer: s.version,
   );
-  if (!await _supported(s, r, draft, candidate)) return;
   if (!_fits(s, r, candidate)) return;
   await stageAndPublish(s, r, draft, candidate, basis.bytesDigest, draftFile);
+}
+
+/// Una precondición que ya no se cumple: no se publica y, si no se
+/// cumplirá nunca para este borrador, se ofrece descartarlo.
+void _refused(BasisReply r, BasisDraft draft, BasisDiagnostic failure) {
+  r.add(failure.code, path: failure.path, message: failure.message);
+  if (_stale.contains(failure.code)) r.addAction(discardAction(draft.digest));
 }
 
 /// Bajo el lock, el borrador sigue siendo exactamente el leído: uno
@@ -126,27 +130,29 @@ Future<bool> journalAbsent(BasisService s, BasisReply r) async {
 }
 
 /// La primera precondición de [draft] que ya no se cumple, con el
-/// proyecto releído ahora.
+/// proyecto releído ahora. Sin [sources] no se leen fuentes: se leen una
+/// sola vez, con el journal escrito y bajo el lock.
 Future<BasisDiagnostic?> recheck(
   BasisService s,
   BasisDraft draft,
-  String? currentBasisDigest,
-) async => checkBasisPreconditions(
+  String? currentBasisDigest, {
+  bool sources = true,
+}) async => checkBasisPreconditions(
   BasisPreconditions(
     state: await s.readProject(),
     projectId: draft.projectId,
     currentBasisDigest: currentBasisDigest,
     expectedBasisDigest: draft.expectedBasisDigest,
     contextProjectDigest: draft.contextProjectDigest,
-    sourceReads: draft.sourceReads,
-    reader: s.reader,
-    limits: s.limits,
+    sourceReads: sources ? draft.sourceReads : const [],
+    sources: s.sources,
   ),
 );
 
 /// Las reglas activas sustentadas que este borrador agrega o revisa
 /// necesitan todas sus fuentes vigentes; una regla ya aceptada que perdió
-/// su soporte no bloquea cambios ajenos.
+/// su soporte no bloquea cambios ajenos. Usa las lecturas de la misma
+/// revalidación.
 Future<bool> _supported(
   BasisService s,
   BasisReply r,
@@ -165,7 +171,7 @@ Future<bool> _supported(
       }
     }
   }
-  final report = await s.reader.readSources(cited, s.limits);
+  final report = await s.sources.read(cited);
   final unverified = [
     for (final st in report.statuses)
       if (st.status != BasisSourceState.current) st,
@@ -186,8 +192,9 @@ bool _fits(BasisService s, BasisReply r, BasisDocument candidate) {
 }
 
 /// Staging completo, journal con la aceptación exacta, revalidación bajo
-/// el lock y después el rename. Un cambio entre medio retira sólo lo
-/// propio y conserva la base y el borrador.
+/// el lock —la única lectura de fuentes antes de publicar— y después el
+/// rename. Un cambio entre medio retira sólo lo propio y conserva la base
+/// y el borrador.
 Future<void> stageAndPublish(
   BasisService s,
   BasisReply r,
@@ -207,9 +214,9 @@ Future<void> stageAndPublish(
     null,
   );
   final failure = await recheck(s, draft, (await files.basis()).value?.digest);
-  if (failure != null) {
+  if (failure != null || !await _supported(s, r, draft, candidate)) {
     await abortOwn(s, journal);
-    r.add(failure.code, path: failure.path, message: failure.message);
+    if (failure != null) _refused(r, draft, failure);
     return;
   }
   await finishPublication(s, r, journal, bytes, candidate.digest);

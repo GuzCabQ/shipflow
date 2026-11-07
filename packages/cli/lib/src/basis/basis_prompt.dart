@@ -3,6 +3,7 @@ import 'package:core/core.dart';
 import '../context/context_prompt.dart';
 import 'basis_flow.dart';
 import 'basis_human.dart';
+import 'basis_presenter.dart';
 import 'basis_prompt_changes.dart';
 import 'basis_prompt_existing.dart';
 import 'basis_prompt_questions.dart';
@@ -95,9 +96,7 @@ final class _Guide {
     );
     switch (option) {
       case 1:
-        final shown = await s.show(draft: true);
-        io.show(renderBasisHuman(shown));
-        return _decide(draft.digest, shown);
+        return _decide(draft.digest, _fitted(await s.show(draft: true)));
       case 3:
         return s.discard(draft.digest);
       case 4:
@@ -172,10 +171,10 @@ final class _Guide {
     final prepared = draft == null
         ? await s.prepare(await _input())
         : await s.revise(_appended(draft), expectedDraftDigest: draft.digest);
-    io.show(renderBasisHuman(prepared));
+    final fitted = _fitted(prepared);
     final digest = prepared.draftDigest;
     if (digest != null && prepared.outcome == BasisOutcome.draftPrepared) {
-      return _decide(digest, prepared);
+      return _decide(digest, fitted);
     }
     if (_groups.isEmpty || !await yesNo(io, _retry)) return prepared;
     changes.removeRange(changes.length - _groups.removeLast(), changes.length);
@@ -234,17 +233,29 @@ final class _Guide {
     changes: [...draft.input.changes, ...changes],
   );
 
-  /// Sólo «aceptar» acepta la huella mostrada; Enter vacío no elige.
+  /// [response] acotada por el presupuesto del perfil, como la daría el
+  /// comando, y mostrada así: lo que no cabe no se presenta como revisado.
+  BasisResponse _fitted(BasisResponse response) {
+    final fitted = fitBasisResponse(response, s.limits.maxResponseBytes);
+    io.show(renderBasisHuman(fitted));
+    return fitted;
+  }
+
+  /// Sólo «aceptar» acepta la huella mostrada, y sólo si la respuesta
+  /// mostrada ofrece aceptarla: unos cambios que no se pudieron mostrar no
+  /// se aceptan. Enter vacío no elige.
   Future<BasisResponse> _decide(String digest, BasisResponse prepared) async {
+    final acceptable = prepared.nextActions.any(
+      (a) => a.arguments.first == '--accept',
+    );
     while (true) {
       final answer = await ask(
         io,
-        'Escribe «aceptar» para guardar exactamente lo revisado, «borrador» '
-        'para conservarlo sin aceptar o «descartar» para descartarlo:',
+        acceptable ? _choices : _withoutAccepting,
         optional: true,
       );
       switch (answer.toLowerCase()) {
-        case 'aceptar':
+        case 'aceptar' when acceptable:
           return s.accept(digest);
         case 'borrador':
           return prepared;
@@ -253,6 +264,14 @@ final class _Guide {
       }
     }
   }
+
+  static const _choices =
+      'Escribe «aceptar» para guardar exactamente lo revisado, «borrador» '
+      'para conservarlo sin aceptar o «descartar» para descartarlo:';
+  static const _withoutAccepting =
+      'Este borrador no se puede aceptar desde aquí sin haberlo revisado '
+      'completo. Escribe «borrador» para conservarlo sin aceptar o '
+      '«descartar» para descartarlo:';
 
   BasisResponse _quit() => (BasisReply(
     BasisOperation.guide,

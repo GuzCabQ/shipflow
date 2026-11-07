@@ -55,7 +55,9 @@ void _targets(BasisResponse r) {
 }
 
 /// Cada cambio propuesto declara el efecto que su versión tiene, en una
-/// cadena válida; sólo un borrador sin aceptar ni historia los lleva.
+/// cadena válida; sólo preparar o consultar un borrador sin aceptar, sin
+/// historia, los lleva. Una aceptación ya aplicada no publica pero tampoco
+/// es un borrador pendiente.
 void _proposed(BasisResponse r) {
   for (final p in r.proposedChanges) {
     final v = p.version;
@@ -74,11 +76,20 @@ void _proposed(BasisResponse r) {
   }
   requireBasis(
     r.proposedChanges.isEmpty ||
-        (r.draftDigest != null && !r.published && r.history.isEmpty),
+        (_draftEnding.contains((r.operation, r.outcome)) &&
+            r.draftDigest != null &&
+            !r.published &&
+            r.history.isEmpty),
     'invalid_schema',
     'proposedChanges',
   );
 }
+
+/// Las únicas respuestas que presentan un borrador sin aceptar.
+const _draftEnding = {
+  (BasisOperation.prepare, BasisOutcome.draftPrepared),
+  (BasisOperation.show, BasisOutcome.shown),
+};
 
 /// Un target que coincide con una regla vigente seleccionada es la misma
 /// versión byte a byte, aunque cumpla otro papel.

@@ -245,15 +245,19 @@ conflicto (75).
 | Eventos | 8.192 | 32.768 |
 | Cambios por propuesta | 64 | 256 |
 | Bytes por fuente | 1 MiB | 4 MiB |
-| Fuentes por lectura | 64 | 256 |
-| Bytes de fuentes por lectura | 16 MiB | 64 MiB |
+| Fuentes por operación | 64 | 256 |
+| Bytes de fuentes por operación | 16 MiB | 64 MiB |
 | Respuesta | 8 MiB | 32 MiB |
 
 Además: textos cortos 512 bytes, motivos y localizadores 4 KiB, enunciados
-16 KiB y profundidad JSON 32. Cada lectura de fuentes se detiene al agotar su cota y lo que queda sin
-leer hace la consulta no concluyente (`budget_exceeded`, 65). Aceptar lee
-las fuentes hasta cuatro veces —revalidar, soportes, revalidar bajo el
-lock y presentar—, cada vez dentro de su cota. Las rutas protegidas
+16 KiB y profundidad JSON 32. Cada operación tiene una sola cuenta de
+lectura de fuentes: cada ruta se lee a lo sumo una vez y todas sus fases
+cobran de la misma cota. Lo que queda sin leer al agotarla hace la
+consulta no concluyente (`budget_exceeded`, 65). Aceptar lee las fuentes
+una sola vez antes de publicar: con el journal escrito y bajo el lock, y
+esa misma lectura comprueba los soportes y se presenta. Si esa
+revalidación no cabe, no se publica (`budget_exceeded`) y el borrador se
+conserva. Las rutas protegidas
 (`.git`, `.ssh`, `.aws`, `.env`, `shipflow/local`) se reconocen sin
 distinguir mayúsculas. Los bytes de la base se cuentan sobre el archivo
 en disco, legible con sangría, que ocupa más que su forma canónica. El
@@ -266,7 +270,10 @@ llegar a sus bytes antes que a sus eventos. Lo que no cabe se rechaza
 entrega no concluyente (`selection.complete: false`), sin registros, nunca
 como un conjunto truncado que parezca completo. Si lo que no cabe son los
 cambios de un borrador, se dice cuántos son y, en vez de ofrecer
-aceptarlo, se ofrece revisarlo con `--report-budget=extended`.
+aceptarlo, se ofrece revisarlo con `--report-budget=extended`. La guía
+aplica la misma regla al preparar y al retomar: muestra la respuesta
+acotada y sólo deja conservar o descartar un borrador cuyos cambios no
+pudo mostrar.
 
 ## Códigos de salida
 
@@ -291,12 +298,14 @@ Una línea: `schemaVersion` 1, `type` `bootstrap`, `operation`, `exitCode`,
 `--json` nunca mezcla preguntas con la respuesta.
 
 `proposedChanges` lista, sólo en la respuesta de un borrador sin aceptar
-(`--input` y `--show --draft`), cada versión exacta que guarda el borrador
+(`--input` con `operation=prepare` y `outcome=draft_prepared`, y `--show
+--draft` con `outcome=shown`), cada versión exacta que guarda el borrador
 con su efecto: `{"change": "create|revise|retire|replace|resolve",
 "version": {…}}`. El efecto se deriva de la versión —la versión 1 crea; un
 retiro, un reemplazo o una resolución se reconocen por su estado— y una
-respuesta que declare otro es inválida. `history` lleva sólo aceptaciones
-ya registradas.
+respuesta que declare otro, o que los lleve en cualquier otra operación o
+resultado —`already_applied` incluido—, es inválida. `history` lleva sólo
+aceptaciones ya registradas.
 
 `init` y `doctor` informan la integridad de la base y de su transacción en
 dos checks propios de su respuesta.

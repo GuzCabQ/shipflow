@@ -114,6 +114,7 @@ const basisImports = {
     '../context/context_prompt.dart',
     'basis_flow.dart',
     'basis_human.dart',
+    'basis_presenter.dart',
     'basis_prompt_changes.dart',
     'basis_prompt_existing.dart',
     'basis_prompt_questions.dart',

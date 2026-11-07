@@ -134,6 +134,10 @@ Future<void> _finish(
     return;
   }
   final failure = await _unchanged(s, journal);
+  if (failure?.code == 'budget_exceeded') {
+    r.add(failure!.code, path: failure.path, message: failure.message);
+    return;
+  }
   if (failure != null) {
     r
       ..add('recovery_preconditions_changed', path: failure.path)
@@ -158,8 +162,7 @@ Future<BasisDiagnostic?> _unchanged(
     expectedBasisDigest: null,
     contextProjectDigest: journal.contextProjectDigest,
     sourceReads: journal.sourceReads,
-    reader: s.reader,
-    limits: s.limits,
+    sources: s.sources,
   ),
 );
 

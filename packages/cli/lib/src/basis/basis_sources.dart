@@ -7,29 +7,59 @@ import '../context/secure_context_store.dart';
 import 'basis_canonical.dart';
 import 'basis_source_policy.dart';
 
-/// Lee las fuentes locales citadas, una sola vez por ruta, por el almacén
-/// anclado: archivos regulares bajo la raíz, sin seguir enlaces, dentro de
-/// las cotas por archivo, totales y de cantidad. Nunca recorre el árbol,
-/// nunca usa la red y nunca guarda el cuerpo.
+/// Lee las fuentes locales citadas por el almacén anclado: archivos
+/// regulares bajo la raíz, sin seguir enlaces, dentro de las cotas por
+/// archivo, totales y de cantidad. Nunca recorre el árbol, nunca usa la red
+/// y nunca guarda el cuerpo.
 final class BasisSourceReader {
   BasisSourceReader(this.store);
 
   final ContextStore store;
 
-  /// Con [observe], una fuente sin huella registrada se lee para
-  /// registrarla y queda `current` si se pudo leer; sin [observe] nunca es
-  /// `current`, porque no hay con qué compararla.
+  /// Las lecturas de una operación: cada ruta se lee a lo sumo una vez y
+  /// todas cobran de un solo presupuesto de [limits].
+  BasisSourceSession session(BasisLimits limits) =>
+      BasisSourceSession._(store, limits);
+
+  /// Una lectura suelta, con su propio presupuesto.
   Future<BasisSourceReport> readSources(
     List<BasisRecordVersion> sources,
     BasisLimits limits, {
     bool observe = false,
+  }) => session(limits).read(sources, observe: observe);
+}
+
+/// Lo leído en una operación, por ruta, y lo cobrado de sus presupuestos:
+/// una fase posterior de la misma operación usa la misma observación en
+/// vez de volver a leer.
+final class BasisSourceSession {
+  BasisSourceSession._(this.store, this.limits);
+
+  final ContextStore store;
+  final BasisLimits limits;
+  final _digests = <String, String>{};
+  final _failures = <String, String>{};
+  var _opened = 0;
+  var _bytes = 0;
+
+  /// Con [observe], una fuente sin huella registrada se lee para
+  /// registrarla y queda `current` si se pudo leer; sin [observe] nunca es
+  /// `current`, porque no hay con qué compararla.
+  Future<BasisSourceReport> read(
+    List<BasisRecordVersion> sources, {
+    bool observe = false,
   }) async {
-    final run = _Run(store, limits, observe: observe);
     final statuses = <BasisSourceStatus>[];
+    final readings = <String, String>{};
+    var complete = true;
     for (final record in sources) {
       final payload = record.payload;
       if (payload is! BasisSource) continue;
-      final (state, code) = await run.state(payload);
+      final (state, code) = await _state(payload, observe: observe);
+      if (code == 'source_budget') complete = false;
+      if (_digests[payload.locator] case final digest?) {
+        readings[payload.locator] = digest;
+      }
       statuses.add(
         BasisSourceStatus(
           sourceId: record.id,
@@ -42,29 +72,18 @@ final class BasisSourceReader {
     return BasisSourceReport(
       statuses: statuses,
       readings: [
-        for (final MapEntry(:key, :value) in run.digests.entries)
+        for (final MapEntry(:key, :value) in readings.entries)
           BasisSourceReading(path: key, digest: value),
       ],
-      complete: !run.budgetHit,
+      complete: complete,
     );
   }
-}
-
-/// Una lectura: lo ya leído por ruta y lo cobrado de los presupuestos.
-final class _Run {
-  _Run(this.store, this.limits, {required this.observe});
-
-  final ContextStore store;
-  final BasisLimits limits;
-  final bool observe;
-  final digests = <String, String>{};
-  final failures = <String, String>{};
-  var opened = 0;
-  var bytes = 0;
-  var budgetHit = false;
 
   /// El estado de [source] frente a la huella que registró, si la tiene.
-  Future<(BasisSourceState, String?)> state(BasisSource source) async {
+  Future<(BasisSourceState, String?)> _state(
+    BasisSource source, {
+    required bool observe,
+  }) async {
     if (source.sourceType == BasisSourceType.external) {
       return (BasisSourceState.unverified, 'source_external');
     }
@@ -75,7 +94,7 @@ final class _Run {
     if (!isAdmittedSourceType(path)) {
       return (BasisSourceState.unverified, 'source_type_not_admitted');
     }
-    final failure = failures[path] ?? await _read(path);
+    final failure = _failures[path] ?? await _read(path);
     if (failure != null) return _failed(failure);
     final recorded = source.contentDigest;
     if (recorded == null) {
@@ -83,7 +102,7 @@ final class _Run {
           ? (BasisSourceState.current, null)
           : (BasisSourceState.unverified, 'source_not_recorded');
     }
-    return recorded == digests[path]
+    return recorded == _digests[path]
         ? (BasisSourceState.current, null)
         : (BasisSourceState.stale, 'source_changed');
   }
@@ -97,18 +116,18 @@ final class _Run {
 
   /// Lee [path] si no se leyó; el código del fallo, o null si quedó leída.
   Future<String?> _read(String path) async {
-    if (digests.containsKey(path)) return null;
+    if (_digests.containsKey(path)) return null;
     final failure = await _readOnce(path);
-    if (failure != null) failures[path] = failure;
+    if (failure != null) _failures[path] = failure;
     return failure;
   }
 
   /// Cada lectura se acota por lo que queda del presupuesto total y cobra
   /// lo que de verdad leyó; agotado, no se abre nada más.
   Future<String?> _readOnce(String path) async {
-    final remaining = limits.maxTotalSourceBytes - bytes;
-    if (opened >= limits.maxSources || remaining <= 0) return _budget();
-    opened++;
+    final remaining = limits.maxTotalSourceBytes - _bytes;
+    if (_opened >= limits.maxSources || remaining <= 0) return 'source_budget';
+    _opened++;
     final cap = min(limits.maxSourceBytes, remaining);
     final List<int>? content;
     try {
@@ -117,9 +136,11 @@ final class _Run {
       return 'source_unreadable';
     }
     if (content == null) return 'source_absent';
-    bytes += content.length;
+    _bytes += content.length;
     if (content.length > cap) {
-      return cap == limits.maxSourceBytes ? 'source_too_large' : _budget();
+      return cap == limits.maxSourceBytes
+          ? 'source_too_large'
+          : 'source_budget';
     }
     final String text;
     try {
@@ -128,13 +149,8 @@ final class _Run {
       return 'source_invalid_utf8';
     }
     if (hasCredentialMarker(text)) return 'source_secret_excluded';
-    digests[path] = bytesDigest(content);
+    _digests[path] = bytesDigest(content);
     return null;
-  }
-
-  String _budget() {
-    budgetHit = true;
-    return 'source_budget';
   }
 }
 

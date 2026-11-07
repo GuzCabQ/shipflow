@@ -44,3 +44,21 @@ final class CountingReads extends CrashingStore {
     return data;
   }
 }
+
+/// Ejecuta [meanwhile] justo después de escribir el journal de bootstrap:
+/// algo cambia entre el journal y la revalidación bajo el lock.
+final class AfterJournal extends CrashingStore {
+  AfterJournal(ContextStore real, this.meanwhile) : super(real, 1 << 30);
+
+  final void Function() meanwhile;
+
+  @override
+  Future<void> publishRelative(
+    String path,
+    List<int> bytes, {
+    required String? expectedSha256,
+  }) async {
+    await real.publishRelative(path, bytes, expectedSha256: expectedSha256);
+    if (path == 'shipflow/local/basis-transaction.json') meanwhile();
+  }
+}

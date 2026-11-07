@@ -29,6 +29,37 @@ bool contextReady(BasisEnvironment env, BasisReply r) {
   return true;
 }
 
+/// Sólo se presenta lo de este proyecto, con su contexto listo: una base o
+/// un borrador de otra copia nunca se entregan como aplicables.
+Future<bool> boundToProject(
+  BasisService s,
+  BasisReply r,
+  BasisDocument? basis,
+  BasisDraft? draft,
+) async {
+  final env = await s.readProject();
+  if (!contextReady(env, r)) return false;
+  for (final (projectId, path) in [
+    (basis?.projectId, basisDocumentPath),
+    (draft?.projectId, basisDraftPath),
+  ]) {
+    if (projectId != null && projectId != env.projectId) {
+      if (path == basisDocumentPath) {
+        r.basis = BasisIntegrity.invalid;
+      } else {
+        r.draft = BasisIntegrity.invalid;
+      }
+      r.add(
+        'invalid_reference',
+        path: path,
+        message: 'Es de otro proyecto: no se usa.',
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
 /// Si [file] se puede usar: ausente o válido. Si no, anota su código y lo
 /// conserva: un archivo propio dañado nunca se sobrescribe.
 bool usable<T>(BasisReply r, BasisFile<T> file, String path) {
@@ -58,7 +89,7 @@ Future<void> present(
     for (final v in selection.selected)
       if (v.payload is BasisSource) v,
   ];
-  final report = await s.reader.readSources(sources, s.limits);
+  final report = await s.sources.read(sources);
   r.sourceStatus.addAll(report.statuses);
   if (!report.complete) _sourceBudget(s, r);
   _supports(r, selection, report);

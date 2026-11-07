@@ -3,19 +3,33 @@ import 'package:test/test.dart';
 
 import 'basis_fixtures.dart';
 
+final _integrity = BasisStorageIntegrity(
+  basis: BasisIntegrity.valid,
+  draft: BasisIntegrity.valid,
+  transaction: BasisIntegrity.absent,
+);
+
+final _complete = BasisSelectionSummary(
+  scope: null,
+  complete: true,
+  excludedCount: 0,
+);
+
+/// Una respuesta con [changes]: por omisión, la preparación de un borrador.
 BasisResponse _draftResponse(
   List<BasisProposedChange> changes, {
   bool published = false,
   bool draft = true,
+  (BasisOperation, BasisOutcome)? ending,
 }) => BasisResponse(
-  operation: published ? BasisOperation.accept : BasisOperation.prepare,
+  operation:
+      ending?.$1 ??
+      (published ? BasisOperation.accept : BasisOperation.prepare),
   exitCode: published ? 0 : 65,
-  outcome: published ? BasisOutcome.published : BasisOutcome.draftPrepared,
-  storageIntegrity: BasisStorageIntegrity(
-    basis: BasisIntegrity.valid,
-    draft: BasisIntegrity.valid,
-    transaction: BasisIntegrity.absent,
-  ),
+  outcome:
+      ending?.$2 ??
+      (published ? BasisOutcome.published : BasisOutcome.draftPrepared),
+  storageIntegrity: _integrity,
   basisDigest: digestOf(1),
   draftDigest: draft ? digestOf(8) : null,
   published: published,
@@ -29,11 +43,7 @@ BasisResponse _draftResponse(
   actor: null,
   reason: null,
   history: const [],
-  selection: BasisSelectionSummary(
-    scope: null,
-    complete: true,
-    excludedCount: 0,
-  ),
+  selection: _complete,
   diagnostics: const [],
   nextActions: const [],
 );
@@ -112,6 +122,34 @@ void main() {
       expect(
         () => validateBasisResponse(response),
         throwsA(isA<ContextFormatException>()),
+      );
+    }
+  });
+
+  test('only preparing or showing a draft carries proposed changes', () {
+    final created = [BasisProposedChange.of(versionOf(1, 1, ruleOf()))];
+    for (final ending in [
+      (BasisOperation.prepare, BasisOutcome.draftPrepared),
+      (BasisOperation.show, BasisOutcome.shown),
+    ]) {
+      expect(
+        () => validateBasisResponse(_draftResponse(created, ending: ending)),
+        returnsNormally,
+      );
+    }
+    for (final ending in [
+      (BasisOperation.accept, BasisOutcome.alreadyApplied),
+      (BasisOperation.accept, BasisOutcome.failed),
+      (BasisOperation.discard, BasisOutcome.discarded),
+      (BasisOperation.recover, BasisOutcome.abortedBeforePublication),
+      (BasisOperation.guide, BasisOutcome.cancelled),
+      (BasisOperation.prepare, BasisOutcome.failed),
+      (BasisOperation.show, BasisOutcome.failed),
+    ]) {
+      expect(
+        () => validateBasisResponse(_draftResponse(created, ending: ending)),
+        throwsA(isA<ContextFormatException>()),
+        reason: '$ending',
       );
     }
   });

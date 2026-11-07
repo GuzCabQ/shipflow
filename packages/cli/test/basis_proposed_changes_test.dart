@@ -154,6 +154,67 @@ void main() {
     expect(actions, contains('--show --draft --report-budget=extended'));
     expect(actions.where((a) => a.startsWith('--accept')), isEmpty);
   });
+
+  group('the guide applies the response budget before offering to accept', () {
+    /// Un presupuesto de respuesta que un enunciado largo no cumple.
+    void tightResponses() => box.limits = BasisLimits.fromJson({
+      ...box.limits.toJson(),
+      'maxResponseBytes': 2000,
+    });
+
+    test('resuming a draft that does not fit cannot accept it', () async {
+      tightResponses();
+      await box.prepare(
+        box.input([create('a', ruleOf(statement: 'x' * 2000))]),
+      );
+      final io = ScriptedIO(['1', 'aceptar', 'borrador']);
+      final result = await box.using((s) => guideBasis(s, io));
+      expect(result.published, isFalse);
+      expect(box.basis.existsSync(), isFalse);
+      expect(box.draft.existsSync(), isTrue);
+      expect(io.shown.toString(), contains('cambios propuestos no caben'));
+      expect(io.shown.toString(), isNot(contains('x' * 2000)));
+    });
+
+    test('preparing a draft that does not fit cannot accept it', () async {
+      tightResponses();
+      final io = ScriptedIO([
+        '1',
+        'Contratos',
+        'x' * 2000,
+        'Compatibilidad.',
+        'proyecto',
+        'n',
+        'n',
+        '4',
+        'Ana',
+        'mantenimiento',
+        'proyecto',
+        'Primera base.',
+        'aceptar',
+        'borrador',
+      ]);
+      final result = await box.using((s) => guideBasis(s, io));
+      expect(result.published, isFalse);
+      expect(box.basis.existsSync(), isFalse);
+      expect(box.draft.existsSync(), isTrue);
+      expect(io.shown.toString(), contains('--report-budget=extended'));
+    });
+
+    test('a draft that just fits is still accepted from the guide', () async {
+      await box.prepare(box.input([create('a', ruleOf())]));
+      final shown = await box.show(draft: true);
+      box.limits = BasisLimits.fromJson({
+        ...box.limits.toJson(),
+        'maxResponseBytes': utf8
+            .encode('${jsonEncode(shown.toJson())}\n')
+            .length,
+      });
+      final io = ScriptedIO(['1', 'aceptar']);
+      final result = await box.using((s) => guideBasis(s, io));
+      expect(result.published, isTrue);
+    });
+  });
 }
 
 /// La versión 2 de [id] con una clave propia en la propuesta.

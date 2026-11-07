@@ -283,6 +283,18 @@
     "layer": "semantic"
   },
   {
+    "file": "invalid-proposed-already-applied.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-discarded.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
     "file": "invalid-proposed-change-name.json",
     "schema": "response",
     "valid": false,

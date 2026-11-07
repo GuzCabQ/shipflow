@@ -13,8 +13,7 @@ final class BasisPreconditions {
     required this.expectedBasisDigest,
     required this.contextProjectDigest,
     required this.sourceReads,
-    required this.reader,
-    required this.limits,
+    required this.sources,
   });
 
   /// El proyecto V2 tal como está al revalidar.
@@ -26,8 +25,9 @@ final class BasisPreconditions {
   final String? expectedBasisDigest;
   final String contextProjectDigest;
   final List<BasisSourceReading> sourceReads;
-  final BasisSourceReader reader;
-  final BasisLimits limits;
+
+  /// Las lecturas de la operación que revalida.
+  final BasisSourceSession sources;
 }
 
 /// La primera precondición que ya no se cumple, o null. Una aprobación
@@ -77,14 +77,18 @@ BasisDiagnostic? _identity(BasisPreconditions p) {
   return null;
 }
 
-/// Cada fuente leída al preparar se vuelve a leer con la misma huella.
+/// Cada fuente leída al preparar se vuelve a leer con la misma huella. Lo
+/// que no cabe en el presupuesto de la operación no se da por vigente.
 Future<BasisDiagnostic?> _sources(BasisPreconditions p) async {
   final checks = [
     for (final (i, read) in p.sourceReads.indexed) _recorded(i, read),
   ];
-  final report = await p.reader.readSources(checks, p.limits);
+  final report = await p.sources.read(checks);
+  String? unread;
   for (final (i, status) in report.statuses.indexed) {
-    if (status.status != BasisSourceState.current) {
+    if (status.diagnostics.any((d) => d.code == 'source_budget')) {
+      unread ??= p.sourceReads[i].path;
+    } else if (status.status != BasisSourceState.current) {
       return _failure(
         'source_changed',
         'Una fuente cambió o ya no se puede leer desde que se preparó.',
@@ -92,7 +96,13 @@ Future<BasisDiagnostic?> _sources(BasisPreconditions p) async {
       );
     }
   }
-  return null;
+  if (unread == null) return null;
+  return _failure(
+    'budget_exceeded',
+    'Las fuentes no caben en el presupuesto de lectura de esta operación: '
+        'no se pueden revalidar y no se publica.',
+    unread,
+  );
 }
 
 /// [read] como una versión de fuente con la huella que registró.
