@@ -397,9 +397,10 @@ jobs:
 
   # EL CANARIO: el canal estable, para enterarse cuando un SDK nuevo rompe
   # algo, sin bloquear el merge — reporta, no detiene (ADR-013). Corre lo mismo
-  # que el camino bloqueante, salvo el formato, que lo decide un solo SDK; los
-  # sabotajes, en secuencia. Ningún job bloqueante depende de él: un canario
-  # lento no retiene la compuerta.
+  # que el camino bloqueante, salvo el formato, que lo decide un solo SDK.
+  # Ningún job bloqueante depende de él: un canario lento no retiene la
+  # compuerta. Sus sabotajes van en los mismos grupos que los bloqueantes:
+  # en secuencia, con `stable`, no entraban en el límite del job.
   canario-estatico-pruebas:
     name: canario · estático y pruebas · Dart stable
     runs-on: ubuntu-latest
@@ -491,10 +492,15 @@ jobs:
 
 
   canario-sabotajes:
-    name: canario · sabotajes · Dart stable
+    name: canario · sabotajes · grupo ${{ matrix.grupo }}/4 · Dart stable
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        grupo: [1, 2, 3, 4]
 
     steps:
       - name: checkout
@@ -520,5 +526,5 @@ jobs:
         run: dart pub get
         working-directory: tool/analisis
 
-      - name: canario · los checks saben fallar, en secuencia
-        run: python3 tool/checks/probar_reglas.py
+      - name: canario · los checks saben fallar, por grupo
+        run: python3 tool/checks/probar_reglas.py --grupo ${{ matrix.grupo }}/4 --resultado "$RUNNER_TEMP/sabotajes-canario.json"

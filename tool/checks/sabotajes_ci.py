@@ -30,11 +30,15 @@ def casos_ci(ci: str, ci_rel: str) -> list[dict]:
                       "menciona": menciona})
 
     # --- los grupos de sabotajes y su conjunto ---
+    # El contexto `timeout-minutes` → `strategy` es del job bloqueante: el del
+    # canario tiene `continue-on-error` en medio.
+    matriz = ("    timeout-minutes: 20\n\n    strategy:\n      fail-fast: false\n"
+              "      matrix:\n        grupo: [1, 2, 3, 4]\n")
     caso("un grupo de sabotajes fuera de la matriz",
-         "        grupo: [1, 2, 3, 4]\n", "        grupo: [1, 2, 3]\n",
+         matriz, matriz.replace("[1, 2, 3, 4]", "[1, 2, 3]"),
          "los grupos de sabotajes son")
     caso("un grupo de más en la matriz",
-         "        grupo: [1, 2, 3, 4]\n", "        grupo: [1, 2, 3, 4, 5]\n",
+         matriz, matriz.replace("[1, 2, 3, 4]", "[1, 2, 3, 4, 5]"),
          "los grupos de sabotajes son")
     caso("un grupo que termina verde sin publicar su manifiesto",
          "          if-no-files-found: error\n", "          if-no-files-found: warn\n",
@@ -104,15 +108,22 @@ def casos_ci(ci: str, ci_rel: str) -> list[dict]:
     caso("el canario sin un comando del camino bloqueante",
          "      - name: canario · analyze\n        run: dart analyze --fatal-infos\n", "",
          "el canario no corre «dart analyze --fatal-infos»")
-    caso("el canario sin los sabotajes en secuencia",
-         "      - name: canario · los checks saben fallar, en secuencia\n"
-         "        run: python3 tool/checks/probar_reglas.py\n", "",
-         "el canario no corre «python3 tool/checks/probar_reglas.py»")
+    caso("el canario sin sus sabotajes",
+         "      - name: canario · los checks saben fallar, por grupo\n"
+         "        run: python3 tool/checks/probar_reglas.py --grupo ${{ matrix.grupo }}/4 "
+         '--resultado "$RUNNER_TEMP/sabotajes-canario.json"\n', "",
+         "el canario no corre «python3 tool/checks/probar_reglas.py --grupo")
+    caso("un grupo del canario fuera de la matriz",
+         "    continue-on-error: true\n\n    strategy:\n      fail-fast: false\n"
+         "      matrix:\n        grupo: [1, 2, 3, 4]\n",
+         "    continue-on-error: true\n\n    strategy:\n      fail-fast: false\n"
+         "      matrix:\n        grupo: [1, 2, 3]\n",
+         "los grupos del canario son")
     caso("el canario bloqueando",
-         "    name: canario · sabotajes · Dart stable\n    runs-on: ubuntu-latest\n"
-         "    timeout-minutes: 20\n    continue-on-error: true\n",
-         "    name: canario · sabotajes · Dart stable\n    runs-on: ubuntu-latest\n"
-         "    timeout-minutes: 20\n",
+         "    name: canario · sabotajes · grupo ${{ matrix.grupo }}/4 · Dart stable\n"
+         "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    continue-on-error: true\n",
+         "    name: canario · sabotajes · grupo ${{ matrix.grupo }}/4 · Dart stable\n"
+         "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n",
          "no declara `continue-on-error: true`")
     caso("el canario con el SDK bloqueante",
          "      - name: dart stable · canario de sabotajes\n" + _SETUP_DART

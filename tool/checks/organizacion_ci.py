@@ -44,7 +44,13 @@ COMANDO_CONJUNTO = ('python3 tool/checks/probar_reglas.py --conjunto '
                     '"$RUNNER_TEMP/manifiestos" --grupos ' + str(GRUPOS)
                     + ' --jobs "$RUNNER_TEMP/jobs.json"')
 COMANDO_COMPUERTA = "python3 tool/checks/compuerta.py"
-COMANDO_SECUENCIAL = "python3 tool/checks/probar_reglas.py"
+# El canario reparte sus sabotajes igual que el camino bloqueante: en
+# secuencia, con `stable`, no entraban en el límite del job. Su resultado va a
+# otro archivo y no se publica: no es evidencia para el merge.
+COMANDO_CANARIO = ('python3 tool/checks/probar_reglas.py --grupo '
+                   '${{ matrix.grupo }}/' + str(GRUPOS)
+                   + ' --resultado "$RUNNER_TEMP/sabotajes-canario.json"')
+MATRIZ_DE_GRUPOS = {"fail-fast": False, "matrix": {"grupo": list(range(1, GRUPOS + 1))}}
 ARTEFACTO = "sabotajes-g${{ matrix.grupo }}-i${{ github.run_attempt }}"
 SUBIDA = {"name": ARTEFACTO, "path": "${{ runner.temp }}/sabotajes.json",
           "if-no-files-found": "error"}
@@ -198,7 +204,7 @@ def _sabotajes(job: dict | None) -> list[str]:
         fallos.append(f"el job de sabotajes se llama «{job.get('name')}» y no "
                       f"«{nombre}»: el conjunto encuentra a cada grupo por ese "
                       f"nombre.")
-    esperada = {"fail-fast": False, "matrix": {"grupo": list(range(1, GRUPOS + 1))}}
+    esperada = MATRIZ_DE_GRUPOS
     if job.get("strategy") != esperada:
         fallos.append(f"los grupos de sabotajes son {job.get('strategy')!r} y "
                       f"tienen que ser {esperada!r}: un grupo de menos deja su "
@@ -271,9 +277,13 @@ def _canarios(jobs: dict) -> list[str]:
                           + (f" en «{wd}»" if wd else "")
                           + (f" bajo «{cond}»" if cond else "")
                           + ": el canal estable dejaría de mirar eso.")
-    secuencial = jobs.get("canario-sabotajes")
-    if secuencial is not None and COMANDO_SECUENCIAL not in {
-            r for r, _, c in _corridos(secuencial) if c is None}:
-        fallos.append(f"el canario no corre «{COMANDO_SECUENCIAL}»: los sabotajes "
-                      f"dejarían de probarse con el canal estable.")
+    sabotajes = jobs.get("canario-sabotajes")
+    if sabotajes is not None:
+        if COMANDO_CANARIO not in {r for r, _, c in _corridos(sabotajes) if c is None}:
+            fallos.append(f"el canario no corre «{COMANDO_CANARIO}»: los sabotajes "
+                          f"dejarían de probarse con el canal estable.")
+        if sabotajes.get("strategy") != MATRIZ_DE_GRUPOS:
+            fallos.append(f"los grupos del canario son {sabotajes.get('strategy')!r} "
+                          f"y tienen que ser {MATRIZ_DE_GRUPOS!r}: un grupo de menos "
+                          f"deja su porción sin probar con el canal estable.")
     return fallos
