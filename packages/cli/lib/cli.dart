@@ -8,6 +8,7 @@ export 'src/cli_command.dart'
         CliCommand,
         RejectUsage,
         RunAssessment,
+        RunBootstrap,
         ReportBudgetProfile,
         RunContext,
         RunDoctor,

@@ -75,14 +75,15 @@ void main() {
     () async {
       final response = await cli(['init', '--json']);
       final full = codec.decodeResponse(utf8.encode(response.payload));
-      final compact = encodeContextWithinLimit(full, maxBytes: 2048);
+      expect(utf8.encode(response.payload).length, greaterThan(2400));
+      final compact = encodeContextWithinLimit(full, maxBytes: 2400);
       final again = codec.decodeResponse(utf8.encode(compact));
       expect(again.context, isNull);
       expect(again.outcome, full.outcome);
       expect(again.exitCode, full.exitCode);
       expect(again.effects.toJson(), full.effects.toJson());
       expect(again.nextActions.length, full.nextActions.length);
-      expect(utf8.encode(compact).length, lessThanOrEqualTo(2048));
+      expect(utf8.encode(compact).length, lessThanOrEqualTo(2400));
     },
   );
 }

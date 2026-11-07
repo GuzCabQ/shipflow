@@ -67,8 +67,19 @@ Future<CitedContext?> preflightObserve(
   return readCitedContext(store, draft);
 }
 
+/// Los códigos de la base guiada: una publicación pendiente bloquea; una
+/// base dañada la informa doctor y no impide observar el código.
+const _basisCodes = <String, String?>{
+  'basis_recovery_required': 'basis_recovery_pending',
+  'basis_invalid': null,
+  'basis_transaction_invalid': null,
+};
+
 /// El código V3 de un diagnóstico de doctor, o null si no afecta a assess.
-String? _fromContext(String code, ContextSharing sharing) => switch (code) {
+String? _fromContext(String code, ContextSharing sharing) =>
+    _basisCodes.containsKey(code) ? _basisCodes[code] : _fromV2(code, sharing);
+
+String? _fromV2(String code, ContextSharing sharing) => switch (code) {
   'recovery_pending' => 'context_recovery_pending',
   'bootstrap_unverified' || 'journal_invalid' => 'state_invalid',
   'not_initialized' || 'ancestor_context' => 'context_absent',

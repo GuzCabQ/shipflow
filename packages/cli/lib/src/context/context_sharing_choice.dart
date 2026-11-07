@@ -74,7 +74,7 @@ bool precheckSharing(
     return false;
   }
   if (choice == SharingChoice.share) {
-    for (final path in ownSharedPaths) {
+    for (final path in o.sharedPaths) {
       if (o.git.tracked.contains(path)) continue;
       final rule = o.git.ignoredBy[path];
       if (rule != null && !_ownBlock(o, rule)) {

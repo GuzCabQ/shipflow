@@ -606,15 +606,15 @@
       "violaciones_extra": [
         {
           "nombre": "una dependencia de desarrollo sin usar",
-          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note. El canario era `vcs` y dejo de servir cuando la rebanada del entorno de verificacion le dio a `cli` una prueba que SI lo importa: el sabotaje dejo de sabotear y el arnes lo dijo en la primera corrida. Ahora usa `rules`, que ninguna linea de `cli` importa. Un canario que se vuelve legitimo es un sabotaje perdido, y esta es la clase de deriva que el arnes existe para encontrar.",
+          "por_que": "La regla dice gobernar `directDependencies` Y `devDependencies`, y la canonica solo ejercitaba la primera. Un review lo comprobo borrando la rama de desarrollo del bucle: los sabotajes siguieron todos verdes. Una rama del ejecutor sin sabotaje propio se puede degradar sin que nadie lo note. El canario era `vcs` y dejo de servir cuando la rebanada del entorno de verificacion le dio a `cli` una prueba que SI lo importa: el sabotaje dejo de sabotear y el arnes lo dijo en la primera corrida. Despues uso `rules`, hasta que la base de decisiones le dio a `cli` un import legitimo de `rules` y los tres canarios que la usaban dejaron de sabotear: el arnes lo dijo en la primera corrida. Ahora usan `orchestration`, que `cli` puede declarar y ninguna linea suya importa. Un canario que se vuelve legitimo es un sabotaje perdido, y esta es la clase de deriva que el arnes existe para encontrar.",
           "debe_mencionar": "desarrollo",
           "requiere_pub_get": true,
           "_derivado": "DERIVADO DEL REAL, no copiado. La copia completa del pubspec ya habia divergido —declaraba `sdk: ^3.6.0` cuando el real dice ^3.11.0— y sobre todo no sobrevive al vaciado del producto: un canario apoyado en el contenido actual no es un invariante permanente. Ver `pubspec_con` en tool/checks/probar_reglas.py.",
           "pubspec_derivado": {
             "donde": "packages/cli/pubspec.yaml",
             "agregar_dev_dependencies": {
-              "rules": {
-                "path": "../rules"
+              "orchestration": {
+                "path": "../orchestration"
               }
             }
           }
@@ -645,7 +645,7 @@
           "nombre": "una dependencia de produccion usada solo desde integration_test",
           "por_que": "`_ambito_de` preguntaba «es test/?» y el `else` volvia produccion a cualquier otro directorio. Un review lo reprodujo con `integration_test/`: la dependencia quedaba declarada como de produccion y ningun control lo veia. Enumerar que directorios son de prueba es la carrera de una lista negra; ahora produccion es un conjunto cerrado —`lib` y `bin`— y este caso fija que lo siga siendo.",
           "archivos": {
-            "packages/cli/integration_test/canario_test.dart": "import 'package:rules/rules.dart';\n\nvoid canario() {}\n"
+            "packages/cli/integration_test/canario_test.dart": "import 'package:orchestration/orchestration.dart';\n\nvoid canario() {}\n"
           },
           "debe_mencionar": "solo la importa desde",
           "requiere_pub_get": true,
@@ -654,8 +654,8 @@
           "pubspec_derivado": {
             "donde": "packages/cli/pubspec.yaml",
             "agregar_dependencias": {
-              "rules": {
-                "path": "../rules"
+              "orchestration": {
+                "path": "../orchestration"
               }
             }
           }
@@ -664,7 +664,7 @@
           "nombre": "un comentario que nombra el paquete no es evidencia de uso",
           "por_que": "La primera version buscaba `package:<nombre>/` sobre el texto, asi que un comentario contaba como import. Se corrigio derivando del arbol sintactico, y ningun sabotaje lo fijaba: un review volvio a sumar coincidencias textuales y los 117 siguieron verdes. Este caso deja esa puerta cerrada.",
           "archivos": {
-            "packages/cli/lib/_canario_comentario.dart": "// package:rules/rules.dart\n// export 'package:rules/rules.dart';\nlibrary;\n"
+            "packages/cli/lib/_canario_comentario.dart": "// package:orchestration/orchestration.dart\n// export 'package:orchestration/orchestration.dart';\nlibrary;\n"
           },
           "debe_mencionar": "no la importa en ninguna directiva",
           "requiere_pub_get": true,
@@ -672,8 +672,8 @@
           "pubspec_derivado": {
             "donde": "packages/cli/pubspec.yaml",
             "agregar_dependencias": {
-              "rules": {
-                "path": "../rules"
+              "orchestration": {
+                "path": "../orchestration"
               }
             }
           }

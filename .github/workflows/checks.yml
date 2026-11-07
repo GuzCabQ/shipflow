@@ -144,7 +144,7 @@ jobs:
         if: ${{ hashFiles('packages/vcs/test/**/*_test.dart') != '' }}
         run: dart test packages/vcs
 
-      # Sin API todavía. El paso existe para que una prueba futura corra.
+      # La selección y la validación estructural de la base de decisiones.
       - name: pruebas de rules
         if: ${{ hashFiles('packages/rules/test/**/*_test.dart') != '' }}
         run: dart test packages/rules
@@ -249,7 +249,7 @@ jobs:
         include:
           - runner: ubuntu-24.04
             plataforma: linux-x64
-          - runner: macos-14
+          - runner: macos-15
             plataforma: macos-arm64
 
     steps:

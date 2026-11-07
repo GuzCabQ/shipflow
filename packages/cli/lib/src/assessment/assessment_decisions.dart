@@ -18,6 +18,12 @@ const _catalog = <String, (int, int, String, String)>{
     'run_assess_recover',
   ),
   'context_recovery_pending': (2, 75, 'context_incomplete', 'run_init_recover'),
+  'basis_recovery_pending': (
+    2,
+    75,
+    'basis_incomplete',
+    'run_bootstrap_recover',
+  ),
   'recovery_conflict': (2, 75, 'manual_reconciliation', 'reconcile_manually'),
   'assessment_invalid': (3, 65, 'assessment_not_used', 'keep_backup'),
   'assessment_context_mismatch': (
@@ -154,6 +160,13 @@ final _byAction = <String, List<AssessmentNextAction>>{
         'choose_sharing',
         AssessmentActionEffect.userDecision,
       ),
+  ],
+  'run_bootstrap_recover': [
+    _action(
+      ['bootstrap', '--recover'],
+      'recover_basis',
+      AssessmentActionEffect.writeOwnState,
+    ),
   ],
   'run_assess': [observeAction],
   'run_assess_recover': [recoverAction],

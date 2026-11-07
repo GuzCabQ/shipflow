@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "revision": 1,
+  "producerVersion": "fixture-only",
+  "validatorVersion": 1,
+  "queryVersion": 1,
+  "events": [
+    {
+      "revision": 1,
+      "operationId": "00000002-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-03T12:01:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Primera incorporación.",
+      "draftDigest": "sha256:960f8848e4780061be4022801d1072d29ab01206986ca6b4d77965cf8e2bcaed",
+      "previousEventDigest": null,
+      "changes": [],
+      "eventDigest": "sha256:07d89659901305474ce7d57ce2c8757ff4e261d3d2a65d0974ec2b75b262d35a"
+    }
+  ],
+  "digest": "sha256:f0071110b2a6d6234daa60e6e4024997e2d1e0dbab9bc48d7a3f66d9e912527a"
+}

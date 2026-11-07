@@ -2,6 +2,7 @@
 // Fijarlo hace visible en la revisión toda dependencia nueva.
 
 import 'source_import_map_assessment.dart';
+import 'source_import_map_basis.dart';
 import 'source_import_map_context.dart';
 
 /// Cada archivo de `lib` y `bin` con lo que importa o exporta.
@@ -44,6 +45,7 @@ const expectedImports = {
   'lib/src/cli_command.dart': {
     'package:core/core.dart',
     'assessment_grammar.dart',
+    'basis/basis_grammar.dart',
     'cli_grammar.dart',
   },
   'lib/src/cli_emitter.dart': {
@@ -102,6 +104,7 @@ const expectedImports = {
     'package:core/core.dart',
     'package:vcs/vcs.dart',
     'assessment/assessment_cli.dart',
+    'basis/basis_cli.dart',
     'cli_application.dart',
     'cli_command.dart',
     'cli_response.dart',
@@ -113,5 +116,6 @@ const expectedImports = {
   },
   'lib/src/terminal_text.dart': <String>{},
   ...assessmentImports,
+  ...basisImports,
   ...contextImports,
 };

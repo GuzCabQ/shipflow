@@ -15,7 +15,7 @@ tiene su validador, que devuelve sus fallos sin mirar los de los demás.
 from __future__ import annotations
 
 EJECUCION_NATIVA = {
-    "plataformas": {"ubuntu-24.04": "linux-x64", "macos-14": "macos-arm64"},
+    "plataformas": {"ubuntu-24.04": "linux-x64", "macos-15": "macos-arm64"},
     "runs-on": "${{ matrix.runner }}",
     "sdk": "3.12.0",
     "pasos": ("las dependencias exactas del lockfile",

@@ -10,6 +10,7 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 import 'support/assessment_fixtures.dart';
+import 'v2_fixtures.dart';
 import 'support/assessment_service_support.dart';
 
 void main() {
@@ -82,7 +83,11 @@ void main() {
 
   test('historicalPartialExitZeroIsStillHistoricalPartial', () async {
     final result = decodeAssessmentResponse(
-      await v3Bytes('valid-historical-partial-response.json'),
+      currentMajor(
+        await v3Bytes('valid-historical-partial-response.json'),
+        from: 1,
+        to: 2,
+      ),
     );
     expect(result.exitCode, 0);
     final human = humanAssessment(result, root: '/r');

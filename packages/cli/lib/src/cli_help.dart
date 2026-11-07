@@ -24,6 +24,16 @@ const _assessUsages = [
   'shipflow assess --recover [--json] $_budgetText',
 ];
 
+const _bootstrapUsages = [
+  'shipflow bootstrap [--json] $_budgetText',
+  'shipflow bootstrap --show [--scope <ruta> | --history | --draft] [--json] '
+      '$_budgetText',
+  'shipflow bootstrap --input <archivo.json|-> [--json] $_budgetText',
+  'shipflow bootstrap --accept <huella> [--json] $_budgetText',
+  'shipflow bootstrap --discard <huella> [--json] $_budgetText',
+  'shipflow bootstrap --recover [--json] $_budgetText',
+];
+
 const helpCommands = [
   (
     name: initCommand,
@@ -38,6 +48,12 @@ const helpCommands = [
     text:
         'Observa las referencias del código y guarda o consulta su '
         'levantamiento.',
+  ),
+  (
+    name: bootstrapCommand,
+    text:
+        'Guarda y consulta las decisiones aceptadas del proyecto y lo que '
+        'falta aclarar.',
   ),
 ];
 
@@ -69,6 +85,7 @@ const rootHelp = (
     ..._initUsages,
     _doctorUsage,
     ..._assessUsages,
+    ..._bootstrapUsages,
   ],
   options: [
     _helpOption,
@@ -172,4 +189,68 @@ const assessHelp = (
     _budgetOption,
   ],
   command: assessCommand,
+);
+
+const bootstrapHelp = (
+  summary:
+      'Guarda en shipflow/basis.json las decisiones del proyecto que una '
+      'persona acepta, sus fuentes y lo que falta aclarar, con su historia. '
+      'Preparar no acepta: aceptar exige la huella exacta del borrador '
+      'revisado. La autoridad es local y declarada, sin autenticación; una '
+      'fuente sin cambios no certifica que la decisión sea correcta, y una '
+      'base vacía no significa que el proyecto no tenga reglas. No ejecuta '
+      'git add, commit ni push.',
+  usage: _bootstrapUsages,
+  options: [
+    _helpOption,
+    (
+      flags: [showFlag],
+      column: showFlag,
+      text: 'Consulta la base aceptada, sin escribir.',
+    ),
+    (
+      flags: [scopeFlag],
+      column: '$scopeFlag <ruta>',
+      text:
+          'Con --show: reglas globales, las de esa ruta y los pendientes de '
+          'ámbito desconocido. «.» es la consulta global.',
+    ),
+    (
+      flags: [historyFlag],
+      column: historyFlag,
+      text: 'Con --show: las aceptaciones en orden, sin releer soportes.',
+    ),
+    (
+      flags: [draftFlag],
+      column: draftFlag,
+      text: 'Con --show: el borrador guardado, que todavía no está aceptado.',
+    ),
+    (
+      flags: [inputFlag],
+      column: '$inputFlag <archivo.json|->',
+      text:
+          'Prepara un borrador desde JSON; «-» lee la entrada estándar. '
+          'Nunca acepta.',
+    ),
+    (
+      flags: [acceptFlag],
+      column: '$acceptFlag <huella>',
+      text: 'Acepta sólo el borrador con esa huella exacta.',
+    ),
+    (
+      flags: [discardFlag],
+      column: '$discardFlag <huella>',
+      text: 'Descarta ese borrador; nunca retira decisiones aceptadas.',
+    ),
+    (
+      flags: [recoverFlag],
+      column: recoverFlag,
+      text:
+          'Completa o aborta una publicación ya aceptada que quedó a medias; '
+          'no crea una aceptación nueva.',
+    ),
+    _jsonOption,
+    _budgetOption,
+  ],
+  command: bootstrapCommand,
 );

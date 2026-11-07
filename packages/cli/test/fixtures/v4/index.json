@@ -1,0 +1,309 @@
+[
+  {
+    "file": "valid-input.json",
+    "schema": "input",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-basis.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-draft.json",
+    "schema": "draft",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-journal.json",
+    "schema": "journal",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-response.json",
+    "schema": "response",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-empty-basis.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-major.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
+    "file": "invalid-import-approval.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
+    "file": "invalid-active-unknown.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-prohibition-alternative.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-scope-escape.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-create-version.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-digest.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-history-gap.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-journal-target.json",
+    "schema": "journal",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-read-published.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-authority.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
+    "file": "invalid-duplicate-key.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-source-input.json",
+    "schema": "input",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-input-observation.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-source-ref-kind.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-independent-source-input.json",
+    "schema": "input",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-review-input.json",
+    "schema": "input",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-kind.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-future.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-proposed.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-scope.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-empty-owner.json",
+    "schema": "input",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
+    "file": "valid-review-basis.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-missing.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-persisted-temporary.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-review-old-version.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-review-owner-update.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-review-resolved-history.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "valid-review-retired-target.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-retarget.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-history-future.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic",
+    "expectedError": "review_target_kind"
+  },
+  {
+    "file": "valid-review-response.json",
+    "schema": "response",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-response-target.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-review-response-duplicate.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-review-draft.json",
+    "schema": "draft",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-draft-temporary.json",
+    "schema": "draft",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-review-event-order-independent.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-review-ordinary-retarget.json",
+    "schema": "basis",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "valid-draft-response.json",
+    "schema": "response",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-proposed-change-kind.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-after-publish.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-already-applied.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-discarded.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-change-name.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
+    "file": "valid-ordinary-pending-scope-update.json",
+    "schema": "basis",
+    "valid": true,
+    "layer": "schema+semantic"
+  }
+]

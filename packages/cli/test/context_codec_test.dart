@@ -20,7 +20,7 @@ String layerOf(String schema, List<int> bytes) {
       case 'transaction':
         codec.decodeTransaction(bytes);
       case 'operation-response':
-        codec.decodeResponse(bytes);
+        codec.decodeResponse(currentMajor(bytes, from: 3, to: 4));
       case 'recognition-dry-run':
         codec.checkDryRun(bytes);
       default:
@@ -38,6 +38,18 @@ List<int> pretty(Object? json) =>
 
 void main() {
   group('the 19 package fixtures fail at their expected layer', () {
+    test(
+      'a V2 response keeps its shape but its old major is refused',
+      () async {
+        final bytes = await v2Bytes('fixtures/valid/doctor-current.json');
+        expect(layerOf('operation-response', bytes), 'valid');
+        expect(
+          () => codec.decodeResponse(bytes),
+          throwsA(isA<ContextFormatException>()),
+        );
+      },
+    );
+
     test('each case', () async {
       final cases = await v2Cases();
       expect(cases, hasLength(19));

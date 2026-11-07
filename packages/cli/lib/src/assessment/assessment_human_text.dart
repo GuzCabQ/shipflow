@@ -11,6 +11,9 @@ const assessmentMessages = <String, String>{
       'el levantamiento anterior.',
   'assessment_recovery_pending': 'Hay una publicación de assess sin terminar.',
   'context_recovery_pending': 'Hay una operación de init sin terminar.',
+  'basis_recovery_pending':
+      'Hay una publicación de la base guiada sin terminar: no se observa '
+      'hasta recuperarla.',
   'recovery_conflict':
       'Un archivo propio no coincide con ninguna versión esperada: se '
       'conserva todo para reconciliarlo a mano.',
@@ -99,6 +102,7 @@ const assessmentPurposes = <String, String>{
   'initialize_context': 'inicializar el contexto',
   'refresh_context': 'actualizar el contexto inicial',
   'recover_context': 'terminar la operación de init',
+  'recover_basis': 'completar la publicación aceptada de la base',
   'choose_sharing': 'elegir cómo conservar el contexto',
   'widen_budget': 'repetir con el perfil ampliado',
 };

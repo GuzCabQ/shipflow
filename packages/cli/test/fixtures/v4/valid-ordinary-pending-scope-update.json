@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "revision": 2,
+  "producerVersion": "fixture-only",
+  "validatorVersion": 1,
+  "queryVersion": 1,
+  "events": [
+    {
+      "revision": 1,
+      "operationId": "00000002-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-03T12:01:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Primera incorporación.",
+      "draftDigest": "sha256:960f8848e4780061be4022801d1072d29ab01206986ca6b4d77965cf8e2bcaed",
+      "previousEventDigest": null,
+      "changes": [
+        {
+          "id": "0000000a-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "rule",
+            "title": "Contratos públicos",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "lifecycle": "active",
+            "replacementRef": null,
+            "statement": "Los cambios de contrato requieren revisión del responsable.",
+            "reason": "Preservar compatibilidad con consumidores.",
+            "ruleClass": "obligation",
+            "alternative": null,
+            "exceptionPolicy": "requires_authority",
+            "support": "human_declaration",
+            "sourceRefs": [],
+            "evidenceLevel": "declared"
+          }
+        },
+        {
+          "id": "0000000b-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "pending",
+            "title": "Alcance pendiente",
+            "scope": {
+              "kind": "unknown",
+              "paths": []
+            },
+            "status": "open",
+            "question": "¿Qué consumidores externos debemos consultar?",
+            "reason": "No hay registro todavía.",
+            "revisitWhen": "Antes de cambiar contratos públicos.",
+            "sourceRefs": [],
+            "resolution": null,
+            "decisionReview": null
+          }
+        }
+      ],
+      "eventDigest": "sha256:2f411c772b57213d0595a888b9b225ec1ac71b08e549244b961995ee9ff7f961"
+    },
+    {
+      "revision": 2,
+      "operationId": "00000025-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-06T18:00:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Revisión ilustrativa.",
+      "draftDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "previousEventDigest": "sha256:2f411c772b57213d0595a888b9b225ec1ac71b08e549244b961995ee9ff7f961",
+      "changes": [
+        {
+          "id": "0000000b-0000-4000-8000-000000000000",
+          "version": 2,
+          "previousVersion": 1,
+          "payload": {
+            "kind": "pending",
+            "title": "Alcance pendiente",
+            "scope": {
+              "kind": "paths",
+              "paths": [
+                "lib/a"
+              ]
+            },
+            "status": "open",
+            "question": "¿Qué consumidores externos debemos consultar?",
+            "reason": "No hay registro todavía.",
+            "revisitWhen": "Antes de cambiar contratos públicos.",
+            "sourceRefs": [],
+            "resolution": null,
+            "decisionReview": null
+          }
+        }
+      ],
+      "eventDigest": "sha256:8de74cf86497b1b75cc726b696a36892a7d1081ddd3c9134f3b0c1486e93d29d"
+    }
+  ],
+  "digest": "sha256:305ccd1a008593da50936305d17f477c76c8e9bc5d4661085cf7c4eae1a2212e"
+}

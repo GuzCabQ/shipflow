@@ -104,7 +104,16 @@ const _evaluationImports = <(String, Set<String>)>[
   ),
   (
     'cli_command.dart',
-    {'package:core/core.dart', 'assessment_grammar.dart', 'cli_grammar.dart'},
+    {
+      'package:core/core.dart',
+      'assessment_grammar.dart',
+      'basis/basis_grammar.dart',
+      'cli_grammar.dart',
+    },
+  ),
+  (
+    'basis/basis_grammar.dart',
+    {'package:core/core.dart', '../cli_command.dart', '../cli_grammar.dart'},
   ),
   (
     'assessment_grammar.dart',

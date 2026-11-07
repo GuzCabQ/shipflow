@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
 import 'context_assessment.dart';
+import 'context_foreign_journals.dart';
 import 'context_decisions.dart';
 import 'context_observation.dart';
 import 'context_recovery_targets.dart';
@@ -25,9 +26,9 @@ Future<ContextOperationResult> recoverContext({
   final effects = EffectsLog();
   final parts = _parts(o);
   final journal = o.journal.value;
-  if (o.ownership.assessmentJournal) {
+  if (o.ownership.basisJournal || o.ownership.assessmentJournal) {
     if (journal == null) _withoutJournal(o, parts);
-    parts.diagnostics.add(assessmentPending(bothActive: journal != null));
+    remitForeignJournals(o.ownership, parts, bothActive: journal != null);
     return resultOf(parts, effects.freeze(budget.started));
   }
   if (journal == null) {
@@ -52,20 +53,23 @@ Future<ContextOperationResult> recoverContext({
   return resultOf(parts, effects.freeze(budget.started));
 }
 
-ResultParts _parts(ObservedContext o) => ResultParts(
-  command: ContextCommand.init,
-  operation: ContextOperation.recover,
-  state: o.journal.present
-      ? ContextState.recoveryRequired
-      : ContextState.absent,
-  freshness: ContextFreshness.notApplicable,
-  sharing: ContextSharing(
-    choice: o.choice,
-    gitState: o.git.state,
-    effective: SharingEffective.unverified,
-  ),
-  success: ContextOutcome.recovered,
-);
+ResultParts _parts(ObservedContext o) =>
+    ResultParts(
+        command: ContextCommand.init,
+        operation: ContextOperation.recover,
+        state: o.journal.present
+            ? ContextState.recoveryRequired
+            : ContextState.absent,
+        freshness: ContextFreshness.notApplicable,
+        sharing: ContextSharing(
+          choice: o.choice,
+          gitState: o.git.state,
+          effective: SharingEffective.unverified,
+        ),
+        success: ContextOutcome.recovered,
+      )
+      ..basis = o.ownership.basis
+      ..basisTransaction = o.ownership.basisTransaction;
 
 void _withoutJournal(ObservedContext o, ResultParts parts) {
   if (o.journal.present) return parts.diagnostics.add(_journalInvalid());
@@ -88,22 +92,6 @@ void _withoutJournal(ObservedContext o, ResultParts parts) {
     parts.actions.add(firstInitAction);
   }
 }
-
-/// Una publicación de assess sin terminar: init no la recupera. Con las dos
-/// activas no se adivina un orden.
-ContextDiagnostic assessmentPending({required bool bothActive}) => bothActive
-    ? diagnostic(
-        'recovery_conflict',
-        'Hay una operación de init y otra de assess sin terminar; no se '
-            'adivina su orden: reconcílialas a mano.',
-        assessmentTransactionPath,
-      )
-    : diagnostic(
-        'recovery_pending',
-        'La operación sin terminar es de assess: la termina «shipflow '
-            'assess --recover».',
-        assessmentTransactionPath,
-      );
 
 ContextDiagnostic _journalInvalid() => diagnostic(
   'journal_invalid',

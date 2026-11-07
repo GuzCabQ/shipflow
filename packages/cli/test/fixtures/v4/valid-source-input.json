@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis.input",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "expectedBasisDigest": null,
+  "actor": {
+    "label": "Responsable de ejemplo",
+    "role": "mantenimiento",
+    "authority": "local_declared",
+    "scope": {
+      "kind": "project",
+      "paths": []
+    }
+  },
+  "reason": "Primera incorporación.",
+  "changes": [
+    {
+      "key": "policy",
+      "targetId": null,
+      "expectedVersion": null,
+      "payload": {
+        "kind": "source",
+        "title": "Política pública",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "sourceType": "local",
+        "locator": "docs/policy.md",
+        "purpose": "Referencia de compatibilidad",
+        "contentDigest": null,
+        "observation": "unverified"
+      }
+    },
+    {
+      "key": "compatibility",
+      "targetId": null,
+      "expectedVersion": null,
+      "payload": {
+        "kind": "rule",
+        "title": "Contratos públicos",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "replacementRef": null,
+        "statement": "Los cambios de contrato requieren revisión del responsable.",
+        "reason": "Preservar compatibilidad con consumidores.",
+        "ruleClass": "obligation",
+        "alternative": null,
+        "exceptionPolicy": "requires_authority",
+        "support": "source_supported",
+        "sourceRefs": [
+          {
+            "ref": "new:policy",
+            "version": 1
+          }
+        ],
+        "evidenceLevel": "declared"
+      }
+    },
+    {
+      "key": "consumers",
+      "targetId": null,
+      "expectedVersion": null,
+      "payload": {
+        "kind": "pending",
+        "title": "Alcance pendiente",
+        "scope": {
+          "kind": "unknown",
+          "paths": []
+        },
+        "status": "open",
+        "question": "¿Qué consumidores externos debemos consultar?",
+        "reason": "No hay registro todavía.",
+        "revisitWhen": "Antes de cambiar contratos públicos.",
+        "sourceRefs": [],
+        "resolution": null,
+        "decisionReview": null
+      }
+    }
+  ]
+}

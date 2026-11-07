@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "kind": "shipflow.assessment-response",
+  "command": "assess",
+  "operation": "observe",
+  "exitCode": 75,
+  "outcome": "blocked",
+  "freshness": "not_applicable",
+  "coverage": "not_run",
+  "snapshot": null,
+  "diagnostics": [],
+  "effects": {
+    "created": [],
+    "replaced": [],
+    "removed": [],
+    "published": false,
+    "gitQueries": 0,
+    "network": 0,
+    "productWrites": 0
+  },
+  "nextActions": [
+    {
+      "argv": [
+        "shipflow",
+        "bootstrap",
+        "--recover"
+      ],
+      "purpose": "Completar publicación aceptada de base.",
+      "effect": "write_own_state"
+    }
+  ],
+  "comparison": null,
+  "retiredRevision": null
+}

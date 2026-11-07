@@ -11,8 +11,22 @@ import 'secure_context_store.dart';
 import 'state_layout.dart';
 import 'state_ownership.dart';
 
-/// Las rutas propias que Git debe poder versionar o excluir.
+/// Las rutas propias que Git siempre debe poder versionar o excluir.
 const ownSharedPaths = [projectPath, gitignorePath];
+
+/// Los documentos portables de V3 y V4: se comprueban sólo si existen. Los
+/// borradores y journals viven en `local/` y nunca se comparten.
+const _durable = [assessmentDocumentPath, basisDocumentPath];
+
+/// Las rutas propias que la conservación elegida debe respetar en [root]:
+/// las de V2 y los documentos durables que ya existen.
+List<String> sharedPathsOf(Directory root) => [
+  ...ownSharedPaths,
+  for (final path in _durable)
+    if (FileSystemEntity.typeSync('${root.path}/$path', followLinks: false) ==
+        FileSystemEntityType.file)
+      path,
+];
 
 /// Un documento leído: sus bytes y su huella, o su ausencia, y su valor o
 /// el código por el que no se acepta.
@@ -46,6 +60,7 @@ final class ObservedContext {
     required this.report,
     required this.current,
     this.stable = true,
+    this.sharedPaths = ownSharedPaths,
   });
 
   final StateOwnership ownership;
@@ -61,6 +76,9 @@ final class ObservedContext {
   /// False si los documentos cambiaron entre dos lecturas seguidas, dos
   /// veces: no hay una vista consistente de una sola generación.
   final bool stable;
+
+  /// Las rutas propias que Git observó para la conservación.
+  final List<String> sharedPaths;
 
   SharingChoice get choice => settings.value?.choice ?? SharingChoice.pending;
 
@@ -81,15 +99,17 @@ Future<ObservedContext> observeContext({
   final docs = ownership.kind == StateOwnershipKind.foreign
       ? _Documents.absent()
       : await _stableDocuments(store);
+  final shared = sharedPathsOf(root);
   return ObservedContext(
     ownership: ownership,
     project: docs.project,
     settings: docs.settings,
     journal: docs.journal,
-    git: await git.observe(root, ownPaths: ownSharedPaths, budget: budget),
+    git: await git.observe(root, ownPaths: shared, budget: budget),
     report: report,
     current: _portable(report),
     stable: docs.stable,
+    sharedPaths: shared,
   );
 }
 

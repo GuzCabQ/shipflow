@@ -53,10 +53,16 @@ El ejecutable tiene dos superficies:
   en `shipflow/assessment.json`, consultable con `--show`, que comprueba su
   vigencia sin volver a analizar. Contrato en
   [`docs/CLI-V3.md`](docs/CLI-V3.md).
+- **V4**, `shipflow bootstrap`: guarda en `shipflow/basis.json` las
+  decisiones que una persona acepta, sus fuentes y lo que falta aclarar, con
+  su historia; se consultan por ámbito con `--show`. Preparar no acepta:
+  aceptar exige la huella exacta del borrador revisado. Sin IA y sin
+  certificar que el código cumpla. Contrato en
+  [`docs/commands/bootstrap.md`](docs/commands/bootstrap.md).
 
 Shipflow todavía no ejecuta agentes ni implementa `analyze`, `plan`,
-`implement`, `verify`, `review` ni `ship`. Los paquetes sin uso en V1 (`agents`, `forge`, `orchestration`, `rules`)
-son reservas declaradas.
+`implement`, `verify`, `review` ni `ship`. Los paquetes sin uso todavía (`agents`, `forge`, `orchestration`) son
+reservas declaradas.
 
 Las preguntas de diseño sin responder y los puntos ciegos conocidos del arnés
 están en **[`HUECOS.md`](HUECOS.md)**, con su procedencia.
