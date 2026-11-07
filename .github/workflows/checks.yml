@@ -411,6 +411,9 @@ jobs:
       - name: checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: experimento · canario lento
+        run: sleep 900
+
       - name: python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -525,6 +528,9 @@ jobs:
       - name: canario · resolver el verificador para los sabotajes
         run: dart pub get
         working-directory: tool/analisis
+
+      - name: experimento · canario rojo
+        run: exit 1
 
       - name: canario · los checks saben fallar, por grupo
         run: python3 tool/checks/probar_reglas.py --grupo ${{ matrix.grupo }}/4 --resultado "$RUNNER_TEMP/sabotajes-canario.json"
