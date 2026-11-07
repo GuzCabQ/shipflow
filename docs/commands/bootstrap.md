@@ -25,8 +25,9 @@ sea correcta, y una base vacía no significa que el proyecto no tenga reglas.
 
 Todas aceptan `--json` y `--report-budget=standard|extended`. Una opción
 repetida o desconocida, un argumento posicional, dos operaciones,
-`--scope`/`--history`/`--draft` sin `--show` o juntas, o una huella que no es
-`sha256:` y 64 hexadecimales terminan con **64** antes de leer nada.
+`--scope`/`--history`/`--draft` sin `--show` o juntas, un `--scope` que no es
+`.` ni una ruta relativa segura, o una huella que no es `sha256:` y 64
+hexadecimales terminan con **64** antes de leer nada.
 
 ## Antes de operar
 
@@ -81,9 +82,89 @@ de nuevo. Aceptar dos veces el mismo borrador responde `already_applied` sin
 crear otra revisión. Hay un solo borrador activo; otro se rechaza con
 `draft_conflict`.
 
-En la guía interactiva sólo escribir **«aceptar»** acepta. Enter vacío no
-elige, y cerrar la entrada cancela (**130**) conservando el último borrador
-guardado. La guía no toma ningún lock mientras espera respuestas.
+Si la base cambió desde que se preparó el borrador (por ejemplo, llegó otra
+con `git pull`), `--show --draft` y `--accept` responden `base_changed` y
+ofrecen descartarlo; nunca lo presentan aplicado a la base nueva.
+
+## La guía
+
+En una terminal, `shipflow bootstrap` explica para qué sirve la base y ofrece
+añadir una decisión, señalar una fuente o anotar un asunto por aclarar. Si ya
+hay una base, también revisar o retirar una decisión vigente y resolver un
+pendiente, sin volver a preguntar lo aceptado. Al incorporar o revisar una
+decisión ofrece registrar su revisión pendiente, con responsable opcional.
+Pregunta una sola vez quién acepta, con qué responsabilidad y sobre qué
+ámbito decide; si algo no se puede preparar, permite quitar lo último añadido
+y conservar lo demás. Sin contexto inicial no pregunta nada y remite a
+`init`.
+
+Prepara con el mismo servicio que `--input` y muestra el resumen. Sólo
+escribir **«aceptar»** acepta; «borrador» lo conserva sin aceptar y
+«descartar» lo descarta. Enter vacío no elige, y cerrar la entrada cancela
+(**130**) conservando el último borrador guardado. La guía no toma ningún
+lock mientras espera respuestas.
+
+## Propuesta JSON (`--input`)
+
+Una propuesta es un objeto con `schemaVersion` 1, `type`
+`shipflow.basis.input`, el `projectId` de `shipflow/project.json`,
+`expectedBasisDigest` (el `digest` de `basis.json` sobre el que se propone, o
+`null` si todavía no hay base), `actor` (`label`, `role`, `authority`
+`local_declared` y su `scope`), `reason` y `changes`. Cada cambio lleva una
+`key` única en la propuesta, `targetId` y `expectedVersion` (`null` para un
+registro nuevo; el ID y la versión vigente para revisar uno) y el `payload`
+completo de la versión nueva. Dentro de la misma propuesta, `new:<key>` cita
+un registro nuevo. Una fuente local se propone con `contentDigest: null` y
+`observation: "unverified"`: la huella la registra el preparado al leerla.
+
+```json
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis.input",
+  "projectId": "<projectId de shipflow/project.json>",
+  "expectedBasisDigest": null,
+  "actor": {"label": "Ana", "role": "mantenimiento",
+            "authority": "local_declared",
+            "scope": {"kind": "project", "paths": []}},
+  "reason": "Primera base.",
+  "changes": [
+    {"key": "doc", "targetId": null, "expectedVersion": null,
+     "payload": {"kind": "source", "title": "Política de contratos",
+                 "scope": {"kind": "project", "paths": []},
+                 "lifecycle": "active", "sourceType": "local",
+                 "locator": "docs/politica.md",
+                 "purpose": "Referencia de compatibilidad.",
+                 "contentDigest": null, "observation": "unverified"}},
+    {"key": "contratos", "targetId": null, "expectedVersion": null,
+     "payload": {"kind": "rule", "title": "Contratos públicos",
+                 "scope": {"kind": "paths", "paths": ["lib/api"]},
+                 "lifecycle": "active", "replacementRef": null,
+                 "statement": "Los cambios de contrato requieren revisión.",
+                 "reason": "Preservar compatibilidad.",
+                 "ruleClass": "obligation", "alternative": null,
+                 "exceptionPolicy": "requires_authority",
+                 "support": "source_supported",
+                 "sourceRefs": [{"ref": "new:doc", "version": 1}],
+                 "evidenceLevel": "declared"}},
+    {"key": "consumidores", "targetId": null, "expectedVersion": null,
+     "payload": {"kind": "pending", "title": "Consumidores",
+                 "scope": {"kind": "paths", "paths": ["lib/api"]},
+                 "status": "open",
+                 "question": "¿Qué consumidores externos hay que consultar?",
+                 "reason": "No hay registro todavía.",
+                 "revisitWhen": "Al integrar el segundo consumidor.",
+                 "sourceRefs": [], "resolution": null,
+                 "decisionReview": {"ref": "new:contratos", "version": 1,
+                                    "reviewer": null}}}
+  ]
+}
+```
+
+Un pendiente se resuelve con `status: "resolved"` y `resolution`
+`disposition:<texto>` o `rule:<id>@<versión>` de una regla ya aceptada. Una
+regla reemplazada lleva `lifecycle: "replaced"` y `replacementRef` con la
+regla que la reemplaza. Cualquier campo desconocido o ausente es inválido
+(65).
 
 ## Consultar
 
@@ -97,8 +178,10 @@ que corresponde esta revisión»): no es la regla vigente, y sus soportes no se
 vuelven a comprobar.
 
 Cada fuente citada se vuelve a leer: `current` si conserva su huella, `stale`
-si cambió, `unverified` si es externa o no se pudo leer, `excluded` si su ruta
-o su contenido parecen credenciales. Una fuente `stale` **no borra** la regla:
+si cambió, `unverified` si es externa, no se pudo leer o se registró sin
+huella (no había con qué compararla), `excluded` si su ruta o su contenido
+parecen credenciales. Una regla sólo se acepta sustentada en fuentes
+observadas `current` al preparar. Una fuente `stale` **no borra** la regla:
 la regla sigue visible con su soporte sin verificar.
 
 `--history` devuelve todas las revisiones en orden, con cada cambio y la
@@ -146,7 +229,12 @@ un conflicto que se conserva. Sin nada pendiente responde `no_changes`.
 | Respuesta | 8 MiB | 32 MiB |
 
 Además: textos cortos 512 bytes, motivos y localizadores 4 KiB, enunciados
-16 KiB y profundidad JSON 32. Las cotas son independientes: una base puede
+16 KiB y profundidad JSON 32. Los bytes de la base se cuentan sobre el archivo
+en disco, legible con sangría, que ocupa más que su forma canónica. El
+borrador contiene la propuesta y los cambios preparados, así que una
+propuesta debe ocupar bastante menos que la cota del borrador. Preparar ya
+comprueba que la base resultante cabría: un borrador que no se podría
+aceptar con ese perfil no se ofrece. Las cotas son independientes: una base puede
 llegar a sus bytes antes que a sus eventos. Lo que no cabe se rechaza
 (`budget_exceeded`) sin recortar historia. Una respuesta que no cabe se
 entrega no concluyente (`selection.complete: false`), sin registros, nunca
