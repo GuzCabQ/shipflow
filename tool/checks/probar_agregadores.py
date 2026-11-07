@@ -57,9 +57,25 @@ def conjunto(manifiestos: list[dict], intentos: dict[int, int] | None = None,
 
 
 def jobs(*intentos_por_grupo: list[int], total: int | None = None) -> dict:
-    lista = [{"name": g.NOMBRE_DEL_JOB.format(k=k, n=N), "run_attempt": a}
+    """Cada grupo con los intentos en que CORRIÓ: cada uno con sus propias horas."""
+    lista = [{"name": g.NOMBRE_DEL_JOB.format(k=k, n=N), "run_attempt": a,
+              "started_at": f"2026-11-07T0{a}:00:0{k}Z",
+              "completed_at": f"2026-11-07T0{a}:05:0{k}Z", "conclusion": "success"}
              for k, intentos in enumerate(intentos_por_grupo, 1) for a in intentos]
     return {"total_count": len(lista) if total is None else total, "jobs": lista}
+
+
+def con_copias(base: dict, intento: int) -> dict:
+    """Lo que devuelve la API tras «reintentar los fallidos»: cada job que NO se
+    reintentó reaparece en el intento nuevo con otro id y `run_attempt` nuevo,
+    pero con las horas del intento en que corrió. Medido en la corrida
+    42425388245."""
+    lista = list(base["jobs"])
+    reintentados = {j["name"] for j in lista if j["run_attempt"] == intento}
+    for j in [j for j in base["jobs"] if j["run_attempt"] == intento - 1]:
+        if j["name"] not in reintentados:
+            lista.append({**j, "run_attempt": intento})
+    return {"total_count": len(lista), "jobs": lista}
 
 
 def _quitar(m: dict, campo: str) -> dict:
@@ -137,6 +153,20 @@ _intentos, _f = g.ultimos_intentos(jobs([1], [1, 2], [1], [1]), N)
 caso("los intentos salen del último job de cada grupo",
      [] if (_intentos, _f) == ({1: 1, 2: 2, 3: 1, 4: 1}, []) else [f"{_intentos} {_f}"],
      None)
+_intentos, _f = g.ultimos_intentos(con_copias(jobs([1], [1, 2], [1], [1]), 2), N)
+caso("una copia de un job no reintentado no cuenta como haber corrido otra vez",
+     [] if (_intentos, _f) == ({1: 1, 2: 2, 3: 1, 4: 1}, []) else [f"{_intentos} {_f}"],
+     None)
+_intentos, _f = g.ultimos_intentos(
+    con_copias(con_copias(jobs([1], [1, 2], [1, 3], [1]), 2), 3), N)
+caso("las copias se siguen hasta el intento en que el grupo corrió de verdad",
+     [] if (_intentos, _f) == ({1: 1, 2: 2, 3: 3, 4: 1}, []) else [f"{_intentos} {_f}"],
+     None)
+_intentos, _ = g.ultimos_intentos(con_copias(jobs([1], [1], [1, 2], [1]), 2), N)
+caso("con copias en la lista, un grupo reintentado de verdad sin manifiesto falla",
+     conjunto(todos(), _intentos), "OTRA ejecución")
+caso("con copias en la lista, los no reintentados aportan su manifiesto anterior",
+     conjunto(todos() + [manifiesto(3, intento=2)], _intentos), None)
 caso("un grupo ausente de la lista de jobs",
      g.ultimos_intentos(jobs([1], [1], [1]), N)[1], "no encontré el job")
 caso("una lista de jobs paginada a medias",

@@ -22,6 +22,13 @@ otra ejecución. Por eso el intento que se exige por grupo sale de la API de
 jobs de la corrida —en qué intento corrió por última vez ese job—, no de los
 artefactos.
 
+**Y la API no lo dice directamente.** Al reintentar los fallidos, cada job que
+no se reintentó reaparece en el intento nuevo con otro id y ese `run_attempt`,
+pero con las horas de cuando corrió. Medido en la corrida 42425388245: los
+grupos 1, 3 y 4 figuraban en el intento 2 sin haber vuelto a correr. Una
+entrada con las mismas horas y el mismo resultado que una anterior es una
+copia, y el grupo corrió en el intento de la primera.
+
 Este módulo es puro: no lee el entorno ni lanza procesos. Lo usan
 `probar_reglas.py` y `probar_agregadores.py`.
 """
@@ -124,15 +131,24 @@ def ultimos_intentos(jobs: object, n: int) -> tuple[dict[int, int], list[str]]:
     intentos: dict[int, int] = {}
     for k in range(1, n + 1):
         nombre = NOMBRE_DEL_JOB.format(k=k, n=n)
-        vistos = [j.get("run_attempt") for j in lista
-                  if isinstance(j, dict) and j.get("name") == nombre]
-        if not vistos or not all(isinstance(v, int) for v in vistos):
+        vistos = [j for j in lista if isinstance(j, dict) and j.get("name") == nombre]
+        if not vistos or not all(isinstance(j.get("run_attempt"), int) for j in vistos):
             fallos.append(f"no encontré el job «{nombre}» en la corrida, con su "
                           f"intento. Un grupo que no corrió no se puede dar "
                           f"por verificado.")
             continue
-        intentos[k] = max(vistos)
+        intentos[k] = _intento_en_que_corrio(vistos)
     return intentos, fallos
+
+
+def _intento_en_que_corrio(vistos: list[dict]) -> int:
+    """El intento de la entrada más reciente, salvo que sea una copia: entonces
+    el de la primera entrada con sus mismas horas y su mismo resultado."""
+    ultimo = max(vistos, key=lambda j: j["run_attempt"])
+    huella = (ultimo.get("started_at"), ultimo.get("completed_at"),
+              ultimo.get("conclusion"))
+    return min(j["run_attempt"] for j in vistos
+               if (j.get("started_at"), j.get("completed_at"), j.get("conclusion")) == huella)
 
 
 def verificar_conjunto(casos: list[dict], manifiestos: list[dict], n: int,
