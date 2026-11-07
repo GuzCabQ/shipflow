@@ -36,7 +36,7 @@ String _header(BasisResponse r) {
   final digest = r.draftDigest == null ? '' : '\nHuella: ${r.draftDigest}';
   return switch (r.outcome) {
     BasisOutcome.published => 'Base guardada en shipflow/basis.json.',
-    BasisOutcome.shown when r.draftDigest != null && r.history.isEmpty =>
+    BasisOutcome.shown when isDraftView(r) =>
       'Borrador guardado: todavía no está aceptado.$digest',
     BasisOutcome.shown => 'Base aceptada${_scope(r.selection.scope)}.',
     BasisOutcome.draftPrepared =>

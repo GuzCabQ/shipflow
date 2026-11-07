@@ -111,6 +111,26 @@ void main() {
       expect(text, contains('todavía no está aceptado'));
     });
 
+    test('history names each change and the version a review cites', () async {
+      await box.publish(box.input(ruleAndReview()));
+      final text = renderBasisHuman(await box.show(history: true));
+      expect(text, contains('«Contratos» regla · versión 1'));
+      expect(text, contains('«Revisión» pendiente · versión 1 · revisa'));
+      expect(text, contains('versión 1 de «Contratos»'));
+    });
+
+    test('a draft never calls its decisions accepted', () async {
+      final prepared = await box.prepare(box.input(ruleAndReview()));
+      final shown = await box.show(draft: true);
+      for (final text in [
+        renderBasisHuman(prepared),
+        renderBasisHuman(shown),
+      ]) {
+        expect(text, isNot(contains('Decisión aceptada')));
+        expect(text, contains('no cuenta como aceptado hasta aceptar'));
+      }
+    });
+
     test('a stale support stays visible with its rule', () async {
       box.box.file('docs/politica.md', 'v1\n');
       await box.publish(box.input(ruleWithSource('docs/politica.md')));
