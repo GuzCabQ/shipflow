@@ -85,14 +85,19 @@ const _budgetProblem =
     'valor no admitido para $reportBudgetFlag: usa '
     '$reportBudgetFlag=standard o $reportBudgetFlag=extended';
 
-/// El valor de una opción que lo exige: presente, no otra opción y, para
-/// aceptar o descartar, una huella `sha256:<hex>` exacta.
+/// El valor de una opción que lo exige: presente, no otra opción; para
+/// `--scope`, «.» o un prefijo relativo seguro, y para aceptar o descartar,
+/// una huella `sha256:<hex>` exacta.
 String? _value(String option, String? value) {
   if (value == null || (value.startsWith('-') && value != '-')) {
     return 'falta el valor de ${reflectArgument(option)}';
   }
   if (value == '-' && option != inputFlag) {
     return 'falta el valor de ${reflectArgument(option)}';
+  }
+  if (option == scopeFlag && value != '.' && !isBasisPrefix(value)) {
+    return 'valor no válido para ${reflectArgument(option)}: usa «.» o una '
+        'ruta relativa como lib/pagos';
   }
   if ((option == acceptFlag || option == discardFlag) &&
       !_digest.hasMatch(value)) {

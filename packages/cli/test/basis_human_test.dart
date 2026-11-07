@@ -90,6 +90,15 @@ void main() {
       expect(text, isNot(contains('sin reglas')));
     });
 
+    test('an unsafe scope is never an empty basis', () async {
+      await box.publish(box.input(ruleAndReview()));
+      final shown = await box.show(path: '../etc');
+      expect(shown.exitCode, 65);
+      expect(shown.outcome, isNot(BasisOutcome.shown));
+      expect(shown.selection.complete, isFalse);
+      expect(renderBasisHuman(shown), isNot(contains('Cobertura normativa')));
+    });
+
     test('integrity is reported apart from the exit code', () async {
       box.basis.parent.createSync(recursive: true);
       box.basis.writeAsStringSync('{"roto": true}\n');

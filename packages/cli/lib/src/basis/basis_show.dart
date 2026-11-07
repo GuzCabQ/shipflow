@@ -39,7 +39,12 @@ Future<void> showBasis(
   r.outcome = BasisOutcome.shown;
   if (history) return _history(r, document, ledger);
   final query = _query(r, path);
-  if (r.stopped && r.has('unsafe_path')) return;
+  if (r.stopped && r.has('unsafe_path')) {
+    r
+      ..outcome = BasisOutcome.failed
+      ..complete = false;
+    return;
+  }
   r.scope = query == null
       ? null
       : BasisScope(kind: BasisScopeKind.paths, paths: [query]);
