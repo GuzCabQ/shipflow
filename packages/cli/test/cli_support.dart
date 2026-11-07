@@ -20,7 +20,20 @@ const _assess = 'shipflow assess [--json] $_budget';
 const _assessShow = 'shipflow assess --show [--json] $_budget';
 const _assessPrevious = 'shipflow assess --show --previous [--json] $_budget';
 const _assessRecover = 'shipflow assess --recover [--json] $_budget';
-
+const _bootstrapCommandText =
+    'Guarda y consulta las decisiones aceptadas del proyecto y lo que falta '
+    'aclarar.';
+const _bootstrap = 'shipflow bootstrap [--json] $_budget';
+const _bootstrapShow =
+    'shipflow bootstrap --show [--scope <ruta> | --history | --draft] '
+    '[--json] $_budget';
+const _bootstrapInput =
+    'shipflow bootstrap --input <archivo.json|-> [--json] $_budget';
+const _bootstrapAccept =
+    'shipflow bootstrap --accept <huella> [--json] $_budget';
+const _bootstrapDiscard =
+    'shipflow bootstrap --discard <huella> [--json] $_budget';
+const _bootstrapRecover = 'shipflow bootstrap --recover [--json] $_budget';
 const helpText =
     'Shipflow supervisa cambios de software verificables y recuperables.\n'
     '\n'
@@ -36,11 +49,18 @@ const helpText =
     '  $_assessShow\n'
     '  $_assessPrevious\n'
     '  $_assessRecover\n'
+    '  $_bootstrap\n'
+    '  $_bootstrapShow\n'
+    '  $_bootstrapInput\n'
+    '  $_bootstrapAccept\n'
+    '  $_bootstrapDiscard\n'
+    '  $_bootstrapRecover\n'
     '\n'
     'Comandos:\n'
     '  init        $_initCommandText\n'
     '  doctor      $_doctorCommandText\n'
     '  assess      $_assessCommandText\n'
+    '  bootstrap   $_bootstrapCommandText\n'
     '\n'
     'Opciones:\n'
     '  -h, --help  Muestra esta ayuda.\n'
@@ -53,10 +73,13 @@ const helpJson =
     '"$_dryRunUsage","$_initUsage","$_refreshUsage",'
     '"$_recoverUsage","shipflow doctor [--json] $_budget",'
     '"$_assess","$_assessShow","$_assessPrevious",'
-    '"$_assessRecover"],"commands":['
+    '"$_assessRecover","$_bootstrap","$_bootstrapShow","$_bootstrapInput",'
+    '"$_bootstrapAccept","$_bootstrapDiscard","$_bootstrapRecover"],'
+    '"commands":['
     '{"name":"init","description":"$_initCommandText"},'
     '{"name":"doctor","description":"$_doctorCommandText"},'
-    '{"name":"assess","description":"$_assessCommandText"}],"options":['
+    '{"name":"assess","description":"$_assessCommandText"},'
+    '{"name":"bootstrap","description":"$_bootstrapCommandText"}],"options":['
     '{"flags":["-h","--help"],"description":"Muestra esta ayuda."},'
     '{"flags":["--version"],"description":"Muestra la versión del '
     'ejecutable."},{"flags":["--json"],"description":"$_jsonText"}],'

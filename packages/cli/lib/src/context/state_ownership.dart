@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:core/core.dart';
 
 import '../assessment/assessment_codec.dart';
+import '../basis/basis_codec.dart';
 import 'context_codec.dart';
 import 'secure_context_store.dart';
 import 'state_layout.dart';
@@ -48,25 +49,21 @@ Future<StateOwnership> _classify(
   SecureContextStore store,
   ObservedLayout layout,
 ) async {
-  final invalid = <String>[];
-  final valid = <String>{};
-  for (final path in layout.documents) {
-    if (await _validDocument(store, path)) {
-      valid.add(path);
-    } else {
-      invalid.add(path);
-    }
-  }
+  final (:valid, :invalid) = await _documents(store, layout);
   if (!await _ownGitignore(store, layout)) {
     return StateOwnership(StateOwnershipKind.foreign, [gitignorePath]);
   }
-  // Un levantamiento que no valida no invalida el contexto: assess lo
-  // informa y lo conserva; init y doctor siguen sobre project.json.
-  if (valid.contains(projectPath)) invalid.remove(assessmentDocumentPath);
+  // Un levantamiento o una base que no validan no invalidan el contexto:
+  // su propio comando los informa y conserva; init y doctor siguen sobre
+  // project.json, y doctor los muestra en sus checks.
+  if (valid.contains(projectPath)) invalid.removeWhere(_ownedApart.contains);
   if (invalid.isNotEmpty) {
     return StateOwnership(StateOwnershipKind.invalid, invalid);
   }
-  final unproven = await _unprovenAssessment(store, layout, valid);
+  final unproven = [
+    ...await _unprovenAssessment(store, layout, valid),
+    ...await _unprovenBasis(store, layout, valid),
+  ];
   if (unproven.isNotEmpty) {
     return StateOwnership(StateOwnershipKind.invalid, unproven);
   }
@@ -75,7 +72,60 @@ Future<StateOwnership> _classify(
     decided.kind,
     decided.findings,
     valid.contains(assessmentTransactionPath),
+    _stateOf(layout, valid, basisDocumentPath),
+    _stateOf(layout, valid, basisTransactionPath),
   );
+}
+
+/// Documentos propios que su comando gobierna aparte del contexto.
+const _ownedApart = {
+  assessmentDocumentPath,
+  basisDocumentPath,
+  basisDraftPath,
+  basisTransactionPath,
+};
+
+BasisIntegrity _stateOf(
+  ObservedLayout layout,
+  Set<String> valid,
+  String path,
+) => !layout.documents.contains(path)
+    ? BasisIntegrity.absent
+    : valid.contains(path)
+    ? BasisIntegrity.valid
+    : BasisIntegrity.invalid;
+
+/// Los restos de bootstrap que no se pueden acreditar: sin su journal, un
+/// temporal nunca, y un candidato sólo si está completo y valida.
+Future<List<String>> _unprovenBasis(
+  SecureContextStore store,
+  ObservedLayout layout,
+  Set<String> valid,
+) async {
+  if (valid.contains(basisTransactionPath)) return const [];
+  return [
+    ...layout.basisTemporaries,
+    for (final candidate in layout.basisCandidates)
+      if (!await _validBasisCandidate(store, candidate)) candidate,
+  ];
+}
+
+final _ownershipLimits = BasisLimits.forProfile(BasisProfile.extended);
+
+Future<bool> _validBasisCandidate(SecureContextStore store, String path) async {
+  try {
+    final bytes = await store.readRelative(
+      path,
+      maxBytes: _ownershipLimits.maxBasisBytes,
+    );
+    if (bytes == null) return false;
+    decodeBasis(bytes, limits: _ownershipLimits);
+    return true;
+  } on ContextFormatException {
+    return false;
+  } on ContextStoreFailure {
+    return false;
+  }
 }
 
 /// Los restos de assess que no se pueden acreditar: sin su journal, un
@@ -126,29 +176,29 @@ StateOwnership _decide(ObservedLayout layout, Set<String> valid) {
   return StateOwnership(StateOwnershipKind.invalid, [...valid]..sort());
 }
 
+/// Los documentos de [layout] que validan y los que no.
+Future<({Set<String> valid, List<String> invalid})> _documents(
+  SecureContextStore store,
+  ObservedLayout layout,
+) async {
+  final valid = <String>{};
+  final invalid = <String>[];
+  for (final path in layout.documents) {
+    if (await _validDocument(store, path)) {
+      valid.add(path);
+    } else {
+      invalid.add(path);
+    }
+  }
+  return (valid: valid, invalid: invalid);
+}
+
 Future<bool> _validDocument(SecureContextStore store, String path) async {
-  const codec = ContextCodec();
   try {
     final kind = documentKindOf(path);
-    final bytes = await store.readRelative(
-      path,
-      maxBytes: kind == DocumentKind.assessment
-          ? maxAssessmentDocumentBytes
-          : maxProjectBytes,
-    );
+    final bytes = await store.readRelative(path, maxBytes: _maxBytes(kind));
     if (bytes == null) return false;
-    switch (kind) {
-      case DocumentKind.project:
-        codec.decodeProject(bytes);
-      case DocumentKind.settings:
-        codec.decodeSettings(bytes);
-      case DocumentKind.transaction:
-        codec.decodeTransaction(bytes);
-      case DocumentKind.assessment:
-        decodeAssessment(bytes);
-      case DocumentKind.assessmentTransaction:
-        decodeAssessmentTransaction(bytes);
-    }
+    _decode(kind, bytes);
     return true;
   } on ContextFormatException {
     return false;
@@ -156,6 +206,37 @@ Future<bool> _validDocument(SecureContextStore store, String path) async {
     return false;
   }
 }
+
+/// [bytes] por el codec estricto de [kind]; lanza si no valida.
+void _decode(DocumentKind kind, List<int> bytes) {
+  const codec = ContextCodec();
+  switch (kind) {
+    case DocumentKind.project:
+      codec.decodeProject(bytes);
+    case DocumentKind.settings:
+      codec.decodeSettings(bytes);
+    case DocumentKind.transaction:
+      codec.decodeTransaction(bytes);
+    case DocumentKind.assessment:
+      decodeAssessment(bytes);
+    case DocumentKind.assessmentTransaction:
+      decodeAssessmentTransaction(bytes);
+    case DocumentKind.basis:
+      decodeBasis(bytes, limits: _ownershipLimits);
+    case DocumentKind.basisDraft:
+      decodeBasisDraft(bytes, limits: _ownershipLimits);
+    case DocumentKind.basisTransaction:
+      decodeBasisTransaction(bytes, limits: _ownershipLimits);
+  }
+}
+
+int _maxBytes(DocumentKind kind) => switch (kind) {
+  DocumentKind.assessment => maxAssessmentDocumentBytes,
+  DocumentKind.basis => _ownershipLimits.maxBasisBytes,
+  DocumentKind.basisDraft ||
+  DocumentKind.basisTransaction => _ownershipLimits.maxDraftBytes,
+  _ => maxProjectBytes,
+};
 
 /// Un `.gitignore` sólo puede tener los bytes exactos que genera init.
 Future<bool> _ownGitignore(

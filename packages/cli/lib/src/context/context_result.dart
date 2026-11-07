@@ -1,5 +1,6 @@
 import 'package:core/core.dart';
 
+import 'context_basis.dart';
 import 'context_decisions.dart';
 import 'state_layout.dart';
 
@@ -48,6 +49,11 @@ final class ResultParts {
   final diagnostics = <ContextDiagnostic>[];
   final actions = <ContextNextAction>[];
   var cancelled = false;
+
+  /// Lo demostrado de la base guiada y de su journal; sin observarlos, sus
+  /// checks quedan sin comprobar.
+  BasisIntegrity basis = BasisIntegrity.unverified;
+  BasisIntegrity basisTransaction = BasisIntegrity.unverified;
 }
 
 /// El resultado único: código del diagnóstico de mayor precedencia, outcome
@@ -78,7 +84,7 @@ ContextOperationResult resultOf(ResultParts p, ContextEffects effects) {
   );
 }
 
-/// Los seis checks, derivados del estado y los diagnósticos ya decididos.
+/// Los ocho checks, derivados del estado y los diagnósticos ya decididos.
 List<ContextCheck> checksOf(ResultParts p) {
   final codes = {for (final d in p.diagnostics) d.code};
   return [
@@ -88,6 +94,8 @@ List<ContextCheck> checksOf(ResultParts p) {
     _transaction(p, codes, _check),
     _freshness(p, _check),
     _sharing(p, codes, _check),
+    basisIntegrityCheck(p.basis),
+    basisTransactionCheck(p.basisTransaction),
   ];
 }
 

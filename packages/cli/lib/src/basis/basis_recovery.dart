@@ -18,10 +18,7 @@ Future<void> recoverBasis(BasisService s, BasisReply r) =>
     s.files.locked(() async {
       final journal = await s.files.journal();
       r.transaction = journal.integrity;
-      if (journal.absent) {
-        r.outcome = BasisOutcome.noChanges;
-        return;
-      }
+      if (journal.absent) return _leftovers(s, r);
       if (!usable(r, journal, basisTransactionPath)) return;
       final value = journal.value!;
       if (!await _attributable(s, r, value)) return;
@@ -30,6 +27,33 @@ Future<void> recoverBasis(BasisService s, BasisReply r) =>
       if (now == value.before) return _finish(s, r, value);
       _conflict(r, 'La base no es la anterior ni la publicada.');
     });
+
+/// Sin journal: un candidato completo de este proyecto se retira tras
+/// identificarlo, nunca se adopta; un temporal o un candidato que no se
+/// puede acreditar se conserva y es un conflicto. Sin restos, no-op.
+Future<void> _leftovers(BasisService s, BasisReply r) async {
+  final observed = await s.observeLayout?.call();
+  if (observed is! ObservedLayout) {
+    r.outcome = BasisOutcome.noChanges;
+    return;
+  }
+  if (observed.basisTemporaries.isNotEmpty) {
+    return _conflict(r, 'Hay temporales de una publicación sin journal.');
+  }
+  final projectId = (await s.readProject()).projectId;
+  for (final path in observed.basisCandidates) {
+    final candidate = await s.files.candidate(path);
+    if (candidate.value == null || candidate.value!.projectId != projectId) {
+      return _conflict(r, 'Hay un candidato sin journal que no se acredita.');
+    }
+    await s.files.remove(path, candidate.bytesDigest!);
+    await s.store.removeDirectory(path.substring(0, path.lastIndexOf('/')));
+    r.changedFiles.add(path);
+  }
+  r.outcome = r.changedFiles.isEmpty
+      ? BasisOutcome.noChanges
+      : BasisOutcome.recovered;
+}
 
 /// El journal es de este proyecto y no hay otra transacción activa: dos
 /// journals no se ordenan adivinando.

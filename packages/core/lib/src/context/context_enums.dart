@@ -54,9 +54,12 @@ enum SharingEffective {
 }
 
 /// El comando que produjo un resultado.
+/// `bootstrap` sólo aparece como comando de una acción siguiente: el
+/// comando de una respuesta contextual es init o doctor.
 enum ContextCommand {
   init('init'),
-  doctor('doctor');
+  doctor('doctor'),
+  bootstrap('bootstrap');
 
   const ContextCommand(this._wireName);
 
@@ -148,7 +151,9 @@ enum ContextCheckId {
   producerCompatibility('producer_compatibility'),
   transactionState('transaction_state'),
   recognitionFreshness('recognition_freshness'),
-  sharingState('sharing_state');
+  sharingState('sharing_state'),
+  basisIntegrity('basis_integrity'),
+  basisTransaction('basis_transaction');
 
   const ContextCheckId(this._wireName);
 

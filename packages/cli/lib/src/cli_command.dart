@@ -1,11 +1,13 @@
 import 'package:core/core.dart';
 
 import 'assessment_grammar.dart';
+import 'basis/basis_grammar.dart';
 import 'cli_grammar.dart';
 
 const initCommand = 'init';
 const doctorCommand = 'doctor';
 const assessCommand = 'assess';
+const bootstrapCommand = 'bootstrap';
 const showFlag = '--show';
 const previousFlag = '--previous';
 const refreshFlag = '--refresh';
@@ -16,9 +18,15 @@ const versionFlag = '--version';
 const dryRunFlag = '--dry-run';
 const helpFlags = {'-h', '--help'};
 const reportBudgetFlag = '--report-budget';
+const scopeFlag = '--scope';
+const historyFlag = '--history';
+const draftFlag = '--draft';
+const inputFlag = '--input';
+const acceptFlag = '--accept';
+const discardFlag = '--discard';
 
 /// De qué ayuda se trata, y adónde apunta un error de uso.
-enum HelpTopic { root, init, doctor, assess }
+enum HelpTopic { root, init, doctor, assess, bootstrap }
 
 /// Lo que los argumentos piden. El token exacto `--json` elige la respuesta
 /// estructurada aunque otro token sea inválido.
@@ -119,6 +127,36 @@ final class RunAssessment extends CliCommand {
   final ReportBudgetProfile budgetProfile;
 }
 
+/// `bootstrap`: guía, prepara, consulta, acepta, descarta o recupera la
+/// base guiada. Sin operación explícita es la guía, que sólo pregunta en
+/// una terminal.
+final class RunBootstrap extends CliCommand {
+  const RunBootstrap({
+    required super.json,
+    required this.operation,
+    this.scope,
+    this.history = false,
+    this.draft = false,
+    this.input,
+    this.digest,
+    this.profile = BasisProfile.standard,
+  });
+
+  final BasisOperation operation;
+
+  /// Sólo con `--show`: la ruta consultada; `.` es la consulta global.
+  final String? scope;
+  final bool history;
+  final bool draft;
+
+  /// Sólo con `--input`: el archivo, o `-` para la entrada estándar.
+  final String? input;
+
+  /// Sólo con `--accept` o `--discard`: la huella exacta del borrador.
+  final String? digest;
+  final BasisProfile profile;
+}
+
 const _root = Grammar({versionFlag, ...helpFlags});
 const _init = Grammar(
   {dryRunFlag, refreshFlag, recoverFlag, ...helpFlags},
@@ -138,6 +176,9 @@ CliCommand parseCliCommand(List<String> arguments) {
   }
   if (arguments.isNotEmpty && arguments.first == assessCommand) {
     return parseAssess(arguments.sublist(1), json: json);
+  }
+  if (arguments.isNotEmpty && arguments.first == bootstrapCommand) {
+    return parseBootstrap(arguments.sublist(1), json: json);
   }
   if (_root.firstProblem(arguments) case final problem?) {
     return RejectUsage(problem, HelpTopic.root, json: json);

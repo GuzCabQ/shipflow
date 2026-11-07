@@ -29,7 +29,11 @@ final class InitSession {
            gitState: o.git.state,
            effective: SharingEffective.unverified,
          ),
-       );
+       ) {
+    parts
+      ..basis = o.ownership.basis
+      ..basisTransaction = o.ownership.basisTransaction;
+  }
 
   final ProjectContextService service;
   final ObservedContext o;

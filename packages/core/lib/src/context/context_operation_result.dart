@@ -40,7 +40,7 @@ final class ContextOperationResult {
 
   /// Sólo tras validar la forma por fuera: no es un lector tolerante.
   factory ContextOperationResult.fromJson(Map<String, Object?> json) {
-    requireSemantic(json['schemaVersion'] == 3, 'schema_version');
+    requireSemantic(json['schemaVersion'] == 4, 'schema_version');
     return ContextOperationResult(
       command: ContextCommand.fromWireName(json['command']! as String),
       operation: ContextOperation.fromWireName(json['operation']! as String),
@@ -59,7 +59,7 @@ final class ContextOperationResult {
     );
   }
 
-  final int schemaVersion = 3;
+  final int schemaVersion = 4;
   final ContextCommand command;
   final ContextOperation operation;
   final ContextOutcome outcome;

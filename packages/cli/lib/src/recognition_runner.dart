@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
 import 'assessment/assessment_cli.dart';
+import 'basis/basis_cli.dart';
 import 'cli_application.dart';
 import 'cli_command.dart';
 import 'cli_response.dart';
@@ -71,20 +72,47 @@ Future<CliResponse> runCommand(
     git: git,
     prompt: prompt,
   ),
-  final RunAssessment run => await runAssessmentCommand(
-    run,
-    version: version,
-    workingDirectory: workingDirectory,
-    recognizeProject: recognizeProject,
-    plugin: assessment,
-    logicalRootHint: logicalRootHint,
-    git: git,
+  RunAssessment() || RunBootstrap() => await _stateCommand(
+    command,
+    version,
+    workingDirectory,
+    recognizeProject,
+    (logicalRootHint: logicalRootHint, git: git, prompt: prompt),
+    assessment,
   ),
   final RunInitDryRun dryRun => await _dryRun(
     dryRun,
     workingDirectory,
     recognizeProject,
     logicalRootHint,
+  ),
+};
+
+/// Los comandos con estado propio fuera del contexto V2: assess y
+/// bootstrap.
+Future<CliResponse> _stateCommand(
+  CliCommand command,
+  String version,
+  Directory workingDirectory,
+  RecognitionContributor recognizeProject,
+  ({String? logicalRootHint, GitContextAdapter? git, ContextPromptIO? prompt})
+  optional,
+  AssessmentPlugin? assessment,
+) => switch (command) {
+  final RunBootstrap run => runBootstrapCommand(
+    run,
+    version: version,
+    workingDirectory: workingDirectory,
+    prompt: optional.prompt,
+  ),
+  _ => runAssessmentCommand(
+    command as RunAssessment,
+    version: version,
+    workingDirectory: workingDirectory,
+    recognizeProject: recognizeProject,
+    plugin: assessment,
+    logicalRootHint: optional.logicalRootHint,
+    git: optional.git,
   ),
 };
 

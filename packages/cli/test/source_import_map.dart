@@ -45,6 +45,7 @@ const expectedImports = {
   'lib/src/cli_command.dart': {
     'package:core/core.dart',
     'assessment_grammar.dart',
+    'basis/basis_grammar.dart',
     'cli_grammar.dart',
   },
   'lib/src/cli_emitter.dart': {
@@ -103,6 +104,7 @@ const expectedImports = {
     'package:core/core.dart',
     'package:vcs/vcs.dart',
     'assessment/assessment_cli.dart',
+    'basis/basis_cli.dart',
     'cli_application.dart',
     'cli_command.dart',
     'cli_response.dart',

@@ -2,9 +2,11 @@ import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
 import 'context_assessment.dart';
+import 'context_basis.dart';
 import 'context_decisions.dart';
 import 'context_observation.dart';
 import 'context_result.dart';
+import 'state_layout.dart';
 
 /// Doctor: sólo lee archivos y consulta Git acotado. No crea `local/`, no
 /// toma locks ni repara; si ve una operación pendiente, la informa.
@@ -33,6 +35,7 @@ Future<ContextOperationResult> runDoctor(
     ..addAll(stateDiagnostics)
     ..addAll(freshDiagnostics)
     ..addAll(sharingDiagnostics);
+  _withBasis(parts, o.ownership);
   if (state == ContextState.absent && stateDiagnostics.isEmpty) {
     parts.diagnostics.add(
       diagnostic('context_absent', 'Todavía no hay contexto guardado aquí.'),
@@ -42,6 +45,12 @@ Future<ContextOperationResult> runDoctor(
   return resultOf(parts, EffectsLog().freeze(budget.started));
 }
 
+/// El estado de la base en [parts], con sus diagnósticos.
+void _withBasis(ResultParts parts, StateOwnership ownership) => parts
+  ..basis = ownership.basis
+  ..basisTransaction = ownership.basisTransaction
+  ..diagnostics.addAll(basisDiagnostics(ownership));
+
 /// Los comandos existentes que resuelven [diagnostics], sin repetir.
 List<ContextNextAction> nextActionsFor(
   List<ContextDiagnostic> diagnostics,
@@ -50,6 +59,7 @@ List<ContextNextAction> nextActionsFor(
   final codes = {for (final d in diagnostics) d.code};
   return [
     if (codes.contains('recovery_pending')) recoverAction,
+    if (codes.contains('basis_recovery_required')) bootstrapRecoverAction,
     if (codes.contains('context_absent') || codes.contains('not_initialized'))
       firstInitAction,
     if (codes.contains('context_stale') ||

@@ -5,11 +5,14 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 import 'support/assessment_fixtures.dart';
+import 'v2_fixtures.dart';
 
 void main() {
   Object decoderFor(String schema, List<int> bytes) => switch (schema) {
     'assessment.schema.json' => decodeAssessment(bytes),
-    'assessment-response.schema.json' => decodeAssessmentResponse(bytes),
+    'assessment-response.schema.json' => decodeAssessmentResponse(
+      currentMajor(bytes, from: 1, to: 2),
+    ),
     _ => decodeAssessmentTransaction(bytes),
   };
 
@@ -124,8 +127,13 @@ void main() {
 
   test('a stale or unverified response never succeeds', () async {
     expect(
-      () async =>
-          decodeAssessmentResponse(await v3Bytes('invalid-stale-success.json')),
+      () async => decodeAssessmentResponse(
+        currentMajor(
+          await v3Bytes('invalid-stale-success.json'),
+          from: 1,
+          to: 2,
+        ),
+      ),
       rejectsAssessment('stale_success', ContextFormatLayer.semantic),
     );
   });

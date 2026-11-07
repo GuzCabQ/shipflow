@@ -32,7 +32,7 @@ void shapeResponse(Object? value) {
     'effects',
     'nextActions',
   });
-  shapeConstant(json['schemaVersion'], 3, '/schemaVersion');
+  shapeConstant(json['schemaVersion'], 4, '/schemaVersion');
   _command(json);
   shapeMember(json['outcome'], _outcomes, '/outcome');
   _exitCode(json['exitCode'], contextExitCodes);
@@ -44,7 +44,7 @@ void shapeResponse(Object? value) {
 
 /// Comprobaciones, diagnósticos, contexto, efectos y siguientes acciones.
 void _findings(Map<String, Object?> json) {
-  shapeList(json['checks'], '/checks', item: _check, max: 6);
+  shapeList(json['checks'], '/checks', item: _check, max: 8);
   shapeList(json['diagnostics'], '/diagnostics', item: _diagnostic);
   if (json['context'] != null) shapeRecognition(json['context'], '/context');
   _effects(json['effects']);
@@ -52,11 +52,11 @@ void _findings(Map<String, Object?> json) {
 }
 
 void _command(Map<String, Object?> json) {
-  final command = shapeMember(
-    json['command'],
-    wireNames(ContextCommand.values, (c) => c.toWireName()),
-    '/command',
-  );
+  // `bootstrap` sólo es comando de una acción, nunca de la respuesta.
+  final command = shapeMember(json['command'], const {
+    'init',
+    'doctor',
+  }, '/command');
   final operation = shapeMember(
     json['operation'],
     wireNames(ContextOperation.values, (o) => o.toWireName()),
@@ -140,7 +140,7 @@ void _action(Object? value, String at) {
     'purpose',
     'effect',
   });
-  shapeMember(json['command'], {'init', 'doctor'}, '$at/command');
+  shapeMember(json['command'], {'init', 'doctor', 'bootstrap'}, '$at/command');
   shapeTexts(json['arguments'], '$at/arguments');
   shapeText(json['purpose'], '$at/purpose');
   shapeText(json['effect'], '$at/effect');

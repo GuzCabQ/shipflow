@@ -38,6 +38,7 @@ Help _helpOf(HelpTopic topic) => switch (topic) {
   HelpTopic.init => initHelp,
   HelpTopic.doctor => doctorHelp,
   HelpTopic.assess => assessHelp,
+  HelpTopic.bootstrap => bootstrapHelp,
 };
 
 CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
@@ -54,6 +55,7 @@ CliResponse _usageError(String problem, HelpTopic topic, {required bool json}) {
     HelpTopic.init => 'shipflow init --help',
     HelpTopic.doctor => 'shipflow doctor --help',
     HelpTopic.assess => 'shipflow assess --help',
+    HelpTopic.bootstrap => 'shipflow bootstrap --help',
     HelpTopic.root => 'shipflow --help',
   };
   return CliResponse(

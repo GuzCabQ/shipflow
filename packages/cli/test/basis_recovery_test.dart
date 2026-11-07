@@ -138,6 +138,35 @@ void main() {
     expect(box.journal.existsSync(), isFalse);
   });
 
+  test('an own complete candidate without journal is removed', () async {
+    final prepared = await box.prepare(box.input([create('rule', ruleOf())]));
+    box.storeWrap = (real) => CrashingStore(real, 1);
+    await expectLater(
+      box.accept(prepared.draftDigest!),
+      throwsA(isA<SimulatedCrash>()),
+    );
+    box.storeWrap = null;
+    expect(box.journal.existsSync(), isFalse);
+    final staging = Directory(box.path('shipflow/local/basis-staging'));
+    expect(staging.listSync(recursive: true).whereType<File>(), hasLength(1));
+    final result = await box.recover();
+    expect(result.outcome, BasisOutcome.recovered);
+    expect(result.exitCode, 0);
+    expect(staging.listSync(recursive: true).whereType<File>(), isEmpty);
+    expect(box.draft.existsSync(), isTrue);
+    expect((await box.box.run(ContextOperation.doctor)).exitCode, 0);
+  });
+
+  test('a temporary without journal is never a no-op', () async {
+    final stray = File(
+      box.path('shipflow/local/.basis-transaction.json.0123456789abcdef.tmp'),
+    )..writeAsStringSync('{');
+    final result = await box.recover();
+    expect(result.exitCode, 75);
+    expect(codesOf(result), contains('recovery_required'));
+    expect(stray.existsSync(), isTrue);
+  });
+
   test('a pending basis publication blocks preparing another', () async {
     await interrupted(2);
     final result = await box.prepare(box.input([create('b', ruleOf())]));

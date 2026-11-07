@@ -23,7 +23,7 @@ const _responseKeys = {
 /// La forma de una respuesta de assess, con el snapshot elegido o null.
 void shapeAssessmentResponse(Object? value) {
   final json = shapeObject(value, '', _responseKeys);
-  shapeConstant(json['schemaVersion'], 1, '/schemaVersion');
+  shapeConstant(json['schemaVersion'], 2, '/schemaVersion');
   shapeConstant(json['kind'], assessmentResponseKind, '/kind');
   shapeConstant(json['command'], 'assess', '/command');
   shapeMember(json['operation'], {'observe', 'show', 'recover'}, '/operation');

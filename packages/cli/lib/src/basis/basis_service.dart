@@ -22,6 +22,7 @@ final class BasisService {
     required this.now,
     required this.limits,
     required this.version,
+    this.observeLayout,
   });
 
   final ContextStore store;
@@ -35,6 +36,10 @@ final class BasisService {
 
   /// La versión del productor que firma los documentos.
   final String version;
+
+  /// La forma de `shipflow/` por metadatos, para encontrar restos sin
+  /// journal; sin ella, recover no los busca.
+  final Future<Object> Function()? observeLayout;
 
   BasisStore get files => BasisStore(store, limits);
 

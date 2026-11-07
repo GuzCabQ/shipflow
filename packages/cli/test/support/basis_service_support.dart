@@ -6,6 +6,7 @@ import 'package:cli/src/basis/basis_preflight.dart';
 import 'package:cli/src/basis/basis_service.dart';
 import 'package:cli/src/basis/basis_sources.dart';
 import 'package:cli/src/context/secure_context_store.dart';
+import 'package:cli/src/context/state_layout.dart';
 import 'package:core/core.dart';
 
 import 'context_service_support.dart';
@@ -21,6 +22,9 @@ final class BasisBox {
     if (result.exitCode != 0) throw StateError('init: ${result.exitCode}');
     return BasisBox._(box);
   }
+
+  /// Sobre un proyecto ya inicializado por otra caja.
+  factory BasisBox.on(ServiceSandbox box) => BasisBox._(box);
 
   final ServiceSandbox box;
   var clock = DateTime.utc(2026, 11, 6, 12);
@@ -59,6 +63,7 @@ final class BasisBox {
           now: () => clock,
           limits: limits,
           version: '0.0.0-prueba',
+          observeLayout: () => observeStateLayout(box.root),
         ),
       );
     } finally {
@@ -205,3 +210,19 @@ List<BasisChange> ruleWithSource(String locator) => [
 /// La versión actual del primer registro de [kind] en la base publicada.
 BasisRecordVersion currentOf(BasisBox box, String kind) =>
     replayBasis(box.document).values.firstWhere((v) => v.payload.kind == kind);
+
+/// Prepara [changes] y muere justo antes del rename: queda un journal de
+/// bootstrap preparado y la base como estaba.
+Future<String> interruptBasis(BasisBox box, List<BasisChange> changes) async {
+  final prepared = await box.prepare(box.input(changes));
+  box.storeWrap = (real) => CrashingStore(real, 2);
+  try {
+    await box.accept(prepared.draftDigest!);
+    throw StateError('accept no murió');
+  } on SimulatedCrash {
+    // La muerte del proceso deja el journal y el candidato.
+  } finally {
+    box.storeWrap = null;
+  }
+  return prepared.draftDigest!;
+}

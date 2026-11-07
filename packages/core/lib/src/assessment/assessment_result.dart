@@ -104,7 +104,7 @@ final class AssessmentResult {
 
   /// Sólo tras validar la forma por fuera: no es un lector tolerante.
   factory AssessmentResult.fromJson(Map<String, Object?> json) {
-    requireSemantic(json['schemaVersion'] == 1, 'schema_version');
+    requireSemantic(json['schemaVersion'] == 2, 'schema_version');
     requireSemantic(json['kind'] == assessmentResponseKind, 'kind');
     requireSemantic(json['command'] == 'assess', 'command');
     return AssessmentResult(
@@ -132,7 +132,7 @@ final class AssessmentResult {
     );
   }
 
-  final int schemaVersion = 1;
+  final int schemaVersion = 2;
   final String kind = assessmentResponseKind;
   final String command = 'assess';
   final AssessmentOperation operation;
