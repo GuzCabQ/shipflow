@@ -62,6 +62,10 @@ Future<void> _notThisDraft(
   );
 }
 
+/// Las precondiciones que ya no se cumplirán para este borrador: sólo
+/// queda descartarlo y preparar otro.
+const _stale = {'base_changed', 'source_changed'};
+
 Future<void> _accept(
   BasisService s,
   BasisReply r,
@@ -74,6 +78,7 @@ Future<void> _accept(
   final failure = await recheck(s, draft, basis.value?.digest);
   if (failure != null) {
     r.add(failure.code, path: failure.path, message: failure.message);
+    if (_stale.contains(failure.code)) r.addAction(discardAction(draft.digest));
     return;
   }
   final candidate = buildCandidate(

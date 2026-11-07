@@ -177,6 +177,39 @@ void main() {
     expect(status.diagnostics.single.code, 'source_not_recorded');
   });
 
+  group('a draft outdated by a newer basis', () {
+    late BasisResponse prepared;
+    setUp(() async {
+      await box.publish(box.input([create('a', ruleOf())]));
+      prepared = await box.prepare(
+        box.input([create('b', pendingOf())], currentBase: true),
+      );
+      final draft = box.draft.readAsBytesSync();
+      box.draft.deleteSync();
+      await box.publish(box.input([create('c', pendingOf())]));
+      box.draft.writeAsBytesSync(draft);
+    });
+
+    test('shown says the basis changed and offers discarding', () async {
+      final shown = await box.show(draft: true);
+      expect(codesOf(shown), contains('base_changed'));
+      expect(codesOf(shown), isNot(contains('history_gap')));
+      expect(shown.draftDigest, prepared.draftDigest);
+      expect(shown.nextActions.map((a) => a.arguments.join(' ')), [
+        '--discard ${prepared.draftDigest}',
+      ]);
+    });
+
+    test('accepting it offers discarding', () async {
+      final accepted = await box.accept(prepared.draftDigest!);
+      expect(codesOf(accepted), contains('base_changed'));
+      expect(
+        accepted.nextActions.map((a) => a.arguments.first),
+        contains('--discard'),
+      );
+    });
+  });
+
   test('full_history_budget_preserves_previous_bytes', () async {
     await box.publish(box.input([create('rule', ruleOf())]));
     final bytes = box.basis.readAsBytesSync();

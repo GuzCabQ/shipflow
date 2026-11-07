@@ -97,6 +97,10 @@ Future<void> _draft(
     );
     return;
   }
+  if (draft.expectedBasisDigest != basis?.digest) {
+    _outdated(r, draft);
+    return;
+  }
   final candidate = buildCandidate(
     basis,
     draft,
@@ -113,3 +117,16 @@ Future<void> _draft(
     ..add('draft_not_accepted', path: basisDraftPath);
   draftActions(r, draft.digest);
 }
+
+/// Un borrador preparado sobre otra base no se presenta aplicado a la
+/// actual: sólo se puede descartar y preparar de nuevo.
+void _outdated(BasisReply r, BasisDraft draft) => r
+  ..draftDigest = draft.digest
+  ..add(
+    'base_changed',
+    path: basisDocumentPath,
+    message:
+        'La base cambió desde que se preparó este borrador: descártalo y '
+        'prepara otro sobre la base actual.',
+  )
+  ..addAction(discardAction(draft.digest));
