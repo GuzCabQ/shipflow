@@ -1,8 +1,10 @@
 import 'package:core/core.dart';
 
 import '../context/context_prompt.dart';
+import 'basis_flow.dart';
 import 'basis_human.dart';
 import 'basis_prompt_changes.dart';
+import 'basis_prompt_existing.dart';
 import 'basis_prompt_questions.dart';
 import 'basis_reply.dart';
 import 'basis_service.dart';
@@ -33,7 +35,12 @@ final class _Guide {
   final BasisService s;
   final ContextPromptIO io;
   final changes = <BasisChange>[];
+  final _groups = <int>[];
   final _used = <String>{};
+  late final String _projectId;
+  var _rules = <BasisRecordVersion>[];
+  var _open = <BasisRecordVersion>[];
+  (BasisActor, String)? _declared;
 
   String key(String prefix) {
     var n = _used.length;
@@ -42,7 +49,18 @@ final class _Guide {
   }
 
   Future<BasisResponse> run() async {
-    io.show(_intro(await s.show()));
+    final blocked = await _context();
+    if (blocked != null) return blocked;
+    final shown = await s.show();
+    io.show(_intro(shown));
+    _rules = [
+      for (final v in shown.selected)
+        if (v.payload case BasisRule(lifecycle: BasisRuleLifecycle.active)) v,
+    ];
+    _open = [
+      for (final v in shown.pending)
+        if (v.payload is BasisPending) v,
+    ];
     final draft = (await s.files.draft()).value;
     if (draft != null) {
       _used.addAll(draft.input.changes.map((c) => c.key));
@@ -50,6 +68,17 @@ final class _Guide {
       if (resumed != null) return resumed;
     }
     return _collect(draft);
+  }
+
+  /// Sin contexto inicial no se pregunta nada: se remite a `init`.
+  Future<BasisResponse?> _context() async {
+    final env = await s.readProject();
+    final r = BasisReply(BasisOperation.guide);
+    if (!contextReady(env, r)) {
+      return (r..outcome = BasisOutcome.blocked).build();
+    }
+    _projectId = env.projectId!;
+    return null;
   }
 
   /// Un borrador guardado se ofrece retomar antes de empezar otro.
@@ -81,11 +110,17 @@ final class _Guide {
     while (true) {
       switch (await _menu()) {
         case '1':
-          changes.addAll(await askDecision(io, key));
+          _add(await askDecision(io, key));
         case '2':
-          changes.addAll(await askSource(io, key));
+          _add(await askSource(io, key));
         case '3':
-          changes.addAll(await askPending(io, key));
+          _add(await askPending(io, key));
+        case '5':
+          _add(await askRevision(io, key, _rules));
+        case '6':
+          _add(await askRetirement(io, key, _rules));
+        case '7':
+          _add(await askResolution(io, key, _open));
         case '4':
           final reviewed = await _review(draft);
           if (reviewed != null) return reviewed;
@@ -95,7 +130,22 @@ final class _Guide {
     }
   }
 
+  void _add(List<BasisChange> group) {
+    if (group.isEmpty) return;
+    changes.addAll(group);
+    _groups.add(group.length);
+  }
+
   Future<String> _menu() async {
+    final valid = {
+      '1',
+      '2',
+      '3',
+      '4',
+      'q',
+      if (_rules.isNotEmpty) ...['5', '6'],
+      if (_open.isNotEmpty) '7',
+    };
     while (true) {
       final answer = await ask(
         io,
@@ -104,15 +154,19 @@ final class _Guide {
         '  2) Señalar una fuente de referencia\n'
         '  3) Anotar un asunto por aclarar\n'
         '  4) Revisar lo preparado y decidir si se guarda\n'
+        '${_rules.isEmpty ? '' : '  5) Revisar una decisión vigente\n'
+                  '  6) Retirar una decisión vigente\n'}'
+        '${_open.isEmpty ? '' : '  7) Resolver un asunto pendiente\n'}'
         '  q) Salir sin guardar lo nuevo',
       );
-      if (const {'1', '2', '3', '4', 'q'}.contains(answer)) return answer;
+      if (valid.contains(answer)) return answer;
       io.show('No reconozco esa respuesta.\n');
     }
   }
 
   /// Prepara o revisa el borrador con lo juntado y muestra su resumen;
-  /// null si no hay nada que revisar todavía.
+  /// null para volver al menú: no había nada que revisar, o se quitó lo
+  /// último añadido porque no se pudo preparar.
   Future<BasisResponse?> _review(BasisDraft? draft) async {
     if (changes.isEmpty && !await _emptyAllowed(draft)) return null;
     final prepared = draft == null
@@ -120,11 +174,17 @@ final class _Guide {
         : await s.revise(_appended(draft), expectedDraftDigest: draft.digest);
     io.show(renderBasisHuman(prepared));
     final digest = prepared.draftDigest;
-    if (digest == null || prepared.outcome != BasisOutcome.draftPrepared) {
-      return prepared;
+    if (digest != null && prepared.outcome == BasisOutcome.draftPrepared) {
+      return _decide(digest, prepared);
     }
-    return _decide(digest, prepared);
+    if (_groups.isEmpty || !await yesNo(io, _retry)) return prepared;
+    changes.removeRange(changes.length - _groups.removeLast(), changes.length);
+    return null;
   }
+
+  static const _retry =
+      'No se pudo preparar. ¿Quitar lo último añadido, conservar lo demás y '
+      'volver al menú?';
 
   /// Sin cambios sólo se guarda una base vacía por elección expresa.
   Future<bool> _emptyAllowed(BasisDraft? draft) async {
@@ -139,7 +199,19 @@ final class _Guide {
     );
   }
 
+  /// Quién acepta y por qué se pregunta una sola vez por guía.
   Future<BasisInput> _input() async {
+    final (actor, reason) = _declared ??= await _declare();
+    return BasisInput(
+      projectId: _projectId,
+      expectedBasisDigest: (await s.files.basis()).value?.digest,
+      actor: actor,
+      reason: reason,
+      changes: changes,
+    );
+  }
+
+  Future<(BasisActor, String)> _declare() async {
     final label = await ask(
       io,
       '¿Quién acepta? (un nombre o rol que te identifique)',
@@ -151,13 +223,7 @@ final class _Guide {
       unknownAllowed: false,
     );
     final reason = await ask(io, 'Motivo de estos cambios:');
-    return BasisInput(
-      projectId: (await s.readProject()).projectId!,
-      expectedBasisDigest: (await s.files.basis()).value?.digest,
-      actor: BasisActor(label: label, role: role, scope: scope),
-      reason: reason,
-      changes: changes,
-    );
+    return (BasisActor(label: label, role: role, scope: scope), reason);
   }
 
   BasisInput _appended(BasisDraft draft) => BasisInput(

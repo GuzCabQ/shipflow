@@ -111,8 +111,10 @@ const basisImports = {
   'lib/src/basis/basis_prompt.dart': {
     'package:core/core.dart',
     '../context/context_prompt.dart',
+    'basis_flow.dart',
     'basis_human.dart',
     'basis_prompt_changes.dart',
+    'basis_prompt_existing.dart',
     'basis_prompt_questions.dart',
     'basis_reply.dart',
     'basis_service.dart',
@@ -202,5 +204,12 @@ const basisImports = {
   'lib/src/basis/basis_prompt_questions.dart': {
     'package:core/core.dart',
     '../context/context_prompt.dart',
+  },
+  'lib/src/basis/basis_prompt_existing.dart': {
+    'package:core/core.dart',
+    '../context/context_prompt.dart',
+    '../terminal_text.dart',
+    'basis_prompt_changes.dart',
+    'basis_prompt_questions.dart',
   },
 };

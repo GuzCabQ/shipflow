@@ -38,6 +38,17 @@ Future<void> showBasis(
   final ledger = replayBasisLedger(document);
   r.outcome = BasisOutcome.shown;
   if (history) return _history(r, document, ledger);
+  await _selected(s, r, ledger, path);
+}
+
+/// Lo vigente para [path]; un ámbito inseguro no se consulta ni se
+/// presenta como una base vacía.
+Future<void> _selected(
+  BasisService s,
+  BasisReply r,
+  BasisLedger ledger,
+  String? path,
+) async {
   final query = _query(r, path);
   if (r.stopped && r.has('unsafe_path')) {
     r
@@ -90,17 +101,10 @@ Future<void> _draft(
   if (!usable(r, draftFile, basisDraftPath)) return;
   final draft = draftFile.value;
   if (draft == null) {
-    r.add(
-      'invalid_reference',
-      path: basisDraftPath,
-      message: 'No hay un borrador guardado.',
-    );
+    r.add('invalid_reference', path: basisDraftPath, message: _noDraft);
     return;
   }
-  if (draft.expectedBasisDigest != basis?.digest) {
-    _outdated(r, draft);
-    return;
-  }
+  if (draft.expectedBasisDigest != basis?.digest) return _outdated(r, draft);
   final candidate = buildCandidate(
     basis,
     draft,
@@ -117,6 +121,8 @@ Future<void> _draft(
     ..add('draft_not_accepted', path: basisDraftPath);
   draftActions(r, draft.digest);
 }
+
+const _noDraft = 'No hay un borrador guardado.';
 
 /// Un borrador preparado sobre otra base no se presenta aplicado a la
 /// actual: sólo se puede descartar y preparar de nuevo.

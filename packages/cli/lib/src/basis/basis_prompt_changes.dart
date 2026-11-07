@@ -44,7 +44,8 @@ Future<List<BasisChange>> askDecision(
   ));
   return [
     _create(key, rule),
-    if (active) ...await _review(io, keys, key, rule),
+    if (active)
+      ...await askReview(io, keys, ref: 'new:$key', version: 1, scope: scope),
   ];
 }
 
@@ -92,25 +93,26 @@ Future<(BasisRuleClass, String?, BasisExceptionPolicy)> _prohibition(
   );
 }
 
-/// La revisión pendiente de la decisión recién preparada, si la hay: el
-/// mismo ámbito y la versión 1 de esa regla; el responsable es opcional.
-Future<List<BasisChange>> _review(
+/// La revisión pendiente de una decisión que se incorpora o se revisa, si
+/// la hay: el ámbito de esa versión y su número exacto; el responsable es
+/// opcional.
+Future<List<BasisChange>> askReview(
   ContextPromptIO io,
-  GuideKeys keys,
-  String ruleKey,
-  BasisRule rule,
-) async {
+  GuideKeys keys, {
+  required String ref,
+  required int version,
+  required BasisScope scope,
+}) async {
   if (!await yesNo(
     io,
     '¿Queda algo por revisar de esta decisión más adelante?',
   )) {
     return const [];
   }
-  final question = await ask(io, '¿Qué falta confirmar?');
-  final reason = await ask(io, '¿Por qué sigue pendiente?');
-  final when = await ask(
-    io,
-    '¿Cuándo volver a mirarlo? (una fecha o un acontecimiento)',
+  final asked = (
+    await ask(io, '¿Qué falta confirmar?'),
+    await ask(io, '¿Por qué sigue pendiente?'),
+    await ask(io, '¿Cuándo volver a mirarlo? (una fecha o un acontecimiento)'),
   );
   final reviewer = await ask(
     io,
@@ -120,19 +122,18 @@ Future<List<BasisChange>> _review(
   if (reviewer.isEmpty) {
     io.show('Responsable por definir: no impide guardar.\n');
   }
-  return [
-    _create(
-      keys('review'),
-      _reviewPending(rule.scope, (question, reason, when), ruleKey, reviewer),
-    ),
-  ];
+  final link = BasisDecisionReview(
+    ref: ref,
+    version: version,
+    reviewer: reviewer.isEmpty ? null : reviewer,
+  );
+  return [_create(keys('review'), _reviewPending(scope, asked, link))];
 }
 
 BasisPending _reviewPending(
   BasisScope scope,
   (String, String, String) asked,
-  String ruleKey,
-  String reviewer,
+  BasisDecisionReview link,
 ) => BasisPending(
   title: 'Revisión pendiente',
   scope: scope,
@@ -142,11 +143,7 @@ BasisPending _reviewPending(
   revisitWhen: asked.$3,
   sourceRefs: const [],
   resolution: null,
-  decisionReview: BasisDecisionReview(
-    ref: 'new:$ruleKey',
-    version: 1,
-    reviewer: reviewer.isEmpty ? null : reviewer,
-  ),
+  decisionReview: link,
 );
 
 /// Una fuente señalada: registrarla no adopta su contenido como reglas.
