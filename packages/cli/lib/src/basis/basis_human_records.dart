@@ -92,7 +92,8 @@ List<String> _pending(BasisRecordVersion v, List<BasisRecordVersion> targets) {
   final p = payload as BasisPending;
   final link = p.decisionReview;
   return [
-    '• Este aspecto sigue pendiente: ${_t(p.question, 400)}',
+    '• «${_t(p.title)}»: Este aspecto sigue pendiente: '
+        '${_t(p.question, 400)}',
     '  Motivo: ${_t(p.reason, 400)}',
     '  Volver a mirarlo: ${_t(p.revisitWhen, 400)}',
     if (link != null) ...[
@@ -164,7 +165,9 @@ String _change(BasisRecordVersion c, Map<String, String> titles) {
     BasisSource() => 'fuente',
     _ => 'pendiente',
   };
-  final head = '  «${_t(c.payload.title)}» $kind · versión ${c.version}';
+  final head =
+      '  «${_t(c.payload.title)}» $kind · versión ${c.version}'
+      '${_ending(c.payload)}';
   return switch (c.payload) {
     BasisPending(:final decisionReview?) =>
       '$head · revisa la versión ${decisionReview.version} de '
@@ -172,6 +175,17 @@ String _change(BasisRecordVersion c, Map<String, String> titles) {
     _ => head,
   };
 }
+
+/// Cómo quedó el registro con ese cambio, si dejó de estar vigente o
+/// abierto.
+String _ending(BasisPayload payload) => switch (payload) {
+  BasisPending(status: BasisPendingStatus.resolved) => ' · resuelto',
+  BasisRule(lifecycle: BasisRuleLifecycle.proposed) => ' · propuesta',
+  BasisRule(lifecycle: BasisRuleLifecycle.replaced) => ' · reemplazada',
+  BasisRule(lifecycle: BasisRuleLifecycle.retired) => ' · retirada',
+  BasisSource(lifecycle: BasisSourceLifecycle.retired) => ' · retirada',
+  _ => '',
+};
 
 String _event(BasisEvent e) =>
     '• Revisión ${e.revision} · ${_t(e.acceptedAt)} · ${_t(e.actor.label)} '

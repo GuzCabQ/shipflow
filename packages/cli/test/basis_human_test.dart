@@ -119,6 +119,33 @@ void main() {
       expect(text, contains('versión 1 de «Contratos»'));
     });
 
+    test(
+      'pendings are named and history tells how each change ended',
+      () async {
+        await box.publish(box.input(ruleAndReview()));
+        expect(
+          renderBasisHuman(await box.show()),
+          contains('• «Revisión»: Este aspecto sigue pendiente:'),
+        );
+        final review = currentOf(box, 'pending');
+        await box.publish(
+          box.input([
+            revise(
+              review.id,
+              1,
+              pendingOf(
+                review: (review.payload as BasisPending).decisionReview,
+                status: BasisPendingStatus.resolved,
+                resolution: 'rule:${currentOf(box, 'rule').id}@1',
+              ),
+            ),
+          ]),
+        );
+        final text = renderBasisHuman(await box.show(history: true));
+        expect(text, contains('«Revisión» pendiente · versión 2 · resuelto'));
+      },
+    );
+
     test('a draft never calls its decisions accepted', () async {
       final prepared = await box.prepare(box.input(ruleAndReview()));
       final shown = await box.show(draft: true);
