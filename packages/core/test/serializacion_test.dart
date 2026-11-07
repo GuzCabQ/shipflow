@@ -227,6 +227,8 @@ void main() {
       'BasisResponse',
       'BasisSelection',
       'BasisValidationIssue',
+      'BasisSourceReport',
+      'BasisEnvironment',
     ];
     _literalCases('basis', basis, basisNames);
 

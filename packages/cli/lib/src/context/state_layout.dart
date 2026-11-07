@@ -14,6 +14,11 @@ const previousPath = 'shipflow/local/previous.json';
 const assessmentDocumentPath = 'shipflow/assessment.json';
 const assessmentTransactionPath = 'shipflow/local/assessment-transaction.json';
 
+/// La base guiada portable, su borrador y el journal de su publicación (V4).
+const basisDocumentPath = 'shipflow/basis.json';
+const basisDraftPath = 'shipflow/local/basis-draft.json';
+const basisTransactionPath = 'shipflow/local/basis-transaction.json';
+
 /// Los bytes exactos del `.gitignore` que genera init.
 const generatedGitignore =
     '# Local operational state; project.json remains shareable.\n/local/\n';

@@ -261,6 +261,7 @@ final _basisResponse = BasisResponse(
 );
 
 Map<String, SerializationCase> _selectionCases() => {
+  ..._observationCases(),
   'BasisSelection': _case(
     BasisSelection(
       selected: [_version],
@@ -273,5 +274,26 @@ Map<String, SerializationCase> _selectionCases() => {
   'BasisValidationIssue': _case(
     BasisValidationIssue(code: 'invalid_reference', at: 'changes/1').toJson(),
     (j) => BasisValidationIssue.fromJson(j).toJson(),
+  ),
+};
+
+Map<String, SerializationCase> _observationCases() => {
+  'BasisSourceReport': _case(
+    BasisSourceReport(
+      statuses: [_status],
+      readings: [_reading],
+      complete: false,
+    ).toJson(),
+    (j) => BasisSourceReport.fromJson(j).toJson(),
+  ),
+  'BasisEnvironment': _case(
+    BasisEnvironment(
+      context: BasisIntegrity.valid,
+      projectId: basisProject,
+      contextDigest: digestOf(15),
+      contextRecoveryPending: true,
+      assessmentRecoveryPending: true,
+    ).toJson(),
+    (j) => BasisEnvironment.fromJson(j).toJson(),
   ),
 };

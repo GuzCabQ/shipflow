@@ -18,6 +18,7 @@ export 'src/assessment/assessment_validation.dart'
 export 'src/assessment/assessment_witnesses.dart';
 export 'src/basis/basis_draft.dart';
 export 'src/basis/basis_enums.dart';
+export 'src/basis/basis_environment.dart';
 export 'src/basis/basis_history.dart';
 export 'src/basis/basis_input.dart';
 export 'src/basis/basis_limits.dart';
