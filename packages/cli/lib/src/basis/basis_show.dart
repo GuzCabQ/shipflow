@@ -27,6 +27,7 @@ Future<void> showBasis(
   r.draft = draftFile.integrity;
   await _journal(files, r);
   if (!usable(r, basis, basisDocumentPath)) return;
+  if (!await _bound(s, r, basis.value, draftFile.value)) return;
   if (draft) return _draft(s, r, basis.value, draftFile);
   final document = basis.value;
   if (document == null) {
@@ -60,6 +61,37 @@ Future<void> _selected(
       ? null
       : BasisScope(kind: BasisScopeKind.paths, paths: [query]);
   await present(s, r, ledger, path: query);
+}
+
+/// Sólo se presenta lo de este proyecto, con su contexto listo: una base o
+/// un borrador de otra copia nunca se entregan como aplicables.
+Future<bool> _bound(
+  BasisService s,
+  BasisReply r,
+  BasisDocument? basis,
+  BasisDraft? draft,
+) async {
+  final env = await s.readProject();
+  if (!contextReady(env, r)) return false;
+  for (final (projectId, path) in [
+    (basis?.projectId, basisDocumentPath),
+    (draft?.projectId, basisDraftPath),
+  ]) {
+    if (projectId != null && projectId != env.projectId) {
+      if (path == basisDocumentPath) {
+        r.basis = BasisIntegrity.invalid;
+      } else {
+        r.draft = BasisIntegrity.invalid;
+      }
+      r.add(
+        'invalid_reference',
+        path: path,
+        message: 'Es de otro proyecto: no se usa.',
+      );
+      return false;
+    }
+  }
+  return true;
 }
 
 /// Los eventos en orden, con sus huellas y vínculos ya validados; los

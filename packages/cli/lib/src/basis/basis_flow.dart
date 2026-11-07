@@ -60,11 +60,27 @@ Future<void> present(
   ];
   final report = await s.reader.readSources(sources, s.limits);
   r.sourceStatus.addAll(report.statuses);
-  if (!report.complete) r.complete = false;
+  if (!report.complete) _sourceBudget(s, r);
   _supports(r, selection, report);
   if (selection.reviewTargets.isNotEmpty) {
     r.add('historical_support_not_rechecked');
   }
+}
+
+/// Lo que no se pudo leer por presupuesto deja la consulta no concluyente,
+/// nunca un éxito: se dice por qué y, en standard, cómo ampliarlo.
+void _sourceBudget(BasisService s, BasisReply r) {
+  final widen = s.limits.profile == BasisProfile.standard
+      ? ' Repite con --report-budget=extended.'
+      : '';
+  r
+    ..complete = false
+    ..add(
+      'budget_exceeded',
+      message:
+          'Se agotó el presupuesto de lectura de fuentes: la consulta no es '
+          'concluyente.$widen',
+    );
 }
 
 /// Una regla activa sustentada en fuentes exige todas sus versiones

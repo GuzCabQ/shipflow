@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:core/core.dart';
 
@@ -102,19 +103,24 @@ final class _Run {
     return failure;
   }
 
+  /// Cada lectura se acota por lo que queda del presupuesto total y cobra
+  /// lo que de verdad leyó; agotado, no se abre nada más.
   Future<String?> _readOnce(String path) async {
-    if (opened >= limits.maxSources) return _budget();
+    final remaining = limits.maxTotalSourceBytes - bytes;
+    if (opened >= limits.maxSources || remaining <= 0) return _budget();
     opened++;
+    final cap = min(limits.maxSourceBytes, remaining);
     final List<int>? content;
     try {
-      content = await store.readRelative(path, maxBytes: limits.maxSourceBytes);
+      content = await store.readRelative(path, maxBytes: cap);
     } on ContextStoreFailure {
       return 'source_unreadable';
     }
     if (content == null) return 'source_absent';
-    if (content.length > limits.maxSourceBytes) return 'source_too_large';
-    if (bytes + content.length > limits.maxTotalSourceBytes) return _budget();
     bytes += content.length;
+    if (content.length > cap) {
+      return cap == limits.maxSourceBytes ? 'source_too_large' : _budget();
+    }
     final String text;
     try {
       text = utf8.decode(content);

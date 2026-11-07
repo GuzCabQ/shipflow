@@ -9,16 +9,18 @@ const _secretNames = {'id_rsa', 'id_ed25519'};
 const _secretStems = {'.env', 'credentials', 'secrets'};
 
 /// Si [path] no se abre nunca: carpetas de credenciales o de estado local,
-/// y nombres de secretos, sin importar mayúsculas.
+/// y nombres de secretos. Se compara sin mayúsculas en todos los segmentos,
+/// porque en macOS `SHIPFLOW/LOCAL` abre el mismo archivo que
+/// `shipflow/local`; la ruta original se conserva para leer.
 bool isExcludedSourcePath(String path) {
-  final segments = path.split('/');
+  final segments = path.toLowerCase().split('/');
   if (segments.any(_excludedSegments.contains)) return true;
   if (segments.length >= 2 &&
       segments[0] == 'shipflow' &&
       segments[1] == 'local') {
     return true;
   }
-  final name = segments.last.toLowerCase();
+  final name = segments.last;
   if (_secretNames.contains(name)) return true;
   if (_secretSuffixes.any(name.endsWith)) return true;
   return _secretStems.any((stem) => name == stem || name.startsWith('$stem.'));

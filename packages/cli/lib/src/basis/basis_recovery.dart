@@ -22,7 +22,8 @@ Future<void> recoverBasis(BasisService s, BasisReply r) =>
       if (!usable(r, journal, basisTransactionPath)) return;
       final value = journal.value!;
       if (!await _attributable(s, r, value)) return;
-      final now = (await s.files.basis()).bytesDigest;
+      final (proven, now) = await _basisBytes(s, r);
+      if (!proven) return;
       if (now == value.after) return _completed(s, r, value);
       if (now == value.before) return _finish(s, r, value);
       _conflict(r, 'La base no es la anterior ni la publicada.');
@@ -30,12 +31,20 @@ Future<void> recoverBasis(BasisService s, BasisReply r) =>
 
 /// Sin journal: un candidato completo de este proyecto se retira tras
 /// identificarlo, nunca se adopta; un temporal o un candidato que no se
-/// puede acreditar se conserva y es un conflicto. Sin restos, no-op.
+/// puede acreditar se conserva y es un conflicto. Sólo es no-op si se
+/// comprobó que no hay restos: un estado ajeno o sin observar se conserva.
 Future<void> _leftovers(BasisService s, BasisReply r) async {
   final observed = await s.observeLayout?.call();
-  if (observed is! ObservedLayout) {
+  if (observed is StateOwnership &&
+      observed.kind == StateOwnershipKind.absent) {
     r.outcome = BasisOutcome.noChanges;
     return;
+  }
+  if (observed is! ObservedLayout) {
+    final found = observed is StateOwnership
+        ? ': ${observed.findings.join(', ')}'
+        : '';
+    return _conflict(r, 'No se pudo comprobar que no queden restos$found.');
   }
   if (observed.basisTemporaries.isNotEmpty) {
     return _conflict(r, 'Hay temporales de una publicación sin journal.');
@@ -72,6 +81,20 @@ Future<bool> _attributable(
     return false;
   }
   return true;
+}
+
+/// La huella de los bytes de la base sólo si se leyeron o se comprobó su
+/// ausencia: una base que no se pudo leer no se confunde con before (que
+/// puede ser «sin base») ni con after. Una base legible pero ajena sí se
+/// compara, y no es ninguna de las dos.
+Future<(bool, String?)> _basisBytes(BasisService s, BasisReply r) async {
+  final basis = await s.files.basis();
+  r.basis = basis.integrity;
+  if (basis.absent || basis.bytesDigest != null) {
+    return (true, basis.bytesDigest);
+  }
+  r.add(basis.code ?? 'io_error', path: basisDocumentPath);
+  return (false, null);
 }
 
 void _conflict(BasisReply r, String message) =>
@@ -198,7 +221,10 @@ Future<void> _abort(
     r.add('draft_conflict', path: basisTransactionPath);
     return;
   }
-  final now = (await s.files.basis()).bytesDigest;
+  if (!await _attributable(s, r, journal)) return;
+  if (!await _ownCandidate(s, r, journal)) return;
+  final (proven, now) = await _basisBytes(s, r);
+  if (!proven) return;
   if (now != journal.before) {
     r
       ..add('recovery_required', path: basisTransactionPath)
@@ -209,4 +235,23 @@ Future<void> _abort(
   r
     ..outcome = BasisOutcome.abortedBeforePublication
     ..changedFiles.add(basisTransactionPath);
+}
+
+/// El candidato del journal, si está, es exactamente el aceptado: uno que
+/// no corresponde no se retira.
+Future<bool> _ownCandidate(
+  BasisService s,
+  BasisReply r,
+  BasisTransaction journal,
+) async {
+  final candidate = await s.files.candidate(journal.candidatePath);
+  if (candidate.absent) return true;
+  final document = candidate.value;
+  if (candidate.bytesDigest == journal.after &&
+      document != null &&
+      _matches(document, journal)) {
+    return true;
+  }
+  _conflict(r, 'El candidato no corresponde a la aceptación registrada.');
+  return false;
 }

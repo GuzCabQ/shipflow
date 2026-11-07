@@ -75,6 +75,7 @@ Future<void> _accept(
   final basis = await s.files.basis();
   if (!usable(r, basis, basisDocumentPath)) return;
   if (!await journalAbsent(s, r)) return;
+  if (!await _stillTheDraft(s, r, basis.value, draft, draftFile)) return;
   final failure = await recheck(s, draft, basis.value?.digest);
   if (failure != null) {
     r.add(failure.code, path: failure.path, message: failure.message);
@@ -90,6 +91,25 @@ Future<void> _accept(
   if (!await _supported(s, r, draft, candidate)) return;
   if (!_fits(s, r, candidate)) return;
   await stageAndPublish(s, r, draft, candidate, basis.bytesDigest, draftFile);
+}
+
+/// Bajo el lock, el borrador sigue siendo exactamente el leído: uno
+/// descartado, revisado o ya aceptado entre medio no se publica.
+Future<bool> _stillTheDraft(
+  BasisService s,
+  BasisReply r,
+  BasisDocument? basis,
+  BasisDraft draft,
+  String draftFile,
+) async {
+  final now = await s.files.draft();
+  r.draft = now.integrity;
+  if (!usable(r, now, basisDraftPath)) return false;
+  if (now.value?.digest == draft.digest && now.bytesDigest == draftFile) {
+    return true;
+  }
+  await _notThisDraft(s, r, basis, now.value, draft.digest);
+  return false;
 }
 
 /// Si no hay un journal de bootstrap; si lo hay, la publicación pendiente

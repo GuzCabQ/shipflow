@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cli/src/basis/basis_canonical.dart';
+import 'package:cli/src/basis/basis_source_policy.dart';
 import 'package:cli/src/basis/basis_sources.dart';
 import 'package:cli/src/context/secure_context_store.dart';
 import 'package:core/core.dart';
@@ -178,6 +179,21 @@ void main() {
       final report = await read([local(1, 'docs/plantilla.md')]);
       expect(statusOf(report, 1).status, BasisSourceState.current);
     });
+  });
+
+  test('protected paths are excluded in any case', () {
+    for (final path in [
+      'SHIPFLOW/LOCAL/nota.md',
+      'Shipflow/Local/nota.md',
+      'docs/.GIT/config.md',
+      'home/.SSH/notas.md',
+      'conf/.Aws/leeme.md',
+      'docs/ID_RSA',
+      'docs/Credentials.md',
+    ]) {
+      expect(isExcludedSourcePath(path), isTrue, reason: path);
+    }
+    expect(isExcludedSourcePath('docs/shipflow/local.md'), isFalse);
   });
 
   test('another type is kept as an unverified reference, unopened', () async {

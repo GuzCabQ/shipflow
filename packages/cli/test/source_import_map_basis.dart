@@ -180,6 +180,7 @@ const basisImports = {
   'lib/src/basis/basis_source_policy.dart': <String>{},
   'lib/src/basis/basis_sources.dart': {
     'dart:convert',
+    'dart:math',
     'package:core/core.dart',
     '../context/secure_context_store.dart',
     'basis_canonical.dart',

@@ -50,6 +50,7 @@ Future<StateOwnership> _classify(
   ObservedLayout layout,
 ) async {
   final (:valid, :invalid) = await _documents(store, layout);
+  await _bindBasis(store, valid);
   if (!await _ownGitignore(store, layout)) {
     return StateOwnership(StateOwnershipKind.foreign, [gitignorePath]);
   }
@@ -174,6 +175,43 @@ StateOwnership _decide(ObservedLayout layout, Set<String> valid) {
     return StateOwnership(StateOwnershipKind.owned, leftovers);
   }
   return StateOwnership(StateOwnershipKind.invalid, [...valid]..sort());
+}
+
+/// La base y su journal sólo valen para este proyecto: uno formalmente
+/// válido con otro `projectId` se informa como inválido y no se usa.
+Future<void> _bindBasis(SecureContextStore store, Set<String> valid) async {
+  if (!valid.contains(projectPath)) return;
+  final project = await _projectIdOf(store, projectPath);
+  for (final path in const [basisDocumentPath, basisTransactionPath]) {
+    if (valid.contains(path) && await _projectIdOf(store, path) != project) {
+      valid.remove(path);
+    }
+  }
+}
+
+Future<String?> _projectIdOf(SecureContextStore store, String path) async {
+  try {
+    final kind = documentKindOf(path);
+    final bytes = await store.readRelative(path, maxBytes: _maxBytes(kind));
+    if (bytes == null) return null;
+    return switch (kind) {
+      DocumentKind.project =>
+        const ContextCodec().decodeProject(bytes).projectId,
+      DocumentKind.basis => decodeBasis(
+        bytes,
+        limits: _ownershipLimits,
+      ).projectId,
+      DocumentKind.basisTransaction => decodeBasisTransaction(
+        bytes,
+        limits: _ownershipLimits,
+      ).projectId,
+      _ => null,
+    };
+  } on ContextFormatException {
+    return null;
+  } on ContextStoreFailure {
+    return null;
+  }
 }
 
 /// Los documentos de [layout] que validan y los que no.
