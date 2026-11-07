@@ -155,6 +155,24 @@ void main() {
       },
     );
 
+    test('rules are never attributed to the current actor', () async {
+      await box.publish(box.input([create('a', ruleOf())]));
+      final bob = BasisActor(label: 'Bob', role: 'dev', scope: at(['lib']));
+      final prepared = await box.prepare(
+        box.input([
+          create('b', ruleOf(scope: at(['lib']), statement: 'Sólo lib.')),
+        ], actor: bob),
+      );
+      final accepted = await box.accept(prepared.draftDigest!);
+      for (final text in [
+        renderBasisHuman(prepared),
+        renderBasisHuman(accepted),
+      ]) {
+        expect(text, isNot(contains('declaró Bob')));
+        expect(text, contains('Bob (dev) · ámbito lib'));
+      }
+    });
+
     test('a draft never calls its decisions accepted', () async {
       final prepared = await box.prepare(box.input(ruleAndReview()));
       final shown = await box.show(draft: true);

@@ -13,7 +13,7 @@ List<String> recordSections(BasisResponse r) {
   ];
   return [
     if (rules.isNotEmpty) ...['', 'Reglas vigentes:'],
-    for (final v in rules) ..._rule(v, r.actor, draft: draft),
+    for (final v in rules) ..._rule(v, draft: draft),
     if (r.pending.isNotEmpty) ...['', 'Pendientes:'],
     for (final v in r.pending) ..._pending(v, r.reviewTargets),
     if (r.reviewTargets.isNotEmpty) ...[
@@ -47,11 +47,7 @@ String _scope(BasisScope scope) => switch (scope.kind) {
   BasisScopeKind.paths => scope.paths.map(_t).join(', '),
 };
 
-List<String> _rule(
-  BasisRecordVersion v,
-  BasisActor? actor, {
-  required bool draft,
-}) {
+List<String> _rule(BasisRecordVersion v, {required bool draft}) {
   final rule = v.payload as BasisRule;
   return [
     '• «${_t(rule.title)}» · versión ${v.version} · ${_scope(rule.scope)}',
@@ -61,20 +57,17 @@ List<String> _rule(
       '  Alternativa: ${_t(rule.alternative ?? 'sin definir')} · '
           'Excepciones: ${_policy(rule.exceptionPolicy)}',
     if (rule.lifecycle == BasisRuleLifecycle.active && draft)
-      '  Decisión del borrador${_declared(actor)}: no cuenta como aceptado '
+      '  Decisión activa en el estado del borrador: no cuenta como aceptado '
           'hasta aceptar su huella.'
     else if (rule.lifecycle == BasisRuleLifecycle.active)
-      '  Decisión aceptada por el usuario${_declared(actor)}.'
+      '  Decisión aceptada por el usuario (autoridad local declarada; quién '
+          'la declaró consta en --history).'
     else
       '  Propuesta: todavía no es una decisión vigente.',
     if (rule.support == BasisSupport.sourceSupported)
       '  Se sustenta en fuentes: su estado está en «Fuentes».',
   ];
 }
-
-String _declared(BasisActor? actor) => actor == null
-    ? ' (autoridad local declarada)'
-    : ' (declaró ${_t(actor.label)}, ${_t(actor.role)}; autoridad local)';
 
 String _policy(BasisExceptionPolicy policy) => switch (policy) {
   BasisExceptionPolicy.notAllowed => 'no se admiten',

@@ -12,6 +12,7 @@ import 'basis_human_records.dart';
 String renderBasisHuman(BasisResponse result) {
   final lines = <String>[
     _header(result),
+    ?_declarer(result),
     ..._storage(result.storageIntegrity),
     if (_presents(result)) _coverage(result.normativeCoverage),
     ...recordSections(result),
@@ -55,6 +56,19 @@ String _header(BasisResponse r) {
     BasisOutcome.cancelled => 'Se canceló: nada se aceptó.',
     _ => 'No se completó la operación.',
   };
+}
+
+/// Quién declaró la propuesta o la aceptación de esta operación; nunca se
+/// atribuye a las reglas que ya estaban aceptadas.
+String? _declarer(BasisResponse r) {
+  final actor = r.actor;
+  if (actor == null) return null;
+  final scope = actor.scope.kind == BasisScopeKind.project
+      ? 'todo el proyecto'
+      : actor.scope.paths.map(_text).join(', ');
+  final what = isDraftView(r) ? 'Propuesta declarada' : 'Declarado';
+  return '$what por ${_text(actor.label)} (${_text(actor.role)}) · ámbito '
+      '$scope; autoridad local, sin autenticar.';
 }
 
 String _scope(BasisScope? scope) => scope == null
