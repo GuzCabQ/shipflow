@@ -142,7 +142,11 @@ Future<BasisDraft> _draft(
   BasisEnvironment env,
 ) async {
   final resolved = resolveBasisChanges(input, basis, s.newId);
-  final report = await s.reader.readSources(_toRead(resolved, basis), s.limits);
+  final report = await s.reader.readSources(
+    _toRead(resolved, basis),
+    s.limits,
+    observe: true,
+  );
   final digests = {for (final r in report.readings) r.path: r.digest};
   final states = {for (final st in report.statuses) st.sourceId: st.status};
   return sealDraft(

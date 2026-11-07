@@ -63,8 +63,9 @@ void main() {
     box.dispose();
   });
 
+  /// Fuentes nuevas, sin huella registrada: se observan como al preparar.
   Future<BasisSourceReport> read(List<BasisRecordVersion> sources) =>
-      BasisSourceReader(store).readSources(sources, _limits);
+      BasisSourceReader(store).readSources(sources, _limits, observe: true);
 
   BasisSourceStatus statusOf(BasisSourceReport report, int n) =>
       report.statuses.singleWhere((s) => s.sourceId == _id(n));
@@ -207,9 +208,11 @@ void main() {
       final tiny = BasisLimits.fromJson({..._limits.toJson(), 'maxSources': 1});
       box.file('docs/a.md', 'a\n');
       box.file('docs/b.md', 'b\n');
-      final report = await BasisSourceReader(
-        store,
-      ).readSources([local(1, 'docs/a.md'), local(2, 'docs/b.md')], tiny);
+      final report = await BasisSourceReader(store).readSources(
+        [local(1, 'docs/a.md'), local(2, 'docs/b.md')],
+        tiny,
+        observe: true,
+      );
       expect(statusOf(report, 1).status, BasisSourceState.current);
       expect(codesOf(statusOf(report, 2)), ['source_budget']);
       expect(report.complete, isFalse);

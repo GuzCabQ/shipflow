@@ -151,6 +151,32 @@ void main() {
     expect(box.basis.readAsBytesSync(), bytes);
   });
 
+  test(
+    'a source never observed current cannot support an acceptance',
+    () async {
+      final prepared = await box.prepare(
+        box.input(ruleWithSource('docs/politica.md')),
+      );
+      expect(codesOf(prepared), contains('source_unverified'));
+      box.box.file('docs/politica.md', 'Versión uno.\n');
+      final accepted = await box.accept(prepared.draftDigest!);
+      expect(accepted.published, isFalse);
+      expect(codesOf(accepted), contains('source_unverified'));
+      expect(box.basis.existsSync(), isFalse);
+    },
+  );
+
+  test('a source recorded without digest is never reported current', () async {
+    await box.publish(
+      box.input([create('doc', localSource('docs/sin-huella.md'))]),
+    );
+    box.box.file('docs/sin-huella.md', 'Contenido posterior.\n');
+    final shown = await box.show();
+    final status = shown.sourceStatus.single;
+    expect(status.status, BasisSourceState.unverified);
+    expect(status.diagnostics.single.code, 'source_not_recorded');
+  });
+
   test('full_history_budget_preserves_previous_bytes', () async {
     await box.publish(box.input([create('rule', ruleOf())]));
     final bytes = box.basis.readAsBytesSync();

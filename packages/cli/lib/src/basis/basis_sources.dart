@@ -15,11 +15,15 @@ final class BasisSourceReader {
 
   final ContextStore store;
 
+  /// Con [observe], una fuente sin huella registrada se lee para
+  /// registrarla y queda `current` si se pudo leer; sin [observe] nunca es
+  /// `current`, porque no hay con qué compararla.
   Future<BasisSourceReport> readSources(
     List<BasisRecordVersion> sources,
-    BasisLimits limits,
-  ) async {
-    final run = _Run(store, limits);
+    BasisLimits limits, {
+    bool observe = false,
+  }) async {
+    final run = _Run(store, limits, observe: observe);
     final statuses = <BasisSourceStatus>[];
     for (final record in sources) {
       final payload = record.payload;
@@ -47,10 +51,11 @@ final class BasisSourceReader {
 
 /// Una lectura: lo ya leído por ruta y lo cobrado de los presupuestos.
 final class _Run {
-  _Run(this.store, this.limits);
+  _Run(this.store, this.limits, {required this.observe});
 
   final ContextStore store;
   final BasisLimits limits;
+  final bool observe;
   final digests = <String, String>{};
   final failures = <String, String>{};
   var opened = 0;
@@ -72,7 +77,12 @@ final class _Run {
     final failure = failures[path] ?? await _read(path);
     if (failure != null) return _failed(failure);
     final recorded = source.contentDigest;
-    return recorded == null || recorded == digests[path]
+    if (recorded == null) {
+      return observe
+          ? (BasisSourceState.current, null)
+          : (BasisSourceState.unverified, 'source_not_recorded');
+    }
+    return recorded == digests[path]
         ? (BasisSourceState.current, null)
         : (BasisSourceState.stale, 'source_changed');
   }
@@ -139,6 +149,9 @@ const _messages = {
   'source_invalid_utf8': 'La fuente no es UTF-8 válido.',
   'source_budget': 'Se agotó el presupuesto de lectura de fuentes.',
   'source_changed': 'El contenido cambió desde su registro.',
+  'source_not_recorded':
+      'Se registró sin huella: no se puede saber si cambió. Prepárala de '
+      'nuevo para observarla.',
 };
 
 BasisDiagnostic _diagnostic(String code, String path) =>
