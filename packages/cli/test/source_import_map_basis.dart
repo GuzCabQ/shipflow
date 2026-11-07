@@ -72,6 +72,7 @@ const basisImports = {
     'package:core/core.dart',
     '../terminal_text.dart',
     'basis_catalog.dart',
+    'basis_human_changes.dart',
     'basis_human_records.dart',
   },
   'lib/src/basis/basis_preconditions.dart': {
@@ -212,5 +213,9 @@ const basisImports = {
     '../terminal_text.dart',
     'basis_prompt_changes.dart',
     'basis_prompt_questions.dart',
+  },
+  'lib/src/basis/basis_human_changes.dart': {
+    'package:core/core.dart',
+    '../terminal_text.dart',
   },
 };

@@ -265,6 +265,30 @@
     "layer": "semantic"
   },
   {
+    "file": "valid-draft-response.json",
+    "schema": "response",
+    "valid": true,
+    "layer": "schema+semantic"
+  },
+  {
+    "file": "invalid-proposed-change-kind.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-after-publish.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "semantic"
+  },
+  {
+    "file": "invalid-proposed-change-name.json",
+    "schema": "response",
+    "valid": false,
+    "layer": "schema"
+  },
+  {
     "file": "valid-ordinary-pending-scope-update.json",
     "schema": "basis",
     "valid": true,

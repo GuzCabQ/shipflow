@@ -85,6 +85,7 @@ const _responseKeys = {
   'normativeCoverage',
   'selected',
   'reviewTargets',
+  'proposedChanges',
   'pending',
   'sourceStatus',
   'actor',
@@ -141,5 +142,16 @@ void _records(Map<String, Object?> json) {
   for (final key in const ['selected', 'reviewTargets', 'pending']) {
     shapeList(json[key], key, item: shapeBasisVersion);
   }
+  shapeList(json['proposedChanges'], 'proposedChanges', item: _proposed);
   shapeList(json['sourceStatus'], 'sourceStatus', item: _sourceStatus);
+}
+
+void _proposed(Object? value, String at) {
+  final json = shapeObject(value, at, const {'change', 'version'});
+  shapeMember(
+    json['change'],
+    _names(BasisChangeKind.values, (v) => v.toWireName()),
+    '$at/change',
+  );
+  shapeBasisVersion(json['version'], '$at/version');
 }

@@ -115,6 +115,11 @@ final showDraftAction = _action(
   'Consultar el borrador sin aceptarlo.',
   BasisActionEffect.readOnly,
 );
+final showDraftExtendedAction = _action(
+  ['--show', '--draft', '--report-budget=extended'],
+  'Revisar todos los cambios del borrador con el presupuesto ampliado.',
+  BasisActionEffect.readOnly,
+);
 final recoverAction = _action(
   ['--recover'],
   'Completar o abortar la publicación aceptada pendiente.',

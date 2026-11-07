@@ -24,30 +24,45 @@ CliResponse presentBasis(
   );
 }
 
-/// [result] si su JSON cabe en [maxBytes], targets de revisión incluidos;
-/// si no, una respuesta no concluyente: sin registros ni historia, con
-/// `selection.complete=false` y `budget_exceeded`, pero con los mismos
-/// efectos, huellas, integridad y acciones. Nunca un conjunto truncado
-/// que parezca completo.
+/// [result] si su JSON cabe en [maxBytes], targets de revisión y cambios
+/// propuestos incluidos; si no, una respuesta no concluyente: sin
+/// registros, cambios ni historia, con `selection.complete=false` y
+/// `budget_exceeded`, con los mismos efectos, huellas e integridad. Nunca
+/// un conjunto truncado que parezca completo.
 BasisResponse fitBasisResponse(BasisResponse result, int maxBytes) {
   if (utf8.encode('${jsonEncode(result.toJson())}\n').length <= maxBytes) {
     return result;
   }
+  final cut = result.proposedChanges.length;
   final diagnostics = [
     ...result.diagnostics,
     basisDiagnostic(
       'budget_exceeded',
-      message:
-          'La respuesta completa no cabe en el presupuesto del perfil: no es '
-          'concluyente. Repite con --report-budget=extended.',
+      message: cut == 0
+          ? 'La respuesta completa no cabe en el presupuesto del perfil: no '
+                'es concluyente. Repite con --report-budget=extended.'
+          : 'Los $cut cambios propuestos no caben en el presupuesto del '
+                'perfil y no se muestran: revísalos con --show --draft '
+                '--report-budget=extended antes de aceptar.',
     ),
   ];
-  return _inconclusive(result, diagnostics);
+  return _inconclusive(result, diagnostics, _actionsWithout(result, cut));
 }
+
+/// Sin poder mostrar los cambios propuestos no se ofrece aceptarlos: se
+/// ofrece revisarlos con el presupuesto ampliado.
+List<BasisAction> _actionsWithout(BasisResponse result, int cut) => cut == 0
+    ? result.nextActions
+    : [
+        showDraftExtendedAction,
+        for (final a in result.nextActions)
+          if (a.arguments.first != '--accept') a,
+      ];
 
 BasisResponse _inconclusive(
   BasisResponse result,
   List<BasisDiagnostic> diagnostics,
+  List<BasisAction> actions,
 ) => BasisResponse(
   operation: result.operation,
   exitCode: basisExitCode(diagnostics),
@@ -60,6 +75,7 @@ BasisResponse _inconclusive(
   normativeCoverage: result.normativeCoverage,
   selected: const [],
   reviewTargets: const [],
+  proposedChanges: const [],
   pending: const [],
   sourceStatus: const [],
   actor: result.actor,
@@ -71,5 +87,5 @@ BasisResponse _inconclusive(
     excludedCount: result.selection.excludedCount,
   ),
   diagnostics: basisByPrecedence(diagnostics),
-  nextActions: result.nextActions,
+  nextActions: actions,
 );

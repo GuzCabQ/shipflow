@@ -25,6 +25,7 @@ export 'src/basis/basis_limits.dart';
 export 'src/basis/basis_model.dart';
 export 'src/basis/basis_payload.dart';
 export 'src/basis/basis_references.dart';
+export 'src/basis/basis_proposed_change.dart';
 export 'src/basis/basis_response_parts.dart';
 export 'src/basis/basis_response_validation.dart';
 export 'src/basis/basis_result.dart';

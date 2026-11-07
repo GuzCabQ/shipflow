@@ -2,6 +2,7 @@ import 'package:core/core.dart';
 
 import 'assessment_serialization_fixtures.dart' show SerializationCase;
 import 'basis_fixtures.dart';
+import 'basis_selection_serialization_fixtures.dart';
 
 /// Una instancia de cada clase serializable de la base, con un valor
 /// distinguible en cada campo, y cómo reconstruirla.
@@ -158,6 +159,10 @@ final _status = BasisSourceStatus(
   status: BasisSourceState.stale,
   diagnostics: [_diagnostic],
 );
+final _proposed = BasisProposedChange(
+  change: BasisChangeKind.revise,
+  version: _version,
+);
 final _action = BasisAction(
   command: 'bootstrap',
   arguments: ['--accept', digestOf(8)],
@@ -176,7 +181,15 @@ final _selection = BasisSelectionSummary(
 );
 
 Map<String, SerializationCase> _responseCases() => {
-  ..._selectionCases(),
+  ..._responsePartCases(),
+  'BasisResponse': _case(
+    _basisResponse.toJson(),
+    (j) => BasisResponse.fromJson(j).toJson(),
+  ),
+};
+
+Map<String, SerializationCase> _responsePartCases() => {
+  ...basisSelectionCases(version: _version, status: _status, reading: _reading),
   'BasisDiagnostic': _case(
     _diagnostic.toJson(),
     (j) => BasisDiagnostic.fromJson(j).toJson(),
@@ -184,6 +197,10 @@ Map<String, SerializationCase> _responseCases() => {
   'BasisSourceStatus': _case(
     _status.toJson(),
     (j) => BasisSourceStatus.fromJson(j).toJson(),
+  ),
+  'BasisProposedChange': _case(
+    _proposed.toJson(),
+    (j) => BasisProposedChange.fromJson(j).toJson(),
   ),
   'BasisAction': _case(
     _action.toJson(),
@@ -196,10 +213,6 @@ Map<String, SerializationCase> _responseCases() => {
   'BasisSelectionSummary': _case(
     _selection.toJson(),
     (j) => BasisSelectionSummary.fromJson(j).toJson(),
-  ),
-  'BasisResponse': _case(
-    _basisResponse.toJson(),
-    (j) => BasisResponse.fromJson(j).toJson(),
   ),
 };
 
@@ -250,6 +263,7 @@ final _basisResponse = BasisResponse(
   normativeCoverage: BasisCoverage.declaredPartial,
   selected: [_version],
   reviewTargets: [_version],
+  proposedChanges: [_proposed],
   pending: [_version],
   sourceStatus: [_status],
   actor: _actor,
@@ -259,41 +273,3 @@ final _basisResponse = BasisResponse(
   diagnostics: [_diagnostic],
   nextActions: [_action],
 );
-
-Map<String, SerializationCase> _selectionCases() => {
-  ..._observationCases(),
-  'BasisSelection': _case(
-    BasisSelection(
-      selected: [_version],
-      pending: [_version],
-      reviewTargets: [_version],
-      excludedCount: 4,
-    ).toJson(),
-    (j) => BasisSelection.fromJson(j).toJson(),
-  ),
-  'BasisValidationIssue': _case(
-    BasisValidationIssue(code: 'invalid_reference', at: 'changes/1').toJson(),
-    (j) => BasisValidationIssue.fromJson(j).toJson(),
-  ),
-};
-
-Map<String, SerializationCase> _observationCases() => {
-  'BasisSourceReport': _case(
-    BasisSourceReport(
-      statuses: [_status],
-      readings: [_reading],
-      complete: false,
-    ).toJson(),
-    (j) => BasisSourceReport.fromJson(j).toJson(),
-  ),
-  'BasisEnvironment': _case(
-    BasisEnvironment(
-      context: BasisIntegrity.valid,
-      projectId: basisProject,
-      contextDigest: digestOf(15),
-      contextRecoveryPending: true,
-      assessmentRecoveryPending: true,
-    ).toJson(),
-    (j) => BasisEnvironment.fromJson(j).toJson(),
-  ),
-};

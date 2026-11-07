@@ -568,6 +568,28 @@
       ],
       "additionalProperties": false
     },
+    "proposedChange": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "enum": [
+            "create",
+            "revise",
+            "retire",
+            "replace",
+            "resolve"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "change",
+        "version"
+      ],
+      "additionalProperties": false
+    },
     "input": {
       "type": "object",
       "properties": {
@@ -1040,6 +1062,12 @@
             "$ref": "#/$defs/version"
           }
         },
+        "proposedChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/proposedChange"
+          }
+        },
         "pending": {
           "type": "array",
           "items": {
@@ -1134,6 +1162,7 @@
         "normativeCoverage",
         "selected",
         "reviewTargets",
+        "proposedChanges",
         "pending",
         "sourceStatus",
         "actor",

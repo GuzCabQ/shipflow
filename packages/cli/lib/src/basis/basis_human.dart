@@ -2,6 +2,7 @@ import 'package:core/core.dart';
 
 import '../terminal_text.dart';
 import 'basis_catalog.dart';
+import 'basis_human_changes.dart';
 import 'basis_human_records.dart';
 
 /// La vista humana de [result], derivada de los mismos datos que el JSON:
@@ -15,6 +16,7 @@ String renderBasisHuman(BasisResponse result) {
     ?_declarer(result),
     ..._storage(result.storageIntegrity),
     if (_presents(result)) _coverage(result.normativeCoverage),
+    ...proposedSections(result),
     ...recordSections(result),
     if (_presents(result)) ..._guarantees(),
     ..._problems(result.diagnostics),

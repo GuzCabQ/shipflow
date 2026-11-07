@@ -1,6 +1,7 @@
 import '../context/context_validation.dart';
 import '../recognition/recognition_json.dart';
 import 'basis_model.dart';
+import 'basis_proposed_change.dart';
 import 'basis_response_parts.dart';
 
 /// La respuesta de bootstrap: humano y JSON nacen de ella. Integridad,
@@ -19,6 +20,7 @@ final class BasisResponse {
     required this.normativeCoverage,
     required List<BasisRecordVersion> selected,
     required List<BasisRecordVersion> reviewTargets,
+    required List<BasisProposedChange> proposedChanges,
     required List<BasisRecordVersion> pending,
     required List<BasisSourceStatus> sourceStatus,
     required this.actor,
@@ -30,6 +32,7 @@ final class BasisResponse {
   }) : changedFiles = List.unmodifiable(changedFiles),
        selected = List.unmodifiable(selected),
        reviewTargets = List.unmodifiable(reviewTargets),
+       proposedChanges = List.unmodifiable(proposedChanges),
        pending = List.unmodifiable(pending),
        sourceStatus = List.unmodifiable(sourceStatus),
        history = List.unmodifiable(history),
@@ -41,6 +44,7 @@ final class BasisResponse {
     requireSemantic(json['schemaVersion'] == 1, 'incompatible_version');
     requireSemantic(json['type'] == 'bootstrap', 'invalid_schema');
     const version = BasisRecordVersion.fromJson;
+    const proposed = BasisProposedChange.fromJson;
     return BasisResponse(
       operation: BasisOperation.fromWireName(json['operation']! as String),
       exitCode: json['exitCode']! as int,
@@ -55,11 +59,10 @@ final class BasisResponse {
       ),
       selected: readObjects(json['selected'], version),
       reviewTargets: readObjects(json['reviewTargets'], version),
+      proposedChanges: readObjects(json['proposedChanges'], proposed),
       pending: readObjects(json['pending'], version),
       sourceStatus: readObjects(json['sourceStatus'], _status),
-      actor: json['actor'] == null
-          ? null
-          : readObject(json['actor'], BasisActor.fromJson),
+      actor: _actor(json['actor']),
       reason: json['reason'] as String?,
       history: readObjects(json['history'], BasisEvent.fromJson),
       selection: readObject(json['selection'], BasisSelectionSummary.fromJson),
@@ -67,6 +70,9 @@ final class BasisResponse {
       nextActions: readObjects(json['nextActions'], BasisAction.fromJson),
     );
   }
+
+  static BasisActor? _actor(Object? json) =>
+      json == null ? null : readObject(json, BasisActor.fromJson);
 
   static BasisStorageIntegrity _integrity(Object? json) =>
       readObject(json, BasisStorageIntegrity.fromJson);
@@ -94,6 +100,10 @@ final class BasisResponse {
   final List<BasisRecordVersion> reviewTargets;
 
   /// Propuestas y asuntos por resolver.
+  /// Los cambios exactos del borrador que se ofrece aceptar, con su
+  /// efecto; vacío fuera de un borrador.
+  final List<BasisProposedChange> proposedChanges;
+
   final List<BasisRecordVersion> pending;
   final List<BasisSourceStatus> sourceStatus;
   final BasisActor? actor;
@@ -119,6 +129,7 @@ final class BasisResponse {
     'normativeCoverage': normativeCoverage.toWireName(),
     'selected': [for (final r in selected) r.toJson()],
     'reviewTargets': [for (final r in reviewTargets) r.toJson()],
+    'proposedChanges': [for (final c in proposedChanges) c.toJson()],
     'pending': [for (final r in pending) r.toJson()],
     'sourceStatus': [for (final s in sourceStatus) s.toJson()],
     'actor': actor?.toJson(),

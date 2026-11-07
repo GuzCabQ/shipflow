@@ -25,6 +25,7 @@ final class BasisReply {
   BasisActor? actor;
   String? reason;
   final history = <BasisEvent>[];
+  final proposed = <BasisProposedChange>[];
   final diagnostics = <BasisDiagnostic>[];
   final actions = <BasisAction>[];
 
@@ -33,6 +34,12 @@ final class BasisReply {
     if (diagnostics.any((d) => d.code == code && d.path == path)) return;
     diagnostics.add(basisDiagnostic(code, path: path, message: message));
   }
+
+  /// Los cambios exactos de [draft], con el efecto de cada versión: los
+  /// que se aceptarían con su huella, sin regenerar identidades.
+  void propose(BasisDraft draft) => proposed
+    ..clear()
+    ..addAll(draft.preparedChanges.map(BasisProposedChange.of));
 
   bool has(String code) => diagnostics.any((d) => d.code == code);
 
@@ -61,6 +68,7 @@ final class BasisReply {
       reviewTargets: history.isEmpty
           ? selection?.reviewTargets ?? const []
           : const [],
+      proposedChanges: proposed,
       pending: selection?.pending ?? const [],
       sourceStatus: sourceStatus,
       actor: actor,

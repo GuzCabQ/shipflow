@@ -221,6 +221,7 @@ void main() {
       'BasisLimits',
       'BasisDiagnostic',
       'BasisSourceStatus',
+      'BasisProposedChange',
       'BasisAction',
       'BasisStorageIntegrity',
       'BasisSelectionSummary',

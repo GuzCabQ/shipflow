@@ -63,11 +63,18 @@ Una regla activa no puede tener ámbito desconocido. El actor declara su propio
 Preparar valida la propuesta completa —forma, referencias, vínculos de
 revisión y autoridad—, lee las fuentes citadas y guarda un borrador en
 `shipflow/local/basis-draft.json` con su **huella**. La respuesta muestra
-el estado resultante y las acciones exactas:
+**cada cambio que hará aceptarlo** —crea, revisa, retira, reemplaza o
+resuelve, con el ID y las versiones de cada registro, también lo que deja
+de estar vigente—, el estado resultante y las acciones exactas.
+`--show --draft` y la guía al retomar muestran lo mismo:
 
 ```text
 Borrador preparado: todavía no está aceptado.
 Huella: sha256:7bf49109…
+…
+Cambios de este borrador (sólo se aplican al aceptar su huella):
+• Retira «Contratos públicos» (regla) · ID 4f1c… · versión 1 → 2
+  Deja de estar vigente; sigue en la historia.
 …
 Siguientes pasos:
   shipflow bootstrap --show --draft
@@ -75,7 +82,9 @@ Siguientes pasos:
   shipflow bootstrap --discard sha256:7bf49109…
 ```
 
-Aceptar exige esa huella. Si la base, el contexto o una fuente citada cambiaron
+Aceptar exige esa huella y, ya bajo el lock, vuelve a leer el borrador:
+uno descartado, revisado o aceptado entre medio no se publica. Si la base,
+el contexto o una fuente citada cambiaron
 desde la preparación, no se publica (**75**, `base_changed` o
 `source_changed`) y el borrador se conserva: hay que prepararlo y revisarlo
 de nuevo. Aceptar dos veces el mismo borrador responde `already_applied` sin
@@ -168,6 +177,11 @@ regla que la reemplaza. Cualquier campo desconocido o ausente es inválido
 
 ## Consultar
 
+Consultar exige el contexto de `init` y que la base y el borrador sean de
+este proyecto: una base copiada de otro (otro `projectId`) no se presenta
+como aplicable (65, `invalid_reference`), y `doctor` la informa como
+inválida.
+
 `--show` devuelve las reglas vigentes, las fuentes que citan (en la versión
 citada, aunque su ámbito sea otro) y los pendientes abiertos. Con
 `--scope <ruta>` incluye lo global, lo de ámbito desconocido y los prefijos
@@ -208,11 +222,18 @@ se revalidan base, contexto y fuentes, y sólo entonces se reemplaza
 `basis.json` con un rename comparado con su huella anterior. Si algo falla
 después del rename, la respuesta conserva `published: true`.
 
+Ni `--recover` ni `--discard` comparan una base que no se pudo leer con
+la anterior: sin leerla, conservan todo e informan el fallo. `--discard`
+sólo aborta una publicación cuyo journal es de este proyecto, sin otra
+transacción activa y con su candidato exacto.
+
 `--recover` con la base ya en su versión nueva sólo limpia. Con la base en
 la versión anterior revalida las precondiciones y publica, o aborta con
 **75** (`recovery_preconditions_changed`) conservando todo y ofreciendo
 `--discard`. Una base que no es ninguna de las dos, o un journal ilegible, es
-un conflicto que se conserva. Sin nada pendiente responde `no_changes`.
+un conflicto que se conserva. Responde `no_changes` sólo si comprobó que
+no queda nada: un estado que no pudo inspeccionar o con restos ajenos es un
+conflicto (75).
 
 ## Cotas
 
@@ -224,12 +245,17 @@ un conflicto que se conserva. Sin nada pendiente responde `no_changes`.
 | Eventos | 8.192 | 32.768 |
 | Cambios por propuesta | 64 | 256 |
 | Bytes por fuente | 1 MiB | 4 MiB |
-| Fuentes por operación | 64 | 256 |
-| Bytes de fuentes por operación | 16 MiB | 64 MiB |
+| Fuentes por lectura | 64 | 256 |
+| Bytes de fuentes por lectura | 16 MiB | 64 MiB |
 | Respuesta | 8 MiB | 32 MiB |
 
 Además: textos cortos 512 bytes, motivos y localizadores 4 KiB, enunciados
-16 KiB y profundidad JSON 32. Los bytes de la base se cuentan sobre el archivo
+16 KiB y profundidad JSON 32. Cada lectura de fuentes se detiene al agotar su cota y lo que queda sin
+leer hace la consulta no concluyente (`budget_exceeded`, 65). Aceptar lee
+las fuentes hasta cuatro veces —revalidar, soportes, revalidar bajo el
+lock y presentar—, cada vez dentro de su cota. Las rutas protegidas
+(`.git`, `.ssh`, `.aws`, `.env`, `shipflow/local`) se reconocen sin
+distinguir mayúsculas. Los bytes de la base se cuentan sobre el archivo
 en disco, legible con sangría, que ocupa más que su forma canónica. El
 borrador contiene la propuesta y los cambios preparados, así que una
 propuesta debe ocupar bastante menos que la cota del borrador. Preparar ya
@@ -238,7 +264,9 @@ aceptar con ese perfil no se ofrece. Las cotas son independientes: una base pued
 llegar a sus bytes antes que a sus eventos. Lo que no cabe se rechaza
 (`budget_exceeded`) sin recortar historia. Una respuesta que no cabe se
 entrega no concluyente (`selection.complete: false`), sin registros, nunca
-como un conjunto truncado que parezca completo.
+como un conjunto truncado que parezca completo. Si lo que no cabe son los
+cambios de un borrador, se dice cuántos son y, en vez de ofrecer
+aceptarlo, se ofrece revisarlo con `--report-budget=extended`.
 
 ## Códigos de salida
 
@@ -257,10 +285,18 @@ Una línea: `schemaVersion` 1, `type` `bootstrap`, `operation`, `exitCode`,
 `outcome`, `storageIntegrity` (base, borrador y journal por separado),
 `basisDigest`, `draftDigest`, `published`, `changedFiles`,
 `normativeCoverage` (`not_established` o `declared_partial`), `selected`,
-`reviewTargets`, `pending`, `sourceStatus`, `actor`, `reason`, `history`,
+`reviewTargets`, `proposedChanges`, `pending`, `sourceStatus`, `actor`, `reason`, `history`,
 `selection`, `diagnostics` y `nextActions`. Cada acción trae `command`,
 `arguments` literales, `purpose` y `effect`; mostrarla no la ejecuta.
 `--json` nunca mezcla preguntas con la respuesta.
+
+`proposedChanges` lista, sólo en la respuesta de un borrador sin aceptar
+(`--input` y `--show --draft`), cada versión exacta que guarda el borrador
+con su efecto: `{"change": "create|revise|retire|replace|resolve",
+"version": {…}}`. El efecto se deriva de la versión —la versión 1 crea; un
+retiro, un reemplazo o una resolución se reconocen por su estado— y una
+respuesta que declare otro es inválida. `history` lleva sólo aceptaciones
+ya registradas.
 
 `init` y `doctor` informan la integridad de la base y de su transacción en
 dos checks propios de su respuesta.

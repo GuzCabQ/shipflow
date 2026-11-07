@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'basis_enums.dart';
 import 'basis_model.dart';
 import 'basis_payload.dart';
+import 'basis_proposed_change.dart';
 import 'basis_response_parts.dart';
 import 'basis_result.dart';
 import 'basis_validation.dart';
@@ -10,10 +11,12 @@ import 'basis_validation.dart';
 /// La coherencia de una respuesta que su schema no expresa: los targets
 /// de revisión deduplicados en orden de ID y versión, completos cuando la
 /// selección lo es, idénticos a la regla vigente si coinciden, vacíos en
-/// la historia; una consulta sin efectos y una publicación identificada.
+/// la historia; los cambios propuestos sólo en un borrador y con su efecto
+/// real; una consulta sin efectos y una publicación identificada.
 void validateBasisResponse(BasisResponse r) {
   _targets(r);
   _copies(r);
+  _proposed(r);
   requireBasis(
     r.operation != BasisOperation.show ||
         (!r.published && r.changedFiles.isEmpty),
@@ -49,6 +52,32 @@ void _targets(BasisResponse r) {
       'reviewTargets',
     );
   }
+}
+
+/// Cada cambio propuesto declara el efecto que su versión tiene, en una
+/// cadena válida; sólo un borrador sin aceptar ni historia los lleva.
+void _proposed(BasisResponse r) {
+  for (final p in r.proposedChanges) {
+    final v = p.version;
+    requireBasis(
+      v.previousVersion == null
+          ? v.version == 1
+          : v.previousVersion == v.version - 1,
+      'invalid_schema',
+      'proposedChanges',
+    );
+    requireBasis(
+      p.change == changeKindOf(v),
+      'invalid_schema',
+      'proposedChanges',
+    );
+  }
+  requireBasis(
+    r.proposedChanges.isEmpty ||
+        (r.draftDigest != null && !r.published && r.history.isEmpty),
+    'invalid_schema',
+    'proposedChanges',
+  );
 }
 
 /// Un target que coincide con una regla vigente seleccionada es la misma

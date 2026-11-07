@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cli/src/basis/basis_canonical.dart';
+import 'package:cli/src/basis/basis_human.dart';
 import 'package:cli/src/basis/basis_sources.dart';
 import 'package:cli/src/context/secure_context_store.dart';
 import 'package:core/core.dart';
@@ -251,5 +252,16 @@ void main() {
       );
       expect(result.sourceStatus.single.status, BasisSourceState.excluded);
     });
+  });
+
+  test('a draft names the rule it retires', () async {
+    await box.publish(box.input([create('a', ruleOf())]));
+    final current = currentOf(box, 'rule');
+    final result = await box.prepare(
+      box.input([
+        revise(current.id, 1, ruleOf(lifecycle: BasisRuleLifecycle.retired)),
+      ]),
+    );
+    expect(renderBasisHuman(result), contains('«Contratos»'));
   });
 }

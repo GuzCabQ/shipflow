@@ -285,6 +285,7 @@ Future<void> _presentDraft(
     ..draft = BasisIntegrity.valid
     ..actor = draft.input.actor
     ..reason = draft.input.reason
+    ..propose(draft)
     ..add('draft_prepared', path: basisDraftPath);
   draftActions(r, draft.digest);
 }

@@ -150,6 +150,7 @@ Future<void> _draft(
     ..draftDigest = draft.digest
     ..actor = draft.input.actor
     ..reason = draft.input.reason
+    ..propose(draft)
     ..add('draft_not_accepted', path: basisDraftPath);
   draftActions(r, draft.digest);
 }
