@@ -213,7 +213,8 @@ BasisRecordVersion _observed(
 }
 
 /// La base que resultaría de aceptar, dentro de las cotas del perfil; null
-/// y su diagnóstico si no cabe.
+/// y su diagnóstico si no cabe: un borrador que no se podría aceptar con
+/// este perfil no se prepara.
 BasisDocument? _candidate(
   BasisService s,
   BasisReply r,
@@ -228,6 +229,7 @@ BasisDocument? _candidate(
   );
   final fits =
       encodeBasisDraft(draft).length <= s.limits.maxDraftBytes &&
+      encodeBasis(candidate).length <= s.limits.maxBasisBytes &&
       candidate.revision <= s.limits.maxEvents &&
       replayBasis(candidate).length <= s.limits.maxCurrentRecords;
   if (fits) return candidate;

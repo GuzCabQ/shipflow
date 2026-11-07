@@ -128,16 +128,36 @@ void main() {
     });
   });
 
-  test('full_history_budget_preserves_previous_bytes', () async {
+  void limitBasisTo(int bytes) => box.limits = BasisLimits.fromJson({
+    ...box.limits.toJson(),
+    'maxBasisBytes': bytes,
+  });
+
+  test('a draft whose basis would not fit is never prepared', () async {
     await box.publish(box.input([create('rule', ruleOf())]));
     final bytes = box.basis.readAsBytesSync();
-    box.limits = BasisLimits.fromJson({
-      ...box.limits.toJson(),
-      'maxBasisBytes': bytes.length + 64,
-    });
+    limitBasisTo(bytes.length + 64);
     final prepared = await box.prepare(
       box.input([create('big', ruleOf(statement: 'x' * 2000))]),
     );
+    expect(prepared.exitCode, 65);
+    expect(codesOf(prepared), contains('budget_exceeded'));
+    expect(prepared.draftDigest, isNull);
+    expect(
+      prepared.nextActions.where((a) => a.arguments.contains('--accept')),
+      isEmpty,
+    );
+    expect(box.draft.existsSync(), isFalse);
+    expect(box.basis.readAsBytesSync(), bytes);
+  });
+
+  test('full_history_budget_preserves_previous_bytes', () async {
+    await box.publish(box.input([create('rule', ruleOf())]));
+    final bytes = box.basis.readAsBytesSync();
+    final prepared = await box.prepare(
+      box.input([create('big', ruleOf(statement: 'x' * 2000))]),
+    );
+    limitBasisTo(bytes.length + 64);
     final result = await box.accept(prepared.draftDigest!);
     expect(result.exitCode, 65);
     expect(codesOf(result), contains('budget_exceeded'));
