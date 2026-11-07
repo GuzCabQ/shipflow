@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis.input",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "expectedBasisDigest": null,
+  "actor": {
+    "label": "Muestra documental, sin aceptación real",
+    "role": "mantenimiento",
+    "authority": "local_declared",
+    "scope": {
+      "kind": "project",
+      "paths": []
+    }
+  },
+  "reason": "Primera incorporación.",
+  "changes": [
+    {
+      "key": "policy",
+      "targetId": null,
+      "expectedVersion": null,
+      "payload": {
+        "kind": "source",
+        "title": "Documentación CLI V3",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "sourceType": "local",
+        "locator": "docs/CLI-V3.md",
+        "purpose": "Referencia pública para futura incorporación; no adopción automática.",
+        "contentDigest": null,
+        "observation": "unverified"
+      }
+    }
+  ]
+}

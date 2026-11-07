@@ -4,47 +4,12 @@ import 'package:core/core.dart';
 import 'package:test/test.dart';
 
 import 'assessment_serialization_fixtures.dart';
+import 'basis_serialization_fixtures.dart';
 import 'context_fixtures.dart' as context;
 import 'context_serialization_fixtures.dart';
 import 'recognition_fixtures.dart';
 
 void main() {
-  group('serializes every status with its specified wire name', () {
-    test('estado del reconocimiento', () {
-      expect(RecognitionStatus.values.map((s) => s.toWireName()), [
-        'recognized',
-        'ambiguous',
-        'unsupported',
-        'invalid_root',
-      ]);
-      for (final status in RecognitionStatus.values) {
-        expect(RecognitionStatus.fromWireName(status.toWireName()), status);
-      }
-    });
-
-    test('estado y relación del repositorio', () {
-      expect(RepositoryStatus.values.map((s) => s.toWireName()), [
-        'detected',
-        'absent',
-        'indeterminate',
-      ]);
-      expect(RepositoryRelation.values.map((r) => r.toWireName()), [
-        'same',
-        'ancestor',
-        'none',
-      ]);
-    });
-
-    test('un nombre desconocido se rechaza', () {
-      expect(
-        () => RecognitionStatus.fromWireName('invalidRoot'),
-        throwsFormatException,
-      );
-      expect(() => RepositoryStatus.fromWireName('x'), throwsFormatException);
-      expect(() => RepositoryRelation.fromWireName('x'), throwsFormatException);
-    });
-  });
-
   group('round trips every public field without loss', () {
     // Cada caso reconstruye desde el JSON y vuelve a escribir.
     final cases =
@@ -234,16 +199,34 @@ void main() {
       'AssessmentNextAction',
       'AssessmentResult',
     ];
-    test('every assessment case has its literal name', () {
-      expect(assessment.keys.toSet(), assessmentNames.toSet());
-    });
-    for (final name in assessmentNames) {
-      test(name, () {
-        final (json, rebuild) = assessment[name]!;
-        final encoded = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
-        expect(jsonEncode(rebuild(encoded)), jsonEncode(json));
-      });
-    }
+    _literalCases('assessment', assessment, assessmentNames);
+
+    final basis = basisSerializationCases();
+    const basisNames = [
+      'BasisScope',
+      'BasisActor',
+      'BasisReference',
+      'BasisDecisionReview',
+      'BasisSource',
+      'BasisRule',
+      'BasisPending',
+      'BasisRecordVersion',
+      'BasisEvent',
+      'BasisDocument',
+      'BasisChange',
+      'BasisInput',
+      'BasisSourceReading',
+      'BasisDraft',
+      'BasisTransaction',
+      'BasisLimits',
+      'BasisDiagnostic',
+      'BasisSourceStatus',
+      'BasisAction',
+      'BasisStorageIntegrity',
+      'BasisSelectionSummary',
+      'BasisResponse',
+    ];
+    _literalCases('basis', basis, basisNames);
 
     test('los campos nullable viajan presentes como null', () {
       const quiet = RecognitionLimitation(
@@ -286,4 +269,23 @@ void main() {
       expect(report.toJson()['status'], 'ambiguous');
     });
   });
+}
+
+/// Un caso por nombre literal: el check de la frontera exige ver cada
+/// nombre en este archivo, y el primer test, que no sobre ni falte ninguno.
+void _literalCases(
+  String family,
+  Map<String, SerializationCase> cases,
+  List<String> names,
+) {
+  test('every $family case has its literal name', () {
+    expect(cases.keys.toSet(), names.toSet());
+  });
+  for (final name in names) {
+    test(name, () {
+      final (json, rebuild) = cases[name]!;
+      final encoded = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
+      expect(jsonEncode(rebuild(encoded)), jsonEncode(json));
+    });
+  }
 }

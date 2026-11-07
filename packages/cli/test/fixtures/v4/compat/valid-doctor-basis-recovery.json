@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 4,
+  "command": "doctor",
+  "operation": "doctor",
+  "outcome": "needs_attention",
+  "exitCode": 75,
+  "contextState": "present",
+  "freshness": "current",
+  "sharing": {
+    "choice": "pending",
+    "gitState": "not_installed",
+    "effective": "pending"
+  },
+  "checks": [
+    {
+      "id": "context_presence",
+      "status": "passed",
+      "code": "context_found",
+      "scope": "shipflow/project.json",
+      "message": "Contexto disponible"
+    },
+    {
+      "id": "basis_transaction",
+      "status": "failed",
+      "code": "basis_recovery_required",
+      "scope": "shipflow/local/basis-transaction.json",
+      "message": "Publicación de base pendiente."
+    }
+  ],
+  "diagnostics": [],
+  "context": {
+    "status": "recognized",
+    "recognitionScope": "declared_project_recognition",
+    "candidates": [
+      {
+        "id": "example",
+        "displayName": "Example",
+        "pluginId": "plugin_example",
+        "evidenceIds": [
+          "e0001"
+        ]
+      }
+    ],
+    "units": [
+      {
+        "id": "u0001",
+        "name": "example",
+        "kind": "package",
+        "path": ".",
+        "evidenceIds": [
+          "e0001"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "e0001",
+        "kind": "name",
+        "role": "identity",
+        "label": "Name",
+        "path": "manifest.example",
+        "value": "example",
+        "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "conflicts": [],
+    "limitations": [],
+    "relations": [],
+    "contextSources": [],
+    "omissions": [
+      {
+        "path": "shipflow",
+        "rule": "tool_state",
+        "evidenceIds": []
+      }
+    ]
+  },
+  "effects": {
+    "filesCreated": [],
+    "filesReplaced": [],
+    "filesRemoved": [],
+    "directoriesCreated": [],
+    "processesStarted": 0,
+    "excludeModified": false,
+    "networkRequests": 0
+  },
+  "nextActions": [
+    {
+      "command": "bootstrap",
+      "arguments": [
+        "--recover"
+      ],
+      "purpose": "Completar publicación aceptada de la base.",
+      "effect": "write_own_state"
+    }
+  ]
+}

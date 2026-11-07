@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "type": "bootstrap",
+  "operation": "show",
+  "exitCode": 0,
+  "outcome": "shown",
+  "storageIntegrity": {
+    "basis": "valid",
+    "draft": "absent",
+    "transaction": "absent"
+  },
+  "basisDigest": "sha256:5a4fbccb79f0de0c289338f15beb333fc4bd2139be10722a81da82caf1136957",
+  "draftDigest": null,
+  "published": false,
+  "changedFiles": [],
+  "normativeCoverage": "declared_partial",
+  "selected": [
+    {
+      "id": "0000000a-0000-4000-8000-000000000000",
+      "version": 2,
+      "previousVersion": 1,
+      "payload": {
+        "kind": "rule",
+        "title": "Contratos públicos",
+        "scope": {
+          "kind": "paths",
+          "paths": [
+            "lib/a"
+          ]
+        },
+        "lifecycle": "active",
+        "replacementRef": null,
+        "statement": "Los cambios de contrato requieren revisión del responsable.",
+        "reason": "Preservar compatibilidad con consumidores.",
+        "ruleClass": "obligation",
+        "alternative": null,
+        "exceptionPolicy": "requires_authority",
+        "support": "human_declaration",
+        "sourceRefs": [],
+        "evidenceLevel": "declared"
+      }
+    }
+  ],
+  "pending": [
+    {
+      "id": "0000000b-0000-4000-8000-000000000000",
+      "version": 1,
+      "previousVersion": null,
+      "payload": {
+        "kind": "pending",
+        "title": "Alcance pendiente",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "status": "open",
+        "question": "¿Qué consumidores externos debemos consultar?",
+        "reason": "No hay registro todavía.",
+        "revisitWhen": "Al integrar el segundo consumidor.",
+        "sourceRefs": [],
+        "resolution": null,
+        "decisionReview": {
+          "ref": "0000000a-0000-4000-8000-000000000000",
+          "version": 1,
+          "reviewer": null
+        }
+      }
+    }
+  ],
+  "reviewTargets": [
+    {
+      "id": "0000000a-0000-4000-8000-000000000000",
+      "version": 1,
+      "previousVersion": null,
+      "payload": {
+        "kind": "rule",
+        "title": "Contratos públicos",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "replacementRef": null,
+        "statement": "Los cambios de contrato requieren revisión del responsable.",
+        "reason": "Preservar compatibilidad con consumidores.",
+        "ruleClass": "obligation",
+        "alternative": null,
+        "exceptionPolicy": "requires_authority",
+        "support": "human_declaration",
+        "sourceRefs": [],
+        "evidenceLevel": "declared"
+      }
+    },
+    {
+      "id": "0000000a-0000-4000-8000-000000000000",
+      "version": 1,
+      "previousVersion": null,
+      "payload": {
+        "kind": "rule",
+        "title": "Contratos públicos",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "replacementRef": null,
+        "statement": "Los cambios de contrato requieren revisión del responsable.",
+        "reason": "Preservar compatibilidad con consumidores.",
+        "ruleClass": "obligation",
+        "alternative": null,
+        "exceptionPolicy": "requires_authority",
+        "support": "human_declaration",
+        "sourceRefs": [],
+        "evidenceLevel": "declared"
+      }
+    }
+  ],
+  "sourceStatus": [],
+  "diagnostics": [],
+  "nextActions": [
+    {
+      "command": "bootstrap",
+      "arguments": [
+        "--show"
+      ],
+      "purpose": "Consultar la base aceptada.",
+      "effect": "read_only"
+    }
+  ],
+  "actor": {
+    "label": "Responsable de ejemplo",
+    "role": "mantenimiento",
+    "authority": "local_declared",
+    "scope": {
+      "kind": "project",
+      "paths": []
+    }
+  },
+  "reason": "Primera incorporación.",
+  "history": [],
+  "selection": {
+    "scope": null,
+    "complete": true,
+    "excludedCount": 0
+  }
+}

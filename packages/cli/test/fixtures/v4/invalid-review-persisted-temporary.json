@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "revision": 1,
+  "producerVersion": "fixture-only",
+  "validatorVersion": 1,
+  "queryVersion": 1,
+  "events": [
+    {
+      "revision": 1,
+      "operationId": "00000002-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-03T12:01:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Primera incorporación.",
+      "draftDigest": "sha256:960f8848e4780061be4022801d1072d29ab01206986ca6b4d77965cf8e2bcaed",
+      "previousEventDigest": null,
+      "changes": [
+        {
+          "id": "0000000a-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "rule",
+            "title": "Contratos públicos",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "lifecycle": "active",
+            "replacementRef": null,
+            "statement": "Los cambios de contrato requieren revisión del responsable.",
+            "reason": "Preservar compatibilidad con consumidores.",
+            "ruleClass": "obligation",
+            "alternative": null,
+            "exceptionPolicy": "requires_authority",
+            "support": "human_declaration",
+            "sourceRefs": [],
+            "evidenceLevel": "declared"
+          }
+        },
+        {
+          "id": "0000000b-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "pending",
+            "title": "Alcance pendiente",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "status": "open",
+            "question": "¿Qué consumidores externos debemos consultar?",
+            "reason": "No hay registro todavía.",
+            "revisitWhen": "Al integrar el segundo consumidor.",
+            "sourceRefs": [],
+            "resolution": null,
+            "decisionReview": {
+              "ref": "new:compatibility",
+              "version": 1,
+              "reviewer": null
+            }
+          }
+        }
+      ],
+      "eventDigest": "sha256:13e88598d00d25eb29d8cce14852948ad0890bebe50ab6f7fef59ca45a9390ae"
+    }
+  ],
+  "digest": "sha256:a86c08368c48995e6de2dac88198597b8fe596525b1d80d6cf5ee692995c34f2"
+}

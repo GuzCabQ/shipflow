@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis.transaction",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "operationId": "00000002-0000-4000-8000-000000000000",
+  "phase": "prepared",
+  "before": null,
+  "after": "sha256:986d120631156517a76300bde818b00aa5c793400c7e2aff3635c434f9692f74",
+  "acceptedDraftDigest": "sha256:960f8848e4780061be4022801d1072d29ab01206986ca6b4d77965cf8e2bcaed",
+  "acceptedAt": "2026-11-03T12:01:00Z",
+  "actor": {
+    "label": "Responsable de ejemplo",
+    "role": "mantenimiento",
+    "authority": "local_declared",
+    "scope": {
+      "kind": "project",
+      "paths": []
+    }
+  },
+  "contextProjectDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "sourceReads": [],
+  "candidatePath": "shipflow/local/basis-staging/00000002-0000-4000-8000-000000000000/candidate.json",
+  "digest": "sha256:d15ebbb75eae0800bc39b3054b54ea31beb41d9d6f516a8ae2e7bd422d699036"
+}

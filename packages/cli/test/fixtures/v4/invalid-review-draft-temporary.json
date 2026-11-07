@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis.draft",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "operationId": "00000002-0000-4000-8000-000000000000",
+  "createdAt": "2026-11-03T12:00:00Z",
+  "expectedBasisDigest": null,
+  "contextProjectDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "input": {
+    "schemaVersion": 1,
+    "type": "shipflow.basis.input",
+    "projectId": "00000001-0000-4000-8000-000000000000",
+    "expectedBasisDigest": null,
+    "actor": {
+      "label": "Responsable de ejemplo",
+      "role": "mantenimiento",
+      "authority": "local_declared",
+      "scope": {
+        "kind": "project",
+        "paths": []
+      }
+    },
+    "reason": "Primera incorporación.",
+    "changes": [
+      {
+        "key": "compatibility",
+        "targetId": null,
+        "expectedVersion": null,
+        "payload": {
+          "kind": "rule",
+          "title": "Contratos públicos",
+          "scope": {
+            "kind": "project",
+            "paths": []
+          },
+          "lifecycle": "active",
+          "replacementRef": null,
+          "statement": "Los cambios de contrato requieren revisión del responsable.",
+          "reason": "Preservar compatibilidad con consumidores.",
+          "ruleClass": "obligation",
+          "alternative": null,
+          "exceptionPolicy": "requires_authority",
+          "support": "human_declaration",
+          "sourceRefs": [],
+          "evidenceLevel": "declared"
+        }
+      },
+      {
+        "key": "consumers",
+        "targetId": null,
+        "expectedVersion": null,
+        "payload": {
+          "kind": "pending",
+          "title": "Alcance pendiente",
+          "scope": {
+            "kind": "project",
+            "paths": []
+          },
+          "status": "open",
+          "question": "¿Qué consumidores externos debemos consultar?",
+          "reason": "No hay registro todavía.",
+          "revisitWhen": "Al integrar el segundo consumidor.",
+          "sourceRefs": [],
+          "resolution": null,
+          "decisionReview": {
+            "ref": "new:compatibility",
+            "version": 1,
+            "reviewer": null
+          }
+        }
+      }
+    ]
+  },
+  "preparedChanges": [
+    {
+      "id": "0000000a-0000-4000-8000-000000000000",
+      "version": 1,
+      "previousVersion": null,
+      "payload": {
+        "kind": "rule",
+        "title": "Contratos públicos",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "lifecycle": "active",
+        "replacementRef": null,
+        "statement": "Los cambios de contrato requieren revisión del responsable.",
+        "reason": "Preservar compatibilidad con consumidores.",
+        "ruleClass": "obligation",
+        "alternative": null,
+        "exceptionPolicy": "requires_authority",
+        "support": "human_declaration",
+        "sourceRefs": [],
+        "evidenceLevel": "declared"
+      }
+    },
+    {
+      "id": "0000000b-0000-4000-8000-000000000000",
+      "version": 1,
+      "previousVersion": null,
+      "payload": {
+        "kind": "pending",
+        "title": "Alcance pendiente",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        },
+        "status": "open",
+        "question": "¿Qué consumidores externos debemos consultar?",
+        "reason": "No hay registro todavía.",
+        "revisitWhen": "Al integrar el segundo consumidor.",
+        "sourceRefs": [],
+        "resolution": null,
+        "decisionReview": {
+          "ref": "new:compatibility",
+          "version": 1,
+          "reviewer": null
+        }
+      }
+    }
+  ],
+  "sourceReads": [],
+  "digest": "sha256:09df2f4716cebe038c34e356bed745fc437334240abb769141ba3f5365693482"
+}

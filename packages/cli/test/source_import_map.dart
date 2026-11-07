@@ -2,6 +2,7 @@
 // Fijarlo hace visible en la revisión toda dependencia nueva.
 
 import 'source_import_map_assessment.dart';
+import 'source_import_map_basis.dart';
 import 'source_import_map_context.dart';
 
 /// Cada archivo de `lib` y `bin` con lo que importa o exporta.
@@ -113,5 +114,6 @@ const expectedImports = {
   },
   'lib/src/terminal_text.dart': <String>{},
   ...assessmentImports,
+  ...basisImports,
   ...contextImports,
 };

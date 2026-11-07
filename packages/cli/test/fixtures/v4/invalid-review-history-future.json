@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "type": "shipflow.basis",
+  "projectId": "00000001-0000-4000-8000-000000000000",
+  "revision": 2,
+  "producerVersion": "fixture-only",
+  "validatorVersion": 1,
+  "queryVersion": 1,
+  "events": [
+    {
+      "revision": 1,
+      "operationId": "00000002-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-03T12:01:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Primera incorporación.",
+      "draftDigest": "sha256:960f8848e4780061be4022801d1072d29ab01206986ca6b4d77965cf8e2bcaed",
+      "previousEventDigest": null,
+      "changes": [
+        {
+          "id": "0000000a-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "rule",
+            "title": "Contratos públicos",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "lifecycle": "active",
+            "replacementRef": null,
+            "statement": "Los cambios de contrato requieren revisión del responsable.",
+            "reason": "Preservar compatibilidad con consumidores.",
+            "ruleClass": "obligation",
+            "alternative": null,
+            "exceptionPolicy": "requires_authority",
+            "support": "human_declaration",
+            "sourceRefs": [],
+            "evidenceLevel": "declared"
+          }
+        },
+        {
+          "id": "0000000b-0000-4000-8000-000000000000",
+          "version": 1,
+          "previousVersion": null,
+          "payload": {
+            "kind": "pending",
+            "title": "Alcance pendiente",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "status": "open",
+            "question": "¿Qué consumidores externos debemos consultar?",
+            "reason": "No hay registro todavía.",
+            "revisitWhen": "Al integrar el segundo consumidor.",
+            "sourceRefs": [],
+            "resolution": null,
+            "decisionReview": {
+              "ref": "0000000a-0000-4000-8000-000000000000",
+              "version": 2,
+              "reviewer": null
+            }
+          }
+        }
+      ],
+      "eventDigest": "sha256:b2617c3ef2e60eac1903d48ff25756539757903c615fc64f673d2d6291abb46c"
+    },
+    {
+      "revision": 2,
+      "operationId": "00000024-0000-4000-8000-000000000000",
+      "acceptedAt": "2026-11-06T18:00:00Z",
+      "actor": {
+        "label": "Responsable de ejemplo",
+        "role": "mantenimiento",
+        "authority": "local_declared",
+        "scope": {
+          "kind": "project",
+          "paths": []
+        }
+      },
+      "reason": "Revisión ilustrativa.",
+      "draftDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "previousEventDigest": "sha256:b2617c3ef2e60eac1903d48ff25756539757903c615fc64f673d2d6291abb46c",
+      "changes": [
+        {
+          "id": "0000000a-0000-4000-8000-000000000000",
+          "version": 2,
+          "previousVersion": 1,
+          "payload": {
+            "kind": "rule",
+            "title": "Contratos públicos",
+            "scope": {
+              "kind": "project",
+              "paths": []
+            },
+            "lifecycle": "active",
+            "replacementRef": null,
+            "statement": "Los cambios de contrato requieren revisión del responsable.",
+            "reason": "Preservar compatibilidad con consumidores.",
+            "ruleClass": "obligation",
+            "alternative": null,
+            "exceptionPolicy": "requires_authority",
+            "support": "human_declaration",
+            "sourceRefs": [],
+            "evidenceLevel": "declared"
+          }
+        }
+      ],
+      "eventDigest": "sha256:f3c679cbeac419e84ec87336e2731de8303ef62ee1d3a0644258c3b4c66563b0"
+    }
+  ],
+  "digest": "sha256:56004569955cdcda09eeea1fb08b0fe7c2b3878638cb61335bcef3b12b92351a"
+}
