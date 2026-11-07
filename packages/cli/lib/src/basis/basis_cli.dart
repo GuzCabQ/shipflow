@@ -47,7 +47,7 @@ Future<CliResponse> runBootstrapCommand(
     final response = await _dispatch(
       command,
       service,
-      prompt,
+      prompt ?? const TerminalPromptIO(),
       readStdin ?? _stdin,
       requested,
     );
@@ -76,12 +76,12 @@ BasisService _service(
 Future<BasisResponse> _dispatch(
   RunBootstrap c,
   BasisService s,
-  ContextPromptIO? prompt,
+  ContextPromptIO prompt,
   BasisStdin readStdin,
   String cwd,
 ) async => switch (c.operation) {
   BasisOperation.guide =>
-    c.json || prompt == null || !prompt.interactive
+    c.json || !prompt.interactive
         ? _choiceRequired()
         : await guideBasis(s, prompt),
   BasisOperation.show => await s.show(
