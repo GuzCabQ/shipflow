@@ -249,7 +249,7 @@ jobs:
         include:
           - runner: ubuntu-24.04
             plataforma: linux-x64
-          - runner: macos-14
+          - runner: macos-15
             plataforma: macos-arm64
 
     steps:

@@ -35,7 +35,7 @@ dart test packages/forge           # si y solo si tiene test/**/*_test.dart
 dart test packages/cli             # si y solo si tiene test/**/*_test.dart
 dart analyze --fatal-infos
 dart format --output=none --set-exit-if-changed packages tool
-# y, en su job, una vez por plataforma declarada (ubuntu-24.04 y macos-14):
+# y, en su job, una vez por plataforma declarada (ubuntu-24.04 y macos-15):
 dart pub get --enforce-lockfile
 dart test packages/cli/test
 dart run packages/cli/tool/build_release.dart --version 0.0.0-ci --output "$RUNNER_TEMP/shipflow-release"
@@ -54,7 +54,7 @@ correr.
 
 Los del ejecutable nativo viven en su propio job, y `capas.py` fija además su
 matriz: cada plataforma declarada con su runner —`ubuntu-24.04` para Linux x64,
-`macos-14` para macOS ARM64—, el SDK bloqueante y `runs-on` tomado de la matriz.
+`macos-15` para macOS ARM64—, el SDK bloqueante y `runs-on` tomado de la matriz.
 Una pata quitada, un runner cambiado o el job omitido ponen el check en rojo: un
 artefacto que no corrió en su plataforma no la verifica.
 

@@ -64,17 +64,17 @@ def casos_nativos(ci: str, ci_rel: str) -> list[dict]:
                     '        with:\n          sdk: "3.12.0"')
     for etiqueta, viejo, nuevo, menciona in (
         ("la pata de macOS fuera de la matriz",
-         "          - runner: macos-14\n            plataforma: macos-arm64\n", "",
+         "          - runner: macos-15\n            plataforma: macos-arm64\n", "",
          "no está verificada"),
         ("un runner que no es el nativo de su plataforma",
-         "          - runner: macos-14\n", "          - runner: macos-13\n",
+         "          - runner: macos-15\n", "          - runner: macos-13\n",
          "no está verificada"),
         ("runs-on fijo en vez del runner de la matriz",
          "    runs-on: ${{ matrix.runner }}\n", "    runs-on: ubuntu-24.04\n",
          "queda decorativa"),
         ("un exclude que saca una pata",
          "        include:\n          - runner: ubuntu-24.04\n",
-         "        exclude:\n          - runner: macos-14\n"
+         "        exclude:\n          - runner: macos-15\n"
          "        include:\n          - runner: ubuntu-24.04\n",
          "solo puede declarar `include`"),
         ("el job entero omitido con «if: false»",
