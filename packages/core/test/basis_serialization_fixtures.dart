@@ -176,6 +176,7 @@ final _selection = BasisSelectionSummary(
 );
 
 Map<String, SerializationCase> _responseCases() => {
+  ..._selectionCases(),
   'BasisDiagnostic': _case(
     _diagnostic.toJson(),
     (j) => BasisDiagnostic.fromJson(j).toJson(),
@@ -258,3 +259,19 @@ final _basisResponse = BasisResponse(
   diagnostics: [_diagnostic],
   nextActions: [_action],
 );
+
+Map<String, SerializationCase> _selectionCases() => {
+  'BasisSelection': _case(
+    BasisSelection(
+      selected: [_version],
+      pending: [_version],
+      reviewTargets: [_version],
+      excludedCount: 4,
+    ).toJson(),
+    (j) => BasisSelection.fromJson(j).toJson(),
+  ),
+  'BasisValidationIssue': _case(
+    BasisValidationIssue(code: 'invalid_reference', at: 'changes/1').toJson(),
+    (j) => BasisValidationIssue.fromJson(j).toJson(),
+  ),
+};

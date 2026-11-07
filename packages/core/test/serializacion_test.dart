@@ -225,6 +225,8 @@ void main() {
       'BasisStorageIntegrity',
       'BasisSelectionSummary',
       'BasisResponse',
+      'BasisSelection',
+      'BasisValidationIssue',
     ];
     _literalCases('basis', basis, basisNames);
 
