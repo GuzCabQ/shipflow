@@ -44,6 +44,7 @@ Future<void> _notThisDraft(
     r
       ..outcome = BasisOutcome.alreadyApplied
       ..basisDigest = basis.digest
+      ..draftDigest = digest
       ..addAction(showAction);
     await present(s, r, replayBasisLedger(basis));
     return;
@@ -189,6 +190,7 @@ Future<void> stageAndPublish(
   await finishPublication(s, r, journal, bytes, candidate.digest);
   if (r.published) await present(s, r, replayBasisLedger(candidate));
   r
+    ..draftDigest = draft.digest
     ..actor = draft.input.actor
     ..reason = draft.input.reason;
 }

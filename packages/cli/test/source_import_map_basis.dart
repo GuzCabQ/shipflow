@@ -71,6 +71,8 @@ const basisImports = {
   'lib/src/basis/basis_human.dart': {
     'package:core/core.dart',
     '../terminal_text.dart',
+    'basis_catalog.dart',
+    'basis_human_records.dart',
   },
   'lib/src/basis/basis_preconditions.dart': {
     'package:core/core.dart',
@@ -103,12 +105,15 @@ const basisImports = {
     'dart:convert',
     'package:core/core.dart',
     '../cli_response.dart',
+    'basis_catalog.dart',
     'basis_human.dart',
   },
   'lib/src/basis/basis_prompt.dart': {
     'package:core/core.dart',
     '../context/context_prompt.dart',
-    'basis_catalog.dart',
+    'basis_human.dart',
+    'basis_prompt_changes.dart',
+    'basis_prompt_questions.dart',
     'basis_reply.dart',
     'basis_service.dart',
   },
@@ -184,5 +189,18 @@ const basisImports = {
     '../context/state_layout.dart',
     'basis_canonical.dart',
     'basis_codec.dart',
+  },
+  'lib/src/basis/basis_human_records.dart': {
+    'package:core/core.dart',
+    '../terminal_text.dart',
+  },
+  'lib/src/basis/basis_prompt_changes.dart': {
+    'package:core/core.dart',
+    '../context/context_prompt.dart',
+    'basis_prompt_questions.dart',
+  },
+  'lib/src/basis/basis_prompt_questions.dart': {
+    'package:core/core.dart',
+    '../context/context_prompt.dart',
   },
 };
