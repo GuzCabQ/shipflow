@@ -98,6 +98,40 @@ Future<void> present(
   }
 }
 
+/// Las reglas activas sustentadas que [changes] agregan o revisan
+/// necesitan todas sus fuentes vigentes antes de publicar [candidate], sea
+/// al aceptar o al recuperar; una regla ya aceptada que perdió su soporte
+/// no bloquea cambios ajenos. Lee con la sesión de la operación, así que
+/// usa las lecturas de la misma revalidación.
+Future<bool> supported(
+  BasisService s,
+  BasisReply r,
+  List<BasisRecordVersion> changes,
+  BasisDocument candidate,
+) async {
+  final ledger = replayBasisLedger(candidate);
+  final cited = <BasisRecordVersion>[];
+  for (final change in changes) {
+    final rule = change.payload;
+    if (rule is BasisRule &&
+        rule.lifecycle == BasisRuleLifecycle.active &&
+        rule.support == BasisSupport.sourceSupported) {
+      for (final ref in rule.sourceRefs) {
+        cited.add(ledger.versionOf(ref.ref, ref.version)!);
+      }
+    }
+  }
+  final report = await s.sources.read(cited);
+  final unverified = [
+    for (final st in report.statuses)
+      if (st.status != BasisSourceState.current) st,
+  ];
+  if (unverified.isEmpty) return true;
+  r.sourceStatus.addAll(report.statuses);
+  r.add('source_unverified', path: unverified.first.sourceId);
+  return false;
+}
+
 /// Lo que no se pudo leer por presupuesto deja la consulta no concluyente,
 /// nunca un éxito: se dice por qué y, en standard, cómo ampliarlo.
 void _sourceBudget(BasisService s, BasisReply r) {

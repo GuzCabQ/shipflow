@@ -230,7 +230,11 @@ transacción activa y con su candidato exacto.
 `--recover` con la base ya en su versión nueva sólo limpia. Con la base en
 la versión anterior revalida las precondiciones y publica, o aborta con
 **75** (`recovery_preconditions_changed`) conservando todo y ofreciendo
-`--discard`. Una base que no es ninguna de las dos, o un journal ilegible, es
+`--discard`. Antes de publicar comprueba además, como al aceptar, que las
+reglas activas nuevas o revisadas tengan sus fuentes vigentes: el journal
+no prueba que esa comprobación llegara a hacerse. Si no las tienen, no
+publica (`source_unverified`, 65), conserva journal, candidato y borrador
+y ofrece `--discard`. Una base que no es ninguna de las dos, o un journal ilegible, es
 un conflicto que se conserva. Responde `no_changes` sólo si comprobó que
 no queda nada: un estado que no pudo inspeccionar o con restos ajenos es un
 conflicto (75).

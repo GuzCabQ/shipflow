@@ -119,7 +119,10 @@ Future<void> _completed(
 }
 
 /// La base sigue en before: se publica el candidato si es exactamente el
-/// aceptado y sus precondiciones siguen; si cambiaron, se conserva todo.
+/// aceptado, sus precondiciones siguen y sus reglas nuevas o revisadas
+/// tienen el soporte que exigiría aceptarlas; el journal no prueba que esa
+/// comprobación ocurriera. Si no, se conserva todo para decidir o
+/// descartar.
 Future<void> _finish(
   BasisService s,
   BasisReply r,
@@ -142,6 +145,10 @@ Future<void> _finish(
     r
       ..add('recovery_preconditions_changed', path: failure.path)
       ..addAction(discardAction(journal.acceptedDraftDigest));
+    return;
+  }
+  if (!await supported(s, r, document.events.last.changes, document)) {
+    r.addAction(discardAction(journal.acceptedDraftDigest));
     return;
   }
   await finishPublication(s, r, journal, candidate.bytes!, document.digest);

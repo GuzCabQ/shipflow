@@ -149,39 +149,6 @@ Future<BasisDiagnostic?> recheck(
   ),
 );
 
-/// Las reglas activas sustentadas que este borrador agrega o revisa
-/// necesitan todas sus fuentes vigentes; una regla ya aceptada que perdió
-/// su soporte no bloquea cambios ajenos. Usa las lecturas de la misma
-/// revalidación.
-Future<bool> _supported(
-  BasisService s,
-  BasisReply r,
-  BasisDraft draft,
-  BasisDocument candidate,
-) async {
-  final ledger = replayBasisLedger(candidate);
-  final cited = <BasisRecordVersion>[];
-  for (final change in draft.preparedChanges) {
-    final rule = change.payload;
-    if (rule is BasisRule &&
-        rule.lifecycle == BasisRuleLifecycle.active &&
-        rule.support == BasisSupport.sourceSupported) {
-      for (final ref in rule.sourceRefs) {
-        cited.add(ledger.versionOf(ref.ref, ref.version)!);
-      }
-    }
-  }
-  final report = await s.sources.read(cited);
-  final unverified = [
-    for (final st in report.statuses)
-      if (st.status != BasisSourceState.current) st,
-  ];
-  if (unverified.isEmpty) return true;
-  r.sourceStatus.addAll(report.statuses);
-  r.add('source_unverified', path: unverified.first.sourceId);
-  return false;
-}
-
 bool _fits(BasisService s, BasisReply r, BasisDocument candidate) {
   final fits =
       encodeBasis(candidate).length <= s.limits.maxBasisBytes &&
@@ -214,7 +181,8 @@ Future<void> stageAndPublish(
     null,
   );
   final failure = await recheck(s, draft, (await files.basis()).value?.digest);
-  if (failure != null || !await _supported(s, r, draft, candidate)) {
+  if (failure != null ||
+      !await supported(s, r, draft.preparedChanges, candidate)) {
     await abortOwn(s, journal);
     if (failure != null) _refused(r, draft, failure);
     return;
