@@ -50,11 +50,14 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _comun import ancla, ancla_multiple, exige_unica  # noqa: E402
 from sabotajes_nativos import casos_nativos  # noqa: E402
+from sabotajes_ci import casos_ci  # noqa: E402
+import sabotajes_en_grupos as grupos  # noqa: E402
 
 # **Los sabotajes corren sobre una COPIA PRIVADA, nunca sobre el checkout
 # compartido.** Esta bandera la pone el proceso externo cuando ya hizo la copia;
@@ -265,14 +268,135 @@ def en_copia_privada(argumentos: list[str]) -> int:
     finally:
         shutil.rmtree(temporal, ignore_errors=True)
 
-    if huella_del_arbol(RAIZ, con_generados=True) != antes:
+    intacto = huella_del_arbol(RAIZ, con_generados=True) == antes
+    if not intacto:
         print("\nprobar_reglas: FALLA\n")
         print("  el checkout COMPARTIDO cambió durante la corrida. Los sabotajes "
               "viven en una\n  copia privada, así que esto no puede venir del "
               "arnés: o alguien más lo editó,\n  o hay un camino que se escapó de "
               "la copia. Lo segundo es grave.")
-        return 1
+        codigo = 1
+    if "--grupo" in argumentos:
+        codigo = max(codigo, completar_manifiesto(argumentos, intacto))
     return codigo
+
+
+def _opcion(argumentos: list[str], nombre: str) -> str | None:
+    """El valor que sigue a `nombre`, o None si no está."""
+    if nombre not in argumentos:
+        return None
+    i = argumentos.index(nombre)
+    if i + 1 >= len(argumentos):
+        raise SystemExit(f"probar_reglas: «{nombre}» necesita un valor.")
+    return argumentos[i + 1]
+
+
+def _grupo(argumentos: list[str]) -> tuple[int, int]:
+    k, _, n = (_opcion(argumentos, "--grupo") or "").partition("/")
+    if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
+        raise SystemExit("probar_reglas: «--grupo» espera K/N, con 1 <= K <= N.")
+    return int(k), int(n)
+
+
+def _git(*args: str) -> str | None:
+    r = subprocess.run(["git", *args], cwd=RAIZ, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _sdk() -> str | None:
+    r = subprocess.run(["dart", "--version"], capture_output=True, text=True)
+    m = re.search(r"Dart SDK version: (\S+)", r.stdout + r.stderr)
+    return m.group(1) if m else None
+
+
+def procedencia() -> dict:
+    """De qué corrida, commit e inventario habla un manifiesto.
+
+    **El árbol se toma de git, no del sistema de archivos.** La huella de bytes
+    de cada grupo ve `.dart_tool` y lo que deja la preparación del runner, que
+    difieren entre runners sin que el árbol analizado difiera. El árbol del
+    commit es la identidad comparable; la huella de bytes sigue protegiendo
+    que cada grupo no deje residuo, dentro de su propia corrida.
+    """
+    return {
+        "repositorio": os.environ.get("GITHUB_REPOSITORY"),
+        "commit": _git("rev-parse", "HEAD"),
+        "arbol": _git("rev-parse", "HEAD^{tree}"),
+        "inventario": grupos.huella_inventario(casos()),
+        "run_id": os.environ.get("GITHUB_RUN_ID"),
+    }
+
+
+def completar_manifiesto(argumentos: list[str], intacto: bool) -> int:
+    """Le agrega al resultado del grupo su procedencia, en el checkout real.
+
+    **Sin manifiesto el grupo falla, aunque sus casos hayan pasado.** La
+    comprobación conjunta solo acepta como evidencia lo que el grupo publicó;
+    un grupo que terminara verde sin manifiesto dejaría ver, en un reintento,
+    el de una ejecución anterior.
+    """
+    k, n = _grupo(argumentos)
+    ruta = Path(_opcion(argumentos, "--resultado") or "")
+    try:
+        resultado = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"\nprobar_reglas: FALLA\n\n  el grupo {k}/{n} no dejó su resultado "
+              f"en «{ruta}» ({e}). Sin manifiesto no hay evidencia del grupo.")
+        return 1
+    sdk = _sdk()
+    resultado.update(procedencia())
+    resultado.update({
+        "tipo": grupos.TIPO, "version": grupos.VERSION,
+        "sdk": sdk, "canario": sdk != grupos.SDK_BLOQUEANTE,
+        "grupo": k, "grupos": n,
+        "intento": int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")),
+        "job": os.environ.get("GITHUB_JOB"),
+        "arbol_limpio": bool(resultado.get("arbol_limpio")) and intacto,
+    })
+    ruta.write_text(json.dumps(resultado, ensure_ascii=False, indent=1) + "\n",
+                    encoding="utf-8")
+    print(f"  manifiesto del grupo {k}/{n} en {ruta}")
+    return 0
+
+
+def conjunto(argumentos: list[str]) -> int:
+    """Junta los manifiestos de los grupos y exige el inventario entero."""
+    directorio = Path(_opcion(argumentos, "--conjunto") or "")
+    n = int(_opcion(argumentos, "--grupos") or "0")
+    lista = casos()
+    manifiestos, fallos = grupos.leer_manifiestos(directorio)
+    ruta_jobs = _opcion(argumentos, "--jobs")
+    if ruta_jobs is None:
+        # Sin la lista de jobs —una corrida local— cada grupo corrió una sola
+        # vez, en el intento de esta corrida.
+        intento = int(os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+        intentos = {k: intento for k in range(1, n + 1)}
+    else:
+        try:
+            jobs = json.loads(Path(ruta_jobs).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            jobs = None
+            fallos.append(f"no pude leer la lista de jobs «{ruta_jobs}»: {e}")
+        intentos, de_jobs = grupos.ultimos_intentos(jobs, n)
+        fallos.extend(de_jobs)
+    ciegos = sum(1 for c in lista if c.get("es_ciego"))
+    if ciegos != len(REGLAS):
+        fallos.append(f"hay {ciegos} casos ciegos para {len(REGLAS)} reglas: el "
+                      f"inventario no prueba a oscuras cada control.")
+    if n < 1:
+        fallos.append("«--grupos» tiene que ser al menos 1.")
+    else:
+        fallos.extend(grupos.verificar_conjunto(
+            lista, manifiestos, n, intentos, procedencia()))
+    if fallos:
+        print("\nprobar_reglas · conjunto: FALLA\n")
+        for f in fallos:
+            print(f"  {f}")
+        return 1
+    usados = ", ".join(f"g{k}@{intentos[k]}" for k in sorted(intentos))
+    print(f"probar_reglas · conjunto: ok — {n} grupos ({usados}) cubren los "
+          f"{len(lista)} casos del inventario: {grupos.resumen(lista)}.")
+    return 0
 
 
 def arq_con(mutar) -> str:
@@ -727,10 +851,15 @@ def casos() -> list[dict]:
     # anclaje que estuvo roto 24 commits en el caso `Cascada([...])`, y cuyo
     # `ValueError` no decía ni qué se buscaba ni para qué.
     ci = (RAIZ / CI_REL).read_text(encoding="utf-8")
-    _i = exige_unica(ci, "      - name: los checks saben fallar",
+    _i = exige_unica(ci, "      - name: los checks saben fallar\n",
                      que="el step que se borra del workflow")
-    _j = exige_unica(ci, "      - name: pruebas de core",
+    _j = exige_unica(ci, "      # El nombre lleva el intento",
                      que="el step siguiente, que marca el corte")
+    assert _i < _j, "el corte del step borrado quedó al revés"
+    # Los sabotajes ahora corren por grupo: el paso obligatorio es el del grupo,
+    # y el comando secuencial solo vive en el canario, que no bloquea.
+    _grupo = ('        run: python3 tool/checks/probar_reglas.py --grupo '
+              '${{ matrix.grupo }}/4 --resultado "$RUNNER_TEMP/sabotajes.json"')
     c.append({
         "nombre": "ci · un paso obligatorio borrado del workflow",
         "archivos": {CI_REL: ci[:_i] + ci[_j:]},
@@ -739,10 +868,7 @@ def casos() -> list[dict]:
     c.append({
         "nombre": "ci · un paso obligatorio con continue-on-error",
         "archivos": {CI_REL: ancla(
-            ci,
-            "        run: python3 tool/checks/probar_reglas.py",
-            "        run: python3 tool/checks/probar_reglas.py\n"
-            "        continue-on-error: true",
+            ci, _grupo, _grupo + "\n        continue-on-error: true",
             que="el step al que se le agrega continue-on-error")},
         "menciona": "continue-on-error",
     })
@@ -756,8 +882,8 @@ def casos() -> list[dict]:
     # cuatro pasaban cuando la comprobación era por subcadena.
     for etiqueta, viejo, nuevo, menciona in [
         ("envuelto en echo",
-         "        run: python3 tool/checks/probar_reglas.py",
-         '        run: echo "python3 tool/checks/probar_reglas.py"',
+         _grupo,
+         _grupo.replace("        run: ", "        run: echo '", 1) + "'",
          "exactamente"),
         # **Este ataca un paso DERIVADO, no uno fijo, y por eso su oraculo es
         # otro.** `dart test packages/core` salio de `PASOS_OBLIGATORIOS` cuando
@@ -767,27 +893,32 @@ def casos() -> list[dict]:
         # corrige el oraculo. Un sabotaje con el oraculo viejo pasa a estar rojo
         # por la razon equivocada, que es un falso detectado.
         ("con «|| true» al final",
-         "        run: dart test packages/core",
-         "        run: dart test packages/core || true",
+         "      - name: pruebas de core\n"
+         f"        if: {condicion_de_pruebas('core')}\n"
+         "        run: dart test packages/core\n",
+         "      - name: pruebas de core\n"
+         f"        if: {condicion_de_pruebas('core')}\n"
+         "        run: dart test packages/core || true\n",
          "no ejecuta sus pruebas"),
+        # El canario ya no es una pata de la matriz: es un job propio. Un job
+        # BLOQUEANTE con `continue-on-error` sigue abriendo la compuerta.
         ("el job entero con continue-on-error",
-         "    continue-on-error: ${{ matrix.canario }}",
-         "    continue-on-error: true",
+         "    name: análisis estático · Dart 3.12.0\n",
+         "    name: análisis estático · Dart 3.12.0\n    continue-on-error: true\n",
          "compuerta queda abierta"),
         # Estas dos dejan el comando EXACTO en el archivo y aun así no
         # gobiernan nada: GitHub omite el paso o deja de bloquear con él.
         # Comparar el comando no alcanzaba; hay que mirar sus atributos.
         ("omitido con «if: false»",
-         "        run: python3 tool/checks/probar_reglas.py",
-         "        run: python3 tool/checks/probar_reglas.py\n        if: false",
+         _grupo, _grupo + "\n        if: false",
          "condición"),
         ("con «continue-on-error: ${{ true }}»",
-         "        run: python3 tool/checks/probar_reglas.py",
-         "        run: python3 tool/checks/probar_reglas.py\n"
-         "        continue-on-error: ${{ true }}",
+         _grupo, _grupo + "\n        continue-on-error: ${{ true }}",
          "no detiene nada"),
         ("corriendo desde otro directorio",
+         "      - name: serialización, opacidad y puertos sin implementación\n"
          "        run: dart run bin/check.dart\n        working-directory: tool/analisis",
+         "      - name: serialización, opacidad y puertos sin implementación\n"
          "        run: dart run bin/check.dart",
          "exactamente"),
     ]:
@@ -851,10 +982,10 @@ def casos() -> list[dict]:
                      "        uses: dart-lang/setup-dart@"
                      "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
                      "        with:\n          sdk: \"3.12.0\"")
-    _dart_capas = ("      - name: dart\n"
+    _dart_capas = ("      - name: dart stable · canario de estático y pruebas\n"
                    "        uses: dart-lang/setup-dart@"
                    "6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n"
-                   "        with:\n          sdk: ${{ matrix.sdk }}")
+                   "        with:\n          sdk: stable")
     _flutter_flotante = ("      - name: flutter\n"
                          "        uses: subosito/flutter-action@"
                          "1a449444c387b1966244ae4d4f8c696479add0b2 # v2\n"
@@ -869,9 +1000,9 @@ def casos() -> list[dict]:
     # Y que la version flotante no se salve con pinta de canario. **NO HAY EXENCION
     # DE CANARIO, y se decidio dos veces** —la primera version la tenia y tenia un
     # agujero medido: no verificaba el VALOR de la matriz, asi que un job con
-    # `canario: [false]` pasaba como canario y bloqueaba igual—. El job `capas` ya
-    # declara `continue-on-error: ${{ matrix.canario }}`, asi que reemplazar su paso
-    # de Dart alcanza: la pinta de canario viene incluida.
+    # `canario: [false]` pasaba como canario y bloqueaba igual—. El job del
+    # canario ya declara `continue-on-error: true`, asi que reemplazar su paso de
+    # Dart alcanza: la pinta de canario viene incluida.
     c.append({
         "nombre": "ci · Flutter flotante tampoco vale con pinta de canario",
         "archivos": {CI_REL: ancla(
@@ -976,6 +1107,12 @@ def casos() -> list[dict]:
     # Viven en `sabotajes_nativos.py`, junto con por qué cada familia la ve un
     # control distinto.
     c.extend(casos_nativos(ci, CI_REL))
+
+    # --- LA ORGANIZACIÓN DEL WORKFLOW ---------------------------------------
+    #
+    # Compuerta, grupos de sabotajes, canario, disparadores y concurrencia.
+    # Viven en `sabotajes_ci.py`; los aplica `organizacion_ci.py`.
+    c.extend(casos_ci(ci, CI_REL))
 
     # --- LA POLITICA DE PRUEBAS · UN PASO POR MIEMBRO DEL `workspace:` --------
     #
@@ -1513,6 +1650,11 @@ def main() -> int:
     if "--recuperar" in sys.argv:
         return 0
 
+    # **El conjunto no sabotea nada**: lee manifiestos y reconstruye el
+    # inventario sobre el checkout, así que no necesita copia.
+    if "--conjunto" in sys.argv:
+        return conjunto(sys.argv[1:])
+
     # Y si todavía no estamos adentro de la copia, se hace y nos rehacemos ahí.
     if EN_COPIA not in sys.argv:
         return en_copia_privada([a for a in sys.argv[1:] if a != EN_COPIA])
@@ -1573,7 +1715,19 @@ def main() -> int:
     if desfasada:
         print(f"La cuenta de sabotajes no cuadra: {desfasada}")
         return 1
-    for caso in lista:
+    # **Los invariantes de inventario se validan sobre la lista COMPLETA en
+    # cualquier modo**: un grupo ejecuta su porción, pero no puede aprobar un
+    # inventario con un caso ciego de menos o una cifra desfasada.
+    ejecutar = lista
+    if "--grupo" in sys.argv:
+        k, n = _grupo(sys.argv)
+        elegidos = set(grupos.asignados([c["nombre"] for c in lista], k, n))
+        ejecutar = [c for c in lista if c["nombre"] in elegidos]
+        print(f"  grupo {k}/{n}: {len(ejecutar)} de {len(lista)} casos\n")
+    resultados: dict[str, dict] = {}
+    for caso in ejecutar:
+        tiempos: dict[str, float] = {}
+        t0 = time.monotonic()
         previo = aplicar(caso["archivos"])
         try:
             if caso.get("regenerar_huella"):
@@ -1596,17 +1750,30 @@ def main() -> int:
                 anotar(previo, "grafo.jsonl")
                 subprocess.run(["dart", "run", "bin/grafo.dart", "--escribir"],
                                cwd=ANALISIS, capture_output=True)
+            tiempos["preparar"] = time.monotonic() - t0
+            t1 = time.monotonic()
             codigo, salida = corre_check(con_grafo=bool(caso.get("probar_grafo")))
+            tiempos["verificar"] = time.monotonic() - t1
             problema = evaluar(caso, codigo, salida)
             if problema:
                 problemas.append(f"{caso['nombre']}: {problema}")
+                resultados[caso["nombre"]] = {"estado": "problema", "detalle": problema}
             else:
                 espera_falla = caso.get("espera", "falla") == "falla"
+                resultados[caso["nombre"]] = {
+                    "estado": "detectado" if espera_falla else "excluido"}
                 print(f"  {caso['nombre']:<52} {'detectado' if espera_falla else 'excluido'}")
         finally:
+            t2 = time.monotonic()
             restaurar(previo)
             if caso.get("pub_get"):
                 pub_get()
+            tiempos["restaurar"] = time.monotonic() - t2
+            tiempos["total"] = time.monotonic() - t0
+            resultados.setdefault(caso["nombre"], {"estado": "problema",
+                                                   "detalle": "no terminó"})
+            resultados[caso["nombre"]]["tiempos"] = {
+                f: round(v, 3) for f, v in tiempos.items()}
 
     codigo, _ = corre_check()
     if codigo != 0:
@@ -1619,6 +1786,8 @@ def main() -> int:
             "siguiente corrió sobre un árbol que no era el que dice.\n      "
             + "\n      ".join(detalle[:12]))
 
+    if "--grupo" in sys.argv:
+        _escribir_resultado(ejecutar, resultados, problemas)
     if problemas:
         print("\nprobar_reglas: FALLA\n")
         for p in problemas:
@@ -1638,10 +1807,33 @@ def main() -> int:
             print(f"  {p}")
         return 1
     positivos = sum(1 for c in lista if c.get("espera", "falla") == "falla")
+    if "--grupo" in sys.argv:
+        k, n = _grupo(sys.argv)
+        total = sum(r["tiempos"]["total"] for r in resultados.values())
+        print(f"\nprobar_reglas: ok — grupo {k}/{n}: {len(ejecutar)} de {len(lista)} "
+              f"casos en {total:.1f} s; el inventario completo lo verifica el "
+              f"conjunto.")
+        return 0
     print(f"\nprobar_reglas: ok — {positivos} sabotajes detectados sobre {len(REGLAS)} reglas, "
           f"de los cuales {ciegos} son casos CIEGOS —uno por regla—, "
           f"y {len(lista) - positivos} exclusiones honradas.")
     return 0
+
+
+def _escribir_resultado(ejecutar: list[dict], resultados: dict[str, dict],
+                        problemas: list[str]) -> None:
+    """Lo que el grupo ejecutó, con cada resultado y sus tiempos por fase.
+
+    La procedencia —commit, árbol, corrida, SDK— la agrega el proceso externo,
+    que está sobre el checkout real y no sobre la copia.
+    """
+    ruta = Path(_opcion(sys.argv, "--resultado") or "")
+    ruta.write_text(json.dumps({
+        "asignados": [c["nombre"] for c in ejecutar],
+        "resultados": resultados,
+        "problemas": problemas,
+        "arbol_limpio": not problemas,
+    }, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

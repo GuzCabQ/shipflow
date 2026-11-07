@@ -22,8 +22,12 @@ python3 tool/checks/capas.py                  # las reglas que se leen del texto
 (cd tool/analisis && dart pub get \
    && dart run bin/check.dart      # serialización, opacidad, puertos, colecciones
    && dart run bin/grafo.dart)     # el grafo: derivado == commiteado
-python3 tool/checks/probar_reglas.py          # y la prueba de que saben fallar
+python3 tool/checks/probar_reglas.py --grupo <K>/<N> --resultado <manifiesto>
+                                              # y la prueba de que saben fallar, repartida
+python3 tool/checks/probar_reglas.py --conjunto <manifiestos> --grupos <N> --jobs <jobs>
+                                              # y que los grupos cubrieron el inventario entero
 python3 tool/checks/probar_recuperacion.py    # y de que se recupera de una corrida muerta
+python3 tool/checks/probar_agregadores.py     # y de que el conjunto y la compuerta saben ponerse rojos
 dart test packages/core            # si y solo si tiene test/**/*_test.dart
 dart test packages/orchestration   # si y solo si tiene test/**/*_test.dart
 dart test packages/vcs             # si y solo si tiene test/**/*_test.dart
@@ -40,13 +44,18 @@ dart pub get --enforce-lockfile
 dart test packages/cli/test
 dart run packages/cli/tool/build_release.dart --version 0.0.0-ci --output "$RUNNER_TEMP/shipflow-release"
 test "$("$RUNNER_TEMP/shipflow-release/shipflow-0.0.0-ci-${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"
+# y al final, la compuerta: verde solo si todo lo bloqueante terminó en verde
+python3 tool/checks/compuerta.py
 ```
 
-**Los 21 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
+En local, `python3 tool/checks/probar_reglas.py` sin argumentos corre todos los
+sabotajes en secuencia, como siempre.
+
+**Los 24 pasos obligatorios los verifica `capas.py` contra el workflow**, comando
 por comando: un paso borrado de CI, o neutralizado con un `continue-on-error`,
 pone el check en rojo.
 
-**Doce son fijos; los otros nueve se DERIVAN del `workspace:`** —uno por miembro—
+**Quince son fijos; los otros nueve se DERIVAN del `workspace:`** —uno por miembro—
 y son CONDICIONALES: cada uno corre si y solo si su paquete tiene al menos un
 `test/**/*_test.dart`. Sin la condición, un paquete sin pruebas hace salir a
 `dart test` con 79 —«No tests ran»— y el job queda rojo por no haber nada que
@@ -57,6 +66,42 @@ matriz: cada plataforma declarada con su runner —`ubuntu-24.04` para Linux x64
 `macos-15` para macOS ARM64—, el SDK bloqueante y `runs-on` tomado de la matriz.
 Una pata quitada, un runner cambiado o el job omitido ponen el check en rojo: un
 artefacto que no corrió en su plataforma no la verifica.
+
+### Qué decide el merge
+
+**Las ramas protegidas exigen un solo contexto**, «reglas de arquitectura · Dart
+3.12.0», y la protección vive en GitHub, fuera de lo que `capas.py` ve. Ese
+contexto lo reporta **la compuerta**, un job que depende de todo lo bloqueante
+—análisis estático, pruebas, los grupos de sabotajes y su conjunto, formato y
+el ejecutable nativo— y que con `if: always()` corre aunque alguno falle:
+`compuerta.py` solo deja pasar si cada uno terminó en `success`. Una falla, una
+cancelación o una omisión son rojo. Sin compuerta, repartir el trabajo en jobs
+dejaría fuera del merge todo lo que no llevara el nombre protegido. Cambiar ese
+nombre exige cambiar la protección de las dos ramas en el mismo movimiento.
+
+**Los sabotajes corren en grupos paralelos**, cada uno en su runner y en su
+copia privada: ningún par de grupos sabotea el mismo árbol. Cada grupo valida
+los invariantes del inventario completo, ejecuta su porción y publica un
+manifiesto con su procedencia —commit, árbol, huella del inventario, SDK,
+corrida e intento—; sin manifiesto, el grupo falla. **El conjunto** reconstruye
+el inventario por su cuenta y exige que los grupos lo hayan cubierto entero,
+cada caso por su motivo. En un reintento parcial, un grupo que no se reintentó
+aporta su manifiesto anterior; uno que sí se reintentó tiene que aportar el del
+intento nuevo, aunque haya artefactos viejos.
+
+**El canario** —el canal `stable`, que avisa sin detener (ADR-013)— corre en
+jobs propios lo mismo que el camino bloqueante, salvo el formato, y los
+sabotajes en secuencia. Nada bloqueante lo espera, así que un canario lento no
+retiene la compuerta. Por eso los pasos obligatorios se buscan solo en jobs que
+bloquean: que un comando sobreviva únicamente en el canario es un paso borrado.
+
+**Disparadores y concurrencia.** CI corre en cada PR, en cada push a `develop`
+y `production`, y a mano. En un PR, una actualización nueva cancela la corrida
+vieja; fuera de un PR cada corrida tiene su propio grupo de concurrencia, así
+que ningún commit de integración queda reemplazado por el siguiente.
+
+`organizacion_ci.py` fija todo esto —jobs, compuerta, grupos, canario,
+disparadores y concurrencia— y `probar_reglas.py` lo sabotea.
 
 La lista se deriva y no se escribe porque escrita a mano ya se había separado:
 `rules`, `agents` y `plugin_fake` no tenían el suyo, así que una prueba agregada
@@ -135,7 +180,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 172 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 197 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.
@@ -146,7 +191,9 @@ tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.
 
 ```
 tool/
-  checks/        capas.py, probar_reglas.py, probar_recuperacion.py
+  checks/        capas.py, probar_reglas.py, probar_recuperacion.py,
+                 organizacion_ci.py, sabotajes_en_grupos.py, compuerta.py,
+                 probar_agregadores.py
   analisis/      check.dart, grafo.dart — los que necesitan el árbol sintáctico
 ```
 
@@ -162,7 +209,7 @@ derive. El motivo está pagado tres veces: una cifra en prosa que nadie deriva
 envejece sola, y la anterior lo hizo —«cuatro de los veintitrés» cuando eran
 otras— sin que nada lo viera.
 
-**Lo que sí puede afirmarse:** los 21 pasos obligatorios, porque `capas.py` los
+**Lo que sí puede afirmarse:** los 24 pasos obligatorios, porque `capas.py` los
 deriva de `PASOS_OBLIGATORIOS` y falla si la cifra no coincide.
 
 **Lo que no puede afirmarse:** ninguna otra cantidad asociada a *puertos*,
