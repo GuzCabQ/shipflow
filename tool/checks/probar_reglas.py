@@ -248,6 +248,18 @@ def en_copia_privada(argumentos: list[str]) -> int:
     comprueba. Lo segundo no es redundante — es lo que convierte «no lo tocamos»
     en un hecho medido.
     """
+    # EXPERIMENTO REV-CI-RENDIMIENTO-002 (rama que no se integra): el grupo 2
+    # bloqueante falla en el intento 1; el grupo 3 bloqueante, desde el intento
+    # 3, termina sin generar su manifiesto.
+    if "--grupo" in argumentos and "canario" not in (_opcion(argumentos, "--resultado") or ""):
+        _intento = int(os.environ.get("GITHUB_RUN_ATTEMPT", "1"))
+        _g = _opcion(argumentos, "--grupo")
+        if _g == "2/4" and _intento == 1:
+            print("EXPERIMENTO: el grupo 2 falla en el intento 1.")
+            return 1
+        if _g == "3/4" and _intento >= 3:
+            print("EXPERIMENTO: el grupo 3 termina sin generar su manifiesto.")
+            return 0
     antes = huella_del_arbol(RAIZ, con_generados=True)
     temporal = Path(tempfile.mkdtemp(prefix="arnes-copia-"))
     # `flush` porque el proceso interno escribe a la misma salida sin buffer:
