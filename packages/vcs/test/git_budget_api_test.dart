@@ -22,7 +22,7 @@ void main() {
   test('a consumer cannot write the started count', () {
     final dynamic budget = GitBudget(maxProcesses: 1);
 
-    expect(() => budget.started = 0, throwsNoSuchMethodError);
+    expect(() => budget.started = 7, throwsNoSuchMethodError);
     expect((budget as GitBudget).started, 0);
   });
 }

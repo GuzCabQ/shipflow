@@ -109,7 +109,7 @@ void main() {
     final budget = GitBudget(total: const Duration(milliseconds: 100));
     final process = runner(budget, 'exec /bin/sleep 0.3');
     expect((await query(process)).cut, 'git_timeout');
-    expect(budget.remaining, lessThanOrEqualTo(Duration.zero));
+    expect(budget.remaining, lessThan(Duration.zero));
     await expectRefused(process);
   });
 
