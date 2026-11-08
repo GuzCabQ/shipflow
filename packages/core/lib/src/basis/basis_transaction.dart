@@ -1,8 +1,8 @@
 import '../context/context_validation.dart';
 import '../recognition/recognition_json.dart';
+import 'basis_actor.dart';
 import 'basis_draft.dart';
 import 'basis_enums.dart';
-import 'basis_model.dart';
 
 /// `shipflow/local/basis-transaction.json`: la aceptación exacta registrada
 /// antes de que cambie la base. Recover sólo completa o aborta lo que dice;

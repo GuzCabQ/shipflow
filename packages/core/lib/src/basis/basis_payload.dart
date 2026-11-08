@@ -1,7 +1,8 @@
 import '../context/context_validation.dart';
 import '../recognition/recognition_json.dart';
 import 'basis_enums.dart';
-import 'basis_model.dart';
+import 'basis_links.dart';
+import 'basis_scope.dart';
 
 /// El contenido de una versión de registro: una fuente, una regla o un
 /// pendiente. El tipo de un ID no cambia entre versiones.

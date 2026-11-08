@@ -1,6 +1,6 @@
 import '../context/context_enums.dart' show wireValue;
 import '../recognition/recognition_json.dart';
-import 'basis_model.dart';
+import 'basis_scope.dart';
 
 /// Qué operación de bootstrap respondió.
 enum BasisOperation {

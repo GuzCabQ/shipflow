@@ -1,5 +1,6 @@
 import '../context/context_validation.dart';
 import '../recognition/recognition_json.dart';
+import 'basis_actor.dart';
 import 'basis_model.dart';
 import 'basis_proposed_change.dart';
 import 'basis_response_parts.dart';
