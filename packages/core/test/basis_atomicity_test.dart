@@ -174,44 +174,29 @@ void main() {
       }
     });
 
+    final target = versionOf(1, 1, ruleOf());
+    final resolved = versionOf(
+      5,
+      1,
+      pendingOf(
+        status: BasisPendingStatus.resolved,
+        resolution: 'rule:${uuid(1)}@1',
+      ),
+    );
+
     test('resolution uses previously accepted version', () {
-      final rule = versionOf(1, 1, ruleOf());
-      final resolved = versionOf(
-        5,
-        1,
-        pendingOf(
-          status: BasisPendingStatus.resolved,
-          resolution: 'rule:${uuid(1)}@1',
-        ),
-      );
       final ledger = BasisLedger();
+      final together = [resolved, target];
       expect(
-        () => applyBasisEvent(
-          ledger,
-          eventAt([
-            [resolved, rule],
-          ]),
-          'events/0',
-        ),
+        () => applyBasisEvent(ledger, eventAt([together]), 'events/0'),
         rejects('invalid_reference', 'events/0/changes/0/payload/resolution'),
       );
       expect((ledger.revision, ledger.current.length), (0, 0));
       expect(ledger.hasOperation(uuid(0x100)), isFalse);
-      applyBasisEvent(
-        ledger,
-        eventAt([
-          [rule],
-        ]),
-        'events/0',
-      );
-      applyBasisEvent(
-        ledger,
-        eventAt([
-          [rule],
-          [resolved],
-        ]),
-        'events/1',
-      );
+      final first = [target];
+      final second = [resolved];
+      applyBasisEvent(ledger, eventAt([first]), 'events/0');
+      applyBasisEvent(ledger, eventAt([first, second]), 'events/1');
       expect(ledger.current.keys, [uuid(1), uuid(5)]);
       expect(ledger.currentOf(uuid(5))!.toJson(), resolved.toJson());
     });
