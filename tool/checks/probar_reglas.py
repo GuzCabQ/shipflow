@@ -458,6 +458,24 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "el proveedor en código, pegado al final de un comentario",
         "el proveedor en un comentario que es lo último del archivo",
     },
+    "nucleo-sin-ciclos": {
+        "un ciclo largo entre tres bibliotecas nuevas",
+        "un ciclo cerrado sólo por un export",
+        "un ciclo cerrado sólo por una alternativa condicional",
+        "una hoja de basis que vuelve a importar el modelo",
+        "una biblioteca de src que importa el barril",
+        "un destino local inexistente",
+        "un part dentro de core",
+        "un archivo que la enumeración de check no ve",
+        "un archivo que el analizador no ve",
+        "un ciclo escondido donde las dos enumeraciones no miran",
+        "un ../ que se sale de lib",
+        "un ciclo en una carpeta con # en el nombre",
+        "un ciclo por una referencia codificada a core",
+        "el barril por una referencia codificada",
+        "una URI de paquete sin nombre válido",
+        "una referencia codificada a core sin ciclo",
+    },
 }
 
 
@@ -810,9 +828,13 @@ def casos() -> list[dict]:
 
     # La exención de token, por sus DOS bordes. Sin el segundo caso sería
     # indistinguible de haber desactivado la regla en los archivos fuente.
+    # El export legítimo necesita un destino que exista: el detector de
+    # bibliotecas de core pone rojo un destino local ausente, y este control
+    # negativo fallaría por una razón que no es la suya.
     c.append({
         "nombre": "exención · el sufijo de un export legítimo queda fuera",
-        "archivos": {"packages/core/lib/_canario_export.dart": "export 'src/x.dart';\n"},
+        "archivos": {"packages/core/lib/_canario_export.dart": "export 'src/x.dart';\n",
+                     "packages/core/lib/src/x.dart": ""},
         "espera": "pasa",
     })
     c.append({
@@ -1288,7 +1310,9 @@ def casos() -> list[dict]:
     c.append({
         "nombre": "check · core/lib sin un solo archivo que inspeccionar",
         "archivos": {r: None for r in _fuentes_core},
-        "menciona": "no miré",
+        # Y el detector de bibliotecas tiene que decirlo por su cuenta: sus
+        # aristas salen de otro recorrido, que también puede quedar vacío.
+        "menciona": ["no miré", "bibliotecas de core: inventario vacío"],
     })
 
     # El nombre viejo sobrevivió dentro de un bloque de código, colgando de

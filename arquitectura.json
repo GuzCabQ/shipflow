@@ -916,6 +916,200 @@
         "por_que_ciega": "Los dos criterios se derivan del árbol sintáctico y del texto que el parser reconoce. De un árbol parcial no sale ningún `HttpClient`, y del texto que el parser no pudo tokenizar no se puede saber qué es comentario y qué es código —un archivo que no se pudo leer se lee exactamente igual que uno sin ninguna mención al proveedor.",
         "debe_mencionar": "no parsea"
       }
+    },
+    "nucleo-sin-ciclos": {
+      "enunciado": "Las bibliotecas de `packages/core/lib` no forman ningún componente cíclico —contando imports, exports y sus alternativas condicionales—, ninguna de `src/` importa ni exporta el barril, y las hojas de valores de basis (`basis_scope`, `basis_actor`, `basis_links`) no alcanzan el modelo, el payload ni la historia.",
+      "origen": "ARQ-03 del diagnóstico de core y SPEC-ARQ-CORE-001: el ciclo basis_model ↔ basis_payload, roto al separar los valores de los registros y eventos.",
+      "tipo": "bibliotecas_sin_ciclos",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Mové el valor al dueño de nivel inferior e importá ese dueño directamente. No lo resuelvas con un export transitivo, un `part`, ni importando el barril desde `src/`.",
+      "por_que": [
+        "Un ciclo entre bibliotecas no rompe la compilación: Dart lo acepta, y por",
+        "eso nadie lo nota hasta que dos tipos ya no se pueden entender por separado.",
+        "basis_model y basis_payload se necesitaban mutuamente porque los valores",
+        "que comparten —ámbito, actor, referencias— vivían junto a los documentos que",
+        "los contienen. Separarlos no sirve de nada si el próximo import lo deshace",
+        "sin ruido.",
+        "",
+        "EL UNIVERSO ES EL DISCO. `fuentes()` de check.dart y la enumeración del",
+        "analizador omiten LAS DOS una carpeta `.dart_tool` dentro de `lib/`: comparar",
+        "una contra la otra da igual aunque un ciclo viva ahí. El control recorre el",
+        "directorio sin filtros, parsea todo lo que encuentra y usa las otras dos",
+        "listas solo como contraste: cualquier diferencia, enlace simbólico o archivo",
+        "ilegible es rojo."
+      ],
+      "alcance": {
+        "raiz": "packages/core/lib",
+        "que_mira": "Las directivas `import` y `export` de cada `.dart` bajo packages/core/lib, con cada una de sus alternativas condicionales, leídas del árbol sintáctico sin resolverlo. Los URI relativos y `package:core/` se resuelven a archivos de `lib/`; `dart:` y otros paquetes se cuentan aparte.",
+        "residuo_declarado": "No gobierna las dependencias ENTRE las áreas de core —recognition, context, assessment y basis—: no son rebanadas independientes y prohibirlas sería inventar una arquitectura. Los `package:` ajenos se cuentan pero no se siguen: core no puede declararlos, y eso lo vigila `nucleo-sin-externas`. Las hojas y lo que no pueden alcanzar están fijados en `tool/analisis/bin/bibliotecas_core.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
+      },
+      "violacion_canonica": {
+        "donde": "packages/core/lib/src/_canario_ciclo.dart",
+        "contenido": "import '_canario_ciclo.dart';\n",
+        "debe_mencionar": "bibliotecas de core: componente cíclico"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "un ciclo largo entre tres bibliotecas nuevas",
+          "por_que": "Un control que solo mirara lazos propios o pares dejaría pasar el ciclo que más cuesta ver a ojo. Una de las aristas va con `./` para probar que se resuelve al mismo nodo que su forma corta.",
+          "archivos": {
+            "packages/core/lib/src/_canario_largo_a.dart": "import './_canario_largo_b.dart';\n",
+            "packages/core/lib/src/_canario_largo_b.dart": "import '_canario_largo_c.dart';\n",
+            "packages/core/lib/src/_canario_largo_c.dart": "import '_canario_largo_a.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: componente cíclico"
+        },
+        {
+          "nombre": "un ciclo cerrado sólo por un export",
+          "por_que": "Un export también es una dependencia: quien lo importa depende de lo exportado. Mirar solo imports dejaba este ciclo invisible.",
+          "archivos": {
+            "packages/core/lib/src/_canario_export_a.dart": "export '_canario_export_b.dart';\n",
+            "packages/core/lib/src/_canario_export_b.dart": "import '_canario_export_a.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "(export)"
+          ]
+        },
+        {
+          "nombre": "un ciclo cerrado sólo por una alternativa condicional",
+          "por_que": "El URI principal es inocuo y la alternativa cierra el ciclo. El grafo general no lee alternativas; este control sí, y es lo que este caso sostiene. La condición no usa la palabra `dart` para no despertar `lenguaje-en-plugin-dart`.",
+          "archivos": {
+            "packages/core/lib/src/_canario_alt_a.dart": "import '_canario_alt_base.dart' if (canario.alternativa) '_canario_alt_b.dart';\n",
+            "packages/core/lib/src/_canario_alt_b.dart": "import '_canario_alt_a.dart';\n",
+            "packages/core/lib/src/_canario_alt_base.dart": ""
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "(alternativa de import)"
+          ]
+        },
+        {
+          "nombre": "una hoja de basis que vuelve a importar el modelo",
+          "por_que": "El arreglo de ARQ-03, deshecho por un import. El contenido es solo la directiva: el control lee directivas, y copiar acá la hoja entera sería una segunda versión del producto que nadie mantiene.",
+          "archivos": {
+            "packages/core/lib/src/basis/basis_links.dart": "import 'basis_model.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: la hoja src/basis/basis_links.dart depende de",
+            "bibliotecas de core: componente cíclico"
+          ]
+        },
+        {
+          "nombre": "una biblioteca de src que importa el barril",
+          "por_que": "Importar el barril desde adentro esconde de qué dueño depende cada cosa, y basta un export más en el barril para cerrar un ciclo que nadie escribió. Por `package:core/`, para probar que esa forma también se resuelve.",
+          "archivos": {
+            "packages/core/lib/src/_canario_barril.dart": "import 'package:core/core.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: importa o exporta el barril: src/_canario_barril.dart"
+        },
+        {
+          "nombre": "un destino local inexistente",
+          "por_que": "Una arista que no llega a ningún archivo no se puede seguir, y no seguirla se leería igual que «no hay ciclo».",
+          "archivos": {
+            "packages/core/lib/src/_canario_destino.dart": "import '_no_existe.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: destino inexistente"
+        },
+        {
+          "nombre": "un part dentro de core",
+          "por_que": "`part` mete una biblioteca dentro de otra y con eso puede esconder un ciclo en un solo nodo. Se prohíbe en vez de modelarlo.",
+          "archivos": {
+            "packages/core/lib/src/_canario_part.dart": "part '_canario_parte.dart';\n",
+            "packages/core/lib/src/_canario_parte.dart": "part of '_canario_part.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: part no admitido"
+        },
+        {
+          "nombre": "un archivo que la enumeración de check no ve",
+          "por_que": "`fuentes()` descarta toda ruta que contenga `.dart_tool`, también como sufijo de una carpeta cualquiera. El analizador sí lo ve: la disparidad es roja.",
+          "archivos": {
+            "packages/core/lib/src/legado.dart_tool/viejo.dart": "void viejo() {}\n"
+          },
+          "debe_mencionar": "bibliotecas de core: cobertura insuficiente"
+        },
+        {
+          "nombre": "un archivo que el analizador no ve",
+          "por_que": "El analizador omite las carpetas ocultas; `fuentes()` no. La disparidad en el otro sentido también es roja.",
+          "archivos": {
+            "packages/core/lib/src/.oculto/x.dart": "void oculto() {}\n"
+          },
+          "debe_mencionar": "bibliotecas de core: cobertura insuficiente"
+        },
+        {
+          "nombre": "un ciclo escondido donde las dos enumeraciones no miran",
+          "por_que": "Las dos listas omiten `src/.dart_tool/` y coinciden entre sí. Si el universo volviera a heredar ese filtro, las tres listas serían iguales y solo el ciclo delataría el recorte: por eso este caso exige las dos cosas.",
+          "archivos": {
+            "packages/core/lib/src/.dart_tool/hidden.dart": "import 'hidden.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "bibliotecas de core: cobertura insuficiente"
+          ]
+        },
+        {
+          "nombre": "un ../ que se sale de lib",
+          "por_que": "Resolver contra una raíz ficticia anclaba los `..` sobrantes y el destino volvía a caer adentro de `lib/`, donde sí existía: el import apuntaba afuera y el check lo contaba como una arista sana. Lo encontró la revisión final del corte.",
+          "archivos": {
+            "packages/core/lib/_canario_fuera.dart": "import '../../lib/src/basis/basis_enums.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: destino inexistente"
+        },
+        {
+          "nombre": "un ciclo en una carpeta con # en el nombre",
+          "por_que": "Sin codificar la ruta, un `#` en el nombre de una carpeta se leía como el comienzo de un fragmento: las aristas apuntaban a otros archivos y el ciclo de adentro pasaba en verde. Lo encontró la revisión final del corte.",
+          "archivos": {
+            "packages/core/lib/src/x#y/a.dart": "import 'b.dart';\n",
+            "packages/core/lib/src/x#y/b.dart": "import 'a.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "src/x#y/a.dart → src/x#y/b.dart (import)"
+          ]
+        },
+        {
+          "nombre": "un ciclo por una referencia codificada a core",
+          "por_que": "`package:c%6Fre/...` es core para Dart. Clasificar por el texto escrito la contaba como un paquete ajeno, la arista desaparecía y el ciclo pasaba en verde. Se clasifica la URI ya parseada, por el nombre de paquete decodificado.",
+          "archivos": {
+            "packages/core/lib/src/_canario_codificado.dart": "import 'package:c%6Fre/src/_canario_codificado.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "src/_canario_codificado.dart → src/_canario_codificado.dart (import)"
+          ]
+        },
+        {
+          "nombre": "el barril por una referencia codificada",
+          "por_que": "La misma clasificación, en una arista sin ciclo: si la referencia codificada se tomara por un paquete ajeno, el acceso al barril desde `src/` pasaría sin ruido.",
+          "archivos": {
+            "packages/core/lib/src/_canario_barril_codificado.dart": "import 'package:c%6Fre/core.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: importa o exporta el barril: src/_canario_barril_codificado.dart"
+        },
+        {
+          "nombre": "una URI de paquete sin nombre válido",
+          "por_que": "Si el nombre del paquete no es un nombre de Dart, no se puede decir si es core ni qué archivo nombra. Contarla como dependencia ajena sería decidir sin mirar.",
+          "archivos": {
+            "packages/core/lib/src/_canario_ilegible.dart": "import 'package:%zz/x.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: URI no válida"
+        },
+        {
+          "nombre": "una referencia codificada a core sin ciclo",
+          "por_que": "CONTROL NEGATIVO de las dos anteriores: la referencia codificada válida, sin ciclo ni barril, tiene que pasar en verde. Que se cuente como arista local y no como paquete ajeno lo muestran los ensayos de la entrega.",
+          "archivos": {
+            "packages/core/lib/_canario_codificado_sano.dart": "import 'package:c%6Fre/src/basis/basis_enums.dart';\n"
+          },
+          "espera": "pasa"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simétrico de `violacion_canonica`: aquélla prueba que el check detecta un EXCESO; éste, que detecta una OMISIÓN.",
+        "que": "Un archivo de packages/core/lib que no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Las aristas salen de las directivas del árbol sintáctico. De un árbol parcial no sale ninguna, y un archivo sin aristas se lee exactamente igual que uno que no importa nada.",
+        "debe_mencionar": "bibliotecas de core: no pude leer sus directivas"
+      }
     }
   }
 }

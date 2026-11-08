@@ -1,6 +1,6 @@
 import '../context/context_validation.dart';
 import '../recognition/recognition_json.dart';
-import 'basis_model.dart';
+import 'basis_actor.dart';
 import 'basis_payload.dart';
 
 /// Un cambio propuesto: crea (sin [targetId] ni [expectedVersion]) o

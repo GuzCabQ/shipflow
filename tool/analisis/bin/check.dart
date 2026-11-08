@@ -31,6 +31,8 @@ import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 
+import 'bibliotecas_core.dart';
+
 final List<String> fallos = [];
 
 /// Lo que se pudo derivar de una clase. Cada campo que sea `null` significa
@@ -768,6 +770,7 @@ Future<void> main(List<String> args) async {
     'puertos-sin-implementacion': 'huecos_declarados',
     'colecciones-inmutables': 'colecciones_copiadas',
     'subprocesos-con-entorno-saneado': 'entorno_saneado',
+    'nucleo-sin-ciclos': 'bibliotecas_sin_ciclos',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
@@ -854,6 +857,17 @@ Future<void> main(List<String> args) async {
       'Cero archivos mirados no es «no hay clases»: es «no miré».',
     );
   }
+
+  // --- bibliotecas de core sin ciclos ------------------------------------
+  //
+  // Mira el disco entero de core/lib, no `fuentesCore`: esa lista solo se
+  // contrasta. Ver `bibliotecas_core.dart`.
+  final bibliotecas = verificarBibliotecasDeCore(
+    dirCore,
+    fuentesCore,
+    detalle: args.contains('--detalle-bibliotecas'),
+  );
+  fallos.addAll(bibliotecas.fallos);
 
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
   //
@@ -1371,4 +1385,5 @@ Future<void> main(List<String> args) async {
     'forja: ok — ${archivosDeLaForja.length} archivos revisados fuera de '
     '`forge`, sin `HttpClient` ni mención al proveedor.',
   );
+  stdout.writeln(bibliotecas.resumen);
 }
