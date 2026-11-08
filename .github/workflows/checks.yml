@@ -194,8 +194,8 @@ jobs:
   # LA PRUEBA DE QUE LOS CHECKS SABEN FALLAR, REPARTIDA.
   #
   # Un guardia que existe y nunca se disparó es indistinguible de uno roto
-  # —F40, la clase 1 del catálogo—. Corrían todos en secuencia y ocupaban casi
-  # todo el job; repartidos, cada grupo corre su porción en su runner y en su
+  # —F40, la clase 1 del catálogo—. En secuencia ocupan casi todo el límite
+  # del job; repartidos, cada grupo corre su porción en su runner y en su
   # copia privada, y ningún par de grupos sabotea el mismo árbol. Cada grupo
   # publica su manifiesto: sin él, el job falla.
   sabotajes:
@@ -284,10 +284,12 @@ jobs:
           pattern: sabotajes-g*-i*
           path: ${{ runner.temp }}/manifiestos
 
+      # Todas las páginas: cada intento repite todos los jobs de la corrida, así
+      # que unos pocos reintentos superan una página.
       - name: los intentos de cada grupo
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?filter=all&per_page=100" > "$RUNNER_TEMP/jobs.json"
+        run: gh api --paginate --slurp "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?filter=all&per_page=100" > "$RUNNER_TEMP/jobs.json"
 
       - name: el conjunto de los sabotajes
         run: python3 tool/checks/probar_reglas.py --conjunto "$RUNNER_TEMP/manifiestos" --grupos 4 --jobs "$RUNNER_TEMP/jobs.json"
@@ -401,7 +403,7 @@ jobs:
   # que el camino bloqueante, salvo el formato, que lo decide un solo SDK.
   # Ningún job bloqueante depende de él: un canario lento no retiene la
   # compuerta. Sus sabotajes van en los mismos grupos que los bloqueantes:
-  # en secuencia, con `stable`, no entraban en el límite del job.
+  # con `stable` cada caso tarda más, y en secuencia no caben en el límite.
   canario-estatico-pruebas:
     name: canario · estático y pruebas · Dart stable
     runs-on: ubuntu-latest

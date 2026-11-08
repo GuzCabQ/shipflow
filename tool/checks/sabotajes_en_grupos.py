@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Los sabotajes repartidos en grupos, y la comprobación que los vuelve a juntar.
 
-**Por qué en grupos.** `probar_reglas.py` corría los casos uno detrás de otro
-y ocupaba entre doce y diecisiete de los veinte que tiene el job. Repartidos
-en `GRUPOS` jobs paralelos, cada uno en su runner y en su copia privada, la
-espera baja sin quitar ningún caso. Nunca dos grupos sabotean el mismo árbol.
+**Por qué en grupos.** Uno detrás de otro, los casos ocupan casi todo el
+límite de tiempo de un job. Repartidos en `GRUPOS` jobs paralelos, cada uno en
+su runner y en su copia privada, la espera baja sin quitar ningún caso. Nunca
+dos grupos sabotean el mismo árbol.
 
 **Por qué una comprobación conjunta.** Un grupo que pasa solo prueba su
 porción. Que el inventario entero se ejecutó —sin un caso de menos, de más ni
@@ -24,10 +24,9 @@ artefactos.
 
 **Y la API no lo dice directamente.** Al reintentar los fallidos, cada job que
 no se reintentó reaparece en el intento nuevo con otro id y ese `run_attempt`,
-pero con las horas de cuando corrió. Medido en la corrida 42425388245: los
-grupos 1, 3 y 4 figuraban en el intento 2 sin haber vuelto a correr. Una
-entrada con las mismas horas y el mismo resultado que una anterior es una
-copia, y el grupo corrió en el intento de la primera.
+pero con las horas de cuando corrió. Una entrada con las mismas horas y el
+mismo resultado que una anterior es una copia, y el grupo corrió en el intento
+de la primera.
 
 Este módulo es puro: no lee el entorno ni lanza procesos. Lo usan
 `probar_reglas.py` y `probar_agregadores.py`.
@@ -56,9 +55,9 @@ PROCEDENCIA = ("repositorio", "commit", "arbol", "inventario", "run_id")
 def asignados(nombres: list[str], k: int, n: int) -> list[str]:
     """Los casos del grupo `k` de `n`: round-robin sobre el orden canónico.
 
-    Medido sobre el inventario real, los cuatro grupos quedan dentro de un 7 %
-    entre sí. Un reparto por duraciones necesitaría un registro de tiempos
-    que envejece; se adopta solo si una medición muestra desequilibrio.
+    Los casos duran parecido, así que el reparto por turnos ya equilibra los
+    grupos. Uno por duraciones necesitaría un registro de tiempos que
+    envejece.
     """
     if not 1 <= k <= n:
         raise ValueError(f"grupo {k} fuera de 1..{n}")
@@ -115,15 +114,16 @@ def ultimos_intentos(jobs: object, n: int) -> tuple[dict[int, int], list[str]]:
     """En qué intento corrió por última vez el job de cada grupo.
 
     `jobs` es la respuesta de `/actions/runs/{id}/jobs?filter=all`, que trae
-    los jobs de TODOS los intentos con su `run_attempt`. Una respuesta
-    paginada a medias se rechaza: sin todos los jobs no se sabe qué se
+    los jobs de TODOS los intentos con su `run_attempt`: una página, o la lista
+    de páginas de `gh api --paginate --slurp`. Cada intento repite todos los
+    jobs de la corrida, así que unos pocos reintentos superan una página. Una
+    respuesta a medias se rechaza: sin todos los jobs no se sabe qué se
     reintentó.
     """
-    if not isinstance(jobs, dict) or not isinstance(jobs.get("jobs"), list):
-        return {}, ["la lista de jobs de la corrida no tiene la forma esperada; "
-                    "sin ella no se sabe qué grupo se reintentó."]
+    jobs, fallos = _unir_paginas(jobs)
+    if jobs is None:
+        return {}, fallos
     lista = jobs["jobs"]
-    fallos = []
     if jobs.get("total_count") != len(lista):
         fallos.append(f"la API informó {jobs.get('total_count')} jobs y llegaron "
                       f"{len(lista)}. Una página faltante podría esconder un "
@@ -139,6 +139,27 @@ def ultimos_intentos(jobs: object, n: int) -> tuple[dict[int, int], list[str]]:
             continue
         intentos[k] = _intento_en_que_corrio(vistos)
     return intentos, fallos
+
+
+def _unir_paginas(respuesta: object) -> tuple[dict | None, list[str]]:
+    """Las páginas como una sola respuesta: todas declaran el mismo total y
+    ningún job aparece en dos."""
+    paginas = respuesta if isinstance(respuesta, list) else [respuesta]
+    if not paginas or not all(isinstance(p, dict) and isinstance(p.get("jobs"), list)
+                              for p in paginas):
+        return None, ["la lista de jobs de la corrida no tiene la forma esperada; "
+                      "sin ella no se sabe qué grupo se reintentó."]
+    totales = {p.get("total_count") for p in paginas}
+    if len(totales) != 1:
+        return None, [f"las páginas de jobs no coinciden en el total ({sorted(map(str, totales))}): "
+                      f"la corrida cambió mientras se leía, o se mezclaron respuestas."]
+    lista = [j for p in paginas for j in p["jobs"]]
+    ids = [j.get("id") for j in lista if isinstance(j, dict) and j.get("id") is not None]
+    repetidos = sorted({i for i in ids if ids.count(i) > 1})
+    if repetidos:
+        return None, [f"el job {repetidos[0]} aparece dos veces entre las páginas: no se "
+                      f"puede saber cuál de las dos lecturas vale."]
+    return {"total_count": totales.pop(), "jobs": lista}, []
 
 
 def _intento_en_que_corrio(vistos: list[dict]) -> int:

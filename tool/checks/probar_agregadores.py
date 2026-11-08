@@ -68,8 +68,7 @@ def jobs(*intentos_por_grupo: list[int], total: int | None = None) -> dict:
 def con_copias(base: dict, intento: int) -> dict:
     """Lo que devuelve la API tras «reintentar los fallidos»: cada job que NO se
     reintentó reaparece en el intento nuevo con otro id y `run_attempt` nuevo,
-    pero con las horas del intento en que corrió. Medido en la corrida
-    42425388245."""
+    pero con las horas del intento en que corrió."""
     lista = list(base["jobs"])
     reintentados = {j["name"] for j in lista if j["run_attempt"] == intento}
     for j in [j for j in base["jobs"] if j["run_attempt"] == intento - 1]:
@@ -167,6 +166,51 @@ caso("con copias en la lista, un grupo reintentado de verdad sin manifiesto fall
      conjunto(todos(), _intentos), "OTRA ejecución")
 caso("con copias en la lista, los no reintentados aportan su manifiesto anterior",
      conjunto(todos() + [manifiesto(3, intento=2)], _intentos), None)
+
+
+def paginas(respuesta: dict, por_pagina: int = 100) -> list[dict]:
+    """La forma de `gh api --paginate --slurp`: una lista de páginas, cada una
+    con el total de la corrida y su porción de jobs."""
+    lista = respuesta["jobs"]
+    return [{"total_count": respuesta["total_count"], "jobs": lista[i:i + por_pagina]}
+            for i in range(0, len(lista), por_pagina)]
+
+
+def siete_intentos() -> dict:
+    """Siete intentos de una corrida de 16 jobs: 112 entradas. El grupo 2 se
+    reintenta en cada intento; los demás grupos y el resto de los jobs
+    reaparecen como copias. El último intento del grupo 2 cae en la página 2."""
+    lista = []
+    for a in range(1, 8):
+        for k in range(1, N + 1):
+            corrio = 1 if k != 2 else a
+            lista.append({"id": len(lista), "name": g.NOMBRE_DEL_JOB.format(k=k, n=N),
+                          "run_attempt": a, "conclusion": "success",
+                          "started_at": f"2026-11-07T0{corrio}:00:0{k}Z",
+                          "completed_at": f"2026-11-07T0{corrio}:05:0{k}Z"})
+        for x in range(12):
+            lista.append({"id": len(lista), "name": f"otro {x}", "run_attempt": a,
+                          "conclusion": "success", "started_at": "2026-11-07T01:00:00Z",
+                          "completed_at": "2026-11-07T01:01:00Z"})
+    return {"total_count": len(lista), "jobs": lista}
+
+
+_todas = paginas(siete_intentos())
+_intentos, _f = g.ultimos_intentos(_todas, N)
+caso("más de 100 jobs en varias páginas, con el reintento en la segunda",
+     [] if (len(_todas), _intentos, _f) == (2, {1: 1, 2: 7, 3: 1, 4: 1}, [])
+     else [f"{len(_todas)} páginas {_intentos} {_f}"], None)
+caso("más de 100 jobs con una página faltante",
+     g.ultimos_intentos(_todas[:1], N)[1], "Una página faltante")
+caso("páginas que no coinciden en el total de jobs",
+     g.ultimos_intentos([_todas[0], {**_todas[1], "total_count": 113}], N)[1],
+     "no coinciden en el total")
+caso("un job repetido entre páginas",
+     g.ultimos_intentos([_todas[0], {**_todas[1], "jobs": _todas[1]["jobs"][:-1]
+                                    + _todas[0]["jobs"][:1]}], N)[1],
+     "aparece dos veces")
+caso("una página que no es un objeto",
+     g.ultimos_intentos([_todas[0], "basura"], N)[1], "no tiene la forma esperada")
 caso("un grupo ausente de la lista de jobs",
      g.ultimos_intentos(jobs([1], [1], [1]), N)[1], "no encontré el job")
 caso("una lista de jobs paginada a medias",

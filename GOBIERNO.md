@@ -91,8 +91,8 @@ intento nuevo, aunque haya artefactos viejos.
 
 **El canario** —el canal `stable`, que avisa sin detener (ADR-013)— corre en
 jobs propios lo mismo que el camino bloqueante, salvo el formato, con los
-sabotajes repartidos en los mismos grupos: en secuencia no entraban en el
-límite del job. Nada bloqueante lo espera, así que un canario lento no
+sabotajes repartidos en los mismos grupos: con `stable` cada caso tarda más,
+y en secuencia no caben en el límite del job. Nada bloqueante lo espera, así que un canario lento no
 retiene la compuerta. Por eso los pasos obligatorios se buscan solo en jobs que
 bloquean: que un comando sobreviva únicamente en el canario es un paso borrado.
 
@@ -182,7 +182,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 198 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 203 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.

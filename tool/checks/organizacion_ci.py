@@ -37,16 +37,16 @@ CANCELAR_EN_CURSO = "${{ github.event_name == 'pull_request' }}"
 COMANDO_GRUPO = ('python3 tool/checks/probar_reglas.py --grupo '
                  '${{ matrix.grupo }}/' + str(GRUPOS)
                  + ' --resultado "$RUNNER_TEMP/sabotajes.json"')
-COMANDO_JOBS = ('gh api "repos/${{ github.repository }}/actions/runs/'
+COMANDO_JOBS = ('gh api --paginate --slurp "repos/${{ github.repository }}/actions/runs/'
                 '${{ github.run_id }}/jobs?filter=all&per_page=100" > '
                 '"$RUNNER_TEMP/jobs.json"')
 COMANDO_CONJUNTO = ('python3 tool/checks/probar_reglas.py --conjunto '
                     '"$RUNNER_TEMP/manifiestos" --grupos ' + str(GRUPOS)
                     + ' --jobs "$RUNNER_TEMP/jobs.json"')
 COMANDO_COMPUERTA = "python3 tool/checks/compuerta.py"
-# El canario reparte sus sabotajes igual que el camino bloqueante: en
-# secuencia, con `stable`, no entraban en el límite del job. Su resultado va a
-# otro archivo y no se publica: no es evidencia para el merge.
+# El canario reparte sus sabotajes igual que el camino bloqueante, porque con
+# `stable` cada caso tarda más y en secuencia no caben en el límite del job. Su
+# resultado va a otro archivo y no se publica: no es evidencia para el merge.
 COMANDO_CANARIO = ('python3 tool/checks/probar_reglas.py --grupo '
                    '${{ matrix.grupo }}/' + str(GRUPOS)
                    + ' --resultado "$RUNNER_TEMP/sabotajes-canario.json"')
@@ -238,8 +238,14 @@ def _conjunto(job: dict | None) -> list[str]:
     bajada = _usa(job, "download-artifact")
     if len(bajada) != 1 or bajada[0].get("with") != BAJADA:
         fallos.append(f"el conjunto no baja los manifiestos como {BAJADA!r}.")
-    jobs = [p for p in _pasos(job) if str(p.get("run", "")).strip() == COMANDO_JOBS]
-    if len(jobs) != 1 or (jobs[0].get("env") or {}).get("GH_TOKEN") != "${{ github.token }}":
+    lecturas = [p for p in _pasos(job) if "/jobs?filter=all" in str(p.get("run", ""))]
+    jobs = [p for p in lecturas if str(p.get("run", "")).strip() == COMANDO_JOBS]
+    if lecturas and not jobs:
+        fallos.append(f"el conjunto lee los intentos con «{str(lecturas[0].get('run')).strip()}» "
+                      f"y no exactamente con «{COMANDO_JOBS}»: sin `--paginate --slurp`, "
+                      f"más de 100 jobs dejan páginas afuera y el conjunto rechaza una "
+                      f"corrida válida.")
+    elif len(jobs) != 1 or (jobs[0].get("env") or {}).get("GH_TOKEN") != "${{ github.token }}":
         fallos.append("el conjunto no lee en qué intento corrió cada grupo: sin "
                       "eso, un grupo reintentado sin manifiesto se taparía con el "
                       "de un intento anterior.")
@@ -268,6 +274,17 @@ def _canarios(jobs: dict) -> list[str]:
             if nombre in _necesita(j):
                 fallos.append(f"«{otro}» depende del canario «{nombre}»: lo "
                               f"esperaría aunque no bloquee.")
+        # Que no bloquee no lo vuelve opcional: un canario omitido no avisa de
+        # nada, y ni la compuerta ni los pasos obligatorios lo miran.
+        if "if" in job:
+            fallos.append(f"el canario «{nombre}» lleva `if: {job['if']!r}`: un canario "
+                          f"omitido no avisa de nada y nada lo reporta.")
+        if _necesita(job):
+            fallos.append(f"el canario «{nombre}» espera a {_necesita(job)}: si alguno "
+                          f"falla, el canario queda omitido sin avisar.")
+        if nombre != "canario-sabotajes" and "strategy" in job:
+            fallos.append(f"el canario «{nombre}» declara una matriz: una matriz vacía "
+                          f"lo deja sin ejecutar.")
     espejo = jobs.get("canario-estatico-pruebas")
     if espejo is not None:
         faltan = (_corridos(jobs.get("estatico")) | _corridos(jobs.get("pruebas"))) \

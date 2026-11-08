@@ -52,13 +52,16 @@ def casos_ci(ci: str, ci_rel: str) -> list[dict]:
          "    needs: [sabotajes]\n    if: ${{ always() }}\n",
          "    needs: [sabotajes]\n",
          "conjunto omitido")
+    lectura = ('        run: gh api --paginate --slurp "repos/${{ github.repository }}/'
+               'actions/runs/${{ github.run_id }}/jobs?filter=all&per_page=100" > '
+               '"$RUNNER_TEMP/jobs.json"\n')
     caso("el conjunto sin leer en qué intento corrió cada grupo",
          '      - name: los intentos de cada grupo\n'
-         '        env:\n          GH_TOKEN: ${{ github.token }}\n'
-         '        run: gh api "repos/${{ github.repository }}/actions/runs/'
-         '${{ github.run_id }}/jobs?filter=all&per_page=100" > '
-         '"$RUNNER_TEMP/jobs.json"\n\n', "",
+         '        env:\n          GH_TOKEN: ${{ github.token }}\n' + lectura + "\n", "",
          "no lee en qué intento corrió cada grupo")
+    caso("el conjunto lee una sola página de jobs",
+         lectura, lectura.replace("gh api --paginate --slurp ", "gh api "),
+         "más de 100 jobs dejan páginas afuera")
     inicio = ci.index("  # LOS GRUPOS, JUNTADOS.")
     fin = ci.index("  # EL FORMATO, EN SU PROPIO JOB.")
     casos.append({"nombre": "ci-org · el conjunto borrado",
@@ -125,6 +128,21 @@ def casos_ci(ci: str, ci_rel: str) -> list[dict]:
          "    name: canario · sabotajes · grupo ${{ matrix.grupo }}/4 · Dart stable\n"
          "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n",
          "no declara `continue-on-error: true`")
+    for nombre, linea in (
+            ("estático y pruebas", "    name: canario · estático y pruebas · Dart stable\n"),
+            ("sabotajes",
+             "    name: canario · sabotajes · grupo ${{ matrix.grupo }}/4 · Dart stable\n")):
+        caso(f"el canario de {nombre} omitido con if: false",
+             linea, linea + "    if: ${{ false }}\n", "un canario omitido no avisa")
+    caso("el canario esperando a otro job",
+         "    name: canario · estático y pruebas · Dart stable\n",
+         "    name: canario · estático y pruebas · Dart stable\n    needs: [estatico]\n",
+         "el canario queda omitido sin avisar")
+    caso("el canario de estático y pruebas con una matriz vacía",
+         "    name: canario · estático y pruebas · Dart stable\n",
+         "    name: canario · estático y pruebas · Dart stable\n"
+         "    strategy:\n      matrix:\n        vacio: []\n",
+         "una matriz vacía lo deja sin ejecutar")
     caso("el canario con el SDK bloqueante",
          "      - name: dart stable · canario de sabotajes\n" + _SETUP_DART
          + "          sdk: stable\n",
