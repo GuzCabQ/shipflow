@@ -27,6 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from ejecucion_nativa import (  # noqa: E402
     EJECUCION_NATIVA, errores_de_ejecucion_nativa)
+from organizacion_ci import (  # noqa: E402
+    CANARIOS, COMANDO_COMPUERTA, COMANDO_CONJUNTO, COMANDO_GRUPO,
+    errores_de_organizacion)
 
 RAIZ = Path(__file__).resolve().parents[2]
 PAQUETES = RAIZ / "packages"
@@ -191,7 +194,16 @@ PASOS_OBLIGATORIOS = {
     # etiqueta: (comando EXACTO, working-directory esperado)
     "el parser de yaml": ('python3 -m pip install --quiet "pyyaml==6.0.3"', None),
     "la regla de capas": ("python3 tool/checks/capas.py", None),
-    "que los checks sepan fallar": ("python3 tool/checks/probar_reglas.py", None),
+    # Repartida en grupos paralelos, y juntada después: cada grupo corre su
+    # porción y el conjunto exige el inventario entero. Ver
+    # `sabotajes_en_grupos.py`.
+    "que los checks sepan fallar": (COMANDO_GRUPO, None),
+    "el conjunto de los sabotajes": (COMANDO_CONJUNTO, None),
+    # La que decide el merge, y la prueba de que ella y el conjunto saben
+    # ponerse rojos. Ver `compuerta.py` y `organizacion_ci.py`.
+    "la compuerta requerida": (COMANDO_COMPUERTA, None),
+    "que los agregadores sepan fallar": (
+        "python3 tool/checks/probar_agregadores.py", None),
     "que la recuperación sepa recuperar": (
         "python3 tool/checks/probar_recuperacion.py", None),
     "serialización, opacidad y puertos": ("dart run bin/check.dart", "tool/analisis"),
@@ -225,10 +237,11 @@ PASOS_OBLIGATORIOS = {
         '${{ matrix.plataforma }}" --version)" = "shipflow 0.0.0-ci"', None),
 }
 
-# El job puede declararse `continue-on-error` SOLO con esta expresión, que es
-# el canario de la matriz: la pata `stable` avisa y no bloquea, por ADR-013.
-# Un `true` pelado convertiría el job entero en decorativo.
-CANARIO_DECLARADO = "${{ matrix.canario }}"
+# **Solo los jobs del canario declarado pueden no bloquear.** Antes el canario
+# era una pata de la matriz y se fijaba la expresión `${{ matrix.canario }}`;
+# desde que vive en jobs propios —para que la compuerta no lo espere— se fija
+# por ID, y `organizacion_ci.py` exige que sean `stable`, que nada bloqueante
+# los espere y que corran lo mismo que el camino bloqueante.
 
 # Una versión de Flutter fijada es `X.Y.Z` y nada más. No un canal (`stable`),
 # no una rama (`main`), no una expresión (`${{ ... }}`), no un prefijo (`3.44`).
@@ -747,19 +760,21 @@ def _check_ci_ejecuta() -> None:
         fallos.append(f"no pude leer checks.yml como YAML: {e}")
         return
 
+    # **Los pasos obligatorios se buscan SOLO en jobs que bloquean.** El
+    # canario corre los mismos comandos con `continue-on-error`, así que
+    # mirarlo también dejaría «presente» un paso borrado del camino bloqueante.
     pasos = []
     for nombre_job, job in (doc.get("jobs") or {}).items():
         _check_toolchain_del_job(nombre_job, job)
-        if not isinstance(job, dict):
+        if not isinstance(job, dict) or nombre_job in CANARIOS:
             continue
         coe = job.get("continue-on-error")
-        if coe not in (None, False, CANARIO_DECLARADO):
+        if coe not in (None, False):
             fallos.append(
                 f"el job «{nombre_job}» declara `continue-on-error: {coe!r}`. "
                 f"Todos sus pasos corren, se ven en rojo, y el job no falla: "
-                f"la compuerta queda abierta sin tocar ni un check. La única "
-                f"forma permitida es «{CANARIO_DECLARADO}», que es el canario "
-                f"declarado de la matriz.")
+                f"la compuerta queda abierta sin tocar ni un check. Solo los "
+                f"jobs del canario declarado pueden no bloquear.")
         for paso in (job.get("steps") or []):
             if isinstance(paso, dict):
                 pasos.append(paso)
@@ -887,6 +902,19 @@ def _check_ejecucion_nativa() -> None:
         return
     comandos = {e: PASOS_OBLIGATORIOS[e][0] for e in EJECUCION_NATIVA["pasos"]}
     fallos.extend(errores_de_ejecucion_nativa(doc, comandos))
+
+
+def _check_organizacion() -> None:
+    """Compuerta, grupos, canario, disparadores y concurrencia del workflow."""
+    ci = RAIZ / ".github" / "workflows" / "checks.yml"
+    try:
+        import yaml
+        doc = yaml.safe_load(ci.read_text(encoding="utf-8")) or {}
+    except Exception as e:  # noqa: BLE001 — sin workflow legible no hay nada que afirmar
+        fallos.append(f"no pude leer el workflow para verificar su "
+                      f"organización: {e}")
+        return
+    fallos.extend(errores_de_organizacion(doc))
 
 
 def _check_casos_ciegos() -> None:
@@ -1340,6 +1368,7 @@ def main() -> int:
         ("paquetes que las reglas nombran", _check_paquetes_nombrados),
         ("CI ejecuta lo que dice", _check_ci_ejecuta),
         ("el ejecutable corre en cada plataforma", _check_ejecucion_nativa),
+        ("la compuerta protege el merge", _check_organizacion),
         ("el gobierno describe lo que gobierna", _check_readme),
         ("nada fuera del alcance del formateo", _check_nada_fuera_de_alcance),
         ("la huella de la política", _check_huella),
