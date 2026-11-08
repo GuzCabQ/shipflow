@@ -770,6 +770,7 @@ Future<void> main(List<String> args) async {
     'puertos-sin-implementacion': 'huecos_declarados',
     'colecciones-inmutables': 'colecciones_copiadas',
     'subprocesos-con-entorno-saneado': 'entorno_saneado',
+    'nucleo-sin-ciclos': 'bibliotecas_sin_ciclos',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;

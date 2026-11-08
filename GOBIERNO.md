@@ -131,19 +131,20 @@ la arquitectura y se revisa como tal.
 | `colecciones-inmutables` | Que un invariante se pueda romper **después** de construir el objeto, mutando la lista que se le pasó | `tool/analisis` |
 | `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
 | `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
+| `nucleo-sin-ciclos` | Que las bibliotecas de `core` formen un ciclo —también por un export o una alternativa condicional—, que `src/` apunte al barril, o que una hoja de valores de basis alcance el modelo | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué siete de estas reglas necesitan otro motor
+### Por qué ocho de estas reglas necesitan otro motor
 
-**Siete, y no son un bloque contiguo de la tabla:** las seis últimas más
+**Ocho, y no son un bloque contiguo de la tabla:** las siete últimas más
 `subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
 fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
 
-Lo único que las siete comparten es la razón: **ninguna se puede derivar
+Lo único que las ocho comparten es la razón: **ninguna se puede derivar
 leyendo el archivo como texto plano.** Es la misma lección que ya pagó
 `capas.py` con el grafo de dependencias: parsear a mano devuelve cero
 resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
@@ -155,7 +156,12 @@ verificador.
 sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
 
 - `serializacion-sin-perdida`, `opacidad-declarada` y `colecciones-inmutables`
-  — y solo estas tres — se derivan del árbol sintáctico de `packages/core/lib`.
+  — y solo estas tres — se derivan de las DECLARACIONES del árbol sintáctico de
+  `packages/core/lib`.
+- `nucleo-sin-ciclos` mira el mismo directorio pero no sus declaraciones: sus
+  **directivas**, con cada alternativa condicional, sin resolverlas. Y no se
+  fía de ninguna lista de archivos: recorre el disco sin filtros y usa la
+  enumeración de `check.dart` y la del analizador solo como contraste.
 - `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
   implementa lo busca en todos los paquetes**: una implementación que viviera
   solo en `core` no es la pregunta que responde.
@@ -182,7 +188,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 203 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 218 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.
