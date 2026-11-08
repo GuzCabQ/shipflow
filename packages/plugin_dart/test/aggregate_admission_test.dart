@@ -1,9 +1,9 @@
 import 'dart:collection';
 
 import 'package:core/core.dart';
-import 'package:plugin_dart/src/derived_observation_budget.dart';
-import 'package:plugin_dart/src/evidence_draft.dart';
-import 'package:plugin_dart/src/toolchain_observer.dart';
+import 'package:plugin_dart/src/recognition/derived_observation_budget.dart';
+import 'package:plugin_dart/src/recognition/evidence_draft.dart';
+import 'package:plugin_dart/src/recognition/toolchain_observer.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:test/test.dart';
 

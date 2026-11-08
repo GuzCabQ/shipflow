@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:plugin_dart/plugin_dart.dart';
-import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/observation/stable_file_reader.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -94,5 +94,41 @@ void main() {
           throw const FileSystemException('denegado', '/ruta/interna'),
     );
     expect(read, isA<UnreadableSource>());
+  });
+
+  group('StableSource owns its bytes and its fingerprint', () {
+    // Vectores SHA-256 conocidos, escritos a mano: la prueba no calcula la
+    // huella con la misma biblioteca que el código bajo prueba.
+    const abc =
+        'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+    const empty =
+        'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+    test(
+      'mutating the original list changes neither bytes, size nor fingerprint',
+      () {
+        final original = [0x61, 0x62, 0x63];
+        final source = StableSource.fromBytes(original);
+        original[0] = 0x7a;
+        original.add(0x64);
+        expect(source.bytes, 'abc'.codeUnits);
+        expect(source.size, 3);
+        expect(source.fingerprint, abc);
+      },
+    );
+
+    test('its bytes cannot be modified through the getter', () {
+      final source = StableSource.fromBytes([0x61, 0x62, 0x63]);
+      expect(() => source.bytes.add(1), throwsUnsupportedError);
+      expect(() => source.bytes[0] = 1, throwsUnsupportedError);
+      expect(source.bytes, 'abc'.codeUnits);
+    });
+
+    test('its fingerprint is the SHA-256 of exactly its bytes', () {
+      final source = StableSource.fromBytes('abc'.codeUnits);
+      expect(source.fingerprint, abc);
+      final none = StableSource.fromBytes(const <int>[]);
+      expect((none.size, none.fingerprint), (0, empty));
+    });
   });
 }

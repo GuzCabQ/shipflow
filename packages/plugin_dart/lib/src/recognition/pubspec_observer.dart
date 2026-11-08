@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:yaml/yaml.dart';
 
-export 'manifest_facts.dart';
-export 'path_dependency_facts.dart';
-
 import 'derived_observation_budget.dart';
 import 'evidence_draft.dart';
 import 'manifest_facts.dart';
@@ -13,11 +10,8 @@ import 'manifest_resources.dart';
 import 'observed_value.dart';
 import 'path_dependency_facts.dart';
 import 'yaml_nesting_guard.dart';
-import 'project_scanner.dart';
+import 'scanned_source.dart';
 import 'recognition_codes.dart';
-
-/// El valor de la evidencia de una dependencia `flutter: {sdk: flutter}`.
-const flutterDependencyValue = 'sdk: flutter';
 
 const _pathDependencySections = [
   'dependencies',

@@ -9,12 +9,13 @@ import 'manifest_evidence.dart';
 import 'pubspec_observer.dart';
 import 'recognition_codes.dart';
 import 'recognition_exclusions.dart';
-import 'scan_guard.dart';
+import '../observation/scan_guard.dart';
 import 'scan_limits.dart';
-import 'scan_model.dart';
-import 'stable_file_reader.dart';
-
-export 'scan_model.dart';
+import '../observation/stable_file_reader.dart';
+import '../observation/source_catalog.dart';
+import 'directory_listing.dart';
+import 'scan_result.dart';
+import 'scanned_source.dart';
 
 /// Recorre [root] en orden de ruta, sin seguir enlaces y dentro de
 /// [limits]. En cada directorio analiza primero su manifiesto, para saber

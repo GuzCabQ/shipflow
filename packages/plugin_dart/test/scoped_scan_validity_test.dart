@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:plugin_dart/src/project_scanner.dart';
+import 'package:plugin_dart/src/recognition/project_scanner.dart';
+import 'package:plugin_dart/src/recognition/scan_result.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';

@@ -13,6 +13,6 @@ export 'src/assessment/assessment_observer.dart'
         observeDartInputs,
         observeDartSources,
         parserVersion;
-export 'src/context_source_rule.dart';
-export 'src/dart_project_recognizer.dart' show recognizeDartProject;
-export 'src/scan_limits.dart';
+export 'src/recognition/context_source_rule.dart';
+export 'src/recognition/dart_project_recognizer.dart' show recognizeDartProject;
+export 'src/recognition/scan_limits.dart';

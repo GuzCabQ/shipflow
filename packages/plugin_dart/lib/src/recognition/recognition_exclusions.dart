@@ -3,16 +3,6 @@ import 'package:core/core.dart';
 import 'evidence_draft.dart';
 import 'manifest_evidence.dart';
 
-/// Los nombres que nunca se recorren, en cualquier profundidad.
-const baselineExclusions = {
-  '.git',
-  '.dart_tool',
-  'build',
-  '.symlinks',
-  'Pods',
-  'node_modules',
-};
-
 /// La ruta exacta del directorio temporal de un paquete Flutter.
 const _temporaryDirectory = 'ios/Flutter/ephemeral';
 

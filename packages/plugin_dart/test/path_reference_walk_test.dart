@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:plugin_dart/src/path_dependency_boundary.dart';
+import 'package:plugin_dart/src/recognition/path_dependency_boundary.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';

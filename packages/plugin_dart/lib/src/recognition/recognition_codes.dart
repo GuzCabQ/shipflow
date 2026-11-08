@@ -1,13 +1,15 @@
 import 'package:core/core.dart';
 
+import '../observation/source_diagnostics.dart';
+
 /// Los códigos de las limitaciones que el reconocimiento puede informar.
 abstract final class LimitationCode {
-  static const symlinkNotFollowed = 'symlink_not_followed';
+  static const symlinkNotFollowed = symlinkNotFollowedCode;
   static const subtreeUnreadable = 'subtree_unreadable';
   static const scanLimitReached = 'scan_limit_reached';
-  static const sourceTooLarge = 'source_too_large';
-  static const sourceUnreadable = 'source_unreadable';
-  static const sourceChanged = 'source_changed_during_scan';
+  static const sourceTooLarge = sourceTooLargeCode;
+  static const sourceUnreadable = sourceUnreadableCode;
+  static const sourceChanged = sourceChangedCode;
   static const invalidManifest = 'invalid_manifest';
   static const invalidToolchainMarker = 'invalid_toolchain_marker';
   static const invalidConstraint = 'invalid_constraint';

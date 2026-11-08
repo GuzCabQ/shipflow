@@ -1,8 +1,10 @@
 import 'dart:convert';
 
-import 'package:plugin_dart/src/project_scanner.dart';
-import 'package:plugin_dart/src/pubspec_observer.dart';
-import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/recognition/pubspec_observer.dart';
+import 'package:plugin_dart/src/observation/stable_file_reader.dart';
+import 'package:plugin_dart/src/recognition/scanned_source.dart';
+import 'package:plugin_dart/src/observation/source_catalog.dart';
+import 'package:plugin_dart/src/recognition/manifest_facts.dart';
 import 'package:test/test.dart';
 
 ScannedSource manifest(Object text, {String path = 'pubspec.yaml'}) {
@@ -10,7 +12,7 @@ ScannedSource manifest(Object text, {String path = 'pubspec.yaml'}) {
   return ScannedSource(
     path,
     SourceKind.manifest,
-    StableSource(bytes, 'sha256:${'0' * 64}'),
+    StableSource.fromBytes(bytes),
   );
 }
 

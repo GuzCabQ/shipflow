@@ -12,6 +12,10 @@ import 'context_source_rule.dart';
 import 'recognition_codes.dart';
 import 'scan_limits.dart';
 import 'toolchain_observer.dart';
+import '../observation/source_catalog.dart';
+import 'directory_listing.dart';
+import 'scan_result.dart';
+import 'scanned_source.dart';
 
 const _pluginId = 'plugin_dart';
 const _dartPackage = 'dart_package';

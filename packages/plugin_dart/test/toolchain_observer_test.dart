@@ -1,21 +1,23 @@
 import 'dart:convert';
 
-import 'package:plugin_dart/src/evidence_draft.dart';
-import 'package:plugin_dart/src/project_scanner.dart';
-import 'package:plugin_dart/src/recognition_codes.dart';
-import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/recognition/evidence_draft.dart';
+import 'package:plugin_dart/src/recognition/recognition_codes.dart';
+import 'package:plugin_dart/src/observation/stable_file_reader.dart';
 import 'package:core/core.dart';
-import 'package:plugin_dart/src/derived_observation_budget.dart';
-import 'package:plugin_dart/src/toolchain_observer.dart'
+import 'package:plugin_dart/src/recognition/derived_observation_budget.dart';
+import 'package:plugin_dart/src/recognition/toolchain_observer.dart'
     hide observeToolchainMarker, parseConstraint, toolchainConflicts;
-import 'package:plugin_dart/src/toolchain_observer.dart' as toolchain;
+import 'package:plugin_dart/src/recognition/toolchain_observer.dart'
+    as toolchain;
+import 'package:plugin_dart/src/recognition/scanned_source.dart';
+import 'package:plugin_dart/src/observation/source_catalog.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:test/test.dart';
 
 ScannedSource marker(SourceKind kind, String text) => ScannedSource(
   kind == SourceKind.fvmConfig ? '.fvmrc' : 'flutter-version.txt',
   kind,
-  StableSource(utf8.encode(text), 'sha256:${'1' * 64}'),
+  StableSource.fromBytes(utf8.encode(text)),
 );
 
 EvidenceDraft constraintDraft(String kind, String value, String path) =>
