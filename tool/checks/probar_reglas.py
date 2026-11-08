@@ -469,6 +469,8 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "un archivo que la enumeración de check no ve",
         "un archivo que el analizador no ve",
         "un ciclo escondido donde las dos enumeraciones no miran",
+        "un ../ que se sale de lib",
+        "un ciclo en una carpeta con # en el nombre",
     },
 }
 

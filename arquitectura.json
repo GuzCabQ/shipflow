@@ -1046,6 +1046,26 @@
             "bibliotecas de core: componente cíclico",
             "bibliotecas de core: cobertura insuficiente"
           ]
+        },
+        {
+          "nombre": "un ../ que se sale de lib",
+          "por_que": "Resolver contra una raíz ficticia anclaba los `..` sobrantes y el destino volvía a caer adentro de `lib/`, donde sí existía: el import apuntaba afuera y el check lo contaba como una arista sana. Lo encontró la revisión final del corte.",
+          "archivos": {
+            "packages/core/lib/_canario_fuera.dart": "import '../../lib/src/basis/basis_enums.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: destino inexistente"
+        },
+        {
+          "nombre": "un ciclo en una carpeta con # en el nombre",
+          "por_que": "Sin codificar la ruta, un `#` en el nombre de una carpeta se leía como el comienzo de un fragmento: las aristas apuntaban a otros archivos y el ciclo de adentro pasaba en verde. Lo encontró la revisión final del corte.",
+          "archivos": {
+            "packages/core/lib/src/x#y/a.dart": "import 'b.dart';\n",
+            "packages/core/lib/src/x#y/b.dart": "import 'a.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "src/x#y/a.dart → src/x#y/b.dart (import)"
+          ]
         }
       ],
       "caso_ciego": {

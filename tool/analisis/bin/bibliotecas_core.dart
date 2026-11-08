@@ -22,6 +22,7 @@ import 'package:analyzer/dart/analysis/features.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/file_system/file_system.dart' as analizador;
 
 typedef VerificacionDeBibliotecas = ({List<String> fallos, String resumen});
 
@@ -124,7 +125,7 @@ VerificacionDeBibliotecas verificarBibliotecasDeCore(
           !uri.startsWith('package:core/')) {
         externos.add(uri);
       } else {
-        final destino = _resolver(rel, uri);
+        final destino = _resolver(_normal(lib.absolute.path), rel, uri);
         if (destino == null || !universo.contains(destino)) {
           falla(
             'destino inexistente dentro de packages/core/lib: $rel → «$uri» '
@@ -211,6 +212,12 @@ List<(StringLiteral, String)> _directivas(
       featureSet: FeatureSet.latestLanguageVersion(),
       throwIfDiagnostics: false,
     );
+  } on analizador.FileSystemException catch (e) {
+    // `parseFile` lee con el sistema de archivos del analizador, que lanza su
+    // propia excepción y no la de `dart:io`: atrapar solo esta última dejaba
+    // escapar un archivo ilegible como excepción sin nombre.
+    falla('no pude leer sus directivas: $rel (${e.message}).');
+    return const [];
   } on FileSystemException catch (e) {
     falla('no pude leer sus directivas: $rel (${e.message}).');
     return const [];
@@ -243,13 +250,26 @@ List<(StringLiteral, String)> _directivas(
   return salida;
 }
 
-/// Relativo a `lib/`, o null si el URI se sale de ahí.
-String? _resolver(String rel, String uri) {
-  if (uri.startsWith('package:core/')) {
-    return uri.substring('package:core/'.length);
+/// Relativo a `lib/`, o null si el URI no cae dentro de ahí.
+///
+/// Se resuelve contra la ruta REAL del archivo, codificada como lo hace Dart.
+/// Contra una raíz ficticia, un `../` de más volvía a caer adentro, un `#` en
+/// el nombre de una carpeta cortaba la ruta como si fuera un fragmento —y un
+/// ciclo ahí adentro se leía como aristas hacia otros archivos—, y un nombre
+/// no ASCII no encontraba su destino.
+String? _resolver(String raiz, String rel, String uri) {
+  try {
+    final escrito = Uri.parse(uri);
+    final destino = escrito.isScheme('package')
+        ? Uri.file('$raiz/${escrito.pathSegments.skip(1).join('/')}')
+        : Uri.file('$raiz/$rel').resolveUri(escrito);
+    final ruta = _normal(destino.toFilePath());
+    return ruta.startsWith('$raiz/') ? ruta.substring(raiz.length + 1) : null;
+  } on FormatException {
+    return null;
+  } on UnsupportedError {
+    return null;
   }
-  final ruta = Uri.parse('file:///lib/$rel').resolve(uri).path;
-  return ruta.startsWith('/lib/') ? ruta.substring('/lib/'.length) : null;
 }
 
 void _contrastar(
