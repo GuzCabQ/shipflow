@@ -810,9 +810,13 @@ def casos() -> list[dict]:
 
     # La exención de token, por sus DOS bordes. Sin el segundo caso sería
     # indistinguible de haber desactivado la regla en los archivos fuente.
+    # El export legítimo necesita un destino que exista: el detector de
+    # bibliotecas de core pone rojo un destino local ausente, y este control
+    # negativo fallaría por una razón que no es la suya.
     c.append({
         "nombre": "exención · el sufijo de un export legítimo queda fuera",
-        "archivos": {"packages/core/lib/_canario_export.dart": "export 'src/x.dart';\n"},
+        "archivos": {"packages/core/lib/_canario_export.dart": "export 'src/x.dart';\n",
+                     "packages/core/lib/src/x.dart": ""},
         "espera": "pasa",
     })
     c.append({

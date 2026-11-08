@@ -31,6 +31,8 @@ import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 
+import 'bibliotecas_core.dart';
+
 final List<String> fallos = [];
 
 /// Lo que se pudo derivar de una clase. Cada campo que sea `null` significa
@@ -855,6 +857,17 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  // --- bibliotecas de core sin ciclos ------------------------------------
+  //
+  // Mira el disco entero de core/lib, no `fuentesCore`: esa lista solo se
+  // contrasta. Ver `bibliotecas_core.dart`.
+  final bibliotecas = verificarBibliotecasDeCore(
+    dirCore,
+    fuentesCore,
+    detalle: args.contains('--detalle-bibliotecas'),
+  );
+  fallos.addAll(bibliotecas.fallos);
+
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
   //
   // `arquitectura.json` direcciona las clases de core por su NOMBRE, y lo hace
@@ -1371,4 +1384,5 @@ Future<void> main(List<String> args) async {
     'forja: ok — ${archivosDeLaForja.length} archivos revisados fuera de '
     '`forge`, sin `HttpClient` ni mención al proveedor.',
   );
+  stdout.writeln(bibliotecas.resumen);
 }
