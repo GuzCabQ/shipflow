@@ -43,7 +43,8 @@ final class BasisLedger {
 
 /// Valida [event] sobre [ledger] y lo incorpora. Las referencias se
 /// resuelven contra la historia anterior más todos los cambios del evento,
-/// sin depender del orden de su lista.
+/// sin depender del orden de su lista. Un evento rechazado deja [ledger]
+/// como estaba.
 void applyBasisEvent(BasisLedger ledger, BasisEvent event, String at) {
   requireBasis(
     event.revision == ledger.revision + 1 &&
@@ -68,8 +69,8 @@ void applyBasisEvent(BasisLedger ledger, BasisEvent event, String at) {
   for (final (i, change) in event.changes.indexed) {
     _change(ledger, batch, event.actor, change, '$at/changes/$i');
   }
+  requireNoReplacementCycle({...ledger.current, ...batch}, at);
   ledger._apply(event);
-  requireNoReplacementCycle(ledger.current, at);
 }
 
 void _change(
