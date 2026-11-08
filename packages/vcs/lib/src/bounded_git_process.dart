@@ -30,7 +30,6 @@ final class GitBudget {
     return deadline;
   }
 
-  /// Suma lo que duró un intento admitido.
   void _charge(Duration elapsed) => _elapsed += elapsed;
 }
 
