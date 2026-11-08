@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:core/core.dart';
+// ContextSourceKind se oculta de core: tiene que llegar del barrel del
+// plugin, que lo reexporta, o esta prueba no vería que se perdió.
+import 'package:core/core.dart' hide ContextSourceKind;
 import 'package:plugin_dart/plugin_dart.dart';
 import 'package:test/test.dart';
 
