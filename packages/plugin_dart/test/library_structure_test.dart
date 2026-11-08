@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:test/test.dart';
 
@@ -149,5 +150,20 @@ void main() {
       );
       expectFault('no se pudo parsear');
     });
+  });
+
+  test('the libraries of plugin_dart keep their structure', () async {
+    // El lib del paquete, no el del directorio actual: CI corre las pruebas
+    // desde la raíz del repositorio.
+    final barrel = await Isolate.resolvePackageUri(
+      Uri.parse('package:plugin_dart/plugin_dart.dart'),
+    );
+    final report = checkLibraryStructure(File.fromUri(barrel!).parent);
+    expect(report.faults, isEmpty, reason: report.faults.join('\n'));
+    // Un inventario recortado no puede pasar por sano: el piso es el tamaño
+    // del paquete al fijar esta estructura, y sólo baja con una decisión.
+    expect(report.files, greaterThanOrEqualTo(40));
+    expect(report.edges, greaterThanOrEqualTo(109));
+    printOnFailure('${report.files} bibliotecas, ${report.edges} aristas');
   });
 }
