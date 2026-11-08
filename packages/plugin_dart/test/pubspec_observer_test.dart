@@ -12,7 +12,7 @@ ScannedSource manifest(Object text, {String path = 'pubspec.yaml'}) {
   return ScannedSource(
     path,
     SourceKind.manifest,
-    StableSource(bytes, 'sha256:${'0' * 64}'),
+    StableSource.fromBytes(bytes),
   );
 }
 

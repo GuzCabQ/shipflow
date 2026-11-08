@@ -12,8 +12,18 @@ sealed class StableRead {
 
 /// Las dos lecturas coincidieron.
 final class StableSource extends StableRead {
-  const StableSource(this.bytes, this.fingerprint);
+  /// Una copia no modificable de [bytes], con la huella calculada sobre esa
+  /// misma copia: nada de fuera puede cambiar el contenido ni darle otra
+  /// huella. No prueba que el archivo estuviera estable; eso lo decide la
+  /// doble lectura de [readStableFile].
+  factory StableSource.fromBytes(List<int> bytes) {
+    final copy = List<int>.unmodifiable(bytes);
+    return StableSource._(copy, 'sha256:${sha256.convert(copy)}');
+  }
 
+  const StableSource._(this.bytes, this.fingerprint);
+
+  /// No modificable.
   final List<int> bytes;
 
   /// `sha256:<hex>` de [bytes].
@@ -65,10 +75,7 @@ Future<StableRead> readStableFile(
     final second = await readBytes(file, maxBytes);
     if (second.length > maxBytes) return OversizedSource(second.length);
     if (!_sameBytes(first, second)) return const UnstableSource();
-    return StableSource(
-      List.unmodifiable(first),
-      'sha256:${sha256.convert(first)}',
-    );
+    return StableSource.fromBytes(first);
   } on FileSystemException catch (error) {
     return UnreadableSource(error.osError?.message ?? error.message);
   }

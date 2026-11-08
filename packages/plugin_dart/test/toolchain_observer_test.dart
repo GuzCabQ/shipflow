@@ -17,7 +17,7 @@ import 'package:test/test.dart';
 ScannedSource marker(SourceKind kind, String text) => ScannedSource(
   kind == SourceKind.fvmConfig ? '.fvmrc' : 'flutter-version.txt',
   kind,
-  StableSource(utf8.encode(text), 'sha256:${'1' * 64}'),
+  StableSource.fromBytes(utf8.encode(text)),
 );
 
 EvidenceDraft constraintDraft(String kind, String value, String path) =>
