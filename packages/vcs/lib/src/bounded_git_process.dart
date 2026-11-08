@@ -12,10 +12,25 @@ final class GitBudget {
 
   final int maxProcesses;
   final Duration total;
+  var _started = 0;
   var _elapsed = Duration.zero;
-  var started = 0;
+
+  /// Los intentos admitidos, aunque el proceso no llegue a arrancar.
+  int get started => _started;
 
   Duration get remaining => total - _elapsed;
+
+  /// Admite y reserva un intento, sin esperar nada entre decidir y contar:
+  /// devuelve su plazo, el menor entre [perProcess] y lo que queda, o null si
+  /// no hay cupo de procesos o de tiempo.
+  Duration? _admit(Duration perProcess) {
+    final deadline = perProcess < remaining ? perProcess : remaining;
+    if (_started >= maxProcesses || deadline <= Duration.zero) return null;
+    _started++;
+    return deadline;
+  }
+
+  void _charge(Duration elapsed) => _elapsed += elapsed;
 }
 
 /// Lo que devolvió una consulta, o por qué se cortó: `git_timeout`,
@@ -68,13 +83,8 @@ final class BoundedGitProcess {
     required Directory cwd,
     List<int>? input,
   }) async {
-    final deadline = perProcess < budget.remaining
-        ? perProcess
-        : budget.remaining;
-    if (budget.started >= budget.maxProcesses || deadline <= Duration.zero) {
-      return const GitCommandResult.cut('git_budget');
-    }
-    budget.started++;
+    final deadline = budget._admit(perProcess);
+    if (deadline == null) return const GitCommandResult.cut('git_budget');
     final clock = Stopwatch()..start();
     try {
       final process = await Process.start(
@@ -91,7 +101,7 @@ final class BoundedGitProcess {
     } on ProcessException {
       return const GitCommandResult.cut('git_start');
     } finally {
-      budget._elapsed += clock.elapsed;
+      budget._charge(clock.elapsed);
     }
   }
 
