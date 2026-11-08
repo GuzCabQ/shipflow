@@ -2,7 +2,10 @@ import 'package:core/core.dart';
 
 import 'observed_value.dart';
 import 'path_dependency_facts.dart';
-import 'project_scanner.dart';
+import 'recognition/scanned_source.dart';
+
+/// El valor de la evidencia de una dependencia `flutter: {sdk: flutter}`.
+const flutterDependencyValue = 'sdk: flutter';
 
 /// Sólo los hechos que el reconocimiento usa, nunca el árbol entero.
 final class ManifestFacts {

@@ -1,5 +1,5 @@
 import 'evidence_draft.dart';
-import 'pubspec_observer.dart';
+import 'manifest_facts.dart';
 import 'recognition_codes.dart';
 
 /// Las evidencias de un manifiesto, agrupadas por lo que cada una sostiene.

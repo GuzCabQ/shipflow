@@ -11,10 +11,11 @@ import 'recognition_codes.dart';
 import 'recognition_exclusions.dart';
 import 'scan_guard.dart';
 import 'scan_limits.dart';
-import 'scan_model.dart';
 import 'stable_file_reader.dart';
-
-export 'scan_model.dart';
+import 'observation/source_catalog.dart';
+import 'recognition/directory_listing.dart';
+import 'recognition/scan_result.dart';
+import 'recognition/scanned_source.dart';
 
 /// Recorre [root] en orden de ruta, sin seguir enlaces y dentro de
 /// [limits]. En cada directorio analiza primero su manifiesto, para saber

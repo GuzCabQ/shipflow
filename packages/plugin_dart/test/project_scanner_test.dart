@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:plugin_dart/plugin_dart.dart';
 import 'package:plugin_dart/src/project_scanner.dart';
 import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/recognition/scan_result.dart';
+import 'package:plugin_dart/src/recognition/directory_listing.dart';
+import 'package:plugin_dart/src/observation/source_catalog.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';

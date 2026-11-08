@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:core/core.dart';
 import 'package:plugin_dart/plugin_dart.dart' show ContextSourceRule;
 import 'package:plugin_dart/src/dart_project_recognizer.dart';
-import 'package:plugin_dart/src/project_scanner.dart';
+import 'package:plugin_dart/src/recognition/directory_listing.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';

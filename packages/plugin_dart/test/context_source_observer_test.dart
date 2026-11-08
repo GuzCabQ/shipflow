@@ -5,6 +5,7 @@ import 'package:plugin_dart/plugin_dart.dart';
 import 'package:plugin_dart/src/derived_observation_budget.dart';
 import 'package:plugin_dart/src/project_scanner.dart';
 import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/recognition/scan_result.dart';
 import 'package:test/test.dart';
 
 import 'scan_support.dart';

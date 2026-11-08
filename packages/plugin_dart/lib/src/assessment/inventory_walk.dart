@@ -3,9 +3,8 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
-import '../recognition_exclusions.dart';
 import '../scan_guard.dart';
-import '../scan_model.dart';
+import '../observation/source_catalog.dart';
 import 'assessment_diagnostics.dart';
 import 'assessment_ids.dart';
 import 'source_reading.dart';

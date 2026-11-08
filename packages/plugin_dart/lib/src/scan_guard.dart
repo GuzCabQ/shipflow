@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'recognition_codes.dart';
+import 'observation/source_diagnostics.dart';
 import 'stable_file_reader.dart';
 
 const linkMessage = 'es un enlace simbólico y no se sigue';
@@ -41,16 +41,16 @@ final class RootGuard {
   ) {
     final type = FileSystemEntity.typeSync(path, followLinks: false);
     if (type == FileSystemEntityType.link) {
-      return (code: LimitationCode.symlinkNotFollowed, message: linkMessage);
+      return (code: symlinkNotFollowedCode, message: linkMessage);
     }
     if (type != expected) {
       return expected == _file
           ? (
-              code: LimitationCode.sourceUnreadable,
+              code: sourceUnreadableCode,
               message: 'no es un archivo regular; no se abrió',
             )
           : (
-              code: LimitationCode.sourceChanged,
+              code: sourceChangedCode,
               message: 'dejó de ser un directorio durante el recorrido',
             );
     }
@@ -59,7 +59,7 @@ final class RootGuard {
       return null;
     }
     return (
-      code: LimitationCode.sourceChanged,
+      code: sourceChangedCode,
       message: 'su ruta salió de la raíz durante el recorrido; no se usó',
     );
   }
@@ -77,15 +77,15 @@ String? _canonical(String path) {
 /// El código y el motivo de una fuente que no se aceptó.
 (String, String) rejectionOf(StableRead read) => switch (read) {
   OversizedSource(:final size) => (
-    LimitationCode.sourceTooLarge,
+    sourceTooLargeCode,
     'mide $size bytes y excede su máximo; no se leyó',
   ),
   UnstableSource() => (
-    LimitationCode.sourceChanged,
+    sourceChangedCode,
     'cambió entre dos lecturas; la observación no es estable',
   ),
   UnreadableSource(:final reason) => (
-    LimitationCode.sourceUnreadable,
+    sourceUnreadableCode,
     'no se pudo leer ($reason)',
   ),
   StableSource() => throw StateError('una fuente estable no se rechaza'),
