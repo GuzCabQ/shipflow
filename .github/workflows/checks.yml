@@ -16,7 +16,8 @@ name: checks
 
 # Un PR se valida una vez por actualización; un push solo en las ramas de
 # integración, que es donde no hay PR que lo cubra. `workflow_dispatch` es la
-# vía manual. Una rama de trabajo sin PR no corre sola: un PR borrador alcanza.
+# vía manual, y GitHub solo la ofrece para workflows presentes en la rama por
+# defecto. Una rama de trabajo sin PR no corre sola: un PR borrador alcanza.
 on:
   push:
     branches: [develop, production]

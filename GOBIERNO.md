@@ -97,7 +97,8 @@ retiene la compuerta. Por eso los pasos obligatorios se buscan solo en jobs que
 bloquean: que un comando sobreviva únicamente en el canario es un paso borrado.
 
 **Disparadores y concurrencia.** CI corre en cada PR, en cada push a `develop`
-y `production`, y a mano. En un PR, una actualización nueva cancela la corrida
+y `production`, y a mano —GitHub solo ofrece la vía manual para workflows que
+estén en la rama por defecto—. En un PR, una actualización nueva cancela la corrida
 vieja; fuera de un PR cada corrida tiene su propio grupo de concurrencia, así
 que ningún commit de integración queda reemplazado por el siguiente.
 
