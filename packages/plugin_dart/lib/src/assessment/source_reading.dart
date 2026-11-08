@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
-import '../scan_guard.dart';
-import '../stable_file_reader.dart';
+import '../observation/scan_guard.dart';
+import '../observation/stable_file_reader.dart';
 import 'assessment_ids.dart';
 
 /// Lo que dejó leer una fuente: su estado, el motivo si no se selló, su

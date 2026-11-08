@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:plugin_dart/plugin_dart.dart';
-import 'package:plugin_dart/src/stable_file_reader.dart';
+import 'package:plugin_dart/src/observation/stable_file_reader.dart';
 import 'package:test/test.dart';
 
 void main() {

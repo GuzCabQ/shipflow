@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 
-import '../scan_guard.dart';
+import '../observation/scan_guard.dart';
 import '../observation/source_catalog.dart';
 import 'assessment_diagnostics.dart';
 import 'assessment_ids.dart';

@@ -1,7 +1,7 @@
 import 'package:core/core.dart';
 
-import '../manifest_evidence.dart';
-import '../recognition_exclusions.dart';
+import 'manifest_evidence.dart';
+import 'recognition_exclusions.dart';
 import 'scanned_source.dart';
 
 /// Lo que dejó el recorrido, en orden de ruta. Cada manifiesto se leyó y

@@ -10,7 +10,7 @@ import 'manifest_resources.dart';
 import 'observed_value.dart';
 import 'path_dependency_facts.dart';
 import 'yaml_nesting_guard.dart';
-import 'recognition/scanned_source.dart';
+import 'scanned_source.dart';
 import 'recognition_codes.dart';
 
 const _pathDependencySections = [

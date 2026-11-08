@@ -1,6 +1,6 @@
 import 'package:core/core.dart';
 
-import 'observation/source_diagnostics.dart';
+import '../observation/source_diagnostics.dart';
 
 /// Los códigos de las limitaciones que el reconocimiento puede informar.
 abstract final class LimitationCode {

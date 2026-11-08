@@ -1,5 +1,5 @@
 import '../observation/source_catalog.dart';
-import '../stable_file_reader.dart';
+import '../observation/stable_file_reader.dart';
 
 /// Una fuente aceptada: estable, dentro de sus límites y sin parsear todavía.
 final class ScannedSource {

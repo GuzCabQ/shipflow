@@ -5,8 +5,8 @@ import 'package:pub_semver/pub_semver.dart';
 
 import 'derived_observation_budget.dart';
 import 'evidence_draft.dart';
-import 'observation/source_catalog.dart';
-import 'recognition/scanned_source.dart';
+import '../observation/source_catalog.dart';
+import 'scanned_source.dart';
 import 'recognition_codes.dart';
 
 /// Una versión exacta declarada por un marcador de la raíz.

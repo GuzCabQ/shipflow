@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'observation/source_diagnostics.dart';
+import 'source_diagnostics.dart';
 import 'stable_file_reader.dart';
 
 const linkMessage = 'es un enlace simbólico y no se sigue';

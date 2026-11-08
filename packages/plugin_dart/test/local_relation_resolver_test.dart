@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:core/core.dart';
-import 'package:plugin_dart/src/dart_project_recognizer.dart';
+import 'package:plugin_dart/src/recognition/dart_project_recognizer.dart';
 import 'package:plugin_dart/src/recognition/directory_listing.dart';
 import 'package:test/test.dart';
 

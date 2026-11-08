@@ -2,7 +2,7 @@ import 'package:core/core.dart';
 
 import 'observed_value.dart';
 import 'path_dependency_facts.dart';
-import 'recognition/scanned_source.dart';
+import 'scanned_source.dart';
 
 /// El valor de la evidencia de una dependencia `flutter: {sdk: flutter}`.
 const flutterDependencyValue = 'sdk: flutter';
