@@ -1066,6 +1066,41 @@
             "bibliotecas de core: componente cíclico",
             "src/x#y/a.dart → src/x#y/b.dart (import)"
           ]
+        },
+        {
+          "nombre": "un ciclo por una referencia codificada a core",
+          "por_que": "`package:c%6Fre/...` es core para Dart. Clasificar por el texto escrito la contaba como un paquete ajeno, la arista desaparecía y el ciclo pasaba en verde. Se clasifica la URI ya parseada, por el nombre de paquete decodificado.",
+          "archivos": {
+            "packages/core/lib/src/_canario_codificado.dart": "import 'package:c%6Fre/src/_canario_codificado.dart';\n"
+          },
+          "debe_mencionar": [
+            "bibliotecas de core: componente cíclico",
+            "src/_canario_codificado.dart → src/_canario_codificado.dart (import)"
+          ]
+        },
+        {
+          "nombre": "el barril por una referencia codificada",
+          "por_que": "La misma clasificación, en una arista sin ciclo: si la referencia codificada se tomara por un paquete ajeno, el acceso al barril desde `src/` pasaría sin ruido.",
+          "archivos": {
+            "packages/core/lib/src/_canario_barril_codificado.dart": "import 'package:c%6Fre/core.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: importa o exporta el barril: src/_canario_barril_codificado.dart"
+        },
+        {
+          "nombre": "una URI de paquete sin nombre válido",
+          "por_que": "Si el nombre del paquete no es un nombre de Dart, no se puede decir si es core ni qué archivo nombra. Contarla como dependencia ajena sería decidir sin mirar.",
+          "archivos": {
+            "packages/core/lib/src/_canario_ilegible.dart": "import 'package:%zz/x.dart';\n"
+          },
+          "debe_mencionar": "bibliotecas de core: URI no válida"
+        },
+        {
+          "nombre": "una referencia codificada a core sin ciclo",
+          "por_que": "CONTROL NEGATIVO de las dos anteriores: la referencia codificada válida, sin ciclo ni barril, tiene que pasar en verde. Que se cuente como arista local y no como paquete ajeno lo muestran los ensayos de la entrega.",
+          "archivos": {
+            "packages/core/lib/_canario_codificado_sano.dart": "import 'package:c%6Fre/src/basis/basis_enums.dart';\n"
+          },
+          "espera": "pasa"
         }
       ],
       "caso_ciego": {

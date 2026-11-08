@@ -6,10 +6,10 @@
 /// los demás verificadores por coherencia, no porque el grafo lo exija.
 ///
 /// POR QUÉ EL UNIVERSO ES EL DISCO Y NO UNA LISTA
-///     Las dos enumeraciones que ya existían —`fuentes()` de check.dart y la
-///     del analizador— omiten LAS DOS una carpeta `.dart_tool` dentro de
-///     `lib/`: compararlas entre sí da igual aunque un ciclo viva ahí. El
-///     universo es el recorrido físico sin filtros; esas dos solo contrastan,
+///     La enumeración de `fuentes()` en check.dart y la del analizador
+///     omiten LAS DOS una carpeta `.dart_tool` dentro de `lib/`: compararlas
+///     entre sí da igual aunque un ciclo viva ahí. El universo es el
+///     recorrido físico sin filtros; esas dos solo contrastan,
 ///     y cualquier diferencia es rojo. Un archivo que no se pudo mirar no es
 ///     un archivo sin ciclos.
 library;
@@ -112,20 +112,29 @@ VerificacionDeBibliotecas verificarBibliotecasDeCore(
   final externos = <String>[];
   var haciaSdk = 0;
   final parseados = <String>{};
+  final raiz = _normal(lib.absolute.path);
   for (final rel in universo) {
     parseados.add(rel);
     final directivas = _directivas(lib, rel, falla);
     for (final (literal, clase) in directivas) {
       final uri = literal.stringValue;
+      // Se clasifica la URI ya parseada, no el texto escrito: `DART:io` es
+      // del SDK y `package:c%6Fre/...` es core.
+      final escrita = uri == null ? null : Uri.tryParse(uri);
       if (uri == null) {
         falla('URI no literal: $rel tiene `${literal.toSource()}` ($clase).');
-      } else if (uri.startsWith('dart:')) {
+      } else if (escrita == null || _paqueteIlegible(escrita)) {
+        falla(
+          'URI no válida: $rel tiene «$uri» ($clase). No se puede decir a qué '
+          'archivo apunta.',
+        );
+      } else if (escrita.isScheme('dart')) {
         haciaSdk++;
-      } else if (uri.startsWith('package:') &&
-          !uri.startsWith('package:core/')) {
+      } else if (escrita.isScheme('package') &&
+          escrita.pathSegments.first != 'core') {
         externos.add(uri);
       } else {
-        final destino = _resolver(_normal(lib.absolute.path), rel, uri);
+        final destino = _resolver(raiz, rel, escrita);
         if (destino == null || !universo.contains(destino)) {
           falla(
             'destino inexistente dentro de packages/core/lib: $rel → «$uri» '
@@ -214,8 +223,7 @@ List<(StringLiteral, String)> _directivas(
     );
   } on analizador.FileSystemException catch (e) {
     // `parseFile` lee con el sistema de archivos del analizador, que lanza su
-    // propia excepción y no la de `dart:io`: atrapar solo esta última dejaba
-    // escapar un archivo ilegible como excepción sin nombre.
+    // propia `FileSystemException`; la de `dart:io` cubre el resto.
     falla('no pude leer sus directivas: $rel (${e.message}).');
     return const [];
   } on FileSystemException catch (e) {
@@ -250,27 +258,38 @@ List<(StringLiteral, String)> _directivas(
   return salida;
 }
 
-/// Relativo a `lib/`, o null si el URI no cae dentro de ahí.
+/// Relativo a `lib/`, o null si la URI no cae dentro de ahí.
 ///
-/// Se resuelve contra la ruta REAL del archivo, codificada como lo hace Dart.
-/// Contra una raíz ficticia, un `../` de más volvía a caer adentro, un `#` en
-/// el nombre de una carpeta cortaba la ruta como si fuera un fragmento —y un
-/// ciclo ahí adentro se leía como aristas hacia otros archivos—, y un nombre
-/// no ASCII no encontraba su destino.
-String? _resolver(String raiz, String rel, String uri) {
+/// Se resuelve como URI de archivo codificada a partir de la ruta real: un
+/// `..` que sale de `lib/` queda afuera, un `#` es parte del nombre y no un
+/// fragmento, y un nombre no ASCII encuentra su archivo. Un segmento que no
+/// puede ser parte de una ruta hace fallar la conversión y cuenta como afuera.
+String? _resolver(String raiz, String rel, Uri escrita) {
   try {
-    final escrito = Uri.parse(uri);
-    final destino = escrito.isScheme('package')
-        ? Uri.file('$raiz/${escrito.pathSegments.skip(1).join('/')}')
-        : Uri.file('$raiz/$rel').resolveUri(escrito);
+    final base = Uri.file(raiz);
+    final destino = escrita.isScheme('package')
+        ? base.replace(
+            pathSegments: [
+              ...base.pathSegments,
+              ...escrita.pathSegments.skip(1),
+            ],
+          )
+        : Uri.file('$raiz/$rel').resolveUri(escrita);
     final ruta = _normal(destino.toFilePath());
     return ruta.startsWith('$raiz/') ? ruta.substring(raiz.length + 1) : null;
-  } on FormatException {
-    return null;
   } on UnsupportedError {
     return null;
   }
 }
+
+/// `package:` sin un nombre de paquete válido y una ruta: no se puede decir
+/// si es core ni qué archivo nombra.
+bool _paqueteIlegible(Uri uri) =>
+    uri.isScheme('package') &&
+    (uri.pathSegments.length < 2 ||
+        !_nombreDePaquete.hasMatch(uri.pathSegments.first));
+
+final _nombreDePaquete = RegExp(r'^[a-z_][a-z0-9_]*$');
 
 void _contrastar(
   String quien,

@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
-// Los bytes esperados se escribieron antes de mover estos tipos de archivo:
-// son el contrato que el movimiento no puede cambiar, no una salida derivada.
+// Los bytes esperados son literales: un oráculo fijo, independiente de la
+// serialización que se prueba.
 const _scope = '{"kind":"paths","paths":["lib/b","lib/a"]}';
 const _actor =
     '{"label":"Ana","role":"mantenimiento","authority":"local_declared",'

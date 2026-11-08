@@ -471,6 +471,10 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "un ciclo escondido donde las dos enumeraciones no miran",
         "un ../ que se sale de lib",
         "un ciclo en una carpeta con # en el nombre",
+        "un ciclo por una referencia codificada a core",
+        "el barril por una referencia codificada",
+        "una URI de paquete sin nombre válido",
+        "una referencia codificada a core sin ciclo",
     },
 }
 
