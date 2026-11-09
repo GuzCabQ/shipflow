@@ -1131,7 +1131,7 @@
       "alcance": {
         "raiz": "packages/cli/lib/src/command",
         "que_mira": "Las directivas `import` y `export` de cada `.dart` bajo packages/cli/lib/src/command y de src/terminal_text.dart, con cada alternativa condicional, leídas del árbol sintáctico. Las URI se clasifican ya parseadas: `dart:`, `package:` por su nombre decodificado, y relativas o `package:cli/` resueltas dentro de packages/cli/lib.",
-        "residuo_declarado": "No gobierna quién consume el módulo —eso lo fijan los mapas de imports de las pruebas de cli—, ni el resto del CLI y sus otros componentes cíclicos, ni la semántica de los comandos, que es de sus pruebas. Los roles, el modelo y el helper están fijados en `tool/analisis/bin/comandos_cli.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
+        "residuo_declarado": "No gobierna quién consume el módulo: los mapas de imports de las pruebas de cli fijan las directivas de los consumidores escritas con comillas simples y sin alternativas, y un consumidor que use comillas dobles o una alternativa condicional hacia el parser no lo ve ninguno de los dos. Tampoco gobierna el resto del CLI y sus otros componentes cíclicos, ni la semántica de los comandos, que es de sus pruebas. Los roles, el modelo y el helper están fijados en `tool/analisis/bin/comandos_cli.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
       },
       "violacion_canonica": {
         "donde": "packages/cli/lib/src/command/cli_command.dart",
