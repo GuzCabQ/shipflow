@@ -6,7 +6,7 @@ const assessmentImports = {
     'dart:io',
     'package:core/core.dart',
     'package:vcs/vcs.dart',
-    '../cli_command.dart',
+    '../command/cli_command.dart',
     '../cli_response.dart',
     '../context/context_cli.dart',
     '../context/context_request.dart',

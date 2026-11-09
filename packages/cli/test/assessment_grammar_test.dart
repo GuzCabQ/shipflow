@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:cli/cli.dart';
 import 'package:cli/src/assessment/assessment_decisions.dart';
-import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/command/cli_command.dart';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 

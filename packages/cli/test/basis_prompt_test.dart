@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:cli/src/basis/basis_cli.dart';
 import 'package:cli/src/basis/basis_prompt.dart';
-import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/command/cli_command.dart';
 import 'package:cli/src/context/context_prompt.dart';
 import 'package:core/core.dart';
 import 'package:test/test.dart';

@@ -3,7 +3,7 @@ library;
 export 'src/assessment/assessment_cli.dart' show AssessmentPlugin;
 export 'src/build_version.dart';
 export 'src/cli_application.dart' show respondStatically;
-export 'src/cli_command.dart'
+export 'src/command/cli_command.dart'
     show
         CliCommand,
         RejectUsage,
@@ -18,8 +18,8 @@ export 'src/cli_command.dart'
         RunInitRefresh,
         ShowHelp,
         ShowVersion,
-        StaticCommand,
-        parseCliCommand;
+        StaticCommand;
+export 'src/command/cli_parser.dart' show parseCliCommand;
 export 'src/cli_emitter.dart';
 export 'src/cli_process_boundary.dart';
 export 'src/cli_response.dart';

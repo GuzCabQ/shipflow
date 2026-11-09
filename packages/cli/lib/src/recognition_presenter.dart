@@ -1,7 +1,7 @@
 import 'package:core/core.dart';
 
 import 'bounded_recognition_json.dart';
-import 'cli_command.dart';
+import 'command/cli_command.dart';
 import 'cli_response.dart';
 import 'recognition_human.dart';
 

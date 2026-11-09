@@ -1,7 +1,7 @@
 import 'package:core/core.dart';
 
 import 'cli_command.dart';
-import 'terminal_text.dart';
+import '../terminal_text.dart';
 
 const _maxReflectedRunes = 160;
 

@@ -1,6 +1,6 @@
 import 'package:core/core.dart';
 
-import 'cli_command.dart';
+import 'command/cli_command.dart';
 import 'recognition_human_context.dart';
 import 'recognition_human_findings.dart';
 import 'recognition_human_support.dart';

@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
-import '../cli_command.dart';
+import '../command/cli_command.dart';
 import '../cli_response.dart';
 import '../recognition_runner.dart';
 import 'context_codec.dart';
