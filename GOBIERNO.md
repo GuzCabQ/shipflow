@@ -133,19 +133,20 @@ la arquitectura y se revisa como tal.
 | `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
 | `nucleo-sin-ciclos` | Que las bibliotecas de `core` formen un ciclo —también por un export o una alternativa condicional—, que `src/` apunte al barril, o que una hoja de valores de basis alcance el modelo | `tool/analisis` |
 | `comandos-separados-del-parser` | Que el modelo de comandos de `cli` dependa de algo más que el barril de `core`, que su módulo alcance servicios, IO, otro paquete o el barril de `cli` —también por un export o una alternativa condicional—, o que forme un ciclo | `tool/analisis` |
+| `composicion-cli-unidireccional` | Que un adapter, un helper o un archivo nuevo de `cli` alcance el despacho de comandos o la frontera del proceso —directamente, por el barril, por otro archivo, por un export o por una alternativa condicional— | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué nueve de estas reglas necesitan otro motor
+### Por qué diez de estas reglas necesitan otro motor
 
-**Nueve, y no son un bloque contiguo de la tabla:** las ocho últimas más
+**Diez, y no son un bloque contiguo de la tabla:** las nueve últimas más
 `subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
 fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
 
-Lo único que las nueve comparten es la razón: **ninguna se puede derivar
+Lo único que las diez comparten es la razón: **ninguna se puede derivar
 leyendo el archivo como texto plano.** Es la misma lección que ya pagó
 `capas.py` con el grafo de dependencias: parsear a mano devuelve cero
 resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
@@ -167,6 +168,10 @@ sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
   de `packages/cli/lib/src/command` y `src/terminal_text.dart`, contrastado con
   el analizador. Lo que decide es qué destino admite cada archivo, no sólo si
   hay ciclos.
+- `composicion-cli-unidireccional` aplica ese mecanismo al disco entero de
+  `packages/cli/lib`, contrastado con el analizador, y no busca ciclos: decide
+  quién puede alcanzar, en uno o más saltos, el despacho y la frontera del
+  proceso.
 - `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
   implementa lo busca en todos los paquetes**: una implementación que viviera
   solo en `core` no es la pregunta que responde.
@@ -193,7 +198,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 239 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 252 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.

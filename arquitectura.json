@@ -1245,6 +1245,121 @@
         "por_que_ciega": "Las aristas salen de las directivas del árbol sintáctico. De un árbol parcial no sale ninguna, y un modelo sin aristas se lee exactamente igual que uno que sólo depende de core.",
         "debe_mencionar": "comandos de cli: no pude leer sus directivas"
       }
+    },
+    "composicion-cli-unidireccional": {
+      "enunciado": "Dentro de packages/cli/lib, sólo cli.dart y src/cli_process_boundary.dart alcanzan el despacho de comandos (src/cli_runner.dart), y sólo cli.dart alcanza la frontera del proceso, contando caminos de uno o más saltos por imports, exports y sus alternativas condicionales. Ningún destino se alcanza a sí mismo.",
+      "origen": "SPEC-ARQ-CLI-002 y DIAGNOSTICO-CLI-002: el ciclo recognition_runner ↔ context_cli, assessment_cli y basis_cli, roto al separar el despacho de la observación de la raíz.",
+      "tipo": "composicion_unidireccional",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Si un adapter o helper necesita observar la raíz, importá src/recognition_runner.dart; la ejecución de comandos se pide a través de quien compone (el barril o la frontera del proceso). No reexportes el despacho desde el reconocimiento ni lo alcances por el barril, un helper, una alternativa condicional o un package:cli codificado.",
+      "por_que": [
+        "Los adapters reusaban la observación de la raíz importando el archivo",
+        "que también los despachaba, y eso cerraba un ciclo de cuatro",
+        "bibliotecas. Separar el despacho no sirve si el próximo import, export",
+        "o helper interpuesto lo vuelve a alcanzar: Dart acepta el ciclo y nada",
+        "falla al compilar.",
+        "",
+        "EL UNIVERSO ES EL DISCO. Todo .dart de packages/cli/lib se mira aunque",
+        "nadie lo importe; la enumeración del analizador sólo contrasta, y",
+        "cualquier diferencia, enlace simbólico, archivo ilegible o rol ausente",
+        "es rojo."
+      ],
+      "alcance": {
+        "raiz": "packages/cli/lib",
+        "que_mira": "Las directivas `import` y `export` de cada `.dart` bajo packages/cli/lib, con cada alternativa condicional, leídas del árbol sintáctico. Las URI se clasifican ya parseadas: `dart:` y `package:` de otros paquetes se cuentan como externas sin recorrerlas; `package:cli/` por su nombre decodificado y las relativas se resuelven dentro de packages/cli/lib; cualquier otro esquema es rojo.",
+        "residuo_declarado": "No prohíbe los ciclos del CLI: los otros cinco componentes cíclicos quedan fuera. No gobierna bin/ ni test/, ni la corrección del despacho, sus efectos, la propiedad del estado o dependencias semánticas que no pasen por directivas; eso es de las pruebas y de las demás reglas. No recorre otros paquetes. Los roles y los orígenes admitidos están fijados en `tool/analisis/bin/composicion_cli.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
+      },
+      "violacion_canonica": {
+        "donde": "packages/cli/lib/src/recognition_runner.dart",
+        "contenido": "export 'cli_runner.dart';\n",
+        "debe_mencionar": "composición de cli: src/recognition_runner.dart alcanza src/cli_runner.dart, que sólo pueden alcanzar cli.dart y src/cli_process_boundary.dart: src/recognition_runner.dart → src/cli_runner.dart (export)."
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "un archivo nuevo que llega al despacho por el barril",
+          "por_que": "El barril exporta el despacho: importarlo desde dentro de lib es alcanzar la composición, aunque ningún import nombre cli_runner.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_barril.dart": "import '../cli.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/_canario_barril.dart alcanza src/cli_runner.dart, que sólo pueden alcanzar cli.dart y src/cli_process_boundary.dart: src/_canario_barril.dart → cli.dart (import) → src/cli_runner.dart (export)."
+        },
+        {
+          "nombre": "un helper interpuesto que reexporta el despacho en una alternativa",
+          "por_que": "La regla cuenta caminos de uno o más saltos y cada alternativa condicional: un helper en medio no lava la dependencia, y quien lo importa también queda nombrado.",
+          "archivos": {
+            "packages/cli/lib/src/context/_canario_helper.dart": "export 'context_request.dart' if (dart.library.io) '../cli_runner.dart';\n",
+            "packages/cli/lib/src/context/_canario_usuario.dart": "import '_canario_helper.dart';\n"
+          },
+          "debe_mencionar": [
+            "composición de cli: src/context/_canario_helper.dart alcanza src/cli_runner.dart, que sólo pueden alcanzar cli.dart y src/cli_process_boundary.dart: src/context/_canario_helper.dart → src/cli_runner.dart (alternativa de export).",
+            "composición de cli: src/context/_canario_usuario.dart alcanza src/cli_runner.dart, que sólo pueden alcanzar cli.dart y src/cli_process_boundary.dart: src/context/_canario_usuario.dart → src/context/_canario_helper.dart (import) → src/cli_runner.dart (alternativa de export)."
+          ]
+        },
+        {
+          "nombre": "una referencia codificada a la frontera del proceso",
+          "por_que": "`package:c%6Ci/` es cli: clasificar por el texto escrito la tomaría por otro paquete y no la recorrería.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_codificado.dart": "import 'package:c%6Ci/src/cli_process_boundary.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/_canario_codificado.dart alcanza src/cli_process_boundary.dart, que sólo puede alcanzar cli.dart: src/_canario_codificado.dart → src/cli_process_boundary.dart (import)."
+        },
+        {
+          "nombre": "una referencia codificada al reconocimiento sin problema",
+          "por_que": "Control sano: la misma clasificación por identidad no puede dar un rojo falso con una referencia válida a una biblioteca que no es composición.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_codificado_sano.dart": "import 'package:c%6Ci/src/recognition_runner.dart';\n"
+          },
+          "espera": "pasa"
+        },
+        {
+          "nombre": "el despacho alcanza la frontera",
+          "por_que": "Los destinos no están exentos: el despacho no puede depender de quien traduce sus fallos, ni volver a sí mismo por un ciclo.",
+          "archivos": {
+            "packages/cli/lib/src/cli_runner.dart": "import 'cli_process_boundary.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/cli_runner.dart alcanza src/cli_process_boundary.dart, que sólo puede alcanzar cli.dart: src/cli_runner.dart → src/cli_process_boundary.dart (import)."
+        },
+        {
+          "nombre": "un archivo que el analizador no ve",
+          "por_que": "Un directorio oculto queda fuera de la enumeración del analizador; el recorrido físico lo ve y la diferencia es rojo.",
+          "archivos": {
+            "packages/cli/lib/src/.oculto/x.dart": "import '../cli_runner.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: cobertura insuficiente: el analizador omite src/.oculto/x.dart"
+        },
+        {
+          "nombre": "una URI con otro esquema",
+          "por_que": "Lo que no es `dart:`, `package:` ni relativo no se puede ubicar dentro de lib ni contar como externo: se rechaza en vez de adivinarlo.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_esquema.dart": "import 'file:///tmp/x.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: URI no clasificable: src/_canario_esquema.dart"
+        },
+        {
+          "nombre": "un ../ que se sale de lib",
+          "por_que": "La URI se resuelve desde la ruta real del archivo: un destino fuera de packages/cli/lib no existe para la regla.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_fuera.dart": "import '../../_fuera.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: destino inexistente dentro de packages/cli/lib"
+        },
+        {
+          "nombre": "un part en el CLI",
+          "por_que": "Un `part` esconde una biblioteca dentro de otra; sus directivas no se leerían como propias.",
+          "archivos": {
+            "packages/cli/lib/src/_canario_part.dart": "part '_canario_parte.dart';\n",
+            "packages/cli/lib/src/_canario_parte.dart": "part of '_canario_part.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: part no admitido"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simétrico de `violacion_canonica`: aquélla prueba que el check detecta un EXCESO; éste, que detecta una OMISIÓN.",
+        "que": "El despacho de comandos no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Las aristas salen de las directivas del árbol sintáctico. De un árbol parcial no sale ninguna, y un despacho sin aristas se lee exactamente igual que uno que no alcanza la frontera.",
+        "debe_mencionar": "composición de cli: no pude leer sus directivas"
+      }
     }
   }
 }

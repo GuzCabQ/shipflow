@@ -774,6 +774,7 @@ Future<void> main(List<String> args) async {
     'subprocesos-con-entorno-saneado': 'entorno_saneado',
     'nucleo-sin-ciclos': 'bibliotecas_sin_ciclos',
     'comandos-separados-del-parser': 'frontera_de_comandos',
+    'composicion-cli-unidireccional': 'composicion_unidireccional',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
