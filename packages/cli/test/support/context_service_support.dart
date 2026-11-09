@@ -93,10 +93,15 @@ final class ServiceSandbox {
     ReportBudgetProfile profile = ReportBudgetProfile.standard,
     ContextStore Function(ContextStore real)? wrap,
     Future<SharingChoice?> Function(SharingQuestion question)? choose,
+    Future<ContextStore> Function(Directory)? openAdministration,
   }) async {
     final real = await SecureContextStore.open(root);
     try {
-      return await _service(wrap == null ? real : wrap(real), git).run(
+      return await _service(
+        wrap == null ? real : wrap(real),
+        git,
+        openAdministration,
+      ).run(
         ContextRequest(
           operation: operation,
           sharing: sharing,
@@ -112,6 +117,7 @@ final class ServiceSandbox {
   ProjectContextService _service(
     ContextStore store,
     Map<String, String>? git,
+    Future<ContextStore> Function(Directory)? openAdministration,
   ) => ProjectContextService(
     root: root,
     store: store,
@@ -121,6 +127,7 @@ final class ServiceSandbox {
     version: '0.0.0-prueba',
     now: () => DateTime.utc(2026, 10, 25, 12),
     newId: newId,
+    openAdministration: openAdministration,
   );
 
   Future<RecognitionReport> _recognize(

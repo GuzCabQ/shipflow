@@ -112,6 +112,9 @@ String _ownBlock(ExcludeChange exclude) =>
 /// El cambio del exclude para [choice], leído desde su directorio anclado,
 /// o null si [choice] no lo toca. El separador propio sólo se acredita si
 /// su huella coincide con la registrada en [settings].
+///
+/// La administración que abre pasa a quien recibe el cambio, que la cierra;
+/// si algo falla antes de entregarlo, se cierra aquí.
 Future<ExcludeChange?> excludeChangeFor(
   ObservedContext o,
   SharingChoice choice,
@@ -123,6 +126,32 @@ Future<ExcludeChange?> excludeChangeFor(
     return null;
   }
   final admin = await openAdministration(Directory(binding.commonDir));
+  try {
+    return await _changeIn(admin, o, choice, path, binding);
+  } on Object {
+    await closeAfterFailure(admin);
+    rethrow;
+  }
+}
+
+/// Cierra [admin] cuando ya hay un fallo en curso. Si el cierre también
+/// falla, ese segundo fallo se descarta: quien llama tiene que ver el
+/// primero, con su traza.
+Future<void> closeAfterFailure(ContextStore admin) async {
+  try {
+    await admin.close();
+  } on Object {
+    // El fallo en curso es el que se propaga.
+  }
+}
+
+Future<ExcludeChange> _changeIn(
+  ContextStore admin,
+  ObservedContext o,
+  SharingChoice choice,
+  String path,
+  GitBinding binding,
+) async {
   final (:before, :safe) = await _readExclude(admin, path, binding);
   if (!safe) return _refused(admin, path, binding.prefix);
   final blockId = blockIdOf(binding.prefix);
