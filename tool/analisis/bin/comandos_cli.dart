@@ -3,9 +3,11 @@
 /// módulo, de ese barril y de `src/terminal_text.dart`, que no tiene
 /// dependencias; y nada de eso forma un ciclo.
 ///
-/// Lo invoca `check.dart`. Mira sólo el módulo y su helper de texto: quién
-/// consume el módulo lo fija el mapa de imports de las pruebas del CLI, y el
-/// resto del CLI queda fuera de esta regla.
+/// Lo invoca `check.dart`. Mira sólo el módulo y su helper de texto; quién
+/// consume el módulo y el resto del CLI quedan fuera. Los mapas de imports de
+/// las pruebas del CLI fijan las directivas de los consumidores escritas con
+/// comillas simples y sin alternativas; otras formas no las ve ninguno de los
+/// dos.
 ///
 /// El universo es el disco, como en `bibliotecas_core.dart`: un archivo nuevo
 /// del módulo se mira aunque nadie lo importe, y la enumeración del analizador
@@ -49,7 +51,15 @@ VerificacionDeComandos verificarComandosDeCli(
   final modulo = Directory('${lib.path}/$_modulo');
 
   final universo = SplayTreeSet<String>();
-  if (modulo.existsSync()) {
+  final tipo = FileSystemEntity.typeSync(modulo.path, followLinks: false);
+  if (tipo == FileSystemEntityType.link) {
+    falla(
+      'cobertura insuficiente: $_modulo es un enlace simbólico. No se sigue '
+      'ni se adivina su destino.',
+    );
+    return (fallos: fallos, resumen: '');
+  }
+  if (tipo == FileSystemEntityType.directory) {
     try {
       for (final entrada in modulo.listSync(
         recursive: true,

@@ -1,8 +1,10 @@
 /// El mecanismo que comparten los controles de dependencias entre
 /// bibliotecas: leer las directivas del árbol sintáctico, resolver una URI
 /// dentro de una raíz, contrastar enumeraciones y encontrar ciclos. No decide
-/// qué se mira ni qué está permitido: eso es de cada control, y cada uno pone
-/// el prefijo de sus mensajes.
+/// qué se mira ni qué dependencias se admiten: eso es de cada control, que
+/// además pone el prefijo de sus mensajes. Sí rechaza, para los dos, lo que
+/// impide leer las dependencias de un archivo: `part`, `part of` y una
+/// directiva desconocida.
 library;
 
 import 'dart:io';
@@ -13,7 +15,7 @@ import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/file_system/file_system.dart' as analizador;
 
-/// Una dependencia local entre dos archivos del universo.
+/// Una dependencia local entre dos archivos que el control parsea.
 final class Arista {
   const Arista(this.origen, this.destino, this.clase);
 
