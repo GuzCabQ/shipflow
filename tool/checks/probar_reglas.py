@@ -476,6 +476,20 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "una URI de paquete sin nombre válido",
         "una referencia codificada a core sin ciclo",
     },
+    "comandos-separados-del-parser": {
+        "una alternativa condicional hacia el barril de cli",
+        "una biblioteca del módulo que importa un ejecutor",
+        "entrada y salida del SDK",
+        "otro paquete del workspace",
+        "core fuera de su barril",
+        "una referencia codificada a cli fuera del módulo",
+        "una referencia codificada al módulo sin problema",
+        "un ciclo entre dos bibliotecas nuevas del módulo",
+        "un part dentro del módulo",
+        "terminal_text gana una directiva",
+        "un archivo que el analizador no ve",
+        "un ../ que se sale de lib",
+    },
 }
 
 
@@ -620,6 +634,13 @@ def neutralizaciones(rid: str) -> list[tuple[str, object, str]]:
 
 BASURA = ")))esto no parsea de ninguna manera(((\n"
 
+# El archivo que el caso ciego rompe, por regla: uno que YA EXISTE y que esa
+# regla mira. Romper otro dejaría el rojo a cargo de un control ajeno.
+OBJETIVO_ILEGIBLE = {
+    "grafo-derivado": "packages/core/test/regla_test.dart",
+    "comandos-separados-del-parser": "packages/cli/lib/src/command/cli_command.dart",
+}
+
 
 def casos_ciegos() -> list[dict]:
     """Uno por regla, DERIVADO del registro. Si una regla no lo declara no se
@@ -647,9 +668,7 @@ def casos_ciegos() -> list[dict]:
             # Se rompe un archivo QUE YA EXISTE Y YA ES ALCANZABLE. Agregar uno
             # nuevo no serviría: quedaría huérfano y el rojo vendría de Q5, no
             # de la ceguera — y rojo por la razón equivocada no prueba nada.
-            objetivo = ("packages/core/test/regla_test.dart"
-                        if rid == "grafo-derivado"
-                        else "packages/core/lib/src/valores.dart")
+            objetivo = OBJETIVO_ILEGIBLE.get(rid, "packages/core/lib/src/valores.dart")
             caso["archivos"] = {objetivo: BASURA}
             caso["probar_grafo"] = rid == "grafo-derivado"
         else:

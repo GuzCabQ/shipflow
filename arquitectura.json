@@ -1110,6 +1110,141 @@
         "por_que_ciega": "Las aristas salen de las directivas del árbol sintáctico. De un árbol parcial no sale ninguna, y un archivo sin aristas se lee exactamente igual que uno que no importa nada.",
         "debe_mencionar": "bibliotecas de core: no pude leer sus directivas"
       }
+    },
+    "comandos-separados-del-parser": {
+      "enunciado": "El modelo de comandos de `packages/cli/lib/src/command` (`cli_command.dart`) sólo depende de `package:core/core.dart`; el resto del módulo —parser y gramáticas, y cualquier archivo nuevo— sólo de otros archivos del módulo, de ese barril y de `src/terminal_text.dart`, que no tiene directivas de dependencia; y el módulo no forma ningún componente cíclico, contando imports, exports y sus alternativas condicionales.",
+      "origen": "SPEC-ARQ-CLI-001 y DIAGNOSTICO-CLI-001: el ciclo cli_command ↔ cli_grammar, assessment_grammar y basis_grammar, roto al separar el modelo CliCommand de parseCliCommand.",
+      "tipo": "frontera_de_comandos",
+      "aplicada_por": "tool/analisis",
+      "alternativa": "Importá el modelo o la gramática que corresponda; el IO y los servicios quedan en los ejecutores. No reexportes el parser desde el modelo ni lo resuelvas con un `part`, el barril de cli o una alternativa condicional.",
+      "por_que": [
+        "Para consumir un comando bastaba con depender de cómo se interpreta la",
+        "línea de órdenes: el modelo y el parser vivían en el mismo archivo, que",
+        "importaba las gramáticas que a su vez lo importaban. Separarlos no sirve",
+        "de nada si el próximo import o reexport lo deshace sin ruido: Dart acepta",
+        "el ciclo y nada falla al compilar.",
+        "",
+        "EL UNIVERSO ES EL DISCO. Un archivo nuevo del módulo se mira aunque nadie",
+        "lo importe; la enumeración del analizador sólo contrasta, y cualquier",
+        "diferencia, enlace simbólico, archivo ilegible o rol ausente es rojo."
+      ],
+      "alcance": {
+        "raiz": "packages/cli/lib/src/command",
+        "que_mira": "Las directivas `import` y `export` de cada `.dart` bajo packages/cli/lib/src/command y de src/terminal_text.dart, con cada alternativa condicional, leídas del árbol sintáctico. Las URI se clasifican ya parseadas: `dart:`, `package:` por su nombre decodificado, y relativas o `package:cli/` resueltas dentro de packages/cli/lib.",
+        "residuo_declarado": "No gobierna quién consume el módulo —eso lo fijan los mapas de imports de las pruebas de cli—, ni el resto del CLI y sus otros componentes cíclicos, ni la semántica de los comandos, que es de sus pruebas. Los roles, el modelo y el helper están fijados en `tool/analisis/bin/comandos_cli.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
+      },
+      "violacion_canonica": {
+        "donde": "packages/cli/lib/src/command/cli_command.dart",
+        "contenido": "import 'package:core/core.dart';\nexport 'cli_parser.dart';\n",
+        "debe_mencionar": "comandos de cli: el modelo sólo depende de package:core/core.dart"
+      },
+      "violaciones_extra": [
+        {
+          "nombre": "una alternativa condicional hacia el barril de cli",
+          "por_que": "Una alternativa también es una dependencia. Mirar sólo la URI principal dejaba entrar el barril por la rama condicional.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_atajo.dart": "export 'cli_command.dart' if (dart.library.io) '../../cli.dart';\n"
+          },
+          "debe_mencionar": "comandos de cli: destino no admitido: src/command/_canario_atajo.dart → cli.dart (alternativa de export): el barril de cli"
+        },
+        {
+          "nombre": "una biblioteca del módulo que importa un ejecutor",
+          "por_que": "Un archivo nuevo que nadie importa también se mira: el universo es el disco, no el grafo.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_ejecutor.dart": "import '../recognition_runner.dart';\n"
+          },
+          "debe_mencionar": "→ src/recognition_runner.dart (import): cli fuera del módulo"
+        },
+        {
+          "nombre": "entrada y salida del SDK",
+          "por_que": "Interpretar argumentos no lee archivos ni entorno: el IO queda en los ejecutores.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_io.dart": "import 'dart:io';\n"
+          },
+          "debe_mencionar": "→ dart:io (import): el SDK"
+        },
+        {
+          "nombre": "otro paquete del workspace",
+          "por_que": "El módulo sólo conoce core por su barril; cualquier otro paquete es un servicio que no le toca.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_vcs.dart": "import 'package:vcs/vcs.dart';\n"
+          },
+          "debe_mencionar": ": otro paquete"
+        },
+        {
+          "nombre": "core fuera de su barril",
+          "por_que": "Lo admitido es el barril de core, no sus bibliotecas internas.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_core.dart": "import 'package:core/src/basis/basis_scope.dart';\n"
+          },
+          "debe_mencionar": ": core fuera de su barril"
+        },
+        {
+          "nombre": "una referencia codificada a cli fuera del módulo",
+          "por_que": "`package:c%6Ci/` es cli: clasificar por el texto escrito la tomaría por otro paquete y dejaría pasar la dependencia.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_codificado.dart": "import 'package:c%6Ci/src/cli_response.dart';\n"
+          },
+          "debe_mencionar": "→ src/cli_response.dart (import): cli fuera del módulo"
+        },
+        {
+          "nombre": "una referencia codificada al módulo sin problema",
+          "por_que": "Control sano: la misma clasificación por identidad no puede dar un rojo falso con una referencia válida al módulo.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_codificado_sano.dart": "import 'package:c%6Ci/src/command/cli_command.dart';\n"
+          },
+          "espera": "pasa"
+        },
+        {
+          "nombre": "un ciclo entre dos bibliotecas nuevas del módulo",
+          "por_que": "El ciclo se busca en todo el módulo, no sólo entre los roles conocidos.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_a.dart": "import '_canario_b.dart';\n",
+            "packages/cli/lib/src/command/_canario_b.dart": "import '_canario_a.dart';\n"
+          },
+          "debe_mencionar": "comandos de cli: componente cíclico"
+        },
+        {
+          "nombre": "un part dentro del módulo",
+          "por_que": "Un `part` esconde una biblioteca dentro de otra y juntaría de nuevo lo que el corte separó.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_part.dart": "part '_canario_parte.dart';\n",
+            "packages/cli/lib/src/command/_canario_parte.dart": "part of '_canario_part.dart';\n"
+          },
+          "debe_mencionar": "comandos de cli: part no admitido"
+        },
+        {
+          "nombre": "terminal_text gana una directiva",
+          "por_que": "El helper de texto lo usan también las vistas; con una dependencia, el módulo la heredaría sin mirarla.",
+          "archivos": {
+            "packages/cli/lib/src/terminal_text.dart": "import 'dart:io';\n"
+          },
+          "debe_mencionar": "comandos de cli: src/terminal_text.dart no puede tener directivas de dependencia"
+        },
+        {
+          "nombre": "un archivo que el analizador no ve",
+          "por_que": "Un directorio oculto queda fuera de la enumeración del analizador; el recorrido físico lo ve y la diferencia es rojo.",
+          "archivos": {
+            "packages/cli/lib/src/command/.oculto/x.dart": "import '../../../cli.dart';\n"
+          },
+          "debe_mencionar": "comandos de cli: cobertura insuficiente: el analizador omite src/command/.oculto/x.dart"
+        },
+        {
+          "nombre": "un ../ que se sale de lib",
+          "por_que": "La URI se resuelve desde la ruta real del archivo: un destino fuera de packages/cli/lib no existe para el módulo.",
+          "archivos": {
+            "packages/cli/lib/src/command/_canario_fuera.dart": "import '../../../_fuera.dart';\n"
+          },
+          "debe_mencionar": "comandos de cli: destino inexistente dentro de packages/cli/lib"
+        }
+      ],
+      "caso_ciego": {
+        "_": "Simétrico de `violacion_canonica`: aquélla prueba que el check detecta un EXCESO; éste, que detecta una OMISIÓN.",
+        "que": "El modelo de comandos no parsea.",
+        "como": "archivo_ilegible",
+        "por_que_ciega": "Las aristas salen de las directivas del árbol sintáctico. De un árbol parcial no sale ninguna, y un modelo sin aristas se lee exactamente igual que uno que sólo depende de core.",
+        "debe_mencionar": "comandos de cli: no pude leer sus directivas"
+      }
     }
   }
 }

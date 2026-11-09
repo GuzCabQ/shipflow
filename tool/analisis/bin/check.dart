@@ -772,6 +772,7 @@ Future<void> main(List<String> args) async {
     'colecciones-inmutables': 'colecciones_copiadas',
     'subprocesos-con-entorno-saneado': 'entorno_saneado',
     'nucleo-sin-ciclos': 'bibliotecas_sin_ciclos',
+    'comandos-separados-del-parser': 'frontera_de_comandos',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
