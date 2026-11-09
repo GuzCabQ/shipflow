@@ -21,7 +21,7 @@ const contextImports = {
     'dart:math',
     'package:core/core.dart',
     'package:vcs/vcs.dart',
-    '../cli_command.dart',
+    '../command/cli_command.dart',
     '../cli_response.dart',
     '../recognition_runner.dart',
     'context_codec.dart',
@@ -90,7 +90,7 @@ const contextImports = {
     'package:core/core.dart',
     'package:crypto/crypto.dart',
     'package:vcs/vcs.dart',
-    '../cli_command.dart',
+    '../command/cli_command.dart',
     'context_codec.dart',
     'context_request.dart',
     'secure_context_store.dart',
@@ -166,7 +166,7 @@ const contextImports = {
   },
   'lib/src/context/context_request.dart': {
     'package:core/core.dart',
-    '../cli_command.dart',
+    '../command/cli_command.dart',
   },
   'lib/src/context/context_response_shape.dart': {
     'package:core/core.dart',

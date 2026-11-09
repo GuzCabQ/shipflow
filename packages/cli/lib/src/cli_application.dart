@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'cli_command.dart';
+import 'command/cli_command.dart';
 import 'cli_help.dart';
 import 'cli_response.dart';
 

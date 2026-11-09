@@ -132,19 +132,20 @@ la arquitectura y se revisa como tal.
 | `grafo-derivado` | Que el mapa del repositorio quede desactualizado, o que un archivo no lo alcance nadie | `tool/analisis` |
 | `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
 | `nucleo-sin-ciclos` | Que las bibliotecas de `core` formen un ciclo —también por un export o una alternativa condicional—, que `src/` apunte al barril, o que una hoja de valores de basis alcance el modelo | `tool/analisis` |
+| `comandos-separados-del-parser` | Que el modelo de comandos de `cli` dependa de algo más que el barril de `core`, que su módulo alcance servicios, IO, otro paquete o el barril de `cli` —también por un export o una alternativa condicional—, o que forme un ciclo | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
 F33: registrada y no ejecutada. El propio check lo verifica —y de hecho fue lo
 primero que hizo cuando se agregaron las tres reglas nuevas.
 
-### Por qué ocho de estas reglas necesitan otro motor
+### Por qué nueve de estas reglas necesitan otro motor
 
-**Ocho, y no son un bloque contiguo de la tabla:** las siete últimas más
+**Nueve, y no son un bloque contiguo de la tabla:** las ocho últimas más
 `subprocesos-con-entorno-saneado`, que es la quinta fila. El registro es la
 fuente —`aplicada_por: tool/analisis`—, no la posición en la tabla.
 
-Lo único que las ocho comparten es la razón: **ninguna se puede derivar
+Lo único que las nueve comparten es la razón: **ninguna se puede derivar
 leyendo el archivo como texto plano.** Es la misma lección que ya pagó
 `capas.py` con el grafo de dependencias: parsear a mano devuelve cero
 resultados ante una sintaxis que el parser no reconoce, y cero se lee igual que
@@ -162,6 +163,10 @@ sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
   **directivas**, con cada alternativa condicional, sin resolverlas. Y no se
   fía de ninguna lista de archivos: recorre el disco sin filtros y usa la
   enumeración de `check.dart` y la del analizador solo como contraste.
+- `comandos-separados-del-parser` aplica el mismo mecanismo de directivas a otro universo: el disco
+  de `packages/cli/lib/src/command` y `src/terminal_text.dart`, contrastado con
+  el analizador. Lo que decide es qué destino admite cada archivo, no sólo si
+  hay ciclos.
 - `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
   implementa lo busca en todos los paquetes**: una implementación que viviera
   solo en `core` no es la pregunta que responde.
@@ -188,7 +193,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 223 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 239 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.

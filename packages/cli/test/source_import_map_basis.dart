@@ -13,7 +13,7 @@ const basisImports = {
   'lib/src/basis/basis_cli.dart': {
     'dart:io',
     'package:core/core.dart',
-    '../cli_command.dart',
+    '../command/cli_command.dart',
     '../cli_response.dart',
     '../context/context_cli.dart',
     '../context/context_prompt.dart',
@@ -62,11 +62,6 @@ const basisImports = {
     'basis_reply.dart',
     'basis_service.dart',
     'basis_store.dart',
-  },
-  'lib/src/basis/basis_grammar.dart': {
-    'package:core/core.dart',
-    '../cli_command.dart',
-    '../cli_grammar.dart',
   },
   'lib/src/basis/basis_human.dart': {
     'package:core/core.dart',

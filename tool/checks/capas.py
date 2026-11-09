@@ -326,6 +326,7 @@ CIEGO_FIJO = {
     "subprocesos-con-entorno-saneado": "archivo_ilegible",
     "forja-en-su-adapter": "archivo_ilegible",
     "nucleo-sin-ciclos": "archivo_ilegible",
+    "comandos-separados-del-parser": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {

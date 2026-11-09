@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/command/cli_command.dart';
 import 'package:cli/src/context/context_codec.dart';
 import 'package:cli/src/context/context_request.dart';
 import 'package:cli/src/context/context_service.dart';

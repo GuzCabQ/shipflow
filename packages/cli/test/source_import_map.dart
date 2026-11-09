@@ -16,7 +16,8 @@ const expectedImports = {
     'src/assessment/assessment_cli.dart',
     'src/build_version.dart',
     'src/cli_application.dart',
-    'src/cli_command.dart',
+    'src/command/cli_command.dart',
+    'src/command/cli_parser.dart',
     'src/cli_emitter.dart',
     'src/cli_process_boundary.dart',
     'src/cli_response.dart',
@@ -33,19 +34,30 @@ const expectedImports = {
   'lib/src/build_version.dart': <String>{},
   'lib/src/cli_application.dart': {
     'dart:convert',
-    'cli_command.dart',
+    'command/cli_command.dart',
     'cli_help.dart',
     'cli_response.dart',
   },
-  'lib/src/assessment_grammar.dart': {
+  'lib/src/command/assessment_grammar.dart': {
     'package:core/core.dart',
     'cli_command.dart',
     'cli_grammar.dart',
   },
-  'lib/src/cli_command.dart': {
+  'lib/src/command/basis_grammar.dart': {
     'package:core/core.dart',
+    'cli_command.dart',
+    'cli_grammar.dart',
+  },
+  'lib/src/command/cli_command.dart': {'package:core/core.dart'},
+  'lib/src/command/cli_grammar.dart': {
+    'package:core/core.dart',
+    'cli_command.dart',
+    '../terminal_text.dart',
+  },
+  'lib/src/command/cli_parser.dart': {
     'assessment_grammar.dart',
-    'basis/basis_grammar.dart',
+    'basis_grammar.dart',
+    'cli_command.dart',
     'cli_grammar.dart',
   },
   'lib/src/cli_emitter.dart': {
@@ -54,17 +66,13 @@ const expectedImports = {
     'cli_response.dart',
     'internal_failure.dart',
   },
-  'lib/src/cli_grammar.dart': {
-    'package:core/core.dart',
-    'cli_command.dart',
-    'terminal_text.dart',
-  },
-  'lib/src/cli_help.dart': {'cli_command.dart'},
+  'lib/src/cli_help.dart': {'command/cli_command.dart'},
   'lib/src/cli_process_boundary.dart': {
     'dart:io',
     'package:vcs/vcs.dart',
     'assessment/assessment_cli.dart',
-    'cli_command.dart',
+    'command/cli_command.dart',
+    'command/cli_parser.dart',
     'context/context_prompt.dart',
     'cli_response.dart',
     'internal_failure.dart',
@@ -78,7 +86,7 @@ const expectedImports = {
   'lib/src/logical_root.dart': {'dart:convert', 'dart:io'},
   'lib/src/recognition_human.dart': {
     'package:core/core.dart',
-    'cli_command.dart',
+    'command/cli_command.dart',
     'recognition_human_context.dart',
     'recognition_human_findings.dart',
     'recognition_human_support.dart',
@@ -95,7 +103,7 @@ const expectedImports = {
   'lib/src/recognition_presenter.dart': {
     'package:core/core.dart',
     'bounded_recognition_json.dart',
-    'cli_command.dart',
+    'command/cli_command.dart',
     'cli_response.dart',
     'recognition_human.dart',
   },
@@ -106,7 +114,8 @@ const expectedImports = {
     'assessment/assessment_cli.dart',
     'basis/basis_cli.dart',
     'cli_application.dart',
-    'cli_command.dart',
+    'command/cli_command.dart',
+    'command/cli_parser.dart',
     'cli_response.dart',
     'logical_root.dart',
     'context/context_cli.dart',

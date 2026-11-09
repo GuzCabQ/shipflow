@@ -3,7 +3,7 @@ library;
 
 import 'dart:io';
 
-import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/command/cli_command.dart';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:cli/src/assessment/assessment_codec.dart';
 import 'package:cli/src/assessment/assessment_service.dart';
 import 'package:cli/src/assessment/assessment_store.dart';
-import 'package:cli/src/cli_command.dart';
+import 'package:cli/src/command/cli_command.dart';
 import 'package:cli/src/context/native/posix_api.dart';
 import 'package:cli/src/context/secure_context_store.dart';
 import 'package:core/core.dart';

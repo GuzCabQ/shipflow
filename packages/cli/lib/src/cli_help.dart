@@ -1,4 +1,4 @@
-import 'cli_command.dart';
+import 'command/cli_command.dart';
 
 typedef HelpOption = ({List<String> flags, String column, String text});
 typedef Help = ({

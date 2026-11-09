@@ -1,6 +1,6 @@
 import 'package:core/core.dart';
 
-import '../cli_command.dart';
+import '../command/cli_command.dart';
 
 /// El reconocimiento actual de la raíz, ensamblado dentro de [profile] y con
 /// las omisiones que la raíz de composición ya autorizó.

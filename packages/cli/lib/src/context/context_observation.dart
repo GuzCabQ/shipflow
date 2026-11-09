@@ -4,7 +4,7 @@ import 'package:core/core.dart';
 import 'package:crypto/crypto.dart';
 import 'package:vcs/vcs.dart';
 
-import '../cli_command.dart';
+import '../command/cli_command.dart';
 import 'context_codec.dart';
 import 'context_request.dart';
 import 'secure_context_store.dart';

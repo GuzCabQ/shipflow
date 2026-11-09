@@ -100,29 +100,35 @@ void main() {
 const _evaluationImports = <(String, Set<String>)>[
   (
     'cli_application.dart',
-    {'dart:convert', 'cli_command.dart', 'cli_help.dart', 'cli_response.dart'},
-  ),
-  (
-    'cli_command.dart',
     {
-      'package:core/core.dart',
+      'dart:convert',
+      'command/cli_command.dart',
+      'cli_help.dart',
+      'cli_response.dart',
+    },
+  ),
+  ('command/cli_command.dart', {'package:core/core.dart'}),
+  (
+    'command/cli_parser.dart',
+    {
       'assessment_grammar.dart',
-      'basis/basis_grammar.dart',
+      'basis_grammar.dart',
+      'cli_command.dart',
       'cli_grammar.dart',
     },
   ),
   (
-    'basis/basis_grammar.dart',
-    {'package:core/core.dart', '../cli_command.dart', '../cli_grammar.dart'},
-  ),
-  (
-    'assessment_grammar.dart',
+    'command/basis_grammar.dart',
     {'package:core/core.dart', 'cli_command.dart', 'cli_grammar.dart'},
   ),
   (
-    'cli_grammar.dart',
-    {'package:core/core.dart', 'cli_command.dart', 'terminal_text.dart'},
+    'command/assessment_grammar.dart',
+    {'package:core/core.dart', 'cli_command.dart', 'cli_grammar.dart'},
   ),
-  ('cli_help.dart', {'cli_command.dart'}),
+  (
+    'command/cli_grammar.dart',
+    {'package:core/core.dart', 'cli_command.dart', '../terminal_text.dart'},
+  ),
+  ('cli_help.dart', {'command/cli_command.dart'}),
   ('terminal_text.dart', <String>{}),
 ];

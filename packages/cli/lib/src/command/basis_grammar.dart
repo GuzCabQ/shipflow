@@ -1,7 +1,7 @@
 import 'package:core/core.dart';
 
-import '../cli_command.dart';
-import '../cli_grammar.dart';
+import 'cli_command.dart';
+import 'cli_grammar.dart';
 
 const _valued = {scopeFlag, inputFlag, acceptFlag, discardFlag};
 const _operations = {showFlag, inputFlag, acceptFlag, discardFlag, recoverFlag};

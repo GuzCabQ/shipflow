@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:vcs/vcs.dart';
 
 import 'assessment/assessment_cli.dart';
-import 'cli_command.dart';
+import 'command/cli_command.dart';
+import 'command/cli_parser.dart';
 import 'context/context_prompt.dart';
 import 'cli_response.dart';
 import 'internal_failure.dart';
