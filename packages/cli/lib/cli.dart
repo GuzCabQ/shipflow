@@ -27,5 +27,6 @@ export 'src/logical_root.dart' show corroborateLogicalRoot, maxLogicalRootBytes;
 export 'src/bounded_recognition_json.dart'
     show encodeRecognitionWithinLimit, recognitionSchemaVersion;
 export 'src/recognition_presenter.dart' show presentRecognition, reportLimitsOf;
+export 'src/cli_runner.dart' show runCli;
 export 'src/recognition_runner.dart'
-    show RecognitionContributor, currentWorkingDirectory, runCli;
+    show RecognitionContributor, currentWorkingDirectory;

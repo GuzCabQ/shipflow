@@ -490,6 +490,17 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "un archivo que el analizador no ve",
         "un ../ que se sale de lib",
     },
+    "composicion-cli-unidireccional": {
+        "un archivo nuevo que llega al despacho por el barril",
+        "un helper interpuesto que reexporta el despacho en una alternativa",
+        "una referencia codificada a la frontera del proceso",
+        "una referencia codificada al reconocimiento sin problema",
+        "el despacho alcanza la frontera",
+        "un archivo que el analizador no ve",
+        "una URI con otro esquema",
+        "un ../ que se sale de lib",
+        "un part en el CLI",
+    },
 }
 
 
@@ -639,6 +650,7 @@ BASURA = ")))esto no parsea de ninguna manera(((\n"
 OBJETIVO_ILEGIBLE = {
     "grafo-derivado": "packages/core/test/regla_test.dart",
     "comandos-separados-del-parser": "packages/cli/lib/src/command/cli_command.dart",
+    "composicion-cli-unidireccional": "packages/cli/lib/src/cli_runner.dart",
 }
 
 

@@ -4,6 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:cli/cli.dart';
+import 'package:cli/src/context/context_prompt.dart';
 import 'package:core/core.dart';
 import 'package:plugin_dart/plugin_dart.dart';
 import 'package:test/test.dart';
@@ -20,6 +21,7 @@ void main() {
     List<String> arguments, {
     Directory? at,
     Map<String, String>? git,
+    ContextPromptIO? prompt,
   }) async => (await runCli(
     arguments,
     version: '0.0.0-prueba',
@@ -32,6 +34,7 @@ void main() {
               authorizedOmissions: authorizedOmissions,
             ),
     git: GitContextAdapter(parentEnvironment: git ?? box.noGit),
+    prompt: prompt,
   )).payload;
 
   test('first init, return and change read in plain words', () async {
@@ -103,4 +106,39 @@ void main() {
     final first = await human(['init']);
     expect(first, contains('Descripción: «raíz»'));
   });
+
+  test('runCli hands its prompt to init', () async {
+    box.project();
+    box.gitInit();
+    final before = box.snapshot();
+    final unanswered = await human(
+      ['init'],
+      git: box.realGit,
+      prompt: _Answering(null, interactive: false),
+    );
+    expect(unanswered, contains('Falta elegir cómo conservarlo'));
+    final cancelled = await human(
+      ['init'],
+      git: box.realGit,
+      prompt: _Answering('q', interactive: true),
+    );
+    expect(cancelled, contains('Cancelado: no se escribió nada.'));
+    expect(box.snapshot(), before);
+  });
+}
+
+/// Contesta siempre [answer]; sin [interactive] no hay a quién preguntar.
+final class _Answering implements ContextPromptIO {
+  _Answering(this.answer, {required this.interactive});
+
+  final String? answer;
+
+  @override
+  final bool interactive;
+
+  @override
+  Future<String?> readLine() async => answer;
+
+  @override
+  void show(String text) {}
 }

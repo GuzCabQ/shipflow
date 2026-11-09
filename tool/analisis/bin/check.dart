@@ -33,6 +33,7 @@ import 'package:analyzer/dart/element/element.dart';
 
 import 'bibliotecas_core.dart';
 import 'comandos_cli.dart';
+import 'composicion_cli.dart';
 
 final List<String> fallos = [];
 
@@ -773,6 +774,7 @@ Future<void> main(List<String> args) async {
     'subprocesos-con-entorno-saneado': 'entorno_saneado',
     'nucleo-sin-ciclos': 'bibliotecas_sin_ciclos',
     'comandos-separados-del-parser': 'frontera_de_comandos',
+    'composicion-cli-unidireccional': 'composicion_unidireccional',
   };
   for (final e in esperadas.entries) {
     final r = reglas[e.key] as Map<String, Object?>?;
@@ -886,6 +888,20 @@ Future<void> main(List<String> args) async {
           resumen: '',
         );
   fallos.addAll(comandos.fallos);
+
+  // --- quién alcanza la composición de cli -------------------------------
+  //
+  // Mira todo `packages/cli/lib`. Ver `composicion_cli.dart`.
+  final composicion = dirCli.existsSync()
+      ? verificarComposicionDeCli(
+          dirCli,
+          detalle: args.contains('--detalle-composicion'),
+        )
+      : (
+          fallos: ['composición de cli: no encuentro packages/cli/lib.'],
+          resumen: '',
+        );
+  fallos.addAll(composicion.fallos);
 
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
   //
@@ -1405,4 +1421,5 @@ Future<void> main(List<String> args) async {
   );
   stdout.writeln(bibliotecas.resumen);
   stdout.writeln(comandos.resumen);
+  stdout.writeln(composicion.resumen);
 }

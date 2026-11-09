@@ -327,6 +327,7 @@ CIEGO_FIJO = {
     "forja-en-su-adapter": "archivo_ilegible",
     "nucleo-sin-ciclos": "archivo_ilegible",
     "comandos-separados-del-parser": "archivo_ilegible",
+    "composicion-cli-unidireccional": "archivo_ilegible",
 }
 
 NO_CUENTA_FIJO = {
