@@ -42,13 +42,10 @@ void main() {
   });
 
   test(
-    'el reconocimiento sólo lee: ni escribe, ni lanza procesos, ni usa red',
+    'reconocimiento, despacho y frontera no nombran escritura, procesos ni red',
     () async {
       final root = await packageRoot();
-      for (final relative in [
-        'lib/src/recognition_runner.dart',
-        'lib/src/cli_process_boundary.dart',
-      ]) {
+      for (final relative in _withoutDirectEffects) {
         final source = File('${root.path}/$relative').readAsStringSync();
         for (final effect in [
           'Process',
@@ -136,6 +133,14 @@ void main() {
     expect(found, isEmpty);
   });
 }
+
+/// Mira el texto de cada archivo, no lo que alcanza: el despacho delega en
+/// operaciones que sí escriben.
+const _withoutDirectEffects = [
+  'lib/src/recognition_runner.dart',
+  'lib/src/cli_runner.dart',
+  'lib/src/cli_process_boundary.dart',
+];
 
 /// [effect] como símbolo propio, no como parte de otro nombre: `Directory`
 /// no coincide con `currentWorkingDirectory`.

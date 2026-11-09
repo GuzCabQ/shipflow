@@ -8,6 +8,7 @@ import 'command/cli_parser.dart';
 import 'context/context_prompt.dart';
 import 'cli_response.dart';
 import 'internal_failure.dart';
+import 'cli_runner.dart';
 import 'recognition_runner.dart';
 
 /// Lo que el proceso público responde: igual que [runCli], salvo que un
