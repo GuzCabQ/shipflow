@@ -32,6 +32,7 @@ import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 
 import 'bibliotecas_core.dart';
+import 'comandos_cli.dart';
 
 final List<String> fallos = [];
 
@@ -869,6 +870,22 @@ Future<void> main(List<String> args) async {
   );
   fallos.addAll(bibliotecas.fallos);
 
+  // --- la frontera del módulo de comandos de cli ------------------------
+  //
+  // Mira sólo `packages/cli/lib/src/command` y su helper de texto. Ver
+  // `comandos_cli.dart`.
+  final dirCli = Directory('${raiz.path}/packages/cli/lib');
+  final comandos = dirCli.existsSync()
+      ? verificarComandosDeCli(
+          dirCli,
+          detalle: args.contains('--detalle-comandos'),
+        )
+      : (
+          fallos: ['comandos de cli: no encuentro packages/cli/lib.'],
+          resumen: '',
+        );
+  fallos.addAll(comandos.fallos);
+
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
   //
   // `arquitectura.json` direcciona las clases de core por su NOMBRE, y lo hace
@@ -1386,4 +1403,5 @@ Future<void> main(List<String> args) async {
     '`forge`, sin `HttpClient` ni mención al proveedor.',
   );
   stdout.writeln(bibliotecas.resumen);
+  stdout.writeln(comandos.resumen);
 }
