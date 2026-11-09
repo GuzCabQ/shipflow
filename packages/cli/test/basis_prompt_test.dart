@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cli/cli.dart' show runCli;
 import 'package:cli/src/basis/basis_cli.dart';
 import 'package:cli/src/basis/basis_prompt.dart';
 import 'package:cli/src/command/cli_command.dart';
@@ -186,6 +187,40 @@ void main() {
     expect(response.payload, contains('Falta elegir una operación explícita'));
     expect(box.snapshot(), before);
   });
+
+  test('runCli hands its prompt to bootstrap', () async {
+    final empty = Directory(
+      Directory.systemTemp
+          .createTempSync('shipflow-prompt-')
+          .resolveSymbolicLinksSync(),
+    );
+    addTearDown(() => empty.deleteSync(recursive: true));
+    Future<String> bootstrap(ContextPromptIO prompt) async => (await runCli(
+      ['bootstrap'],
+      version: '0.0.0-prueba',
+      workingDirectory: empty,
+      recognizeProject:
+          (_, {required reportLimits, required authorizedOmissions}) =>
+              fail('bootstrap no reconoce'),
+      prompt: prompt,
+    )).payload;
+    expect(await bootstrap(_NoTerminal()), contains('[choice_required]'));
+    expect(await bootstrap(_SilentTerminal()), contains('[context_required]'));
+    expect(empty.listSync(), isEmpty);
+  });
+}
+
+/// Una terminal con una persona que no llega a contestar: sin contexto, la
+/// guía se detiene antes de preguntar.
+final class _SilentTerminal implements ContextPromptIO {
+  @override
+  bool get interactive => true;
+
+  @override
+  Future<String?> readLine() => throw StateError('sin contexto no se pregunta');
+
+  @override
+  void show(String text) => throw StateError('sin contexto no se pregunta');
 }
 
 final class _NoTerminal implements ContextPromptIO {
