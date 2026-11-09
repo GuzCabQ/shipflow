@@ -25,11 +25,28 @@ typedef PublishRequest = ({
 /// Publica [r] para [s], o sólo informa la modalidad si no hay nada que
 /// cambiar. Sin `--sharing`, `keepSharing` deja configuración y exclude
 /// tal cual.
+///
+/// La administración del exclude, si se abrió, se cierra al terminar: en
+/// una publicación, después de soltar su lease.
 Future<void> publishFor(InitSession s, PublishRequest r) async {
-  final o = s.o;
   final exclude = r.keepSharing
       ? null
-      : await excludeChangeFor(o, r.choice, s.service.openAdministration);
+      : await excludeChangeFor(s.o, r.choice, s.service.openAdministration);
+  if (exclude == null) return _publish(s, r, null);
+  try {
+    await _publish(s, r, exclude);
+  } on Object {
+    await closeAfterFailure(exclude.admin);
+    rethrow;
+  }
+  await exclude.admin.close();
+}
+
+Future<void> _publish(
+  InitSession s,
+  PublishRequest r,
+  ExcludeChange? exclude,
+) async {
   if (exclude?.patch.problem case final problem?) {
     s.parts.diagnostics.add(excludeProblem(problem));
     return;
