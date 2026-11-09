@@ -33,6 +33,7 @@ import 'package:analyzer/dart/element/element.dart';
 
 import 'bibliotecas_core.dart';
 import 'comandos_cli.dart';
+import 'composicion_cli.dart';
 
 final List<String> fallos = [];
 
@@ -887,6 +888,20 @@ Future<void> main(List<String> args) async {
         );
   fallos.addAll(comandos.fallos);
 
+  // --- quién alcanza la composición de cli -------------------------------
+  //
+  // Mira todo `packages/cli/lib`. Ver `composicion_cli.dart`.
+  final composicion = dirCli.existsSync()
+      ? verificarComposicionDeCli(
+          dirCli,
+          detalle: args.contains('--detalle-composicion'),
+        )
+      : (
+          fallos: ['composición de cli: no encuentro packages/cli/lib.'],
+          resumen: '',
+        );
+  fallos.addAll(composicion.fallos);
+
   // --- 0 · identidad · dentro de core el nombre es una CLAVE -------------
   //
   // `arquitectura.json` direcciona las clases de core por su NOMBRE, y lo hace
@@ -1405,4 +1420,5 @@ Future<void> main(List<String> args) async {
   );
   stdout.writeln(bibliotecas.resumen);
   stdout.writeln(comandos.resumen);
+  stdout.writeln(composicion.resumen);
 }
