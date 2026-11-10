@@ -3,10 +3,15 @@
 /// frontera sólo el barril. Ningún adapter, helper ni archivo nuevo puede
 /// llegar a ellos, ni directamente ni a través de otros archivos.
 ///
+/// El contexto de init y refresh tiene la misma dirección: el servicio compone
+/// la sesión y el publicador; la sesión no alcanza el servicio; el publicador
+/// no alcanza sesión ni servicio; y el desenlace, que ambos consumen, no
+/// alcanza a ninguno de los tres.
+///
 /// Lo invoca `check.dart`. No prohíbe los ciclos del CLI ni gobierna qué
-/// importa cada archivo: sólo quién alcanza esos dos destinos. Las
-/// dependencias hacia el SDK y otros paquetes se cuentan y no se recorren;
-/// las gobiernan las reglas del workspace.
+/// importa cada archivo: sólo quién alcanza esos destinos. Las dependencias
+/// hacia el SDK y otros paquetes se cuentan y no se recorren; las gobiernan
+/// las reglas del workspace.
 ///
 /// El universo es el disco de `lib`, como en `bibliotecas_core.dart`: un
 /// archivo nuevo se mira aunque nadie lo importe, y la enumeración del
@@ -29,6 +34,10 @@ const barrilDeCli = 'cli.dart';
 const despachoDeComandos = 'src/cli_runner.dart';
 const fronteraDelProceso = 'src/cli_process_boundary.dart';
 const reconocimientoDeRaiz = 'src/recognition_runner.dart';
+const servicioDeContexto = 'src/context/context_service.dart';
+const sesionDeContexto = 'src/context/context_init.dart';
+const publicadorDeContexto = 'src/context/context_init_publication.dart';
+const desenlaceDeContexto = 'src/context/context_publication_outcome.dart';
 const rolesDeComposicion = {
   barrilDeCli,
   despachoDeComandos,
@@ -37,6 +46,23 @@ const rolesDeComposicion = {
   'src/context/context_cli.dart',
   'src/assessment/assessment_cli.dart',
   'src/basis/basis_cli.dart',
+  servicioDeContexto,
+  sesionDeContexto,
+  publicadorDeContexto,
+  desenlaceDeContexto,
+};
+
+/// Cada destino con los orígenes que no deben alcanzarlo, en uno o más saltos.
+/// Son relaciones de dirección: la sesión y el publicador sí pueden alcanzar
+/// el desenlace, y el servicio sí puede alcanzar a todos.
+const prohibidosDeContexto = {
+  servicioDeContexto: {
+    sesionDeContexto,
+    publicadorDeContexto,
+    desenlaceDeContexto,
+  },
+  sesionDeContexto: {publicadorDeContexto, desenlaceDeContexto},
+  publicadorDeContexto: {desenlaceDeContexto},
 };
 
 /// Cada destino con los únicos orígenes que pueden alcanzarlo. Un destino
@@ -150,6 +176,23 @@ VerificacionDeComposicion verificarComposicionDeCli(
   final inversas = [
     for (final a in aristas) Arista(a.destino, a.origen, a.clase),
   ];
+  var incumplidas = 0;
+  for (final MapEntry(key: destino, value: prohibidos)
+      in prohibidosDeContexto.entries) {
+    final origenes = alcanzables(destino, inversas);
+    for (final origen in prohibidos.toList()..sort()) {
+      if (!origenes.contains(origen)) continue;
+      incumplidas++;
+      falla(
+        '$origen alcanza $destino, que no debe alcanzarlo: '
+        '${_camino(origen, destino, aristas)}.',
+      );
+    }
+  }
+  final prohibiciones = prohibidosDeContexto.values.fold(
+    0,
+    (total, origenes) => total + origenes.length,
+  );
   final alcanzadoPor = <String, Set<String>>{};
   for (final MapEntry(key: destino, value: admitidos)
       in origenesAdmitidos.entries) {
@@ -178,7 +221,9 @@ VerificacionDeComposicion verificarComposicionDeCli(
     'aristas locales (${aristas.length - exports - alternativas} import, '
     '$exports export, $alternativas alternativas), $haciaSdk hacia el SDK '
     'y $haciaPaquetes hacia otros paquetes sin recorrer, '
-    '${rolesDeComposicion.length} roles presentes; ${alcances.join('; ')}.',
+    '${rolesDeComposicion.length} roles presentes; $prohibiciones '
+    'prohibiciones de contexto verificadas, $incumplidas incumplidas; '
+    '${alcances.join('; ')}.',
   );
   if (detalle) {
     for (final rel in universo) {
