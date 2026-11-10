@@ -5,6 +5,7 @@ import 'package:vcs/vcs.dart';
 
 import 'context_codec.dart';
 import 'context_doctor.dart';
+import 'context_init_publication.dart';
 import 'context_init.dart';
 import 'context_observation.dart';
 import 'context_recovery.dart';
@@ -39,6 +40,19 @@ final class ProjectContextService {
   /// Ancla el directorio de administración Git que contiene el exclude.
   final Future<ContextStore> Function(Directory) openAdministration;
 
+  /// El publicador de una invocación de init o refresh. Se crea por llamada:
+  /// no guarda nada entre invocaciones.
+  ContextPublisher _publisher() => ContextPublisher(
+    root: root,
+    store: store,
+    git: git,
+    recognize: recognize,
+    version: version,
+    now: now,
+    newId: newId,
+    openAdministration: openAdministration,
+  );
+
   Future<ContextOperationResult> run(ContextRequest request) async {
     final budget = GitBudget();
     final o = await observeContext(
@@ -59,7 +73,10 @@ final class ProjectContextService {
         openAdministration: openAdministration,
       ),
       ContextOperation.init || ContextOperation.refresh => InitSession(
-        service: this,
+        root: root,
+        git: git,
+        newId: newId,
+        publisher: _publisher(),
         o: o,
         request: request,
         budget: budget,

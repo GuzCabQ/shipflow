@@ -1247,11 +1247,11 @@
       }
     },
     "composicion-cli-unidireccional": {
-      "enunciado": "Dentro de packages/cli/lib, sólo cli.dart y src/cli_process_boundary.dart alcanzan el despacho de comandos (src/cli_runner.dart), y sólo cli.dart alcanza la frontera del proceso, contando caminos de uno o más saltos por imports, exports y sus alternativas condicionales. Ningún destino se alcanza a sí mismo.",
+      "enunciado": "Dentro de packages/cli/lib, sólo cli.dart y src/cli_process_boundary.dart alcanzan el despacho de comandos (src/cli_runner.dart), y sólo cli.dart alcanza la frontera del proceso. En el contexto de init y refresh, el servicio compone la sesión y el publicador; la sesión no alcanza el servicio; el publicador no alcanza la sesión ni el servicio; y el desenlace no alcanza el publicador, la sesión ni el servicio. Todo ello se cuenta en uno o más saltos por imports, exports y sus alternativas condicionales. Ningún destino se alcanza a sí mismo.",
       "origen": "SPEC-ARQ-CLI-002 y DIAGNOSTICO-CLI-002: el ciclo recognition_runner ↔ context_cli, assessment_cli y basis_cli, roto al separar el despacho de la observación de la raíz.",
       "tipo": "composicion_unidireccional",
       "aplicada_por": "tool/analisis",
-      "alternativa": "Si un adapter o helper necesita observar la raíz, importá src/recognition_runner.dart; la ejecución de comandos se pide a través de quien compone (el barril o la frontera del proceso). No reexportes el despacho desde el reconocimiento ni lo alcances por el barril, un helper, una alternativa condicional o un package:cli codificado.",
+      "alternativa": "Si un adapter o helper necesita observar la raíz, importá src/recognition_runner.dart; la ejecución de comandos se pide a través de quien compone (el barril o la frontera del proceso). En el contexto, el publicador no recibe la sesión ni el servicio: lo que necesita se le pasa como dependencia o como argumento, y el resultado vuelve como desenlace. No reexportes el despacho ni el servicio desde los archivos que los consumen, ni los alcances por el barril, un helper, una alternativa condicional o un package:cli codificado.",
       "por_que": [
         "Los adapters reusaban la observación de la raíz importando el archivo",
         "que también los despachaba, y eso cerraba un ciclo de cuatro",
@@ -1267,7 +1267,7 @@
       "alcance": {
         "raiz": "packages/cli/lib",
         "que_mira": "Las directivas `import` y `export` de cada `.dart` bajo packages/cli/lib, con cada alternativa condicional, leídas del árbol sintáctico. Las URI se clasifican ya parseadas: `dart:` y `package:` de otros paquetes se cuentan como externas sin recorrerlas; `package:cli/` por su nombre decodificado y las relativas se resuelven dentro de packages/cli/lib; cualquier otro esquema es rojo.",
-        "residuo_declarado": "No prohíbe los ciclos del CLI: los otros cinco componentes cíclicos quedan fuera. No gobierna bin/ ni test/, ni la corrección del despacho, sus efectos, la propiedad del estado o dependencias semánticas que no pasen por directivas; eso es de las pruebas y de las demás reglas. No recorre otros paquetes. Los roles y los orígenes admitidos están fijados en `tool/analisis/bin/composicion_cli.dart`, no en este registro: un campo acá se podría vaciar sin que nada lo notara."
+        "residuo_declarado": "No prohíbe los ciclos del CLI: los componentes cíclicos que quedan en él están fuera de la regla. No gobierna bin/ ni test/, ni la corrección del despacho, sus efectos, la propiedad del estado o dependencias semánticas que no pasen por directivas; eso es de las pruebas y de las demás reglas. No recorre otros paquetes. Sobre el contexto, dirige bibliotecas y no ownership en runtime: ResultParts y EffectsLog comparten archivo y no se prohíben transitivamente; las funciones inyectadas (reloj, IDs, reconocedor, abridor administrativo) no se detectan y se prueban por firma y tests. Los roles, las prohibiciones y el modelo están fijados en `tool/analisis/bin/composicion_cli.dart`, no en este registro."
       },
       "violacion_canonica": {
         "donde": "packages/cli/lib/src/recognition_runner.dart",
@@ -1351,6 +1351,56 @@
             "packages/cli/lib/src/_canario_parte.dart": "part of '_canario_part.dart';\n"
           },
           "debe_mencionar": "composición de cli: part no admitido"
+        },
+        {
+          "nombre": "una sesión que importa el servicio que la compone",
+          "por_que": "La sesión recibe sus dependencias explícitas; si volviera a importar el servicio, el ciclo que se cerró volvería sin ruido.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_init.dart": "import 'context_service.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/context/context_init.dart alcanza src/context/context_service.dart"
+        },
+        {
+          "nombre": "un publicador que alcanza la sesión por un helper con export",
+          "por_que": "El publicador no conoce la sesión: el helper reexporta la sesión y el publicador la alcanza igual, por un tramo que el control debe nombrar.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_init_publication.dart": "import 'context_session_ref.dart';\n",
+            "packages/cli/lib/src/context/context_session_ref.dart": "export 'context_init.dart' show InitSession;\n"
+          },
+          "debe_mencionar": "composición de cli: src/context/context_init_publication.dart alcanza src/context/context_init.dart"
+        },
+        {
+          "nombre": "un publicador que alcanza el servicio por una referencia codificada",
+          "por_que": "`package:c%6Ci/` es cli: clasificar por el texto escrito la dejaría pasar. La clasificación es por identidad parseada.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_init_publication.dart": "import 'package:c%6Ci/src/context/context_service.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/context/context_init_publication.dart alcanza src/context/context_service.dart"
+        },
+        {
+          "nombre": "un desenlace que alcanza el servicio por un helper",
+          "por_que": "El desenlace es lo que la sesión y el publicador consumen: si alcanza el servicio, el ciclo vuelve por el desenlace.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_publication_outcome.dart": "import 'context_outcome_ref.dart';\n",
+            "packages/cli/lib/src/context/context_outcome_ref.dart": "export 'context_service.dart' show ProjectContextService;\n"
+          },
+          "debe_mencionar": "composición de cli: src/context/context_publication_outcome.dart alcanza src/context/context_service.dart"
+        },
+        {
+          "nombre": "un desenlace que importa el publicador por una alternativa condicional",
+          "por_que": "Una alternativa condicional también es una dependencia: el control la recorre igual que la URI principal.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_publication_outcome.dart": "import 'context_init_publication.dart' if (dart.library.io) 'context_init_publication.dart';\n"
+          },
+          "debe_mencionar": "composición de cli: src/context/context_publication_outcome.dart alcanza src/context/context_init_publication.dart"
+        },
+        {
+          "nombre": "un desenlace que importa el resultado sin alcanzar a ninguno de los tres",
+          "por_que": "Control negativo: la dependencia de un tipo de valor que no conduce a la sesión, al publicador ni al servicio debe pasar.",
+          "archivos": {
+            "packages/cli/lib/src/context/context_publication_outcome.dart": "import 'context_result.dart';\n"
+          },
+          "espera": "pasa"
         }
       ],
       "caso_ciego": {
