@@ -17,10 +17,12 @@ import 'context_sharing_choice.dart';
 final class InitSession {
   InitSession({
     required this.service,
+    required ContextPublisher publisher,
     required this.o,
     required this.request,
     required this.budget,
-  }) : parts = ResultParts(
+  }) : _publisher = publisher,
+       parts = ResultParts(
          command: ContextCommand.init,
          operation: request.operation,
          state: ContextState.absent,
@@ -37,6 +39,7 @@ final class InitSession {
   }
 
   final ProjectContextService service;
+  final ContextPublisher _publisher;
   final ObservedContext o;
   final ContextRequest request;
   final GitBudget budget;
@@ -178,7 +181,16 @@ final class InitSession {
 
   /// Publica [r] y proyecta lo ocurrido sobre el resultado de esta sesión.
   Future<void> _publish(PublishRequest r, ContextOutcome success) async =>
-      _apply(await publishFor(this, r), success);
+      _apply(
+        await _publisher.publish(
+          r,
+          o: o,
+          profile: request.profile,
+          budget: budget,
+          effects: effects,
+        ),
+        success,
+      );
 
   /// Proyección exhaustiva: cada variante escribe exactamente lo que escribía
   /// el publicador antes, en el mismo orden.

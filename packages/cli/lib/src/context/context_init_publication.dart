@@ -3,13 +3,16 @@ import 'dart:io';
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
+import '../command/cli_command.dart';
 import 'context_assessment.dart';
-import 'context_init.dart';
 import 'context_observation.dart';
 import 'context_publication_outcome.dart';
 import 'context_publication_plan.dart';
+import 'context_request.dart';
+import 'context_result.dart';
 import 'context_sharing_choice.dart';
 import 'context_transaction_runner.dart';
+import 'secure_context_store.dart';
 import 'state_layout.dart';
 import 'state_ownership.dart';
 
@@ -23,121 +26,175 @@ typedef PublishRequest = ({
   bool keepSharing,
 });
 
-/// Publica [r] para [s] y devuelve lo ocurrido, sin tocar el resultado de la
-/// sesión. Sin `--sharing`, `keepSharing` deja configuración y exclude tal
-/// cual.
+/// Publica lo que decide la sesión y devuelve lo ocurrido. Es dueño de la
+/// administración Git que abre para el exclude y la cierra al terminar.
 ///
-/// La administración del exclude, si se abrió, se cierra al terminar: en una
-/// publicación, después de soltar su lease, y después de la comprobación Git
-/// del caso sin plan. Si algo falla antes, se cierra también y se propaga el
-/// fallo original.
-Future<PublicationOutcome> publishFor(InitSession s, PublishRequest r) async {
-  final exclude = r.keepSharing
-      ? null
-      : await excludeChangeFor(s.o, r.choice, s.service.openAdministration);
-  if (exclude == null) return _publish(s, r, null);
-  final PublicationOutcome outcome;
-  try {
-    outcome = await _publish(s, r, exclude);
-  } on Object {
-    await closeAfterFailure(exclude.admin);
-    rethrow;
-  }
-  await exclude.admin.close();
-  return outcome;
-}
+/// Sus dependencias son privadas y no incluyen la sesión, el servicio ni el
+/// resultado: sólo lo que la publicación usa para observar, escribir y
+/// producir valores (IDs, reloj, reconocimiento y el abridor administrativo).
+final class ContextPublisher {
+  ContextPublisher({
+    required Directory root,
+    required ContextStore store,
+    required GitContextAdapter git,
+    required ContextRecognizer recognize,
+    required String version,
+    required DateTime Function() now,
+    required String Function() newId,
+    required Future<ContextStore> Function(Directory) openAdministration,
+  }) : _root = root,
+       _store = store,
+       _git = git,
+       _recognize = recognize,
+       _version = version,
+       _now = now,
+       _newId = newId,
+       _openAdministration = openAdministration;
 
-Future<PublicationOutcome> _publish(
-  InitSession s,
-  PublishRequest r,
-  ExcludeChange? exclude,
-) async {
-  if (exclude?.patch.problem case final problem?) {
-    return PublicationRefused(diagnostics: [excludeProblem(problem)]);
+  final Directory _root;
+  final ContextStore _store;
+  final GitContextAdapter _git;
+  final ContextRecognizer _recognize;
+  final String _version;
+  final DateTime Function() _now;
+  final String Function() _newId;
+  final Future<ContextStore> Function(Directory) _openAdministration;
+
+  /// Publica [r] con la observación y el contexto de ejecución de la llamada.
+  /// Sin `--sharing`, `keepSharing` deja configuración y exclude tal cual.
+  ///
+  /// La administración del exclude, si se abrió, se cierra al terminar: en una
+  /// publicación, después de soltar su lease, y después de la comprobación Git
+  /// del caso sin plan. Si algo falla antes, se cierra también y se propaga el
+  /// fallo original.
+  Future<PublicationOutcome> publish(
+    PublishRequest r, {
+    required ObservedContext o,
+    required ReportBudgetProfile profile,
+    required GitBudget budget,
+    required EffectsLog effects,
+  }) async {
+    final exclude = r.keepSharing
+        ? null
+        : await excludeChangeFor(o, r.choice, _openAdministration);
+    if (exclude == null) {
+      return _publish(r, o, profile, budget, effects, null);
+    }
+    final PublicationOutcome outcome;
+    try {
+      outcome = await _publish(r, o, profile, budget, effects, exclude);
+    } on Object {
+      await closeAfterFailure(exclude.admin);
+      rethrow;
+    }
+    await exclude.admin.close();
+    return outcome;
   }
-  final plan = _planFor(s, r, exclude);
-  if (plan == null) {
-    final (:sharing, :diagnostics) = await sharingOf(
-      s.o,
-      s.service.git,
-      s.budget,
+
+  Future<PublicationOutcome> _publish(
+    PublishRequest r,
+    ObservedContext o,
+    ReportBudgetProfile profile,
+    GitBudget budget,
+    EffectsLog effects,
+    ExcludeChange? exclude,
+  ) async {
+    if (exclude?.patch.problem case final problem?) {
+      return PublicationRefused(diagnostics: [excludeProblem(problem)]);
+    }
+    final plan = _planFor(r, o, exclude);
+    if (plan == null) {
+      final (:sharing, :diagnostics) = await sharingOf(o, _git, budget);
+      return NothingToPublish(sharing: sharing, diagnostics: diagnostics);
+    }
+    return _run(plan, o, profile, budget, effects);
+  }
+
+  PublicationPlan? _planFor(
+    PublishRequest r,
+    ObservedContext o,
+    ExcludeChange? e,
+  ) {
+    final project = _candidate(r, o);
+    final settings = r.keepSharing
+        ? null
+        : settingsFor(r.projectId, r.choice, o.git, e);
+    final unchanged =
+        project == null &&
+        !(e?.patch.changed ?? false) &&
+        (settings == null || sameBytes(o.settings, settingsBytes(settings)));
+    return unchanged
+        ? null
+        : PublicationPlan(
+            operationId: _newId(),
+            operation: r.operation,
+            projectId: r.projectId,
+            choice: r.choice,
+            settings: settings,
+            observed: o,
+            project: project,
+            exclude: e,
+          );
+  }
+
+  ProjectContext? _candidate(PublishRequest r, ObservedContext o) {
+    final current = r.current;
+    return current == null
+        ? null
+        : candidateFor(
+            projectId: r.projectId,
+            revision: r.revision,
+            version: _version,
+            current: current,
+            pluginIds: o.report.proposal.pluginIds,
+            now: _now(),
+          );
+  }
+
+  Future<PublicationOutcome> _run(
+    PublicationPlan plan,
+    ObservedContext o,
+    ReportBudgetProfile profile,
+    GitBudget budget,
+    EffectsLog effects,
+  ) async {
+    final result = await runTransaction(
+      plan: plan,
+      store: _store,
+      git: _git,
+      budget: budget,
+      effects: effects,
+      sourcesUnchanged: () => _sourcesUnchanged(plan.project, profile),
     );
-    return NothingToPublish(sharing: sharing, diagnostics: diagnostics);
-  }
-  return _run(s, plan);
-}
-
-PublicationPlan? _planFor(InitSession s, PublishRequest r, ExcludeChange? e) {
-  final o = s.o;
-  final project = _candidate(s, r);
-  final settings = r.keepSharing
-      ? null
-      : settingsFor(r.projectId, r.choice, o.git, e);
-  final unchanged =
-      project == null &&
-      !(e?.patch.changed ?? false) &&
-      (settings == null || sameBytes(o.settings, settingsBytes(settings)));
-  return unchanged
-      ? null
-      : PublicationPlan(
-          operationId: s.service.newId(),
-          operation: r.operation,
-          projectId: r.projectId,
-          choice: r.choice,
-          settings: settings,
-          observed: o,
-          project: project,
-          exclude: e,
-        );
-}
-
-ProjectContext? _candidate(InitSession s, PublishRequest r) {
-  final current = r.current;
-  return current == null
-      ? null
-      : candidateFor(
-          projectId: r.projectId,
-          revision: r.revision,
-          version: s.service.version,
-          current: current,
-          pluginIds: s.o.report.proposal.pluginIds,
-          now: s.service.now(),
-        );
-}
-
-Future<PublicationOutcome> _run(InitSession s, PublicationPlan plan) async {
-  final result = await runTransaction(
-    plan: plan,
-    store: s.service.store,
-    git: s.service.git,
-    budget: s.budget,
-    effects: s.effects,
-    sourcesUnchanged: () => _sourcesUnchanged(s, plan.project),
-  );
-  if (!result.ok) {
-    return PublicationRefused(
-      diagnostics: result.diagnostics,
-      journalLeft: result.journalLeft,
+    if (!result.ok) {
+      return PublicationRefused(
+        diagnostics: result.diagnostics,
+        journalLeft: result.journalLeft,
+      );
+    }
+    return PublicationCompleted(
+      choice: plan.choice,
+      effective: result.sharing ?? SharingEffective.pending,
+      recognition: plan.project?.recognition,
     );
   }
-  return PublicationCompleted(
-    choice: plan.choice,
-    effective: result.sharing ?? SharingEffective.pending,
-    recognition: plan.project?.recognition,
-  );
-}
 
-/// Si el reconocimiento, repetido bajo el lease, sigue dando [candidate].
-Future<bool> _sourcesUnchanged(InitSession s, ProjectContext? candidate) async {
-  if (candidate == null) return true;
-  final report = await s.service.recognize(
-    s.request.profile,
-    authorizedStateOmissions(await inspectStateOwnership(s.service.root)),
-  );
-  try {
-    return digestOf(projectRecognition(report)) == candidate.observationDigest;
-  } on ContextFormatException {
-    return false;
+  /// Si el reconocimiento, repetido bajo el lease, sigue dando [candidate].
+  Future<bool> _sourcesUnchanged(
+    ProjectContext? candidate,
+    ReportBudgetProfile profile,
+  ) async {
+    if (candidate == null) return true;
+    final report = await _recognize(
+      profile,
+      authorizedStateOmissions(await inspectStateOwnership(_root)),
+    );
+    try {
+      return digestOf(projectRecognition(report)) ==
+          candidate.observationDigest;
+    } on ContextFormatException {
+      return false;
+    }
   }
 }
 
