@@ -6,6 +6,7 @@ import 'context_decisions.dart';
 import 'context_doctor.dart';
 import 'context_observation.dart';
 import 'context_init_publication.dart';
+import 'context_publication_outcome.dart';
 import 'context_request.dart';
 import 'context_result.dart';
 import 'context_service.dart';
@@ -109,15 +110,14 @@ final class InitSession {
     if (current == null) return _ineligible();
     final choice = await chooseSharing(o, request, parts);
     if (choice == null || !precheckSharing(o, choice, parts)) return;
-    await publishFor(this, (
+    await _publish((
       projectId: service.newId(),
       revision: 1,
       current: current,
       choice: choice,
       operation: TransactionOperation.init,
-      success: ContextOutcome.initialized,
       keepSharing: false,
-    ));
+    ), ContextOutcome.initialized);
   }
 
   /// Init sobre un contexto guardado: verifica, nunca actualiza
@@ -162,11 +162,64 @@ final class InitSession {
   }
 
   /// La modalidad guardada, comprobada y reportada sin cambiarla.
-  Future<void> reportSharing() async {
+  Future<void> _reportSharing() async {
     final (:sharing, :diagnostics) = await sharingOf(o, service.git, budget);
+    _reportSharingWith(sharing, diagnostics);
+  }
+
+  void _reportSharingWith(
+    ContextSharing sharing,
+    List<ContextDiagnostic> diagnostics,
+  ) {
     parts
       ..sharing = sharing
       ..diagnostics.addAll(diagnostics);
+  }
+
+  /// Publica [r] y proyecta lo ocurrido sobre el resultado de esta sesión.
+  Future<void> _publish(PublishRequest r, ContextOutcome success) async =>
+      _apply(await publishFor(this, r), success);
+
+  /// Proyección exhaustiva: cada variante escribe exactamente lo que escribía
+  /// el publicador antes, en el mismo orden.
+  void _apply(PublicationOutcome outcome, ContextOutcome success) =>
+      switch (outcome) {
+        NothingToPublish(:final sharing, :final diagnostics) =>
+          _reportSharingWith(sharing, diagnostics),
+        PublicationRefused(:final diagnostics, :final journalLeft) => _refused(
+          diagnostics,
+          journalLeft,
+        ),
+        PublicationCompleted(
+          :final choice,
+          :final effective,
+          :final recognition,
+        ) =>
+          _completed(choice, effective, recognition, success),
+      };
+
+  void _refused(List<ContextDiagnostic> diagnostics, bool journalLeft) {
+    parts.diagnostics.addAll(diagnostics);
+    if (journalLeft) parts.state = ContextState.recoveryRequired;
+  }
+
+  void _completed(
+    SharingChoice choice,
+    SharingEffective effective,
+    PortableRecognition? recognition,
+    ContextOutcome success,
+  ) {
+    parts
+      ..state = ContextState.present
+      ..freshness = ContextFreshness.current
+      ..context = recognition ?? o.project.value?.recognition
+      ..success = success
+      ..sharing = ContextSharing(
+        choice: choice,
+        gitState: o.git.state,
+        effective: effective,
+      );
+    if (!o.gitUsable) parts.diagnostics.add(gitWarning(o.git));
   }
 
   /// Refresh: reobserva y publica sólo un reconocimiento elegible y
@@ -185,9 +238,9 @@ final class InitSession {
     if (!keep && !precheckSharing(o, choice, parts)) return;
     if (same && choice == o.choice) {
       parts.freshness = ContextFreshness.current;
-      return reportSharing();
+      return _reportSharing();
     }
-    await publishFor(this, (
+    await _publish((
       projectId: saved.projectId,
       revision: same ? saved.revision : saved.revision + 1,
       current: same ? null : current,
@@ -195,9 +248,8 @@ final class InitSession {
       operation: same
           ? TransactionOperation.sharing
           : TransactionOperation.refresh,
-      success: ContextOutcome.refreshed,
       keepSharing: keep,
-    ));
+    ), ContextOutcome.refreshed);
   }
 
   /// Una elección local vinculada a otro repositorio no se revincula sola.
@@ -219,13 +271,12 @@ final class InitSession {
     );
   }
 
-  Future<void> _publishSharing(SharingChoice choice) => publishFor(this, (
+  Future<void> _publishSharing(SharingChoice choice) => _publish((
     projectId: o.project.value!.projectId,
     revision: o.project.value!.revision,
     current: null,
     choice: choice,
     operation: TransactionOperation.sharing,
-    success: ContextOutcome.initialized,
     keepSharing: false,
-  ));
+  ), ContextOutcome.initialized);
 }

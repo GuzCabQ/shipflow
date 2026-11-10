@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:core/core.dart';
 import 'package:vcs/vcs.dart';
 
+import 'context_assessment.dart';
 import 'context_init.dart';
 import 'context_observation.dart';
+import 'context_publication_outcome.dart';
 import 'context_publication_plan.dart';
 import 'context_sharing_choice.dart';
 import 'context_transaction_runner.dart';
@@ -18,42 +20,51 @@ typedef PublishRequest = ({
   PortableRecognition? current,
   SharingChoice choice,
   TransactionOperation operation,
-  ContextOutcome success,
   bool keepSharing,
 });
 
-/// Publica [r] para [s], o sólo informa la modalidad si no hay nada que
-/// cambiar. Sin `--sharing`, `keepSharing` deja configuración y exclude
-/// tal cual.
+/// Publica [r] para [s] y devuelve lo ocurrido, sin tocar el resultado de la
+/// sesión. Sin `--sharing`, `keepSharing` deja configuración y exclude tal
+/// cual.
 ///
-/// La administración del exclude, si se abrió, se cierra al terminar: en
-/// una publicación, después de soltar su lease.
-Future<void> publishFor(InitSession s, PublishRequest r) async {
+/// La administración del exclude, si se abrió, se cierra al terminar: en una
+/// publicación, después de soltar su lease, y después de la comprobación Git
+/// del caso sin plan. Si algo falla antes, se cierra también y se propaga el
+/// fallo original.
+Future<PublicationOutcome> publishFor(InitSession s, PublishRequest r) async {
   final exclude = r.keepSharing
       ? null
       : await excludeChangeFor(s.o, r.choice, s.service.openAdministration);
   if (exclude == null) return _publish(s, r, null);
+  final PublicationOutcome outcome;
   try {
-    await _publish(s, r, exclude);
+    outcome = await _publish(s, r, exclude);
   } on Object {
     await closeAfterFailure(exclude.admin);
     rethrow;
   }
   await exclude.admin.close();
+  return outcome;
 }
 
-Future<void> _publish(
+Future<PublicationOutcome> _publish(
   InitSession s,
   PublishRequest r,
   ExcludeChange? exclude,
 ) async {
   if (exclude?.patch.problem case final problem?) {
-    s.parts.diagnostics.add(excludeProblem(problem));
-    return;
+    return PublicationRefused(diagnostics: [excludeProblem(problem)]);
   }
   final plan = _planFor(s, r, exclude);
-  if (plan == null) return s.reportSharing();
-  await _run(s, plan, r.success);
+  if (plan == null) {
+    final (:sharing, :diagnostics) = await sharingOf(
+      s.o,
+      s.service.git,
+      s.budget,
+    );
+    return NothingToPublish(sharing: sharing, diagnostics: diagnostics);
+  }
+  return _run(s, plan);
 }
 
 PublicationPlan? _planFor(InitSession s, PublishRequest r, ExcludeChange? e) {
@@ -94,12 +105,7 @@ ProjectContext? _candidate(InitSession s, PublishRequest r) {
         );
 }
 
-Future<void> _run(
-  InitSession s,
-  PublicationPlan plan,
-  ContextOutcome ok,
-) async {
-  final o = s.o;
+Future<PublicationOutcome> _run(InitSession s, PublicationPlan plan) async {
   final result = await runTransaction(
     plan: plan,
     store: s.service.store,
@@ -108,20 +114,17 @@ Future<void> _run(
     effects: s.effects,
     sourcesUnchanged: () => _sourcesUnchanged(s, plan.project),
   );
-  s.parts.diagnostics.addAll(result.diagnostics);
-  if (result.journalLeft) s.parts.state = ContextState.recoveryRequired;
-  if (!result.ok) return;
-  s.parts
-    ..state = ContextState.present
-    ..freshness = ContextFreshness.current
-    ..context = plan.project?.recognition ?? o.project.value?.recognition
-    ..success = ok
-    ..sharing = ContextSharing(
-      choice: plan.choice,
-      gitState: o.git.state,
-      effective: result.sharing ?? SharingEffective.pending,
+  if (!result.ok) {
+    return PublicationRefused(
+      diagnostics: result.diagnostics,
+      journalLeft: result.journalLeft,
     );
-  if (!o.gitUsable) s.parts.diagnostics.add(gitWarning(o.git));
+  }
+  return PublicationCompleted(
+    choice: plan.choice,
+    effective: result.sharing ?? SharingEffective.pending,
+    recognition: plan.project?.recognition,
+  );
 }
 
 /// Si el reconocimiento, repetido bajo el lease, sigue dando [candidate].
