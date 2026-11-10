@@ -203,8 +203,8 @@ final class InitSession {
         success,
       );
 
-  /// Proyección exhaustiva: cada variante escribe exactamente lo que escribía
-  /// el publicador antes, en el mismo orden.
+  /// Proyecta el desenlace sobre el resultado. Es exhaustiva: cada variante
+  /// escribe sus campos y una variante nueva no compila sin su rama.
   void _apply(PublicationOutcome outcome, ContextOutcome success) =>
       switch (outcome) {
         NothingToPublish(:final sharing, :final diagnostics) =>
