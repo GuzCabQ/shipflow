@@ -114,6 +114,13 @@ final class ServiceSandbox {
     }
   }
 
+  /// Un servicio sobre [store], para invocarlo más de una vez. Quien abre el
+  /// almacén lo cierra.
+  ProjectContextService service(
+    ContextStore store, {
+    Map<String, String>? git,
+  }) => _service(store, git, null);
+
   ProjectContextService _service(
     ContextStore store,
     Map<String, String>? git,

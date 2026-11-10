@@ -3,6 +3,8 @@ library;
 
 import 'dart:io';
 
+import 'package:cli/src/context/context_request.dart';
+import 'package:cli/src/context/secure_context_store.dart';
 import 'package:core/core.dart';
 import 'package:test/test.dart';
 
@@ -166,22 +168,28 @@ void main() {
   );
 
   test(
-    'dos invocaciones consecutivas no arrastran resultados ni efectos',
+    'dos invocaciones del mismo servicio no arrastran resultados ni efectos',
     () async {
-      final first = await box.run(
-        ContextOperation.init,
-        sharing: SharingChoice.local,
-        git: box.realGit,
-      );
-      final second = await box.run(
-        ContextOperation.init,
-        sharing: SharingChoice.local,
-        git: box.realGit,
-      );
-      expect(first.exitCode, 0);
+      final store = await SecureContextStore.open(box.root);
+      addTearDown(store.close);
+      final service = box.service(store, git: box.realGit);
+      final first = await service.run(_initLocal);
+      final firstJson = first.toJson();
+      final persisted = box.snapshot();
+      final second = await service.run(_initLocal);
+      expect(first.outcome, ContextOutcome.initialized);
+      expect(first.effects.filesCreated, isNotEmpty);
       expect(second.exitCode, 0);
-      expect(second.diagnostics.where((d) => d.code == 'initialized'), isEmpty);
-      expect(second.effects.filesCreated, isEmpty);
+      expect(second.outcome, ContextOutcome.unchanged);
+      expect(second.diagnostics, isEmpty);
+      expect(second.effects.wrote, isFalse, reason: 'sin efectos heredados');
+      expect(first.toJson(), firstJson, reason: 'el primero no cambia');
+      expect(box.snapshot(), persisted, reason: 'los bytes no cambian');
     },
   );
 }
+
+const _initLocal = ContextRequest(
+  operation: ContextOperation.init,
+  sharing: SharingChoice.local,
+);
