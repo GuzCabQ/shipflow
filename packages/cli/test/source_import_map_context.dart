@@ -61,6 +61,7 @@ const contextImports = {
   },
   'lib/src/context/context_handles.dart': {'native/posix_api.dart'},
   'lib/src/context/context_init.dart': {
+    'dart:io',
     'package:core/core.dart',
     'package:vcs/vcs.dart',
     'context_assessment.dart',
@@ -71,7 +72,6 @@ const contextImports = {
     'context_publication_outcome.dart',
     'context_request.dart',
     'context_result.dart',
-    'context_service.dart',
     'context_sharing_choice.dart',
   },
   'lib/src/context/context_init_publication.dart': {

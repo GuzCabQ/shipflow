@@ -73,7 +73,9 @@ final class ProjectContextService {
         openAdministration: openAdministration,
       ),
       ContextOperation.init || ContextOperation.refresh => InitSession(
-        service: this,
+        root: root,
+        git: git,
+        newId: newId,
         publisher: _publisher(),
         o: o,
         request: request,
