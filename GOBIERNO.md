@@ -133,7 +133,7 @@ la arquitectura y se revisa como tal.
 | `forja-en-su-adapter` | Que el nombre de la forja, su host o un `HttpClient` salgan de `packages/forge/` | `tool/analisis` |
 | `nucleo-sin-ciclos` | Que las bibliotecas de `core` formen un ciclo —también por un export o una alternativa condicional—, que `src/` apunte al barril, o que una hoja de valores de basis alcance el modelo | `tool/analisis` |
 | `comandos-separados-del-parser` | Que el modelo de comandos de `cli` dependa de algo más que el barril de `core`, que su módulo alcance servicios, IO, otro paquete o el barril de `cli` —también por un export o una alternativa condicional—, o que forme un ciclo | `tool/analisis` |
-| `composicion-cli-unidireccional` | Que un adapter, un helper o un archivo nuevo de `cli` alcance el despacho de comandos o la frontera del proceso —directamente, por el barril, por otro archivo, por un export o por una alternativa condicional— | `tool/analisis` |
+| `composicion-cli-unidireccional` | Que un adapter, un helper o un archivo nuevo de `cli` alcance el despacho de comandos o la frontera del proceso —directamente, por el barril, por otro archivo, por un export o por una alternativa condicional—; y en el contexto de init, que la sesión alcance el servicio que la compone, que el publicador alcance la sesión o el servicio, o que el desenlace alcance a cualquiera de los tres | `tool/analisis` |
 
 Una regla que `capas.py` no aplica **tiene que declarar `aplicada_por`**, ese
 aplicador tiene que existir, y CI tiene que invocarlo. Sin las tres cosas es
@@ -170,8 +170,8 @@ sintáctico de `core`» era falso.** Medido sobre `tool/analisis`:
   hay ciclos.
 - `composicion-cli-unidireccional` aplica ese mecanismo al disco entero de
   `packages/cli/lib`, contrastado con el analizador, y no busca ciclos: decide
-  quién puede alcanzar, en uno o más saltos, el despacho y la frontera del
-  proceso.
+  quién puede alcanzar, en uno o más saltos, el despacho, la frontera del
+  proceso y el servicio, la sesión y el publicador de init.
 - `puertos-sin-implementacion` saca los puertos de ahí, pero **quién los
   implementa lo busca en todos los paquetes**: una implementación que viviera
   solo en `core` no es la pregunta que responde.
@@ -198,7 +198,7 @@ detectar— y un **caso ciego**, que le quita la vista y comprueba que el check 
 ponga rojo en vez de reportar «nada que objetar». `probar_reglas.py` los inyecta y
 los revierte en cada corrida.
 
-**El arnés aplica 252 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
+**El arnés aplica 257 sabotajes.** La cifra la deriva `cifra_de_sabotajes` en
 `tool/checks/probar_reglas.py` contando los casos que esperan falla, y falla si
 esta prosa no coincide. No se mantiene a mano: se escribe acá porque hay quien la
 tiene que leer, y se verifica porque una cifra que nadie deriva envejece sola.

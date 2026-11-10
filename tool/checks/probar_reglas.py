@@ -500,6 +500,12 @@ EXTRAS_OBLIGATORIAS: dict[str, set[str]] = {
         "una URI con otro esquema",
         "un ../ que se sale de lib",
         "un part en el CLI",
+        "una sesión que importa el servicio que la compone",
+        "un publicador que alcanza la sesión por un helper con export",
+        "un publicador que alcanza el servicio por una referencia codificada",
+        "un desenlace que alcanza el servicio por un helper",
+        "un desenlace que importa el publicador por una alternativa condicional",
+        "un desenlace que importa el resultado sin alcanzar a ninguno de los tres",
     },
 }
 
