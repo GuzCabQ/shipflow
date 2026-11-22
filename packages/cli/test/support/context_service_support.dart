@@ -119,7 +119,8 @@ final class ServiceSandbox {
   ProjectContextService service(
     ContextStore store, {
     Map<String, String>? git,
-  }) => _service(store, git, null);
+    Future<ContextStore> Function(Directory)? openAdministration,
+  }) => _service(store, git, openAdministration);
 
   ProjectContextService _service(
     ContextStore store,
