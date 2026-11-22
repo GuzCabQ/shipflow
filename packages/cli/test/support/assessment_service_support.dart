@@ -67,6 +67,10 @@ dependencies:
   /// Las llamadas POSIX del almacén real, para provocar fallos nativos.
   NativePosix? posix;
 
+  /// Lo que se observa del almacén raíz al terminar la operación, antes de
+  /// que su dueño lo cierre.
+  Future<void> Function(ContextStore real)? beforeClose;
+
   String path(String relative) => box.path(relative);
   File get document => File(path(assessmentPath));
 
@@ -89,6 +93,7 @@ dependencies:
         ),
       );
     } finally {
+      await beforeClose?.call(real);
       await real.close();
     }
   }

@@ -107,7 +107,7 @@ final class AssessmentStore {
     decodeAssessment(bytes);
     final created = await store.createDirectory(_locks);
     final lease = await store.acquirePublication([store.contextLock()]);
-    try {
+    return _releasing(lease, () async {
       await _expect(expectedSha256);
       await preconditions();
       final journal = AssessmentTransaction(
@@ -127,9 +127,35 @@ final class AssessmentStore {
         published: published,
       );
       return await commitReported(journal, bytes, done);
-    } finally {
-      await lease.release();
+    });
+  }
+
+  /// [work] con [lease] tomado, que se suelta una vez al final. Prevalece su
+  /// fallo; si publicó y soltar falla, sale su testigo como commit fallido.
+  Future<AssessmentPublication> _releasing(
+    ContextLease lease,
+    Future<AssessmentPublication> Function() work,
+  ) async {
+    final AssessmentPublication publication;
+    try {
+      publication = await work();
+    } on Object {
+      try {
+        await lease.release();
+      } on Object {
+        // El fallo del trabajo es el que se propaga.
+      }
+      rethrow;
     }
+    try {
+      await lease.release();
+    } on Object catch (_, trace) {
+      Error.throwWithStackTrace(
+        AssessmentCommitFailure('io', publication),
+        trace,
+      );
+    }
+    return publication;
   }
 
   /// El reemplazo atómico con CAS y, ya publicado, el journal publicado y

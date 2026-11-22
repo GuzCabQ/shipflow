@@ -29,7 +29,7 @@ String humanAssessment(AssessmentResult result, {required String root}) {
 }
 
 /// El estado en una frase: guardado, sin cambios, parcial, obsoleto, no
-/// comprobado, histórico o lo que impidió seguir.
+/// comprobado, histórico, lo que impidió seguir o guardado pese a un error.
 String headlineOf(AssessmentResult r) => switch (r.outcome) {
   AssessmentOutcome.saved =>
     r.coverage == AssessmentCoverage.complete
@@ -45,7 +45,10 @@ String headlineOf(AssessmentResult r) => switch (r.outcome) {
         : 'Publicación recuperada',
   AssessmentOutcome.shown => _shownHeadline(r),
   _ => switch (r.operation) {
-    AssessmentOperation.observe => 'No se guardó un levantamiento',
+    AssessmentOperation.observe =>
+      r.outcome == AssessmentOutcome.failed && r.effects.published
+          ? 'Levantamiento guardado, pero la operación terminó con un error'
+          : 'No se guardó un levantamiento',
     AssessmentOperation.show => 'No se pudo consultar el levantamiento',
     AssessmentOperation.recover => 'No se recuperó la publicación',
   },
