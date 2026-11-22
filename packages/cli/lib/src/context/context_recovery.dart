@@ -42,15 +42,28 @@ Future<ContextOperationResult> recoverContext({
     openAdministration: openAdministration,
     effects: effects,
   );
+  await _recoverWith(targets, git, budget, parts);
+  return resultOf(parts, effects.freeze(budget.started));
+}
+
+/// Un fallo del trabajo, también el ya traducido, prevalece sobre la limpieza.
+Future<void> _recoverWith(
+  RecoveryTargets targets,
+  GitContextAdapter git,
+  GitBudget budget,
+  ResultParts parts,
+) async {
   try {
     await targets.acquire();
-    await _recover(targets, o, git, budget, parts);
+    await _recover(targets, targets.o, git, budget, parts);
   } on ContextStoreFailure catch (failure) {
     parts.diagnostics.add(storeDiagnostic(failure));
-  } finally {
-    await targets.release();
+    return targets.releaseAfterFailure();
+  } on Object {
+    await targets.releaseAfterFailure();
+    rethrow;
   }
-  return resultOf(parts, effects.freeze(budget.started));
+  await targets.release();
 }
 
 ResultParts _parts(ObservedContext o) =>

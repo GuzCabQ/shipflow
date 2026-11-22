@@ -59,9 +59,25 @@ final class RecoveryTargets {
     await _staging.read(store);
   }
 
+  /// Suelta el lease y después cierra la administración, un intento cada
+  /// uno. Si soltar falla, la cierra igual y propaga el fallo de soltar.
   Future<void> release() async {
-    await _lease?.release();
+    try {
+      await _lease?.release();
+    } on Object {
+      if (_admin case final admin?) await closeAfterFailure(admin);
+      rethrow;
+    }
     await _admin?.close();
+  }
+
+  /// [release] cuando ya hay un fallo en curso, que es el que se propaga.
+  Future<void> releaseAfterFailure() async {
+    try {
+      await release();
+    } on Object {
+      // El fallo en curso es el que cuenta.
+    }
   }
 
   Future<List<int>?> _current(TransactionResource resource) =>
